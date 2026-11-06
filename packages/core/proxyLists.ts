@@ -17,6 +17,8 @@ import {
   parseProxyLines,
   type GeoRow,
   type Market,
+  marketKey,
+  listTries,
 } from './proxyGeo';
 export * from './proxyGeo';
 
@@ -73,7 +75,7 @@ async function geoRows() {
 
 /** Market for a city, cached in the database for 7 days so most scans skip the GEO download. */
 export async function resolveMarket(city: string, stateCode: string): Promise<Market> {
-  const key = stateCode.toUpperCase() + '|' + normPlace(city);
+  const key = marketKey(city, stateCode);
   const cached = await db.proxyMarket.findUnique({ where: { key } });
   if (cached && Date.now() - +cached.refreshedAt < 7 * 86400000)
     return { country: 'US', region: cached.region, city: cached.city, level: cached.level as Market['level'], isps: cached.isps as string[] };
@@ -143,15 +145,52 @@ export async function prepareScanProxies(city: string, stateCode: string, isps: 
 }
 
 /** Lists to try for a pin, most specific first. */
-export async function listsForPin(scan: { proxyRegion: string | null; proxyCity: string | null }, isp: string) {
+/**
+ * Before a grid is queued: lists for the centre city (validating the chosen
+ * ISPs there), then for every other city the grid's points fall in, so each
+ * point can search from its own city. A place Proxy-Seller only covers at
+ * state level, or doesn't cover, simply keeps using the centre city's lists.
+ */
+export async function prepareGridProxies(
+  center: { city: string; stateCode: string },
+  places: { city: string; stateCode: string }[],
+  isps: string[],
+) {
+  const market = await prepareScanProxies(center.city, center.stateCode, isps);
+  const seen = new Set([marketKey(center.city, center.stateCode)]);
+  const cities = [market.city || market.region];
+  for (const p of places) {
+    const key = marketKey(p.city, p.stateCode);
+    if (seen.has(key) || seen.size > 25) continue; // a very wide grid caps the extra lists
+    seen.add(key);
+    try {
+      const m = await resolveMarket(p.city, p.stateCode);
+      if (m.level !== 'city' || (m.region === market.region && m.city === market.city)) continue;
+      for (const isp of isps) if (m.isps.includes(isp)) await ensureList(m, isp);
+      await ensureList(m, '');
+      cities.push(m.city);
+    } catch {
+      // That place keeps using the centre city's lists.
+    }
+  }
+  return { market, cities };
+}
+
+/** The saved lists a grid point uses, best first (see listTries for the order). */
+export async function listsForPin(
+  scan: { proxyRegion: string | null; proxyCity: string | null },
+  pin: { isp?: string | null; city?: string | null; stateCode?: string | null },
+) {
   if (!scan.proxyRegion) return [];
   const rotation = listRotation();
-  const tries = [
-    { region: scan.proxyRegion, city: scan.proxyCity ?? '', isp },
-    { region: scan.proxyRegion, city: scan.proxyCity ?? '', isp: '' },
-  ].filter((t, i, a) => a.findIndex((x) => x.city === t.city && x.isp === t.isp) === i);
+  const center = { region: scan.proxyRegion, city: scan.proxyCity ?? '' };
+  let local: { region: string; city: string } | null = null;
+  if (pin.city && pin.stateCode) {
+    const m = await db.proxyMarket.findUnique({ where: { key: marketKey(pin.city, pin.stateCode) } });
+    if (m && m.level === 'city') local = { region: m.region, city: m.city };
+  }
   const lists = [];
-  for (const t of tries) {
+  for (const t of listTries(center, local, pin.isp ?? '')) {
     const found = await db.proxyList.findUnique({ where: { region_city_isp_rotation: { ...t, rotation } } });
     if (found) lists.push(found);
   }

@@ -139,7 +139,8 @@ esac >/dev/null 2>&1
 if [ "$APP" = maps ]; then
  # Template: wait for "Search here", tap it, type the keyword, press Enter.
  mark launch
- if wait_for '(text|content-desc)="Search here"' 9; then
+ # A fresh phone may open on a first-run screen ("Make it your map": Skip); clear it and look again.
+ if wait_for '(text|content-desc)="Search here"' 9 || { dismiss_fre; wait_for '(text|content-desc)="Search here"' 9; }; then
    sleep 0.8
    B=$(find_node 'class="android.widget.TextView"' '(text|content-desc)="Search here"' "$D/probe.xml")
    if [ -n "$B" ]; then tap_bounds "$B"; else tap_in_file "Search here" "$D/probe.xml"; fi

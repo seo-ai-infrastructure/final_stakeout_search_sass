@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { db, type GridPin, type GridScan } from '@stakeout/db';
-import { listsForPin, normPlace } from '@stakeout/core/proxyLists';
+import { listsForPin, normPlace, locationVerified } from '@stakeout/core/proxyLists';
 import { put, uploadURL, uploaded } from '@stakeout/core/r2';
 import { captureEnded, captureStarted, duoplusPost, updatePhone, type LeasedDevice } from './duoplus';
 import { pull, push, shell, transportFor } from './deviceShell';
@@ -75,10 +75,14 @@ async function checkExit(d: LeasedDevice, p: Pin): Promise<ProxyCheck | null> {
   await sleep(6000);
   const token = process.env.IPINFO_TOKEN ? '?token=' + encodeURIComponent(process.env.IPINFO_TOKEN) : '';
   const url = (process.env.IP_CHECK_URL || 'https://ipinfo.io/json') + token;
-  const raw = await shell(d, `curl -s --max-time 12 ${shellQuote(url)}`, 20000).catch(() => '');
+  // Asked from the phone itself, so it reflects the network actually in use. Not every
+  // Android image ships curl, so try wget next, then DuoPlus's server-side proxy check.
+  let raw = await shell(d, `curl -s --max-time 12 ${shellQuote(url)}`, 20000).catch(() => '');
+  if (!raw.trim().startsWith('{')) raw = await shell(d, `wget -qO- -T 12 ${shellQuote(url)}`, 20000).catch(() => '');
+  if (!raw.trim().startsWith('{')) return checkProxyApi(d);
   try {
     const j = JSON.parse(raw);
-    if (!j?.ip) return null;
+    if (!j?.ip) return checkProxyApi(d);
     return {
       ip: String(j.ip),
       org: String(j.org ?? ''),
@@ -99,7 +103,11 @@ async function checkProxyApi(device: LeasedDevice): Promise<ProxyCheck | null> {
     ip_scan_channel: 'ip2location',
   }).catch(() => null);
   const data = res?.data;
-  if (!data?.success || !data.ip) return null;
+  if (!data?.success || !data.ip) {
+    // DuoPlus says why (e.g. "Connection test failed!"): keep it in the log for diagnosis.
+    console.warn('[duoplus] proxy check failed for', device.imageId, String(data?.tips ?? res?.message ?? 'no response').slice(0, 160));
+    return null;
+  }
   return {
     ip: String(data.ip),
     city: String(data.city ?? ''),
@@ -124,7 +132,7 @@ const isUS = (c: ProxyCheck) => /^(us|usa|united states)$/i.test(c.country.trim(
  */
 async function provisionFromLists(device: LeasedDevice, p: Pin) {
   const isp = p.isp ?? '';
-  const lists = await listsForPin(p.scan, isp);
+  const lists = await listsForPin(p.scan, p);
   if (!lists.length) throw new Error('PROXY_LIST_MISSING');
   const requireState = process.env.PROXY_REQUIRE_STATE_MATCH !== 'false';
   const tried: string[] = [];
@@ -433,6 +441,11 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     // Google said it located this search by IP, so the pin's GPS was not used:
     // the result is not a measurement at this coordinate. Fail (and refund) it.
     if (result.locationFromIp) throw new Error('LOCATION_FROM_IP');
+    // On web surfaces Google states where it placed the search. It must say it used the
+    // device and name this point's state or ZIP; anything else (another country, another
+    // language, an IP guess) fails and is refunded instead of being recorded.
+    if ((surface === 'chrome' || surface === 'google') && !locationVerified(result.locationSource, p.stateCode, p.zip))
+      throw new Error('LOCATION_UNVERIFIED');
     const videoUrl = prefix + '/video.mp4',
       metaJsonUrl = prefix + '/meta.json';
     await put(videoUrl, b.video, 'video/mp4');

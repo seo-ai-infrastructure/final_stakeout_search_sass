@@ -12,6 +12,8 @@ export function r2() {
       requestChecksumCalculation: 'WHEN_REQUIRED',
       responseChecksumValidation: 'WHEN_REQUIRED',
     region: 'auto',
+    // Buckets created in a jurisdiction (e.g. ".us." or ".eu.") have their own address;
+    // set R2_ENDPOINT to the bucket's S3 API URL from the Cloudflare dashboard.
     endpoint:
       process.env.R2_ENDPOINT?.trim().replace(/\/+$/, '') ||
       'https://' + process.env.R2_ACCOUNT_ID + '.r2.cloudflarestorage.com',

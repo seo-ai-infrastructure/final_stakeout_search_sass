@@ -156,3 +156,45 @@ export function ispForPin(mode: string, isps: string[], rowIdx: number, colIdx: 
   return isps[(rowIdx * gridSize + colIdx) % isps.length];
 }
 
+
+
+// ---------------------------------------------------------------------------
+// Per-city lists: which saved lists a grid point tries, in order
+// ---------------------------------------------------------------------------
+
+/** The cache key for a place: "TN|mount juliet". */
+export function marketKey(city: string, stateCode: string) {
+  return stateCode.toUpperCase() + '|' + normPlace(city);
+}
+
+type ListPlace = { region: string; city: string };
+
+/**
+ * The lists a grid point tries, best first. The chosen ISP is kept before the
+ * city: a receipt that names an ISP must have used it. So with an ISP chosen:
+ * point's own city + ISP, centre city + ISP, point's city any ISP, centre any ISP.
+ * Without one: point's city, then centre city.
+ */
+export function listTries(center: ListPlace, local: ListPlace | null, isp: string) {
+  const places = local && !(local.region === center.region && local.city === center.city) ? [local, center] : [center];
+  const tries: { region: string; city: string; isp: string }[] = [];
+  if (isp) for (const p of places) tries.push({ ...p, isp });
+  for (const p of places) tries.push({ ...p, isp: '' });
+  return tries;
+}
+
+
+/**
+ * Google's own location line on a results page, e.g. "37122, Tennessee - From your device".
+ * A web point only counts when Google says it used the device's location AND names the
+ * point's state or ZIP. A foreign-language page, an IP-based location, or the wrong state
+ * all fail, so a phone whose proxy silently dropped can never record another country's results.
+ */
+export function locationVerified(line: string | null | undefined, stateCode: string, zip: string) {
+  const text = (line ?? '').trim();
+  if (!/from your device/i.test(text)) return false;
+  if (zip && text.includes(zip)) return true;
+  const name = US_STATE_NAMES[stateCode.toUpperCase()] ?? '';
+  const squash = (v: string) => v.toLowerCase().replace(/[^a-z]/g, '');
+  return Boolean(name) && squash(text).includes(squash(name));
+}

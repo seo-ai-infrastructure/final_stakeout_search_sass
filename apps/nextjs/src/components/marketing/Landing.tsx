@@ -1,20 +1,10 @@
 import Link from 'next/link';
+import { SiteHeader, SiteFooter } from './SiteChrome';
+import { WALL, AI_NAMED, rankStyle } from './demoData';
+import ReceiptPrinter from './ReceiptPrinter';
 import './marketing.css';
 
 /* ------------------------------------------------------------------ shared bits */
-
-function Logo() {
-  return (
-    <Link href="/" className="flex items-center gap-2.5" aria-label="Stakeout Search home">
-      <svg width="30" height="30" viewBox="0 0 48 48" aria-hidden="true">
-        <path d="M24 3.5c-8.9 0-16.2 7.1-16.2 15.9C7.8 31.6 24 44.5 24 44.5s16.2-12.9 16.2-25.1C40.2 10.6 32.9 3.5 24 3.5z" fill="#f5c451" />
-        <circle cx="24" cy="19.4" r="7.2" fill="#06080c" />
-        <circle cx="24" cy="19.4" r="3" fill="#f5c451" />
-      </svg>
-      <span className="mk-display text-lg font-semibold tracking-wide">Stakeout Search</span>
-    </Link>
-  );
-}
 
 function Check({ className = '' }: { className?: string }) {
   return (
@@ -142,15 +132,6 @@ function Receipt({ className = '' }: { className?: string }) {
 
 /* ------------------------------------------------------------------ phone wall */
 
-const WALL = [12, 9, 7, 6, 7, 10, 15, 9, 5, 3, 3, 4, 7, 11, 6, 3, 2, 1, 2, 4, 9, 5, 2, 1, 2, 1, 3, 8, 7, 4, 2, 2, 3, 5, 10, 11, 6, 4, 3, 5, 8, 14, 21, 12, 8, 7, 9, 13, 21];
-
-function rankStyle(r: number) {
-  if (r <= 3) return { bg: '#3ddc97', ink: '#04130c' };
-  if (r <= 10) return { bg: '#f5c451', ink: '#1a1300' };
-  if (r <= 20) return { bg: '#ff8a4c', ink: '#1f0b00' };
-  return { bg: '#2a3442', ink: '#9aa7b8' };
-}
-
 function PhoneWall() {
   return (
     <figure className="rounded-3xl border border-[#1b2431] bg-[#0b0f15] p-4 sm:p-6">
@@ -204,22 +185,244 @@ const STEPS = [
   { n: '3', title: 'Open the receipts', text: 'Click any point to watch what the phone saw, inspect the results and AI answers, and share it with your client.' },
 ];
 
+/* ------------------------------------------------------------------ value section 1: AI answers */
+
+function AiAnswers() {
+  const named = AI_NAMED.filter(Boolean).length;
+  return (
+    <section className="relative border-y border-[#1b2431] bg-[#080b10]">
+      <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 sm:px-8 lg:grid-cols-[1fr_1.1fr]">
+        <div>
+          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">Ask Maps · AI Overviews</p>
+          <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
+            The AI Answer Is the <span className="mk-gold-text">New #1 Spot.</span>
+          </h2>
+          <p className="mt-5 text-lg leading-relaxed text-[#c9d3df]">
+            Google now shows an AI answer above the results for many searches. You can rank #2 and still be invisible if the answer above you names someone else.
+          </p>
+          <ul className="mt-7 space-y-4">
+            {[
+              ['Who the AI recommends, at every point', 'The full Ask Maps and AI Overview answer is saved in each receipt, not reduced to a yes or no.'],
+              ['Named, or left out?', `See the points where the answer includes you, and where it sends people to a competitor instead.`],
+              ['What the AI trusted', 'The sources an AI Overview cited, so you know which reviews, directories and pages to work on.'],
+            ].map(([t, d]) => (
+              <li key={t} className="flex gap-3">
+                <Check className="mt-0.5 text-[#7aa7ff]" />
+                <span><b className="block text-white">{t}</b><span className="text-[#9aa7b8]">{d}</span></span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="relative">
+          <div className="grid gap-4 sm:grid-cols-[1fr_210px]">
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-[#d6e4ff]/20 bg-[#0f1624] p-4">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps · point 2,6</span>
+                  <span className="rounded-full bg-[#ff6b6b]/15 px-2 py-0.5 font-semibold text-[#ff9b9b]">Not named</span>
+                </div>
+                <p className="mt-2 text-[13px] leading-relaxed text-[#c9d3df]">
+                  For a fast, reliable plumber nearby, <b className="text-white">Harbor Plumbing Co.</b> and <b className="text-white">Northside Drain &amp; Sewer</b> get strong reviews for emergency calls.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[#3ddc97]/30 bg-[#0d1a16] p-4">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps · point 4,4</span>
+                  <span className="rounded-full bg-[#3ddc97]/15 px-2 py-0.5 font-semibold text-[#3ddc97]">Named first</span>
+                </div>
+                <p className="mt-2 text-[13px] leading-relaxed text-[#c9d3df]">
+                  <mark className="rounded bg-[#f5c451] px-1 font-semibold text-[#1a1300]">Your Business</mark> is highly rated for same-day repairs, and Harbor Plumbing Co. is another option.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[#2a3442] bg-[#0c1118] p-4">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-[#9dbcff]">✦ AI Overview · point 6,3</span>
+                  <span className="text-[#9aa7b8]">3 sources cited</span>
+                </div>
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {['A review site', 'A local directory', 'Your website'].map((s, i) => (
+                    <span key={s} className={'rounded-full border px-2.5 py-1 text-[11px] ' + (i === 2 ? 'border-[#f5c451]/50 text-[#ffdf8e]' : 'border-[#2a3442] text-[#c9d3df]')}>{s}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <figure className="rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-4">
+              <div className="grid grid-cols-7 gap-1" role="img" aria-label={`Named in the AI answer at ${named} of 49 points`}>
+                {AI_NAMED.map((v, i) => (
+                  <span key={i} className={'aspect-square rounded-full ' + (v ? 'bg-[#f5c451] shadow-[0_0_10px_rgba(245,196,81,0.6)]' : 'bg-[#1b2431]')} />
+                ))}
+              </div>
+              <figcaption className="mt-4">
+                <span className="mk-display block text-4xl font-bold text-[#f5c451]">{named}<span className="text-xl text-[#9aa7b8]"> / 49</span></span>
+                <span className="text-[12px] leading-snug text-[#9aa7b8]">points where the AI answer named you</span>
+              </figcaption>
+            </figure>
+          </div>
+          <p className="mt-3 text-[12px] text-[#6b7686]">Illustrative answers and grid.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ value section 2: competitor territory */
+
+const RIVALS: Record<string, { name: string; color: string }> = {
+  Y: { name: 'Your Business', color: '#f5c451' },
+  H: { name: 'Harbor Plumbing Co.', color: '#7aa7ff' },
+  N: { name: 'Northside Drain & Sewer', color: '#b48cff' },
+  A: { name: 'Ace Rooter Service', color: '#3fc7c7' },
+};
+// Who holds #1 at each point of the 7×7 grid.
+const TERRITORY = ['HHHNNNN', 'HHYYNYN', 'HYYYYNN', 'AYYNYYN', 'AAYHYHN', 'AAAYHHH', 'YAAHHHH'].join('').split('');
+
+function Territory() {
+  const count = (k: string) => TERRITORY.filter((t) => t === k).length;
+  const rows = Object.entries(RIVALS)
+    .map(([k, r]) => ({ k, ...r, wins: count(k) }))
+    .sort((a, b) => b.wins - a.wins);
+  return (
+    <section className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 sm:px-8 lg:grid-cols-[1.1fr_1fr]">
+      <div className="grid gap-4 sm:grid-cols-[1fr_1fr]">
+        <figure className="rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-4">
+          <p className="mk-mono mb-3 text-[11px] uppercase tracking-widest text-[#9aa7b8]">Who holds #1, point by point</p>
+          <div className="grid grid-cols-7 gap-1" role="img" aria-label="A territory map showing which business ranks first at each of 49 grid points">
+            {TERRITORY.map((t, i) => (
+              <span key={i} className="aspect-square rounded-[5px]" style={{ background: RIVALS[t].color, opacity: t === 'Y' ? 1 : 0.85 }} />
+            ))}
+          </div>
+          <figcaption className="mt-3 text-[11px] text-[#6b7686]">Illustrative territory map.</figcaption>
+        </figure>
+        <div className="rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-4">
+          <p className="mk-mono mb-3 text-[11px] uppercase tracking-widest text-[#9aa7b8]">#1 spots on this grid</p>
+          <ol className="space-y-2.5">
+            {rows.map((r, i) => (
+              <li key={r.k} className={'rounded-xl px-3 py-2.5 ' + (r.k === 'Y' ? 'bg-[#f5c451]/10 ring-1 ring-[#f5c451]/50' : 'bg-[#0f141c]')}>
+                <div className="flex items-center gap-2 text-[13px]">
+                  <span className="mk-mono w-4 text-[#6b7686]">{i + 1}</span>
+                  <span className="h-2.5 w-2.5 rounded-sm" style={{ background: r.color }} />
+                  <span className={'min-w-0 flex-1 truncate ' + (r.k === 'Y' ? 'font-semibold text-white' : 'text-[#c9d3df]')}>{r.name}</span>
+                  <span className="mk-mono font-semibold text-white">{r.wins}</span>
+                </div>
+                <div className="mt-2 h-1.5 rounded-full bg-[#1b2431]">
+                  <div className="h-1.5 rounded-full" style={{ width: `${(r.wins / 49) * 100}%`, background: r.color }} />
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+      <div>
+        <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Up to 980 competitor positions per 7×7 scan</p>
+        <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
+          Know Who&apos;s Beating You, <span className="mk-gold-text">Street by Street.</span>
+        </h2>
+        <p className="mt-5 text-lg leading-relaxed text-[#c9d3df]">
+          Every point saves the whole top 20, not just your rank. So one scan shows you every competitor, where each one wins, and the exact streets where you lose, with the video to prove it.
+        </p>
+        <ul className="mt-7 space-y-4">
+          {[
+            ['Find the streets you\u2019re losing, and who to', 'Your territory against theirs, point by point.'],
+            ['Spot a new competitor the week they arrive', 'Run the same grid again and see who moved in, and where.'],
+            ['Walk into the pitch with their rival on video', 'Show a prospect the business beating them, on their own street, recorded.'],
+          ].map(([t, d]) => (
+            <li key={t} className="flex gap-3">
+              <Check className="mt-0.5 text-[#f5c451]" />
+              <span><b className="block text-white">{t}</b><span className="text-[#9aa7b8]">{d}</span></span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ value section 3: the itemized receipt */
+
+const ITEMS: [string, string][] = [
+  ['Real Android phone sessions', '49'],
+  ['Screen recordings, about 2 hours in total', '49'],
+  ['GPS-set locations, one per grid point', '49'],
+  ['Residential connections, ISP named', '49'],
+  ['Ranked listings captured (up to 20 per point)', '980'],
+  ['AI answers checked (Ask Maps / AI Overview)', '49'],
+  ['SHA-256 evidence fingerprints', '49'],
+  ['Client share link, no login needed', '1'],
+];
+
+function ValueStack() {
+  return (
+    <section className="border-y border-[#1b2431] bg-[#080b10]">
+      <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">What one 7×7 scan puts in your hands</p>
+          <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">Your Scan, <span className="mk-gold-text">Itemized.</span></h2>
+          <p className="mt-5 text-lg text-[#9aa7b8]">A rank tracker sells you 49 colored dots. Here&apos;s what&apos;s behind ours.</p>
+        </div>
+
+        <div className="mt-14 grid items-start gap-8 lg:grid-cols-[1.15fr_1fr]">
+          <div className="mk-receipt mx-auto w-full max-w-[560px] rounded-b-2xl">
+            <div className="mk-perf" aria-hidden="true" />
+            <div className="px-6 pb-7 pt-3 sm:px-9">
+              <div className="flex items-baseline justify-between border-b border-dashed border-[#2a3442] pb-3">
+                <span className="mk-display text-lg font-semibold tracking-[0.2em] text-[#f5c451]">STAKEOUT · 7×7 SCAN</span>
+                <span className="mk-mono text-[11px] text-[#9aa7b8]">“plumber near me”</span>
+              </div>
+              <ul className="mk-mono mt-4 space-y-3 text-[13px] sm:text-[14px]">
+                {ITEMS.map(([label, qty]) => (
+                  <li key={label} className="flex items-baseline gap-2">
+                    <span className="text-[#eef2f7]">{label}</span>
+                    <span className="flex-1 translate-y-[-3px] border-b border-dotted border-[#2a3442]" aria-hidden="true" />
+                    <span className="font-semibold text-[#f5c451]">×{qty}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-6 border-t border-dashed border-[#2a3442] pt-4">
+                <div className="mk-mono flex justify-between text-[13px] text-[#9aa7b8]"><span>Time to run</span><span className="text-white">minutes, not days</span></div>
+                <div className="mk-mono mt-2 flex justify-between text-[13px] text-[#9aa7b8]"><span>Your driving</span><span className="text-white">0 miles</span></div>
+                <div className="mk-mono mt-2 flex justify-between text-[13px] text-[#9aa7b8]"><span>Failed points</span><span className="text-[#3ddc97]">credited back automatically</span></div>
+              </div>
+              <p className="mk-mono mt-6 text-center text-[11px] tracking-widest text-[#6b7686]">*** EVERY DATA POINT COMES WITH A RECEIPT ***</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-[#2a3442] bg-[#0c1118] p-7">
+              <p className="mk-mono text-[12px] uppercase tracking-widest text-[#ff8a4c]">The manual way</p>
+              <h3 className="mk-display mt-2 text-3xl font-semibold">One person. One phone. One very long day.</h3>
+              <dl className="mt-6 grid grid-cols-2 gap-3">
+                {[
+                  ['~50 mi', 'of driving between 49 points a mile apart'],
+                  ['~7 hrs', 'driving, parking, searching, recording'],
+                  ['980', 'listings to write down by hand, at most'],
+                  ['0', 'fingerprints proving nothing was edited'],
+                ].map(([n, l]) => (
+                  <div key={l} className="rounded-xl border border-[#1b2431] bg-[#0f141c] px-4 py-3.5">
+                    <dt className="mk-display text-3xl font-bold text-white">{n}</dt>
+                    <dd className="mt-1 text-[12px] leading-snug text-[#9aa7b8]">{l}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-5 text-sm leading-relaxed text-[#9aa7b8]">And you&apos;d still have one phone, one network and one moment in time, repeated every time a client asks how it&apos;s going.</p>
+            </div>
+            <div className="rounded-2xl border border-[#f5c451]/40 bg-[#f5c451]/[0.06] p-7">
+              <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">The Stakeout way</p>
+              <p className="mt-2 text-lg leading-relaxed text-[#eef2f7]">Type a keyword, pick a grid, and every point gets its own real phone session, many running at once. Open the receipts with your coffee.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ------------------------------------------------------------------ page */
 
 export default function Landing() {
   return (
     <div className="mk min-h-screen overflow-x-hidden">
-      <header className="sticky top-0 z-30 border-b border-[#1b2431] bg-[#06080c]/85 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3.5 sm:px-8">
-          <Logo />
-          <nav className="flex items-center gap-1 text-sm sm:gap-2" aria-label="Main">
-            <Link href="/demo" className="hidden rounded-lg px-3 py-2 text-[#9aa7b8] hover:text-white sm:block">Live demo</Link>
-            <Link href="/agency" className="hidden rounded-lg px-3 py-2 text-[#9aa7b8] hover:text-white md:block">Done for you</Link>
-            <Link href="/login" className="rounded-lg px-3 py-2 text-[#eef2f7] hover:bg-[#111823]">Sign in</Link>
-            <Link href="/login?mode=register" className="mk-btn-primary rounded-lg px-4 py-2 font-semibold">Get started</Link>
-          </nav>
-        </div>
-      </header>
+      <SiteHeader />
 
       {/* HERO */}
       <section className="relative">
@@ -353,14 +556,37 @@ export default function Landing() {
         </div>
       </section>
 
+      <AiAnswers />
+
+      <Territory />
+
+      {/* THE TAGLINE: EVERY DATA POINT COMES WITH A RECEIPT */}
+      <section className="relative overflow-hidden border-y border-[#1b2431]">
+        <div className="mk-glow pointer-events-none absolute inset-0" aria-hidden="true" />
+        <div className="mk-grid-bg pointer-events-none absolute inset-0 opacity-40" aria-hidden="true" />
+        <div className="relative mx-auto max-w-7xl px-5 py-24 sm:px-8">
+          <div className="mx-auto max-w-5xl text-center">
+            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Not a slogan. A feature.</p>
+            <h2 className="mk-display mt-4 text-[48px] font-bold leading-[0.98] sm:text-7xl lg:text-[104px]">
+              Every Data Point<br />Comes with a <span className="mk-gold-text">Receipt.</span>
+            </h2>
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-[#9aa7b8]">
+              Other tools give you a number. We give you the number, and everything behind it. Go on: tap any point and pull its receipt.
+            </p>
+          </div>
+          <div className="mt-16">
+            <ReceiptPrinter />
+          </div>
+        </div>
+      </section>
+
       {/* ANATOMY OF A RECEIPT */}
       <section className="border-y border-[#1b2431] bg-[#080b10]">
-        <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 sm:px-8 lg:grid-cols-[360px_1fr]">
-          <div className="flex justify-center"><Receipt /></div>
+        <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
           <div>
             <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">What&apos;s on a receipt</p>
             <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">Everything your client could ask. Answered on one page.</h2>
-            <div className="mt-10 grid gap-x-8 gap-y-7 sm:grid-cols-2">
+            <div className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
               {ANATOMY.map((a) => (
                 <div key={a.n}>
                   <p className="mk-mono text-sm text-[#7aa7ff]">{a.n}</p>
@@ -402,6 +628,8 @@ export default function Landing() {
         </div>
       </section>
 
+      <ValueStack />
+
       {/* CALLS TO ACTION */}
       <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
         <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
@@ -425,20 +653,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <footer className="border-t border-[#1b2431]">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-5 py-8 text-sm text-[#9aa7b8] sm:px-8">
-          <Logo />
-          <nav className="flex flex-wrap gap-5" aria-label="Footer">
-            <Link href="/demo" className="hover:text-white">Live demo</Link>
-            <Link href="/agency" className="hover:text-white">Done for you</Link>
-            <Link href="/login" className="hover:text-white">Sign in</Link>
-            <a href="mailto:sass@stakeoutsearch.com" className="hover:text-white">sass@stakeoutsearch.com</a>
-          </nav>
-          <p className="w-full text-xs text-[#6b7686]">
-            © 2026 Stakeout Search. Not affiliated with Google. Google Maps is a trademark of Google LLC. Example screens and receipt values are illustrative.
-          </p>
-        </div>
-      </footer>
+      <SiteFooter note="Example screens and receipt values are illustrative." />
     </div>
   );
 }

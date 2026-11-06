@@ -9,7 +9,7 @@ import {
 } from '@stakeout/core/redis';
 import { cloneScheduledRun, settlePin } from '@stakeout/core/scans';
 import { listsForPin } from '@stakeout/core/proxyLists';
-import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool } from './duoplus';
+import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist } from './duoplus';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 
@@ -46,12 +46,14 @@ async function execute(job: Job, token?: string) {
       await settlePin(pin.id, { data: await measureDesktop(pin) });
       return;
     }
-    const preferred = pin.scan.proxyRegion ? (await listsForPin(pin.scan, pin.isp ?? ''))[0]?.id : null;
+    const preferred = pin.scan.proxyRegion ? (await listsForPin(pin.scan, pin))[0]?.id : null;
     const lease = await acquireDeviceLease(pin.id, pin.scan.phoneModel, preferred);
     if (!('device' in lease)) {
       const waited = Date.now() - job.timestamp;
       // No phone of the requested model exists: wait briefly in case one is
       // rebooting, then fail (and refund) rather than measure on other hardware.
+      // No phone ready: look for (and set up) phones within ~30 s instead of waiting for the next 5-minute sync.
+      if (lease.reason === 'NO_COMPATIBLE_DEVICE') syncSoon();
       if (lease.reason === 'NO_COMPATIBLE_DEVICE' && waited > NO_DEVICE_GRACE_MS) {
         await settlePin(pin.id, { error: 'NO_COMPATIBLE_DEVICE' });
         return;
@@ -67,6 +69,17 @@ async function execute(job: Job, token?: string) {
       throw new DelayedError();
     }
     const d = lease.device;
+    // Only ever measure on a phone that is powered on right now. If it was switched
+    // off or expired since the last fleet sync, take it out of service and put this
+    // point straight back in the queue for another phone: no credit used, no blame.
+    const power = await phonePowerStatus(d.imageId);
+    if (power && !power.on) {
+      console.warn('[duoplus] phone', d.imageId, 'is', power.status, '- taken out of service; point requeued');
+      await db.devicePool.update({ where: { imageId: d.imageId }, data: { offlineAt: new Date() } }).catch(() => {});
+      await d.release();
+      await job.moveToDelayed(Date.now() + 5000, token);
+      throw new DelayedError();
+    }
     // First time a phone picks this pin up: the end of its queue wait.
     await db.gridPin.updateMany({
       where: { id: pin.id, startedAt: null },
@@ -82,6 +95,11 @@ async function execute(job: Job, token?: string) {
         d.imageId,
         (e instanceof Error ? e.message : 'PIN_FAILED').split(' ')[0],
       ).catch(() => {});
+      // Can't reach the phone over ADB: our outbound IP may have changed. Re-whitelist it.
+      if (e instanceof Error && e.message.startsWith('ADB_CONNECT_FAILED') && Date.now() - lastWhitelistFix > 60000) {
+        lastWhitelistFix = Date.now();
+        await ensureAdbWhitelist(true).catch(() => {});
+      }
       if (e instanceof Error && e.message === 'FLAG_CAPTCHA_DETECTED')
         await db.devicePool.update({
           where: { imageId: d.imageId },
@@ -196,10 +214,17 @@ async function reconcile() {
   }
 }
 
+let lastWhitelistFix = 0;
 let busy = false,
   lastRepair = Date.now(),
   lastFleetSync = 0,
   fleetSyncRunning = false;
+
+/** Bring the next fleet sync forward to ~30 s from now (at most once a minute). */
+function syncSoon() {
+  const every = Number(process.env.FLEET_SYNC_MINUTES ?? 5) * 60000;
+  if (Date.now() - lastFleetSync > 60000) lastFleetSync = Math.min(lastFleetSync, Date.now() - every + 30000);
+}
 
 async function tick() {
   if (busy) return;

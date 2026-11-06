@@ -1,3 +1,4 @@
+import { phoneUsable, phoneInScope, expiresWithin, adbWhitelist, PHONE_STATUS } from '@stakeout/core/fleetHealth';
 import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { redis, duoplusPost } from '@stakeout/core/redis';
@@ -18,24 +19,50 @@ const PAGE_SIZE = 100;
  */
 export async function syncDuoPlusDevicePool() {
   if (!process.env.DUOPLUS_API_KEY) return;
+  await ensureAdbWhitelist().catch((e) => console.warn('[duoplus] ADB whitelist not updated:', e instanceof Error ? e.message : e));
   try {
+    // Only phones that are powered on, ADB-ready and not about to expire are used.
+    // Anything else (off, expired, renewal overdue, booting, configuring) is ignored,
+    // and a phone registered earlier that is no longer usable is marked offline below.
     const online: any[] = [];
+    const skipped: Record<string, number> = {};
+    const needAdb: string[] = [];
+    const autoSetup = process.env.DUOPLUS_AUTO_PROVISION !== 'false';
+    let listed = 0;
     let complete = false;
     for (let page = 1; page <= 20; page++) {
-      const res = await duoplusPost('/api/v1/cloudPhone/list', {
-        page,
-        pagesize: PAGE_SIZE,
-        link_status: ['1'],
-        adb_status: ['1'],
-      });
+      // Every phone on the account, so the summary can say why each unusable one is skipped.
+      const res = await duoplusPost('/api/v1/cloudPhone/list', { page, pagesize: PAGE_SIZE });
       const list: any[] = res?.data?.list ?? [];
-      online.push(...list.filter((i) => i?.id && Number(i.status) === 1 && i.adb));
+      listed += list.length;
+      for (const i of list) {
+        if (!i?.id) continue;
+        if (!phoneInScope(String(i.id))) {
+          skipped['not in DUOPLUS_PHONE_IDS'] = (skipped['not in DUOPLUS_PHONE_IDS'] ?? 0) + 1;
+          continue;
+        }
+        // On and not about to expire, but ADB is off: switch it on (picked up next sync).
+        if (Number(i.status) === 1 && String(i.adb_status ?? '1') !== '1' && !expiresWithin(i.expired_at, 30)) needAdb.push(String(i.id));
+        const u = phoneUsable(i);
+        if (u.ok) online.push(i);
+        else {
+          skipped[u.why] = (skipped[u.why] ?? 0) + 1;
+          // A phone that is on but can't be used says so by name, so it can be fixed.
+          if (Number(i.status) === 1) console.warn('[duoplus] phone', String(i.id), (i.name ? '(' + i.name + ') ' : '') + 'is on but not usable:', u.why);
+        }
+      }
       if (list.length < PAGE_SIZE) {
         complete = true;
         break;
       }
     }
     const now = new Date();
+    if (autoSetup && needAdb.length) {
+      const r = await duoplusPost('/api/v1/cloudPhone/openAdb', { image_ids: needAdb }).catch((e) => ({ error: String(e) }));
+      console.log('[duoplus] switched ADB on for', needAdb.join(', '), '·', JSON.stringify((r as any)?.data ?? r).slice(0, 200));
+    }
+    const summary = Object.entries(skipped).map(([why, n]) => n + ' ' + why).join(', ');
+    console.log(`[duoplus] fleet sync: ${listed} listed, ${online.length} usable` + (summary ? ` · skipped: ${summary}` : ''));
     const known = await db.devicePool.findMany({ select: { imageId: true, proxyId: true } });
     const knownIds = new Set(known.map((d) => d.imageId));
     const usedProxies = new Set(known.map((d) => d.proxyId));
@@ -58,10 +85,19 @@ export async function syncDuoPlusDevicePool() {
       }
       // New phone: register it only with its real DuoPlus proxy binding, and
       // leave it un-bootstrapped so it cannot be leased until an admin bootstraps it.
-      const proxyId = item.proxy_id ? String(item.proxy_id) : '';
+      let proxyId = item.proxy_id ? String(item.proxy_id) : '';
       if (!proxyId || usedProxies.has(proxyId)) {
-        console.warn('[duoplus] skipped new phone without a unique proxy binding', imageId);
-        continue;
+        // Give the phone its own DuoPlus proxy record instead of waiting for someone to bind one.
+        const created = autoSetup ? await createOwnProxy(imageId) : null;
+        if (!created) {
+          console.warn(
+            '[duoplus] skipped new phone without a unique proxy binding',
+            imageId,
+            autoSetup ? '(it gets its own once the first scan has created a proxy list)' : '',
+          );
+          continue;
+        }
+        proxyId = created;
       }
       usedProxies.add(proxyId);
       await db.devicePool.create({
@@ -101,6 +137,21 @@ export async function bootstrapDevice(d: { imageId: string; adbAddr: string | nu
     .map((v) => v.trim());
   const [brand, model] = props.slice(-2);
   if (!model) throw new Error('BOOTSTRAP_NO_MODEL');
+  // Apps can read the SIM's country and carrier. A phone whose emulated SIM says another
+  // country gets a matched US carrier instead (no phone number: DuoPlus warns custom
+  // numbers carry risk). Phones with no SIM are left alone. DUOPLUS_US_SIM=false to skip.
+  if (process.env.DUOPLUS_US_SIM !== 'false') {
+    const simCountry = (await shell(d, 'getprop gsm.sim.operator.iso-country').catch(() => '')).trim().toLowerCase();
+    if (simCountry && !simCountry.split(',').every((c) => c.trim() === 'us' || c.trim() === '')) {
+      await updatePhone({
+        image_id: d.imageId,
+        sim: { status: 1, country: 'US', operator: 'T-Mobile USA', mcc: '310', mnc: '260' },
+      }).then(
+        () => console.log('[duoplus] phone', d.imageId, 'had a', simCountry.toUpperCase(), 'SIM; set to a US carrier'),
+        (e) => console.warn('[duoplus] could not set a US SIM on', d.imageId, e instanceof Error ? e.message : e),
+      );
+    }
+  }
   await db.devicePool.update({
     where: { imageId: d.imageId },
     data: { hardwareBrand: brand || null, hardwareModel: model, bootstrappedAt: new Date() },
@@ -155,19 +206,46 @@ export function updatePhone(item: PhoneUpdate) {
   });
 }
 
+/** Phone IDs DuoPlus reports as failed in an otherwise successful batch response. */
+function failedIds(res: any): string[] {
+  const f = res?.data?.fail;
+  return Array.isArray(f) ? f.map((x: any) => String(x?.id ?? x?.image_id ?? x)) : [];
+}
+
+async function updateOne(b: { item: PhoneUpdate }) {
+  const res = await duoplusPost('/api/v1/cloudPhone/update', { images: [b.item] });
+  if (failedIds(res).includes(b.item.image_id))
+    throw new Error('DUOPLUS_UPDATE_FAILED ' + JSON.stringify(res?.data?.fail_reason ?? '').slice(0, 120));
+}
+
 async function flushUpdates() {
   flushTimer = null;
-  const batch = pendingUpdates.splice(0, 50);
+  // DuoPlus accepts at most 20 phones per cloudPhone/update call.
+  const batch = pendingUpdates.splice(0, 20);
   if (pendingUpdates.length) flushTimer = setTimeout(flushUpdates, 0);
   if (!batch.length) return;
   try {
-    await duoplusPost('/api/v1/cloudPhone/update', { images: batch.map((b) => b.item) });
-    batch.forEach((b) => b.resolve());
+    const res = await duoplusPost('/api/v1/cloudPhone/update', { images: batch.map((b) => b.item) });
+    // A 200 response can still list phones whose GPS/proxy/locale were not applied:
+    // retry those one by one, and fail a point rather than let it search from the wrong place.
+    const failed = new Set(failedIds(res));
+    for (const b of batch) {
+      if (!failed.has(b.item.image_id)) {
+        b.resolve();
+        continue;
+      }
+      try {
+        await updateOne(b);
+        b.resolve();
+      } catch (err) {
+        b.reject(err);
+      }
+    }
   } catch (e) {
     if (batch.length === 1) return batch[0].reject(e);
     for (const b of batch) {
       try {
-        await duoplusPost('/api/v1/cloudPhone/update', { images: [b.item] });
+        await updateOne(b);
         b.resolve();
       } catch (err) {
         b.reject(err);
@@ -281,4 +359,109 @@ export async function acquireDeviceLease(
     return { device };
   }
   return { reason: 'BUSY' };
+}
+
+
+/**
+ * Live check just before a point runs: is this phone still powered on?
+ * Returns null when DuoPlus can't be asked (so a busy API never halts the fleet);
+ * the ADB connection would fail on its own if the phone really were off.
+ */
+export async function phonePowerStatus(imageId: string): Promise<{ on: boolean; status: string } | null> {
+  const res = await duoplusPost('/api/v1/cloudPhone/status', { image_ids: [imageId] }).catch(() => null);
+  const data = res?.data;
+  const items: any[] = Array.isArray(data) ? data : Array.isArray(data?.list) ? data.list : data ? [data] : [];
+  const item = items.find((i) => String(i?.id ?? i?.image_id ?? '') === imageId) ?? (items.length === 1 ? items[0] : null);
+  if (!item || item.status === undefined) return null;
+  const code = Number(item.status);
+  return { on: code === 1, status: PHONE_STATUS[code] ?? 'status ' + String(item.status) };
+}
+
+
+/**
+ * Creates a DuoPlus proxy record for one phone (filled from a saved Proxy-Seller list;
+ * the worker rewrites it to the right city and ISP before every point) and binds it.
+ * Returns null until a scan has created at least one list.
+ */
+async function createOwnProxy(imageId: string): Promise<string | null> {
+  const list = await db.proxyList.findFirst({ orderBy: { lastUsedAt: 'desc' } });
+  if (!list) return null;
+  const ports = list.ports as number[];
+  // Test the credentials first (Check Proxy works on unsaved settings), so a phone is
+  // never set up with a dead or foreign proxy. Up to three ports of the list.
+  let port: number | null = null;
+  let lastTip = '';
+  for (const p of ports.slice(0, 3)) {
+    const check = await duoplusPost('/api/v1/proxy/check', {
+      protocol: 'socks5',
+      host: list.host,
+      port: Number(p),
+      user: list.login,
+      password: list.password,
+      ip_scan_channel: 'ip2location',
+    }).catch(() => null);
+    const d = check?.data;
+    if (d?.success && /^(us|usa|united states)$/i.test(String(d.country ?? '').trim())) {
+      port = Number(p);
+      break;
+    }
+    lastTip = String(d?.tips || (d?.country ? 'exits in ' + d.country : '') || check?.message || 'no response');
+  }
+  if (port === null) {
+    console.warn('[duoplus] no working US port to set up', imageId, 'with:', lastTip.slice(0, 160));
+    return null;
+  }
+  const res = await duoplusPost('/api/v1/proxy/add', {
+    proxy_list: [
+      { protocol: 'socks5', host: list.host, port, user: list.login, password: list.password, name: 'stakeout-' + imageId },
+    ],
+    ip_scan_channel: 'ip2location',
+  }).catch(() => null);
+  const id = res?.data?.success?.[0]?.id;
+  if (!id) {
+    console.warn('[duoplus] could not create a proxy record for', imageId, JSON.stringify(res?.data?.fail ?? res?.message ?? '').slice(0, 200));
+    return null;
+  }
+  const bound = await duoplusPost('/api/v1/cloudPhone/update', {
+    images: [{ image_id: imageId, proxy: { id: String(id), dns: 1 } }],
+  }).catch(() => null);
+  if (!bound || failedIds(bound).includes(imageId)) {
+    console.warn('[duoplus] created proxy record', String(id), 'but could not bind it to', imageId);
+    return null;
+  }
+  console.log('[duoplus] created and bound its own proxy record for', imageId);
+  return String(id);
+}
+
+
+let whitelistedFor = '';
+
+/** The worker's own public IPv4, as the internet (and DuoPlus) sees it. */
+async function ownPublicIp(): Promise<string> {
+  for (const url of ['https://api.ipify.org?format=json', 'https://ipinfo.io/json']) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const j: any = await r.json();
+      if (j?.ip) return String(j.ip);
+    } catch {
+      // try the next lookup
+    }
+  }
+  return '';
+}
+
+/**
+ * Keeps this worker's IP on DuoPlus's ADB connection whitelist, so it can reach the
+ * phones even when Railway's outbound address changes. Only calls DuoPlus when the
+ * address changed (or when forced after an ADB connection failure).
+ * Set DUOPLUS_ADB_WHITELIST_AUTO=false to manage the whitelist by hand instead.
+ */
+export async function ensureAdbWhitelist(force = false) {
+  if (process.env.DUOPLUS_ADB_WHITELIST_AUTO === 'false' || !process.env.DUOPLUS_API_KEY) return;
+  const ip = await ownPublicIp();
+  if (!ip || (ip === whitelistedFor && !force)) return;
+  const ips = adbWhitelist(ip, process.env.DUOPLUS_ADB_WHITELIST_EXTRA ?? '');
+  await duoplusPost('/api/v1/cloudPhone/setAdbIpWhitelist', { ips });
+  whitelistedFor = ip;
+  console.log('[duoplus] ADB whitelist set to', ips.join(', '));
 }

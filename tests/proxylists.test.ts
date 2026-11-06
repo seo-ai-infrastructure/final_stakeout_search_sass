@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractGeoRows, matchMarket, parseProxyLines, toDuoPlusLine, ispForPin, listRotation } from '../packages/core/proxyGeo';
+import { extractGeoRows, matchMarket, parseProxyLines, toDuoPlusLine, ispForPin, listRotation, marketKey, listTries, locationVerified } from '../packages/core/proxyGeo';
 import { parseSpec } from '../packages/core/grid';
 
 const flat = { status: 'success', data: [
@@ -51,4 +51,45 @@ test('scan settings accept any, one or a 2–6 ISP mix only', () => {
   assert.throws(() => parseSpec({ ...base, ispMode: 'mix', isps: ['A'] }), /2–6/);
   assert.throws(() => parseSpec({ ...base, ispMode: 'single', isps: ['A', 'B'] }), /ISP/);
   assert.throws(() => parseSpec({ ...base, ispMode: 'any', isps: ['A'] }), /ISP/);
+});
+
+
+test('marketKey: one key per place, however it is spelled', () => {
+  assert.equal(marketKey('Mount Juliet', 'tn'), marketKey('MOUNT  JULIET', 'TN'));
+  assert.notEqual(marketKey('Hermitage', 'TN'), marketKey('Mount Juliet', 'TN'));
+});
+
+test('listTries: the chosen ISP is kept before the city', () => {
+  const center = { region: 'Tennessee', city: 'Mount Juliet' };
+  const local = { region: 'Tennessee', city: 'Hermitage' };
+  assert.deepEqual(listTries(center, local, 'TDS Telecom'), [
+    { region: 'Tennessee', city: 'Hermitage', isp: 'TDS Telecom' },
+    { region: 'Tennessee', city: 'Mount Juliet', isp: 'TDS Telecom' },
+    { region: 'Tennessee', city: 'Hermitage', isp: '' },
+    { region: 'Tennessee', city: 'Mount Juliet', isp: '' },
+  ]);
+});
+
+test('listTries: any ISP uses the point\'s own city first, then the centre', () => {
+  const center = { region: 'Tennessee', city: 'Mount Juliet' };
+  assert.deepEqual(listTries(center, { region: 'Tennessee', city: 'Old Hickory' }, ''), [
+    { region: 'Tennessee', city: 'Old Hickory', isp: '' },
+    { region: 'Tennessee', city: 'Mount Juliet', isp: '' },
+  ]);
+  // A point in the centre city (or with no city list) just uses the centre.
+  assert.deepEqual(listTries(center, center, ''), [{ region: 'Tennessee', city: 'Mount Juliet', isp: '' }]);
+  assert.deepEqual(listTries(center, null, 'Comcast Cable'), [
+    { region: 'Tennessee', city: 'Mount Juliet', isp: 'Comcast Cable' },
+    { region: 'Tennessee', city: 'Mount Juliet', isp: '' },
+  ]);
+});
+
+
+test('locationVerified: only a device location in the right state or ZIP counts', () => {
+  assert.equal(locationVerified('37122, Tennessee - From your device', 'TN', '37121'), true); // real capture: state named
+  assert.equal(locationVerified('37121, Tennessee \u2013 From your device', 'TN', '37121'), true);
+  assert.equal(locationVerified('Wilson County, TN - Based on your IP address', 'TN', '37121'), false); // IP guess
+  assert.equal(locationVerified('O\u02bbzbekiston', 'TN', '37121'), false); // the 19:05 acceptance run
+  assert.equal(locationVerified('30301, Georgia - From your device', 'TN', '37121'), false); // wrong state
+  assert.equal(locationVerified(null, 'TN', '37121'), false);
 });
