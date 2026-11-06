@@ -1,0 +1,503 @@
+{
+  "config": [
+    {
+      "key": "search_term",
+      "value": "exterior painters near me",
+      "type": "string",
+      "required": true,
+      "desc": "one query picked at random per run"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "1",
+      "type": "START",
+      "position": {
+        "x": 300,
+        "y": 60
+      },
+      "data": {
+        "action": "START",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 49
+      }
+    },
+    {
+      "id": "9000000000036",
+      "type": "EXECUTE_ADB",
+      "position": {
+        "x": 4,
+        "y": 149
+      },
+      "data": {
+        "action": "EXECUTE_ADB",
+        "adb_command": "am force-stop com.google.android.apps.maps",
+        "desc": "clean start: force-stop com.google.android.apps.maps",
+        "save_result": "",
+        "timeout": "30000",
+        "exception_type": "1",
+        "exception_notify": "1"
+      },
+      "measured": {
+        "width": 195,
+        "height": 113
+      }
+    },
+    {
+      "id": "9000000000038",
+      "type": "EXECUTE_ADB",
+      "position": {
+        "x": 300,
+        "y": 479
+      },
+      "data": {
+        "action": "EXECUTE_ADB",
+        "adb_command": "start video screen recording",
+        "desc": "go HOME",
+        "save_result": "",
+        "timeout": "30000",
+        "exception_type": "1",
+        "exception_notify": "1"
+      },
+      "measured": {
+        "width": 195,
+        "height": 113
+      }
+    },
+    {
+      "id": "9000000000039",
+      "type": "WAIT_TIME",
+      "position": {
+        "x": 300,
+        "y": 640
+      },
+      "data": {
+        "action": "WAIT_TIME",
+        "desc": "settle after reset",
+        "type": "interval_random",
+        "exception_type": "1",
+        "exception_notify": "1",
+        "end_time": "1600",
+        "start_time": "800"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "9000000000040",
+      "type": "OPEN_APP",
+      "position": {
+        "x": 300,
+        "y": 781
+      },
+      "data": {
+        "action": "OPEN_APP",
+        "package_name": "com.google.android.apps.maps",
+        "uri": "",
+        "desc": "cold-launch Maps",
+        "wait_before": "3000",
+        "wait_after": "700",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "9000000000041",
+      "type": "WAIT_FOR_SELECTOR",
+      "position": {
+        "x": 631.6666666666667,
+        "y": 937
+      },
+      "data": {
+        "action": "WAIT_FOR_SELECTOR",
+        "save_result": "maps_ready",
+        "desc": "wait Maps ready",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "1",
+        "exception_notify": "1",
+        "selector_bean_list": [
+          {
+            "text": "Search here"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "waiting_time": "9000",
+        "fixed_value": "1",
+        "operator": "",
+        "number": ""
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "9000000000042",
+      "type": "CLICK_ELEMENT",
+      "position": {
+        "x": 76.66666666666663,
+        "y": 1054.6666666666667
+      },
+      "data": {
+        "action": "CLICK_ELEMENT",
+        "save_result": "",
+        "desc": "focus search box",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "text": "Search here"
+          },
+          {
+            "class": "android.widget.TextView"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "wait_before": "800",
+        "wait_after": "1200",
+        "fixed_value": "1",
+        "operator": "",
+        "number": ""
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "9000000000043",
+      "type": "INPUT_CONTENT",
+      "position": {
+        "x": 300,
+        "y": 1204
+      },
+      "data": {
+        "action": "INPUT_CONTENT",
+        "save_result": "",
+        "desc": "type query",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "fullId": "com.google.android.apps.maps:id/search_omnibox_edit_text"
+          }
+        ],
+        "selector_condition": "equal",
+        "type": "fixed_value",
+        "wait_before": "1500",
+        "wait_after": "0",
+        "fixed_value": "1",
+        "operator": "",
+        "number": "",
+        "content_type": "random_pick",
+        "input_content": "${search_term}"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "9000000000044",
+      "type": "KEYBOARD_OPERATION",
+      "position": {
+        "x": 300,
+        "y": 1345
+      },
+      "data": {
+        "action": "KEYBOARD_OPERATION",
+        "keyboard_key": "enter",
+        "desc": "run search",
+        "wait_before": "1500",
+        "wait_after": "0",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "9000000000045",
+      "type": "WAIT_TIME",
+      "position": {
+        "x": 300,
+        "y": 1486
+      },
+      "data": {
+        "action": "WAIT_TIME",
+        "desc": "wait results",
+        "type": "interval_random",
+        "exception_type": "1",
+        "exception_notify": "1",
+        "end_time": "7000",
+        "start_time": "4000"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1787339547733",
+      "type": "FOR_TIMES",
+      "position": {
+        "x": 300,
+        "y": 1627
+      },
+      "data": {
+        "action": "FOR_TIMES",
+        "desc": "",
+        "loop_location_save_path": "",
+        "children": {
+          "nodes": [
+            {
+              "id": "9000000000007",
+              "type": "SLIDE_PAGE",
+              "position": {
+                "x": 1033,
+                "y": 1808
+              },
+              "data": {
+                "action": "SLIDE_PAGE",
+                "element_type": "slide_page",
+                "direction": "up",
+                "end_distance": "500",
+                "end_duration": "750",
+                "start_distance": "350",
+                "start_duration": "500",
+                "random_start_range": "30",
+                "desc": "scroll results",
+                "exception_type": "1",
+                "exception_notify": "1",
+                "position_x": "300",
+                "position_y": "1100"
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            },
+            {
+              "id": "9000000000008",
+              "type": "WAIT_TIME",
+              "position": {
+                "x": 1033,
+                "y": 1949
+              },
+              "data": {
+                "action": "WAIT_TIME",
+                "desc": "settle",
+                "type": "interval_random",
+                "exception_type": "1",
+                "exception_notify": "1",
+                "end_time": "1400",
+                "start_time": "700"
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            }
+          ],
+          "edges": [
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "9000000000007",
+              "target": "9000000000008",
+              "sourceHandle": "9000000000007-output",
+              "targetHandle": "9000000000008-input",
+              "id": "xy-edge__90000000000079000000000007-output-90000000000089000000000008-input",
+              "selected": false
+            }
+          ]
+        },
+        "type": "interval_random",
+        "exception_type": "2",
+        "exception_notify": "2",
+        "interval_max": "22",
+        "interval_min": "15"
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1793969469680",
+      "type": "EXECUTE_ADB",
+      "position": {
+        "x": 350.00000000000045,
+        "y": 1860
+      },
+      "data": {
+        "action": "EXECUTE_ADB",
+        "adb_command": "xml file UIdump",
+        "desc": "",
+        "save_result": "",
+        "timeout": "30000",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    }
+  ],
+  "edges": [
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1",
+      "target": "9000000000036",
+      "sourceHandle": "1-output",
+      "targetHandle": "9000000000036-input",
+      "id": "xy-edge__11-output-90000000000369000000000036-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "9000000000036",
+      "sourceHandle": "9000000000036-output",
+      "target": "9000000000038",
+      "targetHandle": "9000000000038-input",
+      "id": "xy-edge__90000000000369000000000036-output-90000000000389000000000038-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "9000000000038",
+      "target": "9000000000039",
+      "sourceHandle": "9000000000038-output",
+      "targetHandle": "9000000000039-input",
+      "id": "xy-edge__90000000000389000000000038-output-90000000000399000000000039-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "9000000000039",
+      "target": "9000000000040",
+      "sourceHandle": "9000000000039-output",
+      "targetHandle": "9000000000040-input",
+      "id": "xy-edge__90000000000399000000000039-output-90000000000409000000000040-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "9000000000040",
+      "target": "9000000000041",
+      "sourceHandle": "9000000000040-output",
+      "targetHandle": "9000000000041-input",
+      "id": "xy-edge__90000000000409000000000040-output-90000000000419000000000041-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "9000000000041",
+      "target": "9000000000042",
+      "sourceHandle": "9000000000041-output",
+      "targetHandle": "9000000000042-input",
+      "id": "xy-edge__90000000000419000000000041-output-90000000000429000000000042-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "9000000000042",
+      "target": "9000000000043",
+      "sourceHandle": "9000000000042-output",
+      "targetHandle": "9000000000043-input",
+      "id": "xy-edge__90000000000429000000000042-output-90000000000439000000000043-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "9000000000043",
+      "target": "9000000000044",
+      "sourceHandle": "9000000000043-output",
+      "targetHandle": "9000000000044-input",
+      "id": "xy-edge__90000000000439000000000043-output-90000000000449000000000044-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "9000000000044",
+      "target": "9000000000045",
+      "sourceHandle": "9000000000044-output",
+      "targetHandle": "9000000000045-input",
+      "id": "xy-edge__90000000000449000000000044-output-90000000000459000000000045-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "9000000000045",
+      "target": "1787339547733",
+      "sourceHandle": "9000000000045-output",
+      "targetHandle": "1787339547733-input",
+      "id": "xy-edge__90000000000459000000000045-output-17873395477331787339547733-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1787339547733",
+      "sourceHandle": "1787339547733-output",
+      "target": "1793969469680",
+      "targetHandle": "1793969469680-input",
+      "id": "xy-edge__17873395477331787339547733-output-17939694696801793969469680-input",
+      "selected": false
+    }
+  ]
+}

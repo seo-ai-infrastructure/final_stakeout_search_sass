@@ -1,0 +1,1 @@
+ALTER TABLE "GridPin" ADD COLUMN "evidenceSha256" TEXT;

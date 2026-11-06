@@ -1,0 +1,2248 @@
+{
+  "config": [
+    {
+      "key": "search_term",
+      "value": "car accident lawyer near me",
+      "type": "string",
+      "required": true,
+      "desc": "ONE exact keyword, set per pin by the worker"
+    },
+    {
+      "key": "pin_id",
+      "value": "test_1_1",
+      "type": "string",
+      "required": true,
+      "desc": "names the dump files; set per pin by the worker"
+    },
+    {
+      "key": "mb_text",
+      "value": "More businesses",
+      "type": "string",
+      "required": true,
+      "desc": ""
+    },
+    {
+      "key": "more_results_text",
+      "value": "More search results",
+      "type": "string",
+      "required": true,
+      "desc": ""
+    },
+    {
+      "key": "precise_text",
+      "value": "Use precise location",
+      "type": "string",
+      "required": true,
+      "desc": ""
+    }
+  ],
+  "nodes": [
+    {
+      "id": "1",
+      "type": "START",
+      "position": {
+        "x": 300,
+        "y": 60
+      },
+      "data": {
+        "action": "START",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 49
+      }
+    },
+    {
+      "id": "1795000000000",
+      "type": "OPEN_APP",
+      "position": {
+        "x": 300,
+        "y": 157
+      },
+      "data": {
+        "action": "OPEN_APP",
+        "package_name": "com.android.chrome",
+        "uri": "",
+        "desc": "open Chrome (the worker clears Chrome data before each pin)",
+        "wait_before": "2000",
+        "wait_after": "0",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000047",
+      "type": "WAIT_TIME",
+      "position": {
+        "x": 300,
+        "y": 298
+      },
+      "data": {
+        "action": "WAIT_TIME",
+        "desc": "",
+        "type": "interval_random",
+        "exception_type": "2",
+        "exception_notify": "2",
+        "end_time": "4000",
+        "start_time": "2000"
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1795000000001",
+      "type": "WAIT_FOR_SELECTOR",
+      "position": {
+        "x": 300,
+        "y": 419
+      },
+      "data": {
+        "action": "WAIT_FOR_SELECTOR",
+        "save_result": "fre_0",
+        "desc": "look for \"Accept & continue\"",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "text": "Accept & continue"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "waiting_time": "2500",
+        "fixed_value": "1"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000003",
+      "type": "IF_CONDITION",
+      "position": {
+        "x": 300,
+        "y": 560
+      },
+      "data": {
+        "action": "IF_CONDITION",
+        "condition_bean": {
+          "exist": [
+            {
+              "value": "fre_0"
+            }
+          ]
+        },
+        "apposition": "and",
+        "desc": "",
+        "showMore": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "children": {
+          "nodes": [
+            {
+              "id": "1795000000002",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 551,
+                "y": 580
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "tap \"Accept & continue\"",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "Accept & continue"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "300",
+                "wait_after": "1500",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            }
+          ],
+          "edges": []
+        }
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1795000000004",
+      "type": "WAIT_FOR_SELECTOR",
+      "position": {
+        "x": 300,
+        "y": 721
+      },
+      "data": {
+        "action": "WAIT_FOR_SELECTOR",
+        "save_result": "fre_1",
+        "desc": "look for \"Use without an account\"",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "text": "Use without an account"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "waiting_time": "2500",
+        "fixed_value": "1"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000006",
+      "type": "IF_CONDITION",
+      "position": {
+        "x": 300,
+        "y": 862
+      },
+      "data": {
+        "action": "IF_CONDITION",
+        "condition_bean": {
+          "exist": [
+            {
+              "value": "fre_1"
+            }
+          ]
+        },
+        "apposition": "and",
+        "desc": "",
+        "showMore": false,
+        "exception_type": "0",
+        "exception_notify": "2",
+        "children": {
+          "nodes": [
+            {
+              "id": "1795000000005",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 551,
+                "y": 882
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "tap \"Use without an account\"",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "Use without an account"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "300",
+                "wait_after": "1500",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            }
+          ],
+          "edges": []
+        }
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1795000000007",
+      "type": "WAIT_FOR_SELECTOR",
+      "position": {
+        "x": 300,
+        "y": 1023
+      },
+      "data": {
+        "action": "WAIT_FOR_SELECTOR",
+        "save_result": "fre_2",
+        "desc": "look for \"No thanks\"",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "0",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "text": "No thanks"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "waiting_time": "500",
+        "fixed_value": "1",
+        "operator": "",
+        "number": ""
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000009",
+      "type": "IF_CONDITION",
+      "position": {
+        "x": 300,
+        "y": 1164
+      },
+      "data": {
+        "action": "IF_CONDITION",
+        "condition_bean": {
+          "exist": [
+            {
+              "value": "fre_2"
+            }
+          ]
+        },
+        "apposition": "and",
+        "desc": "",
+        "showMore": false,
+        "exception_type": "1",
+        "exception_notify": "2",
+        "children": {
+          "nodes": [
+            {
+              "id": "1795000000008",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 551,
+                "y": 1184
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "tap \"No thanks\"",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "No thanks"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "300",
+                "wait_after": "1500",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            }
+          ],
+          "edges": []
+        }
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1795000000010",
+      "type": "WAIT_FOR_SELECTOR",
+      "position": {
+        "x": 300,
+        "y": 1325
+      },
+      "data": {
+        "action": "WAIT_FOR_SELECTOR",
+        "save_result": "fre_3",
+        "desc": "look for \"Got it\"",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "text": "Got it"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "waiting_time": "2500",
+        "fixed_value": "1"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000012",
+      "type": "IF_CONDITION",
+      "position": {
+        "x": 300,
+        "y": 1466
+      },
+      "data": {
+        "action": "IF_CONDITION",
+        "condition_bean": {
+          "exist": [
+            {
+              "value": "fre_3"
+            }
+          ]
+        },
+        "apposition": "and",
+        "desc": "",
+        "showMore": false,
+        "exception_type": "0",
+        "exception_notify": "2",
+        "children": {
+          "nodes": [
+            {
+              "id": "1795000000011",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 551,
+                "y": 1486
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "tap \"Got it\"",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "Got it"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "300",
+                "wait_after": "500",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            }
+          ],
+          "edges": []
+        }
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1795000000013",
+      "type": "WAIT_FOR_SELECTOR",
+      "position": {
+        "x": 300,
+        "y": 1627
+      },
+      "data": {
+        "action": "WAIT_FOR_SELECTOR",
+        "save_result": "new_tab",
+        "desc": "Chrome new-tab page ready",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "fullId": "com.android.chrome:id/search_box_text"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "waiting_time": "3000",
+        "fixed_value": "1",
+        "operator": "",
+        "number": ""
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000020",
+      "type": "IF_CONDITION",
+      "position": {
+        "x": 300,
+        "y": 1768
+      },
+      "data": {
+        "action": "IF_CONDITION",
+        "condition_bean": {
+          "exist": [
+            {
+              "value": "new_tab"
+            }
+          ]
+        },
+        "apposition": "and",
+        "desc": "on the new-tab page?",
+        "showMore": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "children": {
+          "nodes": [
+            {
+              "id": "1795000000014",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 551,
+                "y": 1788
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "focus the search box",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "fullId": "com.android.chrome:id/search_box_text"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "1000",
+                "wait_after": "800",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            }
+          ],
+          "edges": []
+        },
+        "other": {
+          "nodes": [
+            {
+              "id": "1795000000015",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 782,
+                "y": 1788
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "fullId": "com.android.chrome:id/tab_switcher_button"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "2000",
+                "wait_after": "0",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1795000000016",
+              "type": "WAIT_TIME",
+              "position": {
+                "x": 782,
+                "y": 1909
+              },
+              "data": {
+                "action": "WAIT_TIME",
+                "desc": "",
+                "type": "interval_random",
+                "exception_type": "2",
+                "exception_notify": "2",
+                "end_time": "4000",
+                "start_time": "2000"
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1795000000017",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 782,
+                "y": 2030
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "desc": "New tab"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "1500",
+                "wait_after": "0",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1795000000018",
+              "type": "WAIT_TIME",
+              "position": {
+                "x": 782,
+                "y": 2151
+              },
+              "data": {
+                "action": "WAIT_TIME",
+                "desc": "",
+                "type": "interval_random",
+                "exception_type": "2",
+                "exception_notify": "2",
+                "end_time": "4000",
+                "start_time": "2000"
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1795000000019",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 782,
+                "y": 2272
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "focus the search box",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "fullId": "com.android.chrome:id/search_box_text"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "1000",
+                "wait_after": "800",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            }
+          ],
+          "edges": [
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000015",
+              "target": "1795000000016",
+              "sourceHandle": "1795000000015-output",
+              "targetHandle": "1795000000016-input",
+              "id": "xy-edge__17950000000151795000000015-output-17950000000161795000000016-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000016",
+              "target": "1795000000017",
+              "sourceHandle": "1795000000016-output",
+              "targetHandle": "1795000000017-input",
+              "id": "xy-edge__17950000000161795000000016-output-17950000000171795000000017-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000017",
+              "target": "1795000000018",
+              "sourceHandle": "1795000000017-output",
+              "targetHandle": "1795000000018-input",
+              "id": "xy-edge__17950000000171795000000017-output-17950000000181795000000018-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000018",
+              "target": "1795000000019",
+              "sourceHandle": "1795000000018-output",
+              "targetHandle": "1795000000019-input",
+              "id": "xy-edge__17950000000181795000000018-output-17950000000191795000000019-input",
+              "selected": false
+            }
+          ]
+        }
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000021",
+      "type": "INPUT_CONTENT",
+      "position": {
+        "x": 300,
+        "y": 2413
+      },
+      "data": {
+        "action": "INPUT_CONTENT",
+        "save_result": "",
+        "desc": "type the exact keyword",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "fullId": "com.android.chrome:id/url_bar"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "wait_before": "1500",
+        "wait_after": "0",
+        "fixed_value": "1",
+        "content_type": "random_pick",
+        "input_content": "${search_term}"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000022",
+      "type": "KEYBOARD_OPERATION",
+      "position": {
+        "x": 300,
+        "y": 2554
+      },
+      "data": {
+        "action": "KEYBOARD_OPERATION",
+        "desc": "",
+        "keyboard_key": "enter",
+        "wait_before": "800",
+        "wait_after": "0",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1795000000048",
+      "type": "WAIT_TIME",
+      "position": {
+        "x": 300,
+        "y": 2675
+      },
+      "data": {
+        "action": "WAIT_TIME",
+        "desc": "",
+        "type": "interval_random",
+        "exception_type": "2",
+        "exception_notify": "2",
+        "end_time": "5000",
+        "start_time": "3000"
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1795000000023",
+      "type": "WAIT_FOR_SELECTOR",
+      "position": {
+        "x": 300,
+        "y": 3421
+      },
+      "data": {
+        "action": "WAIT_FOR_SELECTOR",
+        "save_result": "precise",
+        "desc": "Google offers precise location",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "text": "${precise_text}"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "waiting_time": "3000",
+        "fixed_value": "1"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000033",
+      "type": "IF_CONDITION",
+      "position": {
+        "x": 300,
+        "y": 3562
+      },
+      "data": {
+        "action": "IF_CONDITION",
+        "condition_bean": {
+          "exist": [
+            {
+              "value": "precise"
+            }
+          ]
+        },
+        "apposition": "and",
+        "desc": "turn on precise location so Google uses the pin GPS, not the proxy IP",
+        "showMore": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "children": {
+          "nodes": [
+            {
+              "id": "1795000000024",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 551,
+                "y": 3582
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "use device location",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "${precise_text}"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "300",
+                "wait_after": "1500",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            },
+            {
+              "id": "1795000000025",
+              "type": "WAIT_TIME",
+              "position": {
+                "x": 551,
+                "y": 3723
+              },
+              "data": {
+                "action": "WAIT_TIME",
+                "desc": "",
+                "type": "interval_random",
+                "exception_type": "2",
+                "exception_notify": "2",
+                "end_time": "2500",
+                "start_time": "1500"
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1795000000026",
+              "type": "WAIT_FOR_SELECTOR",
+              "position": {
+                "x": 551,
+                "y": 3844
+              },
+              "data": {
+                "action": "WAIT_FOR_SELECTOR",
+                "save_result": "allow_site",
+                "desc": "look for \"Allow\"",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "Allow"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "waiting_time": "2500",
+                "fixed_value": "1"
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            },
+            {
+              "id": "1795000000028",
+              "type": "IF_CONDITION",
+              "position": {
+                "x": 551,
+                "y": 3985
+              },
+              "data": {
+                "action": "IF_CONDITION",
+                "condition_bean": {
+                  "exist": [
+                    {
+                      "value": "allow_site"
+                    }
+                  ]
+                },
+                "apposition": "and",
+                "desc": "",
+                "showMore": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "children": {
+                  "nodes": [
+                    {
+                      "id": "1795000000027",
+                      "type": "CLICK_ELEMENT",
+                      "position": {
+                        "x": 802,
+                        "y": 4005
+                      },
+                      "data": {
+                        "action": "CLICK_ELEMENT",
+                        "save_result": "",
+                        "desc": "tap \"Allow\"",
+                        "element_type": "element_selector",
+                        "use_offset": false,
+                        "exception_type": "2",
+                        "exception_notify": "2",
+                        "selector_bean_list": [
+                          {
+                            "text": "Allow"
+                          }
+                        ],
+                        "selector_condition": "contain",
+                        "type": "fixed_value",
+                        "wait_before": "300",
+                        "wait_after": "1500",
+                        "fixed_value": "1",
+                        "operator": "",
+                        "number": ""
+                      },
+                      "measured": {
+                        "width": 195,
+                        "height": 93
+                      }
+                    }
+                  ],
+                  "edges": []
+                }
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1795000000029",
+              "type": "WAIT_FOR_SELECTOR",
+              "position": {
+                "x": 551,
+                "y": 4146
+              },
+              "data": {
+                "action": "WAIT_FOR_SELECTOR",
+                "save_result": "allow_os",
+                "desc": "look for \"While using the app\"",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "While using the app"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "waiting_time": "2500",
+                "fixed_value": "1"
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            },
+            {
+              "id": "1795000000031",
+              "type": "IF_CONDITION",
+              "position": {
+                "x": 551,
+                "y": 4287
+              },
+              "data": {
+                "action": "IF_CONDITION",
+                "condition_bean": {
+                  "exist": [
+                    {
+                      "value": "allow_os"
+                    }
+                  ]
+                },
+                "apposition": "and",
+                "desc": "",
+                "showMore": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "children": {
+                  "nodes": [
+                    {
+                      "id": "1795000000030",
+                      "type": "CLICK_ELEMENT",
+                      "position": {
+                        "x": 802,
+                        "y": 4307
+                      },
+                      "data": {
+                        "action": "CLICK_ELEMENT",
+                        "save_result": "",
+                        "desc": "tap \"While using the app\"",
+                        "element_type": "element_selector",
+                        "use_offset": false,
+                        "exception_type": "2",
+                        "exception_notify": "2",
+                        "selector_bean_list": [
+                          {
+                            "text": "While using the app"
+                          }
+                        ],
+                        "selector_condition": "contain",
+                        "type": "fixed_value",
+                        "wait_before": "300",
+                        "wait_after": "1500",
+                        "fixed_value": "1",
+                        "operator": "",
+                        "number": ""
+                      },
+                      "measured": {
+                        "width": 195,
+                        "height": 93
+                      }
+                    }
+                  ],
+                  "edges": []
+                }
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1795000000032",
+              "type": "WAIT_TIME",
+              "position": {
+                "x": 551,
+                "y": 4448
+              },
+              "data": {
+                "action": "WAIT_TIME",
+                "desc": "",
+                "type": "interval_random",
+                "exception_type": "2",
+                "exception_notify": "2",
+                "end_time": "5000",
+                "start_time": "3000"
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            }
+          ],
+          "edges": [
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000024",
+              "target": "1795000000025",
+              "sourceHandle": "1795000000024-output",
+              "targetHandle": "1795000000025-input",
+              "id": "xy-edge__17950000000241795000000024-output-17950000000251795000000025-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000025",
+              "target": "1795000000026",
+              "sourceHandle": "1795000000025-output",
+              "targetHandle": "1795000000026-input",
+              "id": "xy-edge__17950000000251795000000025-output-17950000000261795000000026-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000026",
+              "target": "1795000000028",
+              "sourceHandle": "1795000000026-output",
+              "targetHandle": "1795000000028-input",
+              "id": "xy-edge__17950000000261795000000026-output-17950000000281795000000028-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000028",
+              "target": "1795000000029",
+              "sourceHandle": "1795000000028-output",
+              "targetHandle": "1795000000029-input",
+              "id": "xy-edge__17950000000281795000000028-output-17950000000291795000000029-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000029",
+              "target": "1795000000031",
+              "sourceHandle": "1795000000029-output",
+              "targetHandle": "1795000000031-input",
+              "id": "xy-edge__17950000000291795000000029-output-17950000000311795000000031-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000031",
+              "target": "1795000000032",
+              "sourceHandle": "1795000000031-output",
+              "targetHandle": "1795000000032-input",
+              "id": "xy-edge__17950000000311795000000031-output-17950000000321795000000032-input",
+              "selected": false
+            }
+          ]
+        }
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000034",
+      "type": "EXECUTE_ADB",
+      "position": {
+        "x": 300,
+        "y": 4569
+      },
+      "data": {
+        "action": "EXECUTE_ADB",
+        "adb_command": "mkdir -p /sdcard/stakeout",
+        "desc": "folder for this run's dumps",
+        "timeout": "30000",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 113
+      }
+    },
+    {
+      "id": "10013",
+      "type": "FOR_TIMES",
+      "position": {
+        "x": 300,
+        "y": 4730
+      },
+      "data": {
+        "action": "FOR_TIMES",
+        "desc": "scroll until ${mb_text} visible",
+        "children": {
+          "nodes": [
+            {
+              "id": "10004",
+              "type": "WAIT_FOR_SELECTOR",
+              "position": {
+                "x": 551,
+                "y": 4750
+              },
+              "data": {
+                "action": "WAIT_FOR_SELECTOR",
+                "save_result": "mb_hit",
+                "desc": "find ${mb_text}",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "${mb_text}"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "waiting_time": "800",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            },
+            {
+              "id": "10005",
+              "type": "TEXT_EXTRACTION",
+              "position": {
+                "x": 551,
+                "y": 4891
+              },
+              "data": {
+                "action": "TEXT_EXTRACTION",
+                "use_variable": "mb_hit",
+                "extraction_rule": "(\"bounds\":\"(?:\\[(?:[1-9][0-9]*),[0-9]+\\]\\[[0-9]+,[0-9]+\\]|\\[[0-9]+,(?:[1-9][0-9]*)\\]\\[[0-9]+,[0-9]+\\]|\\[[0-9]+,[0-9]+\\]\\[(?:[1-9][0-9]*),[0-9]+\\]|\\[[0-9]+,[0-9]+\\]\\[[0-9]+,(?:[1-9][0-9]*)\\])\")",
+                "save_result": "mb_visible",
+                "desc": "mb_visible = on-screen bounds only",
+                "exception_type": "2",
+                "exception_notify": "2"
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            },
+            {
+              "id": "10009",
+              "type": "IF_CONDITION",
+              "position": {
+                "x": 551,
+                "y": 5032
+              },
+              "data": {
+                "action": "IF_CONDITION",
+                "condition_bean": {
+                  "exist": [
+                    {
+                      "value": "mb_visible"
+                    }
+                  ]
+                },
+                "desc": "${mb_text} visibly on screen",
+                "apposition": "and",
+                "exception_type": "2",
+                "exception_notify": "2",
+                "children": {
+                  "nodes": [
+                    {
+                      "id": "1793964213734",
+                      "type": "EXECUTE_ADB",
+                      "position": {
+                        "x": 802,
+                        "y": 5052
+                      },
+                      "data": {
+                        "action": "EXECUTE_ADB",
+                        "adb_command": "uiautomator dump /sdcard/stakeout/${pin_id}_serp.xml",
+                        "desc": "dump 1: full results page incl. 3-pack and AI Overview",
+                        "save_result": "",
+                        "timeout": "30000",
+                        "exception_type": "0",
+                        "exception_notify": "2"
+                      },
+                      "measured": {
+                        "width": 195,
+                        "height": 113
+                      }
+                    },
+                    {
+                      "id": "10006",
+                      "type": "CLICK_ELEMENT",
+                      "position": {
+                        "x": 802,
+                        "y": 5213
+                      },
+                      "data": {
+                        "action": "CLICK_ELEMENT",
+                        "save_result": "",
+                        "desc": "click ${mb_text}",
+                        "element_type": "element_selector",
+                        "use_offset": false,
+                        "exception_type": "2",
+                        "exception_notify": "2",
+                        "selector_bean_list": [
+                          {
+                            "text": "${mb_text}"
+                          }
+                        ],
+                        "selector_condition": "contain",
+                        "type": "fixed_value",
+                        "wait_before": "400",
+                        "wait_after": "2000",
+                        "fixed_value": "1",
+                        "operator": "",
+                        "number": ""
+                      },
+                      "measured": {
+                        "width": 195,
+                        "height": 93
+                      }
+                    },
+                    {
+                      "id": "10008",
+                      "type": "BREAK_LOOP",
+                      "position": {
+                        "x": 802,
+                        "y": 5354
+                      },
+                      "data": {
+                        "action": "BREAK_LOOP",
+                        "desc": "exit",
+                        "exception_type": "2",
+                        "exception_notify": "2"
+                      },
+                      "measured": {
+                        "width": 195,
+                        "height": 69
+                      }
+                    }
+                  ],
+                  "edges": [
+                    {
+                      "type": "closableEdge",
+                      "markerEnd": {
+                        "type": "arrowclosed"
+                      },
+                      "source": "1793964213734",
+                      "target": "10006",
+                      "sourceHandle": "1793964213734-output",
+                      "targetHandle": "10006-input",
+                      "id": "xy-edge__17939642137341793964213734-output-1000610006-input",
+                      "selected": false
+                    },
+                    {
+                      "type": "closableEdge",
+                      "markerEnd": {
+                        "type": "arrowclosed"
+                      },
+                      "source": "10006",
+                      "target": "10008",
+                      "sourceHandle": "10006-output",
+                      "targetHandle": "10008-input",
+                      "id": "xy-edge__1000610006-output-1000810008-input",
+                      "selected": false
+                    }
+                  ]
+                },
+                "other": {
+                  "nodes": [
+                    {
+                      "id": "10010",
+                      "type": "SLIDE_PAGE",
+                      "position": {
+                        "x": 1033,
+                        "y": 5052
+                      },
+                      "data": {
+                        "action": "SLIDE_PAGE",
+                        "element_type": "slide_page",
+                        "direction": "up",
+                        "end_distance": "500",
+                        "end_duration": "750",
+                        "start_distance": "350",
+                        "start_duration": "500",
+                        "random_start_range": "30",
+                        "desc": "",
+                        "exception_type": "2",
+                        "exception_notify": "2",
+                        "position_x": "300",
+                        "position_y": "700"
+                      },
+                      "measured": {
+                        "width": 195,
+                        "height": 73
+                      }
+                    },
+                    {
+                      "id": "10011",
+                      "type": "WAIT_TIME",
+                      "position": {
+                        "x": 1033,
+                        "y": 5173
+                      },
+                      "data": {
+                        "action": "WAIT_TIME",
+                        "desc": "",
+                        "type": "interval_random",
+                        "exception_type": "2",
+                        "exception_notify": "2",
+                        "end_time": "1500",
+                        "start_time": "900"
+                      },
+                      "measured": {
+                        "width": 195,
+                        "height": 73
+                      }
+                    }
+                  ],
+                  "edges": [
+                    {
+                      "type": "closableEdge",
+                      "markerEnd": {
+                        "type": "arrowclosed"
+                      },
+                      "source": "10010",
+                      "target": "10011",
+                      "sourceHandle": "10010-output",
+                      "targetHandle": "10011-input",
+                      "id": "xy-edge__1001010010-output-1001110011-input",
+                      "selected": false
+                    }
+                  ]
+                }
+              },
+              "measured": {
+                "width": 195,
+                "height": 93
+              }
+            }
+          ],
+          "edges": [
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "10004",
+              "target": "10005",
+              "sourceHandle": "10004-output",
+              "targetHandle": "10005-input",
+              "id": "xy-edge__1000410004-output-1000510005-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "10005",
+              "target": "10009",
+              "sourceHandle": "10005-output",
+              "targetHandle": "10009-input",
+              "id": "xy-edge__1000510005-output-1000910009-input",
+              "selected": false
+            }
+          ]
+        },
+        "type": "interval_random",
+        "exception_type": "2",
+        "exception_notify": "2",
+        "interval_max": "22",
+        "interval_min": "18"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000049",
+      "type": "WAIT_TIME",
+      "position": {
+        "x": 300,
+        "y": 5471
+      },
+      "data": {
+        "action": "WAIT_TIME",
+        "desc": "",
+        "type": "interval_random",
+        "exception_type": "2",
+        "exception_notify": "2",
+        "end_time": "7000",
+        "start_time": "4000"
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1795000000037",
+      "type": "FOR_TIMES",
+      "position": {
+        "x": 300,
+        "y": 5590.333333333334
+      },
+      "data": {
+        "action": "FOR_TIMES",
+        "desc": "scroll the business list",
+        "loop_location_save_path": "",
+        "children": {
+          "nodes": [
+            {
+              "id": "1795000000035",
+              "type": "SLIDE_PAGE",
+              "position": {
+                "x": 551,
+                "y": 5612
+              },
+              "data": {
+                "action": "SLIDE_PAGE",
+                "element_type": "slide_page",
+                "direction": "up",
+                "end_distance": "500",
+                "end_duration": "750",
+                "start_distance": "350",
+                "start_duration": "500",
+                "random_start_range": "30",
+                "desc": "",
+                "exception_type": "2",
+                "exception_notify": "2",
+                "position_x": "300",
+                "position_y": "700"
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1795000000036",
+              "type": "WAIT_TIME",
+              "position": {
+                "x": 551,
+                "y": 5733
+              },
+              "data": {
+                "action": "WAIT_TIME",
+                "desc": "",
+                "type": "interval_random",
+                "exception_type": "2",
+                "exception_notify": "2",
+                "end_time": "1500",
+                "start_time": "900"
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            }
+          ],
+          "edges": [
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1795000000035",
+              "target": "1795000000036",
+              "sourceHandle": "1795000000035-output",
+              "targetHandle": "1795000000036-input",
+              "id": "xy-edge__17950000000351795000000035-output-17950000000361795000000036-input",
+              "selected": false
+            }
+          ]
+        },
+        "type": "interval_random",
+        "exception_type": "2",
+        "exception_notify": "2",
+        "interval_max": "9",
+        "interval_min": "6"
+      },
+      "measured": {
+        "width": 195,
+        "height": 93
+      }
+    },
+    {
+      "id": "1795000000045",
+      "type": "EXECUTE_ADB",
+      "position": {
+        "x": 300,
+        "y": 6559
+      },
+      "data": {
+        "action": "EXECUTE_ADB",
+        "adb_command": "uiautomator dump /sdcard/stakeout/${pin_id}_finder.xml",
+        "desc": "dump 2: full business list, ranks 1–20",
+        "timeout": "30000",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 113
+      }
+    },
+    {
+      "id": "1795000000046",
+      "type": "EXECUTE_ADB",
+      "position": {
+        "x": 300,
+        "y": 6720
+      },
+      "data": {
+        "action": "EXECUTE_ADB",
+        "adb_command": "echo done > /sdcard/stakeout/${pin_id}.done",
+        "desc": "tells the worker the template finished",
+        "timeout": "30000",
+        "exception_type": "2",
+        "exception_notify": "2"
+      },
+      "measured": {
+        "width": 195,
+        "height": 113
+      }
+    },
+    {
+      "id": "1793965416717",
+      "type": "WAIT_FOR_SELECTOR",
+      "position": {
+        "x": 300,
+        "y": 2796
+      },
+      "data": {
+        "action": "WAIT_FOR_SELECTOR",
+        "save_result": "update_location_needed",
+        "desc": "",
+        "element_type": "element_selector",
+        "use_offset": false,
+        "exception_type": "2",
+        "exception_notify": "2",
+        "selector_bean_list": [
+          {
+            "text": "Use precise location"
+          },
+          {
+            "class": "android.widget.Button"
+          }
+        ],
+        "selector_condition": "contain",
+        "type": "fixed_value",
+        "waiting_time": "30000",
+        "fixed_value": "1",
+        "operator": "",
+        "number": ""
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    },
+    {
+      "id": "1793965495620",
+      "type": "IF_CONDITION",
+      "position": {
+        "x": 300,
+        "y": 2917
+      },
+      "data": {
+        "action": "IF_CONDITION",
+        "condition_bean": {
+          "exist": [
+            {
+              "value": "update_location_needed"
+            }
+          ]
+        },
+        "apposition": "and",
+        "children": {
+          "nodes": [
+            {
+              "id": "1793965523191",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 551,
+                "y": 2937
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "Use precise location"
+                  },
+                  {
+                    "class": "android.widget.Button"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "3000",
+                "wait_after": "2000",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1793965601030",
+              "type": "WAIT_TIME",
+              "position": {
+                "x": 551,
+                "y": 3058
+              },
+              "data": {
+                "action": "WAIT_TIME",
+                "desc": "",
+                "type": "interval_random",
+                "exception_type": "2",
+                "exception_notify": "2",
+                "end_time": "7000",
+                "start_time": "5000"
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1793968238927",
+              "type": "WAIT_FOR_SELECTOR",
+              "position": {
+                "x": 551,
+                "y": 3179
+              },
+              "data": {
+                "action": "WAIT_FOR_SELECTOR",
+                "save_result": "",
+                "desc": "",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "text": "www.google.com wants to use your device&apos;s location"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "waiting_time": "10000",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            },
+            {
+              "id": "1793968331911",
+              "type": "CLICK_ELEMENT",
+              "position": {
+                "x": 551,
+                "y": 3300
+              },
+              "data": {
+                "action": "CLICK_ELEMENT",
+                "save_result": "",
+                "desc": "",
+                "element_type": "element_selector",
+                "use_offset": false,
+                "exception_type": "2",
+                "exception_notify": "2",
+                "selector_bean_list": [
+                  {
+                    "fullId": "com.android.chrome:id/positive_button"
+                  },
+                  {
+                    "text": "Allow"
+                  }
+                ],
+                "selector_condition": "contain",
+                "type": "fixed_value",
+                "wait_before": "3000",
+                "wait_after": "700",
+                "fixed_value": "1",
+                "operator": "",
+                "number": ""
+              },
+              "measured": {
+                "width": 195,
+                "height": 73
+              }
+            }
+          ],
+          "edges": [
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1793965523191",
+              "sourceHandle": "1793965523191-output",
+              "target": "1793965601030",
+              "targetHandle": "1793965601030-input",
+              "id": "xy-edge__17939655231911793965523191-output-17939656010301793965601030-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1793965601030",
+              "sourceHandle": "1793965601030-output",
+              "target": "1793968238927",
+              "targetHandle": "1793968238927-input",
+              "id": "xy-edge__17939656010301793965601030-output-17939682389271793968238927-input",
+              "selected": false
+            },
+            {
+              "type": "closableEdge",
+              "markerEnd": {
+                "type": "arrowclosed"
+              },
+              "source": "1793968238927",
+              "sourceHandle": "1793968238927-output",
+              "target": "1793968331911",
+              "targetHandle": "1793968331911-input",
+              "id": "xy-edge__17939682389271793968238927-output-17939683319111793968331911-input",
+              "selected": false
+            }
+          ]
+        },
+        "desc": "",
+        "exception_type": "0",
+        "exception_notify": "2",
+        "showMore": false
+      },
+      "measured": {
+        "width": 195,
+        "height": 73
+      }
+    }
+  ],
+  "edges": [
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1",
+      "target": "1795000000000",
+      "sourceHandle": "1-output",
+      "targetHandle": "1795000000000-input",
+      "id": "xy-edge__11-output-17950000000001795000000000-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000000",
+      "target": "1795000000047",
+      "sourceHandle": "1795000000000-output",
+      "targetHandle": "1795000000047-input",
+      "id": "xy-edge__17950000000001795000000000-output-17950000000471795000000047-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000047",
+      "target": "1795000000001",
+      "sourceHandle": "1795000000047-output",
+      "targetHandle": "1795000000001-input",
+      "id": "xy-edge__17950000000471795000000047-output-17950000000011795000000001-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000001",
+      "target": "1795000000003",
+      "sourceHandle": "1795000000001-output",
+      "targetHandle": "1795000000003-input",
+      "id": "xy-edge__17950000000011795000000001-output-17950000000031795000000003-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000003",
+      "target": "1795000000004",
+      "sourceHandle": "1795000000003-output",
+      "targetHandle": "1795000000004-input",
+      "id": "xy-edge__17950000000031795000000003-output-17950000000041795000000004-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000004",
+      "target": "1795000000006",
+      "sourceHandle": "1795000000004-output",
+      "targetHandle": "1795000000006-input",
+      "id": "xy-edge__17950000000041795000000004-output-17950000000061795000000006-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000006",
+      "target": "1795000000007",
+      "sourceHandle": "1795000000006-output",
+      "targetHandle": "1795000000007-input",
+      "id": "xy-edge__17950000000061795000000006-output-17950000000071795000000007-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000007",
+      "target": "1795000000009",
+      "sourceHandle": "1795000000007-output",
+      "targetHandle": "1795000000009-input",
+      "id": "xy-edge__17950000000071795000000007-output-17950000000091795000000009-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000009",
+      "target": "1795000000010",
+      "sourceHandle": "1795000000009-output",
+      "targetHandle": "1795000000010-input",
+      "id": "xy-edge__17950000000091795000000009-output-17950000000101795000000010-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000010",
+      "target": "1795000000012",
+      "sourceHandle": "1795000000010-output",
+      "targetHandle": "1795000000012-input",
+      "id": "xy-edge__17950000000101795000000010-output-17950000000121795000000012-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000012",
+      "target": "1795000000013",
+      "sourceHandle": "1795000000012-output",
+      "targetHandle": "1795000000013-input",
+      "id": "xy-edge__17950000000121795000000012-output-17950000000131795000000013-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000013",
+      "target": "1795000000020",
+      "sourceHandle": "1795000000013-output",
+      "targetHandle": "1795000000020-input",
+      "id": "xy-edge__17950000000131795000000013-output-17950000000201795000000020-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000020",
+      "target": "1795000000021",
+      "sourceHandle": "1795000000020-output",
+      "targetHandle": "1795000000021-input",
+      "id": "xy-edge__17950000000201795000000020-output-17950000000211795000000021-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000021",
+      "target": "1795000000022",
+      "sourceHandle": "1795000000021-output",
+      "targetHandle": "1795000000022-input",
+      "id": "xy-edge__17950000000211795000000021-output-17950000000221795000000022-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000022",
+      "target": "1795000000048",
+      "sourceHandle": "1795000000022-output",
+      "targetHandle": "1795000000048-input",
+      "id": "xy-edge__17950000000221795000000022-output-17950000000481795000000048-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000048",
+      "sourceHandle": "1795000000048-output",
+      "target": "1793965416717",
+      "targetHandle": "1793965416717-input",
+      "id": "xy-edge__17950000000481795000000048-output-17939654167171793965416717-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1793965416717",
+      "sourceHandle": "1793965416717-output",
+      "target": "1793965495620",
+      "targetHandle": "1793965495620-input",
+      "id": "xy-edge__17939654167171793965416717-output-17939654956201793965495620-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1793965495620",
+      "sourceHandle": "1793965495620-output",
+      "target": "1795000000023",
+      "targetHandle": "1795000000023-input",
+      "id": "xy-edge__17939654956201793965495620-output-17950000000231795000000023-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000023",
+      "target": "1795000000033",
+      "sourceHandle": "1795000000023-output",
+      "targetHandle": "1795000000033-input",
+      "id": "xy-edge__17950000000231795000000023-output-17950000000331795000000033-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000033",
+      "target": "1795000000034",
+      "sourceHandle": "1795000000033-output",
+      "targetHandle": "1795000000034-input",
+      "id": "xy-edge__17950000000331795000000033-output-17950000000341795000000034-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000034",
+      "target": "10013",
+      "sourceHandle": "1795000000034-output",
+      "targetHandle": "10013-input",
+      "id": "xy-edge__17950000000341795000000034-output-1001310013-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "10013",
+      "target": "1795000000049",
+      "sourceHandle": "10013-output",
+      "targetHandle": "1795000000049-input",
+      "id": "xy-edge__1001310013-output-17950000000491795000000049-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000049",
+      "target": "1795000000037",
+      "sourceHandle": "1795000000049-output",
+      "targetHandle": "1795000000037-input",
+      "id": "xy-edge__17950000000491795000000049-output-17950000000371795000000037-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000037",
+      "sourceHandle": "1795000000037-output",
+      "target": "1795000000045",
+      "targetHandle": "1795000000045-input",
+      "id": "xy-edge__17950000000371795000000037-output-17950000000451795000000045-input",
+      "selected": false
+    },
+    {
+      "type": "closableEdge",
+      "markerEnd": {
+        "type": "arrowclosed"
+      },
+      "source": "1795000000045",
+      "target": "1795000000046",
+      "sourceHandle": "1795000000045-output",
+      "targetHandle": "1795000000046-input",
+      "id": "xy-edge__17950000000451795000000045-output-17950000000461795000000046-input",
+      "selected": false
+    }
+  ]
+}
