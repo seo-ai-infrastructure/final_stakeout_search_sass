@@ -10,6 +10,7 @@ import {
 } from '@stakeout/core/redis';
 import { cloneScheduledRun, settlePin } from '@stakeout/core/scans';
 import { listsForPin } from '@stakeout/core/proxyLists';
+import { describeRpaTemplates } from './rpa';
 import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist } from './duoplus';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
@@ -111,6 +112,7 @@ async function execute(job: Job, token?: string) {
         });
       throw e;
     } finally {
+      await restPhone(d.imageId);
       await d.release();
     }
   } catch (e) {
@@ -218,6 +220,13 @@ async function reconcile() {
   }
 }
 
+/** A rest after every search on a phone (SEARCH_GAP_SECONDS, randomised); never shortens a longer one. */
+async function restPhone(imageId: string) {
+  const base = Number(process.env.SEARCH_GAP_SECONDS ?? 120);
+  if (!(base > 0)) return;
+  const until = new Date(Date.now() + base * 1000 * (0.8 + Math.random() * 0.6));
+  await db.devicePool.updateMany({ where: { imageId, cooldownUntil: { lt: until } }, data: { cooldownUntil: until } }).catch(() => {});
+}
 let lastWhitelistFix = 0;
 let busy = false,
   lastRepair = Date.now(),
@@ -273,3 +282,7 @@ process.once('SIGTERM', () => void close());
 console.info(
   `Stakeout Telemetry Engine online · target=${redactRedisUrl()} · stakeout-pins + stakeout-recurring-schedules`,
 );
+if ((process.env.SEARCH_MODE ?? '').toLowerCase() === 'rpa') {
+  console.info('[rpa] SEARCH_MODE=rpa: the search step runs your DuoPlus RPA template');
+  void describeRpaTemplates();
+}

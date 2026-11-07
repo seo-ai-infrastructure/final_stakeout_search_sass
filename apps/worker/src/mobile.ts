@@ -6,6 +6,9 @@ import { db, type GridPin, type GridScan } from '@stakeout/db';
 import { listsForPin, normPlace, locationVerified } from '@stakeout/core/proxyLists';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
+import { OBSERVE_SH } from '@stakeout/core/observer';
+import type { RpaSurface } from '@stakeout/core/rpaRules';
+import { runRpaSearch } from './rpa';
 import { put, uploadURL, uploaded } from '@stakeout/core/r2';
 import { captureEnded, captureStarted, duoplusPost, updatePhone, phonePowerStatus, type LeasedDevice } from './duoplus';
 import { pull, push, shell, transportFor } from './deviceShell';
@@ -45,6 +48,20 @@ async function ensureRunnerInstalled(d: LeasedDevice) {
     await shell(d, `echo ${RUNNER_SHA} > ${RT_DIR}/run_pin.sha`);
   }
   bootstrappedInMemory.add(d.imageId);
+}
+
+// SEARCH_MODE=rpa: the account's DuoPlus RPA template does the search; the phone only records.
+const searchMode = () => ((process.env.SEARCH_MODE ?? 'script').toLowerCase() === 'rpa' ? 'rpa' : 'script');
+const OBSERVER_SHA = createHash('sha256').update(OBSERVE_SH).digest('hex');
+const observerInMemory = new Set<string>();
+async function ensureObserverInstalled(d: LeasedDevice) {
+  if (observerInMemory.has(d.imageId)) return;
+  const sha = (await shell(d, `mkdir -p ${RT_DIR}; cat ${RT_DIR}/observe.sha 2>/dev/null`).catch(() => '')).trim();
+  if (sha !== OBSERVER_SHA) {
+    await push(d, `${RT_DIR}/observe.sh`, OBSERVE_SH);
+    await shell(d, `echo ${OBSERVER_SHA} > ${RT_DIR}/observe.sha`);
+  }
+  observerInMemory.add(d.imageId);
 }
 
 type ProxyCheck = {
@@ -214,7 +231,8 @@ async function preflightExit(d: LeasedDevice, p: Pin, isp: string) {
     process.env.PROXY_GATE_IPAPI === 'false'
       ? null
       : parseIpapi(await deviceGet(d, 'http://ip-api.com/json/?fields=status,countryCode,region,regionName,city,isp,org,as,hosting,proxy,query'));
-  const google = process.env.PROXY_GATE_GOOGLE === 'false' ? null : parseGoogleProbe(await googleProbe(d));
+  // A scripted request to Google seconds before the search looks like a bot: off unless PROXY_GATE_GOOGLE=true.
+  const google = process.env.PROXY_GATE_GOOGLE !== 'true' ? null : parseGoogleProbe(await googleProbe(d));
   const verdict = judgeExit({ ipinfo, ipapi, google }, { stateCode: p.stateCode, isp, policy: gatePolicy(), extraAsns: extraAsns() });
   return { verdict, ipinfo, ipapi, google };
 }
@@ -282,11 +300,21 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
       const used = new Set<number>();
       for (let t = 0; t < tries; t++) {
         await device.assertOwned();
-        const lease = await leasePort(list.psListId, ports, p.id + ':' + list.psListId + ':' + t, used);
+        // One sticky IP per phone for the whole scan: reuse the port this phone had on earlier points.
+        const stickyKey = `stakeout:scanport:${p.scanId}:${device.imageId}:${list.psListId}`;
+        const prior = t === 0 ? Number((await redis().get(stickyKey).catch(() => null)) ?? NaN) : NaN;
+        const reuse =
+          Number.isInteger(prior) && ports.includes(prior) && !(await redis().exists(`stakeout:portbad:${list.psListId}:${prior}`));
+        const lease = reuse ? { port: prior, reused: true } : await leasePort(list.psListId, ports, p.id + ':' + list.psListId + ':' + t, used);
         if (!lease) break;
+        if (reuse) await redis().set(`stakeout:portbusy:${list.psListId}:${lease.port}`, p.id, 'PX', 15 * 60000).catch(() => {});
         used.add(lease.port);
+        const devKey = `stakeout:devport:${device.imageId}`;
+        const samePort = (await redis().get(devKey).catch(() => null)) === list.psListId + ':' + lease.port;
         let superseded: string | null = null;
         try {
+          // Fewer changes: the phone's record already points at this port, so DuoPlus is left alone.
+          if (!samePort)
           await duoplusPost('/api/v1/proxy/update', {
             id: device.proxyId,
             host: list.host,
@@ -310,6 +338,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
             continue;
           }
         }
+        await redis().set(devKey, list.psListId + ':' + lease.port, 'EX', 24 * 3600).catch(() => {});
         const g = await preflightExit(device, p, isp);
         // The phone is now bound to its current record, so a replaced one can go.
         if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
@@ -320,6 +349,20 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
         }
         await db.proxyList.update({ where: { id: list.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
         const v = g.verdict;
+        // A cap on searches per exit IP per hour; past it, this port rests and another is used.
+        const cap = Number(process.env.SEARCHES_PER_IP_PER_HOUR ?? 8);
+        if (cap > 0 && v.ip) {
+          const k = 'stakeout:ipcount:' + v.ip;
+          const n = await redis().incr(k);
+          if (n === 1) await redis().expire(k, 3600);
+          if (n > cap) {
+            await redis().set(`stakeout:portbad:${list.psListId}:${lease.port}`, '1', 'PX', 3600000);
+            await redis().del(stickyKey);
+            tried.push(label + ':' + lease.port + ':IP_HOURLY_CAP');
+            continue;
+          }
+        }
+        await redis().set(stickyKey, String(lease.port), 'EX', 6 * 3600).catch(() => {});
         return {
           ip: v.ip ?? '',
           org: g.ipinfo?.org || g.ipapi?.as || '',
@@ -547,16 +590,41 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
   const detachedUpload = !pullEvidence && process.env.UNBIND_PROXY_BEFORE_UPLOAD === 'true';
   const putUrl = pullEvidence ? '' : await uploadURL(tarKey);
 
-  // One command starts the capture in the background and records its PID.
   const pidFile = `${RT_DIR}/${tag}.pid`;
-  await shell(
-    d,
-    `export UPLOAD_URL=${shellQuote(detachedUpload || pullEvidence ? '' : putUrl)}; ` +
-      `nohup sh ${RT_DIR}/run_pin.sh ${args.join(' ')} >${RT_DIR}/last_run.log 2>&1 & echo $! > ${pidFile}`,
-  );
+  const rpaMode = searchMode() === 'rpa' && pullEvidence;
+  const rpaSecs = Math.max(120, Number(process.env.RPA_TIMEOUT_SECONDS ?? 420));
+  if (rpaMode) {
+    // The recorder only records while the template runs, then reads the results list.
+    await ensureObserverInstalled(d);
+    await shell(
+      d,
+      `nohup sh ${RT_DIR}/observe.sh ${shellQuote(tagBase)} ${shellQuote(point)} ${rpaSecs + 60} >${RT_DIR}/last_run.log 2>&1 & echo $! > ${pidFile}`,
+    );
+  } else {
+    // One command starts the capture in the background and records its PID.
+    await shell(
+      d,
+      `export UPLOAD_URL=${shellQuote(detachedUpload || pullEvidence ? '' : putUrl)}; ` +
+        `nohup sh ${RT_DIR}/run_pin.sh ${args.join(' ')} >${RT_DIR}/last_run.log 2>&1 & echo $! > ${pidFile}`,
+    );
+  }
 
-  const deadline = Date.now() + 240000;
-  await sleep(30000);
+  const deadline = Date.now() + (rpaMode ? (rpaSecs + 180) * 1000 : 240000);
+  if (rpaMode) {
+    await sleep(2000);
+    try {
+      await runRpaSearch({
+        imageId: d.imageId,
+        surface: app[scan.targetType] as RpaSurface,
+        keyword: scan.keyword,
+        name: 'stakeout-' + p.id + '-' + tagBase,
+        timeoutMs: rpaSecs * 1000,
+      });
+    } finally {
+      // Template finished (or failed): the recorder now reads the results list and stops.
+      await shell(d, `touch ${shellQuote(RT_DIR + '/' + tag + '/stop')}`).catch(() => {});
+    }
+  } else await sleep(30000);
 
   // Over ADB the worker can see the script exit, so a failed capture is reported
   // in seconds instead of after the full upload timeout. Checking costs no API call.

@@ -118,8 +118,8 @@ wait_stable() {
  done
 }
 am force-stop $PKG
-# Maps: force-stop only, as in the tested template (a data wipe brings back first-run pop-ups).
-[ "$APP" = maps ] || pm clear $PKG >/dev/null 2>&1
+# Force-stop only, never a data wipe: each phone keeps one persistent profile (cookies,
+# consent, history) like a real user's. A wiped browser on every search looks like a bot.
 pm grant $PKG android.permission.ACCESS_FINE_LOCATION 2>/dev/null
 pm grant $PKG android.permission.ACCESS_COARSE_LOCATION 2>/dev/null
 if [ "$APP" = google ]; then

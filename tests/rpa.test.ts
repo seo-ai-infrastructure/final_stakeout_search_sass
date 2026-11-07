@@ -1,0 +1,37 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { formatServerTime, learnServerOffset, pickKeywordKey, pickTemplate } from '../packages/core/rpaRules';
+
+test('rpa: task times are written on DuoPlus clock', () => {
+  const t = Date.UTC(2026, 10, 7, 16, 5, 9);
+  assert.equal(formatServerTime(t, 480), '2026-11-08 00:05');
+  assert.equal(formatServerTime(t, 0, true), '2026-11-07 16:05:09');
+});
+
+test('rpa: the server clock offset is learned from created_at', () => {
+  const now = Date.UTC(2026, 10, 7, 16, 5, 30);
+  assert.equal(learnServerOffset('2026-11-08 00:05:21', now), 480);
+  assert.equal(learnServerOffset('2026-11-07 16:05:21', now), 0);
+  assert.equal(learnServerOffset('2026-11-07 11:05:21', now), -300);
+  assert.equal(learnServerOffset('garbage', now), null);
+});
+
+test('rpa: picks the Stakeout template for the surface, or an explicit id', () => {
+  const list = [
+    { id: 'a', name: 'TikTok warmup' },
+    { id: 'b', name: 'Chrome generic' },
+    { id: 'c', name: 'Stakeout_chrome_final' },
+    { id: 'd', name: 'Stakeout Maps search' },
+  ];
+  assert.equal(pickTemplate(list, 'chrome')?.id, 'c');
+  assert.equal(pickTemplate(list, 'maps')?.id, 'd');
+  assert.equal(pickTemplate(list, 'chrome', 'b')?.id, 'b');
+  assert.equal(pickTemplate(list, 'google'), null);
+});
+
+test('rpa: finds the keyword variable by name, or the only text variable', () => {
+  assert.equal(pickKeywordKey([{ key: 'kw', type: 'string', required: true, desc: '' }, { key: 'n', type: 'number', required: false, desc: '' }]), 'kw');
+  assert.equal(pickKeywordKey([{ key: 'text1', type: 'textarea', required: true, desc: 'Search keyword' }, { key: 'x', type: 'string', required: false, desc: '' }]), 'text1');
+  assert.equal(pickKeywordKey([{ key: 'only', type: 'string', required: true, desc: '' }]), 'only');
+  assert.equal(pickKeywordKey([{ key: 'a', type: 'string', required: false, desc: '' }, { key: 'b', type: 'string', required: false, desc: '' }]), null);
+});
