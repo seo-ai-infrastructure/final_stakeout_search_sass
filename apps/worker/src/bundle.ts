@@ -35,7 +35,7 @@ export async function readBundleFile(tgzPath: string, tag: string, dir: string) 
       if (!name.startsWith(tag + '/') || entry.type !== 'File') return false;
       const leaf = name.slice(tag.length + 1);
       if (
-        !/^(video\.mp4|dump_\d{1,2}\.xml|final\.xml|serp\.xml|aio_(initial|expanded)\.xml|flags\.txt|meta\.txt)$/.test(
+        !/^(video\.mp4|dump_\d{1,2}\.xml|final\.xml|serp\.xml|aio_(initial|expanded)\.xml|shot_(top|ai|pack|finder)\.png|flags\.txt|meta\.txt)$/.test(
           leaf,
         )
       )
@@ -48,6 +48,7 @@ export async function readBundleFile(tgzPath: string, tag: string, dir: string) 
   });
   const folder = join(dir, tag),
     entries = await readdir(folder);
+  console.log('[evidence]', tag, 'files:', [...entries].sort().join(', '));
   const xml = async (pattern: RegExp) =>
     Promise.all(
       entries
