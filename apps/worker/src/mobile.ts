@@ -171,6 +171,8 @@ const ANDROID_UA =
   'Mozilla/5.0 (Linux; Android 13; SM-S918U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
 const PORT_REST_MS = Number(process.env.PROXY_PORT_REST_MINUTES ?? 30) * 60000;
 const PORT_BAD_MS = Number(process.env.PROXY_PORT_BAD_HOURS ?? 6) * 3600000;
+// A point holds its port exclusively for at least this long (covers proxy setup + capture).
+const PORT_BUSY_MS = 15 * 60000;
 
 const gatePolicy = (): GatePolicy => {
   const v = (process.env.PROXY_GATE ?? 'strict').toLowerCase();
@@ -225,13 +227,21 @@ async function preflightExit(d: LeasedDevice, p: Pin, isp: string) {
 async function leasePort(listId: number, ports: number[], seed: string, skip: Set<number>) {
   const r = redis();
   const order = portOrder(ports, seed).filter((port) => !skip.has(port));
+  const busy = (port: number) => `stakeout:portbusy:${listId}:${port}`;
   const usable: number[] = [];
   for (const port of order) {
     if (await r.exists(`stakeout:portbad:${listId}:${port}`)) continue;
     usable.push(port);
-    if (await r.set(`stakeout:port:${listId}:${port}`, seed, 'PX', PORT_REST_MS, 'NX')) return { port, reused: false };
+    if (await r.set(`stakeout:port:${listId}:${port}`, seed, 'PX', PORT_REST_MS, 'NX')) {
+      await r.set(busy(port), seed, 'PX', PORT_BUSY_MS);
+      return { port, reused: false };
+    }
   }
-  return usable.length ? { port: usable[0], reused: true } : null;
+  // Every port was used recently: reuse one, but never a port another point is using right now.
+  for (const port of usable) {
+    if (await r.set(busy(port), seed, 'PX', PORT_BUSY_MS, 'NX')) return { port, reused: true };
+  }
+  return null;
 }
 const benchPort = (listId: number, port: number) => redis().set(`stakeout:portbad:${listId}:${port}`, '1', 'PX', PORT_BAD_MS).catch(() => null);
 

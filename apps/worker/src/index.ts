@@ -1,3 +1,4 @@
+import { failureCode } from '@stakeout/core/fleetHealth';
 import 'dotenv/config';
 import { Queue, Worker, DelayedError, type Job } from 'bullmq';
 import { db } from '@stakeout/db';
@@ -97,10 +98,7 @@ async function execute(job: Job, token?: string) {
       await settlePin(pin.id, { data: result });
       await recordDeviceOutcome(d.imageId, null).catch(() => {});
     } catch (e) {
-      await recordDeviceOutcome(
-        d.imageId,
-        (e instanceof Error ? e.message : 'PIN_FAILED').split(' ')[0],
-      ).catch(() => {});
+      await recordDeviceOutcome(d.imageId, failureCode(e)).catch(() => {});
       // Can't reach the phone over ADB: our outbound IP may have changed. Re-whitelist it.
       if (e instanceof Error && e.message.startsWith('ADB_CONNECT_FAILED') && Date.now() - lastWhitelistFix > 60000) {
         lastWhitelistFix = Date.now();

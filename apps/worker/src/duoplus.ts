@@ -17,6 +17,10 @@ const PAGE_SIZE = 100;
  * only from the admin bootstrap (Android getprop), and proxies only from DuoPlus.
  * Phones missing from a complete listing are marked offline (admin's isEnabled is untouched).
  */
+/** Auto power-on only when the fleet is limited to your own phones (DUOPLUS_PHONE_IDS), never account-wide. */
+const powerOnAllowed = () => process.env.DUOPLUS_AUTO_POWER_ON !== 'false' && Boolean((process.env.DUOPLUS_PHONE_IDS ?? '').trim());
+const lastPowerOn = new Map<string, number>();
+
 export async function syncDuoPlusDevicePool() {
   if (!process.env.DUOPLUS_API_KEY) return;
   await ensureAdbWhitelist().catch((e) => console.warn('[duoplus] ADB whitelist not updated:', e instanceof Error ? e.message : e));
@@ -27,6 +31,8 @@ export async function syncDuoPlusDevicePool() {
     const online: any[] = [];
     const skipped: Record<string, number> = {};
     const needAdb: string[] = [];
+    const needPower: string[] = [];
+    const scopedSkips: string[] = [];
     const autoSetup = process.env.DUOPLUS_AUTO_PROVISION !== 'false';
     let listed = 0;
     let complete = false;
@@ -47,6 +53,10 @@ export async function syncDuoPlusDevicePool() {
         if (u.ok) online.push(i);
         else {
           skipped[u.why] = (skipped[u.why] ?? 0) + 1;
+          // Your own phones are named, with DuoPlus's raw fields, so a dashboard/API mismatch shows.
+          scopedSkips.push(String(i.id) + ' ' + u.why + ' [status=' + String(i.status) + (i.link_status !== undefined ? ' link=' + String(i.link_status) : '') + ']');
+          // One of your listed phones is off: power it on (subscription phones only: never billed per minute).
+          if (powerOnAllowed() && Number(i.status) === 2 && i.expired_at && !expiresWithin(i.expired_at, 60)) needPower.push(String(i.id));
           // A phone that is on but can't be used says so by name, so it can be fixed.
           if (Number(i.status) === 1) console.warn('[duoplus] phone', String(i.id), (i.name ? '(' + i.name + ') ' : '') + 'is on but not usable:', u.why);
         }
@@ -61,8 +71,21 @@ export async function syncDuoPlusDevicePool() {
       const r = await duoplusPost('/api/v1/cloudPhone/openAdb', { image_ids: needAdb }).catch((e) => ({ error: String(e) }));
       console.log('[duoplus] switched ADB on for', needAdb.join(', '), '·', JSON.stringify((r as any)?.data ?? r).slice(0, 200));
     }
+    if (needPower.length) {
+      const due = needPower.filter((id) => Date.now() - (lastPowerOn.get(id) ?? 0) > 10 * 60000);
+      if (due.length) {
+        due.forEach((id) => lastPowerOn.set(id, Date.now()));
+        const r = await duoplusPost('/api/v1/cloudPhone/powerOn', { image_ids: due }).catch((e) => ({ error: String(e) }));
+        console.log('[duoplus] powering on', due.join(', '), '(DuoPlus reports powered off) ·', JSON.stringify((r as any)?.data ?? r).slice(0, 200));
+      }
+    }
     const summary = Object.entries(skipped).map(([why, n]) => n + ' ' + why).join(', ');
-    console.log(`[duoplus] fleet sync: ${listed} listed, ${online.length} usable` + (summary ? ` · skipped: ${summary}` : ''));
+    console.log(
+      `[duoplus] fleet sync: ${listed} listed, ${online.length} usable` +
+        (online.length ? ' (' + online.map((i) => String(i.id)).join(', ') + ')' : '') +
+        (summary ? ` · skipped: ${summary}` : '') +
+        (scopedSkips.length ? ' · yours not usable: ' + scopedSkips.join('; ') : ''),
+    );
     const known = await db.devicePool.findMany({ select: { imageId: true, proxyId: true } });
     const knownIds = new Set(known.map((d) => d.imageId));
     const usedProxies = new Set(known.map((d) => d.proxyId));

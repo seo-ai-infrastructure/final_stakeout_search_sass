@@ -137,19 +137,36 @@ case $APP in
  chrome) am start -a android.intent.action.VIEW -d "https://www.google.com/search?q=$QE" $PKG ;;
 esac >/dev/null 2>&1
 if [ "$APP" = maps ]; then
- # Template: wait for "Search here", tap it, type the keyword, press Enter.
+ # Template: wait for "Search here", tap it, type the keyword, press Enter. The keyword must
+ # be confirmed in the search box before Enter; never scroll a map that was not searched.
  mark launch
+ ui_has() { uiautomator dump "$D/check.xml" >/dev/null 2>&1; grep -q -i -F "$1" "$D/check.xml"; }
+ MS=none
  # A fresh phone may open on a first-run screen ("Make it your map": Skip); clear it and look again.
  if wait_for '(text|content-desc)="Search here"' 9 || { dismiss_fre; wait_for '(text|content-desc)="Search here"' 9; }; then
    sleep 0.8
    B=$(find_node 'class="android.widget.TextView"' '(text|content-desc)="Search here"' "$D/probe.xml")
    if [ -n "$B" ]; then tap_bounds "$B"; else tap_in_file "Search here" "$D/probe.xml"; fi
-   sleep 1.2
+   sleep 1.5
+   input text "$(printf '%s' "$Q" | sed 's/ /%s/g')"
+   sleep 1.5
+   # The keyword has to be in the box before Enter.
+   P=$(printf 'text="%s"' "$Q")
+   if ui_has "$P"; then input keyevent 66; MS=typed; fi
  fi
- sleep 1.5
- input text "$(printf '%s' "$Q" | sed 's/ /%s/g')"
- sleep 1.5
- input keyevent 66
+ if [ "$MS" = none ]; then
+   # Typing did not land: open Maps' own search for the keyword at the phone's (GPS) location.
+   input keyevent 4 2>/dev/null; sleep 0.8
+   am start -a android.intent.action.VIEW -d "geo:0,0?q=$QE" $PKG >/dev/null 2>&1
+   sleep 4
+   ui_has "$Q" && MS=intent
+ fi
+ echo "maps_search=$MS" >> "$D/meta.txt"
+ if [ "$MS" = none ]; then
+   echo "MAPS_SEARCH_FAILED: could not enter the keyword in Google Maps"
+   kill -INT $REC_PID 2>/dev/null; wait "$REC_PID" 2>/dev/null
+   exit 1
+ fi
  mark search
  rsleep 4000 7000
 else

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { failureRate, isDeviceAttributable, nextOutcomes, pauseReason, percentile, stateTimezone, expiresWithin, phoneUsable, phoneInScope, adbWhitelist } from '../packages/core/fleetHealth';
+import { failureRate, isDeviceAttributable, nextOutcomes, pauseReason, percentile, stateTimezone, expiresWithin, phoneUsable, phoneInScope, adbWhitelist, failureCode } from '../packages/core/fleetHealth';
 import { transportFor } from '../apps/worker/src/deviceShell';
 
 test('the outcome window keeps the newest 20 pins', () => {
@@ -17,9 +17,10 @@ test('a phone is paused only with enough pins and a high failure rate', () => {
 });
 
 test('proxy, location and capacity failures never count against a phone', () => {
-  for (const code of ['PROXY_LADDER_EXHAUSTED', 'LOCATION_FROM_IP', 'NO_COMPATIBLE_DEVICE', 'DEVICE_LEASE_LOST'])
+  // Storage errors (R2_*, NoSuchBucket…) come from our settings, not the phone.
+  for (const code of ['PROXY_LADDER_EXHAUSTED', 'LOCATION_FROM_IP', 'NO_COMPATIBLE_DEVICE', 'DEVICE_LEASE_LOST', 'R2_UPLOAD_TIMEOUT', 'NoSuchBucket'])
     assert.equal(isDeviceAttributable(code), false, code);
-  for (const code of ['DEVICE_SCRIPT_FAILED', 'R2_UPLOAD_TIMEOUT', 'FLAG_CAPTCHA_DETECTED', 'EMPTY_VIDEO'])
+  for (const code of ['DEVICE_SCRIPT_FAILED', 'FLAG_CAPTCHA_DETECTED', 'EMPTY_VIDEO'])
     assert.equal(isDeviceAttributable(code), true, code);
 });
 
@@ -81,4 +82,14 @@ test('adbWhitelist: own IP first, extras kept, duplicates and junk dropped, at m
   const many = Array.from({ length: 15 }, (_, i) => '10.0.0.' + (i + 1)).join(',');
   assert.equal(adbWhitelist('34.1.2.3', many).length, 10);
   assert.deepEqual(adbWhitelist('', '98.7.6.5'), ['98.7.6.5']);
+});
+
+test('storage and DuoPlus errors never count against a phone; real phone failures still do', () => {
+  const s3 = Object.assign(new Error('The specified bucket does not exist.'), { name: 'NoSuchBucket' });
+  assert.equal(failureCode(s3), 'NoSuchBucket');
+  assert.equal(isDeviceAttributable(failureCode(s3)), false);
+  assert.equal(isDeviceAttributable(failureCode(new Error('R2_UPLOAD_TIMEOUT'))), false);
+  assert.equal(isDeviceAttributable(failureCode(new Error('DuoPlus rejected /api/v1/cloudPhone/update: x'))), false);
+  assert.equal(isDeviceAttributable(failureCode(new Error('DEVICE_SCRIPT_FAILED boom'))), true);
+  assert.equal(isDeviceAttributable(failureCode(new Error('FLAG_CAPTCHA_DETECTED'))), true);
 });

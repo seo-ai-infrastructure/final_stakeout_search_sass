@@ -11,9 +11,21 @@ export const OUTCOME_WINDOW = 20;
  * failures are not the phone's fault and must not get a healthy phone paused.
  */
 export function isDeviceAttributable(code: string) {
-  return !/^(PROXY_|LOCATION_FROM_IP|ISP_TARGETING_NOT_CONFIGURED|NO_COMPATIBLE_DEVICE|DEVICE_WAIT_TIMEOUT|DEVICE_LEASE_LOST|UNSUPPORTED_SURFACE)/.test(
+  // Not the phone's fault: proxy/location problems, waiting for phones, storage (R2/S3) and
+  // credential errors, DuoPlus API refusals and phones still applying settings.
+  return !/^(PROXY_|LOCATION_FROM_IP|ISP_TARGETING_NOT_CONFIGURED|NO_COMPATIBLE_DEVICE|DEVICE_WAIT_TIMEOUT|DEVICE_LEASE_LOST|UNSUPPORTED_SURFACE|R2_|NoSuchBucket|NoSuchKey|AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|InvalidArgument|InvalidBucketName|CredentialsProviderError|Credential|DuoPlus|DUOPLUS_|PHONE_STILL_CONFIGURING|PHONE_NOT_READY)/.test(
     code,
   );
+}
+
+/**
+ * A short code for why a point failed. Errors from libraries (e.g. the S3 client's
+ * "NoSuchBucket") carry their real type in `name`; our own errors start with a CODE.
+ */
+export function failureCode(e: unknown): string {
+  if (!(e instanceof Error)) return 'PIN_FAILED';
+  if (e.name && e.name !== 'Error') return e.name;
+  return e.message.split(' ')[0] || 'PIN_FAILED';
 }
 
 export function nextOutcomes(previous: string, ok: boolean) {

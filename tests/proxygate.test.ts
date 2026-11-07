@@ -99,3 +99,12 @@ test('portOrder: every port once, a stable order per point, different points sta
   assert.deepEqual(portOrder(ports, 'pin-a'), a);
   assert.notEqual(portOrder(ports, 'pin-b')[0], a[0]);
 });
+
+test('gate: no network evidence from either lookup fails closed', () => {
+  const v = judgeExit(
+    { ipinfo: { ip: '73.1.2.3', country: 'US', region: 'Tennessee', city: 'Mount Juliet', org: '' }, ipapi: null, google: null },
+    { stateCode: 'TN' },
+  );
+  assert.ok(v.reasons.includes('NO_NETWORK_EVIDENCE'));
+  assert.equal(judgeExit({ ...comcastTN }, { stateCode: 'TN' }).ok, true);
+});

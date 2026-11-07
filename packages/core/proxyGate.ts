@@ -141,6 +141,8 @@ export function judgeExit(
     if (!sourcesAgree) reasons.push('EXIT_NOT_STICKY');
   }
   // 3. Residential network: ASN allow-list or a known residential ISP name; never a datacenter.
+  // No network name from either lookup is not a pass: fail closed.
+  if (policy !== 'off' && !network) reasons.push('NO_NETWORK_EVIDENCE');
   if (policy !== 'off' && network) {
     if (datacenterByName(network)) reasons.push('DATACENTER_NETWORK');
     else if (policy === 'strict') {
