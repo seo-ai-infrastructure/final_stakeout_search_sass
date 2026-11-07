@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254)
       throw new InputError('A valid work email is required.');
     const ip = clientKey(req);
-    await requireHuman(b.turnstileToken, ip);
+    await requireHuman(b.turnstileToken, ip, 'teaser');
     const hardware = await teaserHardware();
     const s = parseSpec({
       keyword: b.keyword,

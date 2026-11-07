@@ -160,7 +160,7 @@ export function LeadGenWidget() {
             className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white"
           />
         </div>
-        <TurnstileWidget key={turnstileRun} onToken={setTurnstileToken} />
+        <TurnstileWidget key={turnstileRun} action="teaser" onToken={setTurnstileToken} />
         <button
           type="submit"
           disabled={loading || Boolean(sentTo)}

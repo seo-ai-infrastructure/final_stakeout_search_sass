@@ -29,8 +29,11 @@ function loadScript() {
   });
 }
 
-/** Cloudflare Turnstile check. Renders nothing when no site key is configured. */
-export function TurnstileWidget({ onToken }: { onToken: (token: string) => void }) {
+/**
+ * Cloudflare Turnstile check. Renders nothing when no site key is configured.
+ * `action` names the protected form (e.g. "signup"); the server requires the same action.
+ */
+export function TurnstileWidget({ onToken, action }: { onToken: (token: string) => void; action?: string }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!turnstileSiteKey || !box.current) return;
@@ -41,6 +44,7 @@ export function TurnstileWidget({ onToken }: { onToken: (token: string) => void 
         if (!alive || !box.current || !window.turnstile) return;
         id = window.turnstile.render(box.current, {
           sitekey: turnstileSiteKey,
+          ...(action ? { action } : {}),
           theme: 'dark',
           callback: (t: string) => onToken(t),
           'expired-callback': () => onToken(''),

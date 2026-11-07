@@ -187,7 +187,7 @@ function LoginFormContent() {
                 />
               </div>
             </div>
-            {mode === 'register' && <TurnstileWidget key={turnstileRun} onToken={setTurnstileToken} />}
+            {mode === 'register' && <TurnstileWidget key={turnstileRun} action="signup" onToken={setTurnstileToken} />}
             <button
               type="submit"
               disabled={loading}

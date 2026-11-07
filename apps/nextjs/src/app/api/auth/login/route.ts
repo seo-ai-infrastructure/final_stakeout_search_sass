@@ -42,7 +42,7 @@ export async function POST(req: Request) {
         throw new InputError('Use your agency email address.');
       if (pass.length < 8)
         throw new InputError('Choose a password of at least 8 characters.');
-      await requireHuman(body.turnstileToken, clientKey(req));
+      await requireHuman(body.turnstileToken, clientKey(req), 'signup');
       await limitIp(req, 'register-ip', 3, 86400);
       await limit('register-inbox', emailQuotaKey(email), 1, 86400);
       await limit(
