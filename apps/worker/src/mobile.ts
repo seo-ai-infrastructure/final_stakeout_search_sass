@@ -204,6 +204,28 @@ async function leasePort(listId: number, ports: number[], seed: string, skip: Se
 }
 const benchPort = (listId: number, port: number) => redis().set(`stakeout:portbad:${listId}:${port}`, '1', 'PX', PORT_BAD_MS).catch(() => null);
 
+/**
+ * Gives the phone a fresh DuoPlus proxy record for this port, for when DuoPlus refuses to edit
+ * the one it has (record gone, or not editable while bound). The new record is bound by the next
+ * applyNetworkAndGps; the replaced record is deleted once the phone has moved off it.
+ */
+async function replaceProxyRecord(device: LeasedDevice, list: { id: string; host: string; login: string; password: string }, port: number) {
+  const res = await duoplusPost('/api/v1/proxy/add', {
+    proxy_list: [{ protocol: 'socks5', host: list.host, port, user: list.login, password: list.password, name: 'stakeout-' + device.imageId }],
+    ip_scan_channel: 'ip2location',
+  });
+  const id = res?.data?.success?.[0]?.id;
+  if (!id) throw new Error('DUOPLUS_PROXY_ADD_FAILED ' + JSON.stringify(res?.data?.fail ?? res?.message ?? '').slice(0, 160));
+  const replaced = device.proxyId;
+  device.proxyId = String(id);
+  device.proxyListId = list.id;
+  await db.devicePool.update({ where: { imageId: device.imageId }, data: { proxyId: String(id), proxyListId: list.id } });
+  console.log('[duoplus] phone', device.imageId, 'now uses proxy record', String(id), replaced ? '(replacing ' + replaced + ')' : '');
+  return replaced && replaced !== String(id) ? replaced : null;
+}
+
+const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 240);
+
 async function provisionFromLists(device: LeasedDevice, p: Pin) {
   const isp = p.isp ?? '';
   const lists = await listsForPin(p.scan, p);
@@ -222,6 +244,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
         const lease = await leasePort(list.psListId, ports, p.id + ':' + list.psListId + ':' + t, used);
         if (!lease) break;
         used.add(lease.port);
+        let superseded: string | null = null;
         try {
           await duoplusPost('/api/v1/proxy/update', {
             id: device.proxyId,
@@ -236,11 +259,19 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
             await db.devicePool.update({ where: { imageId: device.imageId }, data: { proxyListId: list.id } });
             device.proxyListId = list.id;
           }
-        } catch {
-          tried.push(label + ':' + lease.port + ':UPDATE_FAILED');
-          continue;
+        } catch (err) {
+          console.warn('[duoplus] proxy/update refused for', device.imageId, 'record', device.proxyId, '-', errText(err));
+          try {
+            superseded = await replaceProxyRecord(device, list, lease.port);
+          } catch (e2) {
+            console.warn('[duoplus] could not give', device.imageId, 'a fresh proxy record -', errText(e2));
+            tried.push(label + ':' + lease.port + ':UPDATE_FAILED');
+            continue;
+          }
         }
         const g = await preflightExit(device, p, isp);
+        // The phone is now bound to its current record, so a replaced one can go.
+        if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
         if (!g.verdict.ok) {
           await benchPort(list.psListId, lease.port);
           tried.push(label + ':' + lease.port + ':' + g.verdict.reasons.join('+'));

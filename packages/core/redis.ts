@@ -117,7 +117,13 @@ export async function duoplusPost(
       result.data?.fail?.length ||
       Object.values(result.data ?? {}).some((v: any) => v?.success === false)
     ) {
-      throw new Error('DuoPlus rejected ' + endpoint);
+      // Keep DuoPlus's own reason: it is what tells a missing record from a refused edit.
+      const why = [result?.message, result?.data?.fail_reason ?? result?.data?.fail]
+        .filter((v) => v !== undefined && v !== null && v !== '')
+        .map((v) => (typeof v === 'string' ? v : JSON.stringify(v)))
+        .join(' ')
+        .slice(0, 200);
+      throw new Error('DuoPlus rejected ' + endpoint + (why ? ': ' + why : '') + (result?.code !== undefined ? ' (code ' + result.code + ')' : ''));
     }
     return result;
   }
