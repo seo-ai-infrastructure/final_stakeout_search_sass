@@ -24,16 +24,35 @@ export function transportFor(d: ShellTarget): 'adb' | 'api' {
 }
 
 const connected = new Set<string>();
+/** ADB passwords reported by DuoPlus's phone list (adb_password), by ADB address. */
+const adbPasswords = new Map<string, string>();
+export function setAdbPassword(addr: string, password: string | null | undefined) {
+  if (password) adbPasswords.set(addr, password);
+  else adbPasswords.delete(addr);
+}
+
+const errText = (e: unknown) => {
+  const x = e as { stderr?: unknown; message?: unknown; killed?: boolean };
+  const raw = String(x?.stderr || x?.message || e || '').replace(/\s+/g, ' ').trim();
+  return (x?.killed ? 'timed out; ' : '') + raw.slice(0, 160);
+};
 
 async function ensureConnected(addr: string) {
   if (connected.has(addr)) return;
   const { stdout } = await run('adb', ['connect', addr], { timeout: 15000 });
   if (!/connected to|already connected/i.test(stdout))
-    throw new Error('ADB_CONNECT_FAILED');
+    throw new Error('ADB_CONNECT_FAILED ' + stdout.replace(/\s+/g, ' ').slice(0, 120));
+  // Phones with an ADB password need a login after connecting (adb shell glogin <password>).
+  const pw = adbPasswords.get(addr);
+  if (pw) {
+    const r = await run('adb', ['-s', addr, 'shell', 'glogin', pw], { timeout: 10000 }).catch((e) => ({ stdout: 'error: ' + errText(e) }));
+    console.log('[adb] login on', addr, '·', String(r.stdout).replace(/\s+/g, ' ').slice(0, 80));
+  }
   connected.add(addr);
 }
 
 async function adb(addr: string, args: string[], timeoutMs: number) {
+  let last = '';
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await ensureConnected(addr);
@@ -42,13 +61,16 @@ async function adb(addr: string, args: string[], timeoutMs: number) {
         maxBuffer: 16 * 1024 * 1024,
       });
       return stdout;
-    } catch {
+    } catch (e) {
+      last = errText(e);
       // Dropped connection: reconnect once, then give up.
       connected.delete(addr);
       await run('adb', ['disconnect', addr], { timeout: 5000 }).catch(() => {});
     }
   }
-  throw new Error('ADB_COMMAND_FAILED');
+  // Say which command failed and why, so a failure can be fixed rather than guessed at.
+  const what = args[0] === 'shell' ? 'shell ' + String(args[1] ?? '').split(' ')[0] : args[0];
+  throw new Error('ADB_COMMAND_FAILED ' + what + ': ' + last);
 }
 
 /** Runs one shell command on the phone and returns its output. */

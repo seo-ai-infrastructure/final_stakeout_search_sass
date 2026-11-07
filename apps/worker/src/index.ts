@@ -93,12 +93,14 @@ async function execute(job: Job, token?: string) {
       where: { id: pin.id, startedAt: null },
       data: { startedAt: new Date() },
     });
+    let pinError: unknown = null;
     try {
       const result = await measureMobile(pin, d);
       await d.assertOwned();
       await settlePin(pin.id, { data: result });
       await recordDeviceOutcome(d.imageId, null).catch(() => {});
     } catch (e) {
+      pinError = e;
       await recordDeviceOutcome(d.imageId, failureCode(e)).catch(() => {});
       // Can't reach the phone over ADB: our outbound IP may have changed. Re-whitelist it.
       if (e instanceof Error && e.message.startsWith('ADB_CONNECT_FAILED') && Date.now() - lastWhitelistFix > 60000) {
@@ -112,7 +114,8 @@ async function execute(job: Job, token?: string) {
         });
       throw e;
     } finally {
-      await restPhone(d.imageId);
+      // Pace only real searches: setup failures (ADB, proxy, DuoPlus) don't need a rest.
+      if (searched(pinError)) await restPhone(d.imageId);
       await d.release();
     }
   } catch (e) {
@@ -218,6 +221,12 @@ async function reconcile() {
       data: { updatedAt: new Date() },
     });
   }
+}
+
+/** Whether a point got as far as searching (success, or a failure after the search began). */
+function searched(e: unknown) {
+  if (!e) return true;
+  return !/^(ADB_|PROXY_|DuoPlus|DUOPLUS_|PHONE_|RPA_TEMPLATE|RPA_NO_KEYWORD|NO_COMPATIBLE|DEVICE_LEASE)/.test(failureCode(e));
 }
 
 /** A rest after every search on a phone (SEARCH_GAP_SECONDS, randomised); never shortens a longer one. */

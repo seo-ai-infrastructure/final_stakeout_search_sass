@@ -3,6 +3,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { redis, duoplusPost } from '@stakeout/core/redis';
 import { leasableDeviceWhere } from '@stakeout/core/hardware';
+import { setAdbPassword } from './deviceShell';
 import { isDeviceAttributable, nextOutcomes, pauseReason } from '@stakeout/core/fleetHealth';
 import { RUN_PIN_SH_V2 } from '@stakeout/core/runner';
 import { push, shell } from './deviceShell';
@@ -18,11 +19,26 @@ const PAGE_SIZE = 100;
  * Phones missing from a complete listing are marked offline (admin's isEnabled is untouched).
  */
 /** Auto power-on only when the fleet is limited to your own phones (DUOPLUS_PHONE_IDS), never account-wide. */
-const powerOnAllowed = () => process.env.DUOPLUS_AUTO_POWER_ON !== 'false' && Boolean((process.env.DUOPLUS_PHONE_IDS ?? '').trim());
+/** The fleet is one DuoPlus group (DUOPLUS_GROUP_ID): its phones that are on and ready are used. */
+const fleetGroup = () => (process.env.DUOPLUS_GROUP_ID ?? '').trim();
+let groupDescribed = false;
+async function describeGroup() {
+  const id = fleetGroup();
+  if (groupDescribed || !id) return;
+  groupDescribed = true;
+  const res = await duoplusPost('/api/v1/cloudPhone/groupList', { page: 1, pagesize: 100 }).catch(() => null);
+  const list: any[] = res?.data?.list ?? [];
+  const g = list.find((x) => String(x?.id) === id);
+  console.log('[duoplus] fleet = DuoPlus group', id, g ? '"' + String(g.name ?? '') + '"' : '(not in groupList: check DUOPLUS_GROUP_ID)');
+}
+/** Auto power-on only for a chosen set (a group or DUOPLUS_PHONE_IDS), never account-wide. */
+const powerOnAllowed = () =>
+  process.env.DUOPLUS_AUTO_POWER_ON !== 'false' && (Boolean(fleetGroup()) || Boolean((process.env.DUOPLUS_PHONE_IDS ?? '').trim()));
 const lastPowerOn = new Map<string, number>();
 
 export async function syncDuoPlusDevicePool() {
   if (!process.env.DUOPLUS_API_KEY) return;
+  await describeGroup().catch(() => {});
   await ensureAdbWhitelist().catch((e) => console.warn('[duoplus] ADB whitelist not updated:', e instanceof Error ? e.message : e));
   try {
     // Only phones that are powered on, ADB-ready and not about to expire are used.
@@ -38,7 +54,8 @@ export async function syncDuoPlusDevicePool() {
     let complete = false;
     for (let page = 1; page <= 20; page++) {
       // Every phone on the account, so the summary can say why each unusable one is skipped.
-      const res = await duoplusPost('/api/v1/cloudPhone/list', { page, pagesize: PAGE_SIZE });
+      const group = fleetGroup();
+      const res = await duoplusPost('/api/v1/cloudPhone/list', { page, pagesize: PAGE_SIZE, ...(group ? { group_id: group } : {}) });
       const list: any[] = res?.data?.list ?? [];
       listed += list.length;
       for (const i of list) {
@@ -47,8 +64,15 @@ export async function syncDuoPlusDevicePool() {
           skipped['not in DUOPLUS_PHONE_IDS'] = (skipped['not in DUOPLUS_PHONE_IDS'] ?? 0) + 1;
           continue;
         }
+        // Double-check group membership in case the filter is ignored.
+        const grp = fleetGroup();
+        if (grp && Array.isArray(i.group) && i.group.length && !i.group.some((g: any) => String(g?.id) === grp)) {
+          skipped['not in group ' + grp] = (skipped['not in group ' + grp] ?? 0) + 1;
+          continue;
+        }
         // On and not about to expire, but ADB is off: switch it on (picked up next sync).
         if (Number(i.status) === 1 && String(i.adb_status ?? '1') !== '1' && !expiresWithin(i.expired_at, 30)) needAdb.push(String(i.id));
+        if (i.adb) setAdbPassword(String(i.adb), i.adb_password ? String(i.adb_password) : null);
         const u = phoneUsable(i);
         if (u.ok) online.push(i);
         else {
@@ -81,7 +105,7 @@ export async function syncDuoPlusDevicePool() {
     }
     const summary = Object.entries(skipped).map(([why, n]) => n + ' ' + why).join(', ');
     console.log(
-      `[duoplus] fleet sync: ${listed} listed, ${online.length} usable` +
+      `[duoplus] fleet sync${fleetGroup() ? ' (group ' + fleetGroup() + ')' : ''}: ${listed} listed, ${online.length} usable` +
         (online.length ? ' (' + online.map((i) => String(i.id)).join(', ') + ')' : '') +
         (summary ? ` · skipped: ${summary}` : '') +
         (scopedSkips.length ? ' · yours not usable: ' + scopedSkips.join('; ') : ''),
