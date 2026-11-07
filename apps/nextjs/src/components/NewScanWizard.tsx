@@ -64,6 +64,102 @@ export function NewScanWizard() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [addressQuery, setAddressQuery] = useState('');
   const [isGeocoding, setIsGeocoding] = useState(false);
+  // Saved businesses (one per client): pick one to fill every field; tick keywords to run several at once.
+  type SavedBusiness = {
+    id: string; name: string; centerLabel: string; centerLat: number; centerLng: number; keywords: string[];
+    targetType: TargetType; gridSize: number; spacingKm: number; ispMode: IspMode; isps: string[];
+    trackAiOverviews: boolean; scheduleType: 'once' | 'daily' | 'weekly';
+  };
+  const [saved, setSaved] = useState<SavedBusiness[]>([]);
+  const [businessId, setBusinessId] = useState('');
+  const [keywordList, setKeywordList] = useState<string[]>([]);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [saveMsg, setSaveMsg] = useState('');
+  function applyBusiness(b: SavedBusiness) {
+    setBusinessId(b.id);
+    setTargetBusiness(b.name);
+    setCenterLat(b.centerLat);
+    setCenterLng(b.centerLng);
+    setAddressQuery(b.centerLabel);
+    setTargetType(b.targetType);
+    setGridSize(b.gridSize);
+    setSpacingKm(b.spacingKm);
+    setIspMode(b.ispMode);
+    setIspSelected(b.isps ?? []);
+    setTrackAiOverviews(b.trackAiOverviews);
+    setScheduleType(b.scheduleType);
+    setKeywordList(b.keywords);
+    setPicked(b.keywords.slice(0, 1));
+    setKeyword(b.keywords[0] ?? '');
+    setSaveMsg('');
+  }
+  function togglePick(k: string) {
+    const next = picked.includes(k) ? picked.filter((x) => x !== k) : [...picked, k];
+    setPicked(next);
+    if (next[0]) setKeyword(next[0]);
+  }
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const list: SavedBusiness[] = await fetch('/api/businesses')
+        .then((r) => (r.ok ? r.json() : { businesses: [] }))
+        .then((d) => d.businesses ?? [])
+        .catch(() => []);
+      if (!live) return;
+      setSaved(list);
+      const q = new URLSearchParams(window.location.search);
+      const b = q.get('business') && list.find((x) => x.id === q.get('business'));
+      if (b) return applyBusiness(b);
+      const from = q.get('from');
+      if (from) {
+        // "Run again": the same settings as a past scan.
+        const scan = await fetch('/api/scans/' + encodeURIComponent(from)).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        const sc = scan?.scan ?? scan;
+        if (!live || !sc?.keyword) return;
+        setTargetBusiness(sc.targetBusiness);
+        setKeyword(sc.keyword);
+        setCenterLat(sc.centerLat);
+        setCenterLng(sc.centerLng);
+        if (sc.targetType) setTargetType(sc.targetType);
+        if (sc.gridSize) setGridSize(sc.gridSize);
+        if (sc.spacingKm) setSpacingKm(sc.spacingKm);
+        setTrackAiOverviews(Boolean(sc.trackAiOverviews));
+        const match = list.find((x) => x.name === sc.targetBusiness);
+        if (match) { setBusinessId(match.id); setKeywordList(match.keywords); setPicked(match.keywords.includes(sc.keyword) ? [sc.keyword] : []); }
+      }
+    })();
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  async function saveBusiness() {
+    setSaveMsg('');
+    const keywords = [...new Set([...keywordList, ...picked, keyword].map((k) => k.trim()).filter(Boolean))];
+    const body = {
+      name: targetBusiness, centerLabel: addressQuery || [detectedCity, detectedState, detectedZip].filter(Boolean).join(' '),
+      centerLat, centerLng, keywords, targetType, gridSize, spacingKm, ispMode, isps: ispMode === 'any' ? [] : ispSelected,
+      trackAiOverviews, scheduleType,
+    };
+    const res = await fetch(businessId ? '/api/businesses/' + businessId : '/api/businesses', {
+      method: businessId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return setSaveMsg(data.error ?? 'Could not save this business.');
+    const b: SavedBusiness = data.business;
+    setSaved((list) => [b, ...list.filter((x) => x.id !== b.id)]);
+    setBusinessId(b.id);
+    setKeywordList(b.keywords);
+    setSaveMsg(businessId ? 'Saved changes.' : 'Saved. Pick it from “Saved business” next time.');
+  }
+  async function deleteBusiness() {
+    if (!businessId || !window.confirm('Delete this saved business? Scans already run are kept.')) return;
+    const res = await fetch('/api/businesses/' + businessId, { method: 'DELETE' });
+    if (!res.ok) return setSaveMsg('Could not delete it.');
+    setSaved((list) => list.filter((x) => x.id !== businessId));
+    setBusinessId('');
+    setKeywordList([]);
+    setPicked([]);
+    setSaveMsg('Deleted.');
+  }
   const submissionKey = useRef<string | null>(null);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -249,20 +345,24 @@ export function NewScanWizard() {
       setErrorMsg(ispMode === 'single' ? 'Choose an ISP, or switch to Any ISP.' : 'Choose at least 2 ISPs for a mix.');
       return;
     }
-    if (!creditSummary.hasEnoughCredits) {
+    if (creditBalance < creditSummary.totalCost * runKeywords.length) {
       setIsTopUpOpen(true);
       return;
     }
     setIsSubmitting(true);
     try {
+      const baseKey = (submissionKey.current ??= crypto.randomUUID());
+      const started: string[] = [];
+      for (const [i, kw] of runKeywords.entries()) {
       const res = await fetch('/api/scans/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Idempotency-Key': (submissionKey.current ??= crypto.randomUUID()),
+          // One key per keyword, so a retry never starts the same scan twice.
+          'Idempotency-Key': runKeywords.length > 1 ? baseKey + ':' + i : baseKey,
         },
         body: JSON.stringify({
-          keyword: keyword.trim(),
+          keyword: kw,
           targetBusiness: targetBusiness.trim(),
           centerLat,
           centerLng,
@@ -278,14 +378,17 @@ export function NewScanWizard() {
       const data = await res.json();
       if (!res.ok) {
         if (res.status < 500) submissionKey.current = null;
-        throw new Error(data.error ?? 'Failed to launch scan');
+        throw new Error((started.length ? started.length + ' scan(s) started; then: ' : '') + (data.error ?? 'Failed to launch scan'));
       }
-      router.push(`/scans/${data.scanId}`);
+      started.push(data.scanId);
+      }
+      router.push(started.length > 1 ? '/scans' : `/scans/${started[0]}`);
     } catch (err: any) {
       setErrorMsg(err.message);
       setIsSubmitting(false);
     }
   }
+  const runKeywords = picked.length ? picked : [keyword.trim()].filter(Boolean);
   const isDesktop = targetType === 'desktop_aimode';
   const aiAddonLabel =
     targetType === 'mobile_maps'
@@ -327,6 +430,44 @@ export function NewScanWizard() {
               <span>{errorMsg}</span>
             </div>
           )}
+          {/* Saved business: fills every field */}
+          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-3">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+              Saved business
+              <select
+                value={businessId}
+                onChange={(e) => {
+                  const b = saved.find((x) => x.id === e.target.value);
+                  if (b) applyBusiness(b);
+                  else { setBusinessId(''); setKeywordList([]); setPicked([]); }
+                }}
+                className="mt-1.5 block w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-sm normal-case tracking-normal text-white"
+              >
+                <option value="">{saved.length ? '— New business —' : 'No saved businesses yet'}</option>
+                {saved.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}{b.centerLabel ? ' · ' + b.centerLabel : ''} ({b.keywords.length} keyword{b.keywords.length === 1 ? '' : 's'})</option>
+                ))}
+              </select>
+            </label>
+            {keywordList.length > 0 && (
+              <div>
+                <p className="text-[11px] text-slate-400">Keywords to run ({picked.length} selected · one scan each)</p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {keywordList.map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => togglePick(k)}
+                      aria-pressed={picked.includes(k)}
+                      className={`rounded-full border px-2.5 py-1 text-xs ${picked.includes(k) ? 'border-emerald-400 bg-emerald-400/15 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
           {/* 1. Target App */}
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
@@ -536,10 +677,10 @@ export function NewScanWizard() {
             <div className="flex items-center justify-between border-t border-slate-800 pt-2.5">
               <span className="text-sm font-bold text-white">
                 Total Cost ({creditSummary.totalPins} pins ×{' '}
-                {creditSummary.costPerPin} cr):
+                {creditSummary.costPerPin} cr{runKeywords.length > 1 ? ' × ' + runKeywords.length + ' keywords' : ''}):
               </span>
               <span className="text-base font-extrabold text-emerald-400">
-                {creditSummary.totalCost} Credits
+                {creditSummary.totalCost * runKeywords.length} Credits
               </span>
             </div>
             <button
@@ -552,18 +693,34 @@ export function NewScanWizard() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Provisioning {creditSummary.totalPins} Pins...
                 </>
-              ) : creditSummary.hasEnoughCredits ? (
+              ) : creditBalance >= creditSummary.totalCost * runKeywords.length ? (
                 <>
-                  Launch {gridSize}×{gridSize} Stakeout Scan (
-                  {creditSummary.totalCost} Cr)
+                  Launch {runKeywords.length > 1 ? runKeywords.length + ' ' : ''}{gridSize}×{gridSize} Stakeout Scan{runKeywords.length > 1 ? 's' : ''} (
+                  {creditSummary.totalCost * runKeywords.length} Cr)
                   <ArrowRight className="h-4 w-4" />
                 </>
               ) : (
                 <>
-                  Top Up Credits to Launch ({creditSummary.totalCost} Cr Needed)
+                  Top Up Credits to Launch ({creditSummary.totalCost * runKeywords.length} Cr Needed)
                 </>
               )}
             </button>
+            <div className="flex flex-wrap items-center gap-3 border-t border-slate-800 pt-3">
+              <button
+                type="button"
+                onClick={saveBusiness}
+                disabled={!targetBusiness.trim()}
+                className="min-h-[40px] rounded-lg border border-slate-700 px-3 text-sm font-semibold text-slate-200 hover:border-emerald-400 disabled:opacity-50"
+              >
+                {businessId ? 'Update saved business' : 'Save as business'}
+              </button>
+              {businessId && (
+                <button type="button" onClick={deleteBusiness} className="text-xs text-slate-400 underline hover:text-red-300">
+                  Delete
+                </button>
+              )}
+              {saveMsg && <span role="status" className="text-xs text-emerald-300">{saveMsg}</span>}
+            </div>
           </div>
         </form>
       </div>

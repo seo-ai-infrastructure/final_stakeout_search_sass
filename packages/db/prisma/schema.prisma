@@ -20,6 +20,7 @@ model User {
   emailVerifiedAt DateTime?
   scans         GridScan[]
   ledger        CreditLedger[]
+  businesses    SavedBusiness[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -211,4 +212,29 @@ model ProxyMarket {
   level       String
   isps        Json
   refreshedAt DateTime @default(now())
+}
+
+/// A client business saved with its keywords and scan defaults, so scans start in one click.
+model SavedBusiness {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Business name exactly as it appears on Google.
+  name             String
+  /// The address, ZIP or place the grid is centred on, as entered.
+  centerLabel      String   @default("")
+  centerLat        Float
+  centerLng        Float
+  keywords         String[]
+  targetType       String   @default("mobile_chrome")
+  gridSize         Int      @default(7)
+  spacingKm        Float    @default(1.60934)
+  ispMode          String   @default("any")
+  isps             String[]
+  trackAiOverviews Boolean  @default(false)
+  scheduleType     String   @default("once")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([userId])
 }

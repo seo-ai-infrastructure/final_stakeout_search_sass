@@ -205,7 +205,13 @@ export function GeoGridDashboard({
             Create agency account
           </Link>
         ) : (
-          <div className="flex gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href={'/new-scan?from=' + encodeURIComponent(scan.id)}
+              className="rounded-lg bg-emerald-400 px-3 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-300"
+            >
+              Run again
+            </Link>
             <button onClick={() => changeShare('share')}>Share report</button>
             <button onClick={() => changeShare('revoke')}>Revoke link</button>
           </div>
