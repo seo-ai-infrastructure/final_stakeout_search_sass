@@ -73,6 +73,12 @@ async function execute(job: Job, token?: string) {
     // off or expired since the last fleet sync, take it out of service and put this
     // point straight back in the queue for another phone: no credit used, no blame.
     const power = await phonePowerStatus(d.imageId);
+    // Still applying settings (or booting): busy, not offline. Try again shortly, same phone stays in service.
+    if (power && !power.on && (power.status === 'configuring' || power.status === 'powering on')) {
+      await d.release();
+      await job.moveToDelayed(Date.now() + 15000, token);
+      throw new DelayedError();
+    }
     if (power && !power.on) {
       console.warn('[duoplus] phone', d.imageId, 'is', power.status, '- taken out of service; point requeued');
       await db.devicePool.update({ where: { imageId: d.imageId }, data: { offlineAt: new Date() } }).catch(() => {});

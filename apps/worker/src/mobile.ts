@@ -7,7 +7,7 @@ import { listsForPin, normPlace, locationVerified } from '@stakeout/core/proxyLi
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
 import { put, uploadURL, uploaded } from '@stakeout/core/r2';
-import { captureEnded, captureStarted, duoplusPost, updatePhone, type LeasedDevice } from './duoplus';
+import { captureEnded, captureStarted, duoplusPost, updatePhone, phonePowerStatus, type LeasedDevice } from './duoplus';
 import { pull, push, shell, transportFor } from './deviceShell';
 import { readBundle, readBundleFile } from './bundle';
 import { stateTimezone } from '@stakeout/core/fleetHealth';
@@ -56,14 +56,45 @@ type ProxyCheck = {
   timezone: string;
 };
 
+/**
+ * Waits while DuoPlus is still applying a change to the phone ("configuring" / "powering on"),
+ * so nothing is checked or searched on half-applied settings. Fails only if the phone is off,
+ * expired or its configuration failed.
+ */
+async function waitUntilConfigured(d: LeasedDevice, maxMs = 90000) {
+  const until = Date.now() + maxMs;
+  for (;;) {
+    const st = await phonePowerStatus(d.imageId);
+    if (!st || st.on) return;
+    if (st.status !== 'configuring' && st.status !== 'powering on') throw new Error('PHONE_NOT_READY ' + st.status);
+    if (Date.now() > until) throw new Error('PHONE_STILL_CONFIGURING');
+    await sleep(4000);
+  }
+}
+
+const stillConfiguring = (e: unknown) => /being configured|cannot be operated|configuring/i.test(e instanceof Error ? e.message : String(e));
+
 /** Binds the phone's proxy record and moves its GPS and time zone to the pin (one batched request). */
 async function applyNetworkAndGps(d: LeasedDevice, p: Pin) {
-  await updatePhone({
+  const item = {
     image_id: d.imageId,
     proxy: { id: d.proxyId, dns: 1 },
     gps: { type: 2, latitude: String(p.lat), longitude: String(p.lng) },
     locale: { type: 2, timezone: stateTimezone(p.stateCode), language: 'en-US' },
-  });
+  };
+  // DuoPlus refuses changes while it is still applying the previous one: wait and retry.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await updatePhone(item);
+      break;
+    } catch (e) {
+      if (attempt >= 12 || !stillConfiguring(e)) throw e;
+      await waitUntilConfigured(d, 60000).catch(() => {});
+      await sleep(3000);
+    }
+  }
+  // Then let it finish applying these settings before anything is checked or searched.
+  await waitUntilConfigured(d);
 }
 
 /**
