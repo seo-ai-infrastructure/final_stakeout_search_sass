@@ -8,7 +8,7 @@
  * serp.xml, final.xml, meta.txt, video.mp4, status=done.
  */
 export const OBSERVE_SH = `#!/system/bin/sh
-# observe v3
+# observe v4
 SCAN=$1; PIN=$2; MAXS=$3; RUN=$4
 [ -n "$MAXS" ] || MAXS=420
 T=/sdcard/stakeout
@@ -33,11 +33,13 @@ n=0
 if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
   [ -s "$T/$RUN"_serp.xml ] && cp "$T/$RUN"_serp.xml "$D/dump_$n.xml" && n=$((n+1))
   cp "$T/$RUN"_finder.xml "$D/dump_$n.xml" && n=$((n+1))
-  # Top of results (ads + AI Overview) and the expanded AI Overview feed the AI reader.
-  [ -s "$T/$RUN"_top.xml ] && cp "$T/$RUN"_top.xml "$D/aio_initial.xml"
-  [ -s "$T/$RUN"_ai.xml ] && cp "$T/$RUN"_ai.xml "$D/aio_expanded.xml"
-  # Screenshots: top of results, expanded AI Overview, the 3-pack, first screen of the Local Finder.
-  for k in top ai pack finder; do [ -s "$T/$RUN"_"$k".png ] && cp "$T/$RUN"_"$k".png "$D/shot_$k.png"; done
+  # AI Overview: collapsed (inside the results page) and, when the template expanded it, the full view.
+  [ -s "$T/$RUN"_serp.xml ] && cp "$T/$RUN"_serp.xml "$D/aio_initial.xml"
+  [ -s "$T/$RUN"_aio.xml ] && cp "$T/$RUN"_aio.xml "$D/aio_expanded.xml"
+  # Screenshots: the full AI Overview, and the tracked business visible on the results page / in the Local Finder.
+  [ -s "$T/$RUN"_aio.png ] && cp "$T/$RUN"_aio.png "$D/shot_ai.png"
+  [ -s "$T/$RUN"_pack_target.png ] && cp "$T/$RUN"_pack_target.png "$D/shot_pack.png"
+  [ -s "$T/$RUN"_finder_target.png ] && cp "$T/$RUN"_finder_target.png "$D/shot_finder.png"
   echo "evidence=template" >> "$D/meta.txt"
 else
 echo "evidence=observer_pass" >> "$D/meta.txt"

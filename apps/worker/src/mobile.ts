@@ -618,6 +618,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         surface: app[scan.targetType] as RpaSurface,
         keyword: scan.keyword,
         pinId: tag,
+        businessName: scan.targetBusiness,
         name: 'stakeout-' + p.id + '-' + tagBase,
         timeoutMs: rpaSecs * 1000,
         doneCheck: async () => (await shell(d, `test -f /sdcard/stakeout/${tag}.done && echo y`).catch(() => '')).trim() === 'y',

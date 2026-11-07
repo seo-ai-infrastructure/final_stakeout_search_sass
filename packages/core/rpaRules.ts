@@ -48,10 +48,18 @@ export function pickKeywordKey(vars: TemplateVar[]): string | null {
  * Every template variable for one run: the template's own defaults, with the keyword
  * and the run's pin_id filled in (DuoPlus may require all required variables).
  */
-export function buildTaskConfig(vars: TemplateVar[], keywordKey: string, keyword: string, pinId: string) {
+export function buildTaskConfig(
+  vars: TemplateVar[],
+  keywordKey: string,
+  keyword: string,
+  pinId: string,
+  businessName = '',
+) {
   const cfg: Record<string, { key: string; value: unknown; type: string; required: boolean }> = {};
   for (const v of vars) {
-    const value = v.key === keywordKey ? keyword : v.key === 'pin_id' ? pinId : v.value ?? '';
+    // business_name is only used for screenshots when the business is visible; the template never taps it.
+    const value =
+      v.key === keywordKey ? keyword : v.key === 'pin_id' ? pinId : v.key === 'business_name' && businessName ? businessName : v.value ?? '';
     cfg[v.key] = { key: v.key, value, type: v.type || 'string', required: v.required };
   }
   if (!cfg[keywordKey]) cfg[keywordKey] = { key: keywordKey, value: keyword, type: 'string', required: true };

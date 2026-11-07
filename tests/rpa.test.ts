@@ -55,3 +55,13 @@ test('rpa: template variables are found even when nested or JSON-encoded', () =>
   assert.equal(extractTemplateVars({ info: { detail: { config: v } } })[0].key, 'keyword');
   assert.deepEqual(extractTemplateVars({ nothing: true }), []);
 });
+
+test('rpa: the tracked business is passed to the template as business_name', () => {
+  const vars = [
+    { key: 'keyword', type: 'string', required: true, desc: '', value: 'x' },
+    { key: 'pin_id', type: 'string', required: true, desc: '', value: 'p' },
+    { key: 'business_name', type: 'string', required: true, desc: '', value: 'McIntyre Painting' },
+  ];
+  assert.equal(buildTaskConfig(vars, 'keyword', 'kw', 'run1', 'Steinger, Greene & Feiner').business_name.value, 'Steinger, Greene & Feiner');
+  assert.equal(buildTaskConfig(vars, 'keyword', 'kw', 'run1').business_name.value, 'McIntyre Painting');
+});

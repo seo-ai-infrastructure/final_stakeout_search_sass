@@ -119,6 +119,8 @@ export async function runRpaSearch(opts: {
   keyword: string;
   /** Names the template's files on the phone (/sdcard/stakeout/<pinId>_*.xml, <pinId>.done). */
   pinId: string;
+  /** The scan's tracked business, for the template's "business visible" screenshots. */
+  businessName?: string;
   name: string;
   timeoutMs: number;
   onStarted?: () => void;
@@ -136,7 +138,7 @@ export async function runRpaSearch(opts: {
       {
         image_id: opts.imageId,
         issue_at: formatServerTime(Date.now(), serverOffsetMin),
-        config: buildTaskConfig(t.vars, t.keywordKey, opts.keyword, opts.pinId),
+        config: buildTaskConfig(t.vars, t.keywordKey, opts.keyword, opts.pinId, opts.businessName),
       },
     ],
   });
