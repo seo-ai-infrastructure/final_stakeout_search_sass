@@ -164,6 +164,12 @@ export function NewScanWizard() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const previewMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const [mapState, setMapState] = useState<'loading' | 'ready' | 'error'>('loading');
+  type Place = { label: string; sub: string; lat: number; lng: number; businessId?: string };
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [placeIdx, setPlaceIdx] = useState(-1);
+  const [searchNote, setSearchNote] = useState('');
+  const typedRef = useRef(false);
   // 1. Load Authenticated User via /api/user/me
   useEffect(() => {
     async function loadUser() {
@@ -254,18 +260,28 @@ export function NewScanWizard() {
         attributionControl: { compact: true },
       });
     } catch {
-      setErrorMsg(
-        'Map unavailable. Search for a location or enter the center coordinates.',
-      );
+      setMapState('error');
       return;
     }
-    map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', (e) => {
       setCenterLat(Number(e.lngLat.lat.toFixed(6)));
       setCenterLng(Number(e.lngLat.lng.toFixed(6)));
     });
+    map.on('load', () => {
+      setMapState('ready');
+      map.resize();
+    });
+    map.on('error', () => {
+      if (!map.isStyleLoaded()) setMapState('error');
+    });
+    // The panel can still be 0×0 when the map starts (a blank, black map): follow its size.
+    const el = mapContainerRef.current;
+    const ro = new ResizeObserver(() => map.resize());
+    ro.observe(el);
     mapRef.current = map;
     return () => {
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
     };
@@ -308,31 +324,85 @@ export function NewScanWizard() {
       map.fitBounds(bounds, { padding: 65, maxZoom: 14, duration: 400 });
     }
   }, [previewPoints]);
+  async function findPlaces(q: string): Promise<Place[]> {
+    const needle = q.toLowerCase();
+    const mine: Place[] = saved
+      .filter((b) => b.name.toLowerCase().includes(needle) || b.centerLabel.toLowerCase().includes(needle))
+      .slice(0, 3)
+      .map((b) => ({ label: b.name, sub: 'Saved business · ' + (b.centerLabel || 'saved centre'), lat: b.centerLat, lng: b.centerLng, businessId: b.id }));
+    let found: Place[] = [];
+    try {
+      const r = await fetch(
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8&lang=en&lat=${centerLat}&lon=${centerLng}`,
+      );
+      const d = await r.json();
+      found = (d.features ?? [])
+        .filter((f: any) => f.properties?.countrycode === 'US')
+        .slice(0, 6)
+        .map((f: any) => {
+          const p = f.properties;
+          const street = [p.housenumber, p.street].filter(Boolean).join(' ');
+          return {
+            label: p.name || street || p.city || p.postcode || q,
+            sub: [p.name && street, p.city || p.county, [p.state, p.postcode].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+            lat: Number(f.geometry.coordinates[1]),
+            lng: Number(f.geometry.coordinates[0]),
+          };
+        });
+    } catch {
+      setSearchNote('Place search is unavailable right now. Click the map to set the centre.');
+    }
+    return [...mine, ...found];
+  }
+  function choosePlace(p: Place) {
+    const b = p.businessId && saved.find((x) => x.id === p.businessId);
+    if (b) applyBusiness(b);
+    else {
+      setCenterLat(Number(p.lat.toFixed(6)));
+      setCenterLng(Number(p.lng.toFixed(6)));
+      setAddressQuery(p.sub ? p.label + ', ' + p.sub : p.label);
+    }
+    typedRef.current = false;
+    setPlaces([]);
+    setPlaceIdx(-1);
+    setSearchNote('');
+    mapRef.current?.flyTo({ center: [p.lng, p.lat], zoom: 12, duration: 600 });
+  }
+  // Suggestions while typing (debounced); never for text filled in by a saved business.
+  useEffect(() => {
+    const q = addressQuery.trim();
+    if (!typedRef.current || q.length < 3) {
+      setPlaces([]);
+      return;
+    }
+    let live = true;
+    const t = setTimeout(async () => {
+      setIsGeocoding(true);
+      const list = await findPlaces(q);
+      if (!live) return;
+      setIsGeocoding(false);
+      setPlaces(list);
+      setPlaceIdx(list.length ? 0 : -1);
+      setSearchNote(
+        list.length ? '' : `No place matches “${q}”. Small businesses are often missing from map data: try its street address, city or ZIP, or click the map.`,
+      );
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addressQuery]);
   async function handleGeocodeSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!addressQuery.trim()) return;
+    const q = addressQuery.trim();
+    if (!q) return;
+    if (places.length) return choosePlace(places[Math.max(0, placeIdx)]);
     setIsGeocoding(true);
-    setErrorMsg(null);
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=${encodeURIComponent(
-          addressQuery,
-        )}`,
-      );
-      const results = await res.json();
-      if (Array.isArray(results) && results.length > 0) {
-        setCenterLat(Number(Number(results[0].lat).toFixed(6)));
-        setCenterLng(Number(Number(results[0].lon).toFixed(6)));
-      } else {
-        setErrorMsg(
-          'Address not found. Click directly on the map to position pins.',
-        );
-      }
-    } catch {
-      setErrorMsg('Address lookup failed.');
-    } finally {
-      setIsGeocoding(false);
-    }
+    const list = await findPlaces(q);
+    setIsGeocoding(false);
+    if (list.length) return choosePlace(list[0]);
+    setSearchNote(`No place matches “${q}”. Small businesses are often missing from map data: try its street address, city or ZIP, or click the map.`);
   }
   async function handleLaunchScan(e: React.FormEvent) {
     e.preventDefault();
@@ -402,10 +472,10 @@ export function NewScanWizard() {
           <div className="flex items-center justify-between border-b border-slate-800 pb-4">
             <div>
               <h1 className="text-lg font-extrabold text-white">
-                Stakeout GeoGrid Launcher
+                New scan
               </h1>
               <p className="text-xs text-slate-400">
-                Real DuoPlus Cloud Phones • Residential ISP • AI Overviews
+                Real phones · local residential IPs · AI Overviews
               </p>
             </div>
             <button
@@ -432,7 +502,7 @@ export function NewScanWizard() {
           )}
           {/* Saved business: fills every field */}
           <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-3">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+            <label className="block text-sm font-semibold text-slate-200">
               Saved business
               <select
                 value={businessId}
@@ -470,7 +540,7 @@ export function NewScanWizard() {
           </div>
           {/* 1. Target App */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+            <label className="block text-sm font-semibold text-slate-200">
               1. Target Mobile App Surface
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -523,7 +593,7 @@ export function NewScanWizard() {
           {/* 2. Search Query & Business Name */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <label className="block text-sm font-semibold text-slate-200">
                 2A. Exact Business Name (GBP)
               </label>
               <input
@@ -536,7 +606,7 @@ export function NewScanWizard() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <label className="block text-sm font-semibold text-slate-200">
                 2B. Search Query
               </label>
               <input
@@ -552,7 +622,7 @@ export function NewScanWizard() {
           {/* 4. Size of Map Grid & Spacing */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <label className="block text-sm font-semibold text-slate-200">
                 4. Grid Matrix Size
               </label>
               <select
@@ -568,7 +638,7 @@ export function NewScanWizard() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <label className="block text-sm font-semibold text-slate-200">
                 Pin Spacing
               </label>
               <select
@@ -621,7 +691,7 @@ export function NewScanWizard() {
           </div>
           {/* 8. Automation Schedule */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+            <label className="block text-sm font-semibold text-slate-200">
               6. Search Execution Schedule
             </label>
             <div className="grid grid-cols-3 gap-2">
@@ -734,10 +804,22 @@ export function NewScanWizard() {
             <MapPin className="ml-3.5 h-4 w-4 shrink-0 text-emerald-400" />
             <input
               type="text"
-              placeholder="Search address, city, or ZIP to center grid..."
+              role="combobox"
+              aria-expanded={places.length > 0}
+              aria-controls="place-suggestions"
+              aria-label="Search a saved business, address, city or ZIP"
+              placeholder="Search a saved business, address, city or ZIP…"
               value={addressQuery}
-              onChange={(e) => setAddressQuery(e.target.value)}
-              className="w-full bg-transparent px-3 py-2.5 text-xs text-white placeholder-slate-400 focus:outline-none"
+              onChange={(e) => {
+                typedRef.current = true;
+                setAddressQuery(e.target.value);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'ArrowDown' && places.length) { e.preventDefault(); setPlaceIdx((i) => (i + 1) % places.length); }
+                if (e.key === 'ArrowUp' && places.length) { e.preventDefault(); setPlaceIdx((i) => (i - 1 + places.length) % places.length); }
+                if (e.key === 'Escape') setPlaces([]);
+              }}
+              className="w-full bg-transparent px-3 py-3 text-sm text-white placeholder-slate-400 focus:outline-none"
             />
             <button
               type="submit"
@@ -747,8 +829,49 @@ export function NewScanWizard() {
               {isGeocoding ? '...' : <Search className="h-4 w-4" />}
             </button>
           </form>
+          {places.length > 0 && (
+            <ul id="place-suggestions" role="listbox" className="mt-2 overflow-hidden rounded-xl border border-slate-700 bg-slate-900/95 shadow-2xl backdrop-blur">
+              {places.map((p, i) => (
+                <li key={p.label + p.sub + i} role="option" aria-selected={i === placeIdx}>
+                  <button
+                    type="button"
+                    onMouseEnter={() => setPlaceIdx(i)}
+                    onClick={() => choosePlace(p)}
+                    className={`flex w-full flex-col items-start px-3.5 py-2.5 text-left ${i === placeIdx ? 'bg-slate-800' : ''}`}
+                  >
+                    <span className="text-sm font-semibold text-white">{p.label}</span>
+                    {p.sub && <span className={`text-xs ${p.businessId ? 'text-emerald-300' : 'text-slate-400'}`}>{p.sub}</span>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {searchNote && !places.length && (
+            <p role="status" className="mt-2 rounded-xl border border-slate-700 bg-slate-900/95 px-3.5 py-2.5 text-xs leading-relaxed text-slate-300 shadow-2xl">
+              {searchNote}
+            </p>
+          )}
         </div>
         <div ref={mapContainerRef} className="absolute inset-0" />
+        {mapState !== 'ready' && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+            <p className="rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-sm text-slate-300">
+              {mapState === 'error'
+                ? 'The map couldn’t load. You can still search a place above or type the centre coordinates.'
+                : 'Loading map…'}
+            </p>
+          </div>
+        )}
+        <div className="pointer-events-none absolute bottom-5 left-5 z-20 max-w-sm rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 shadow-2xl backdrop-blur">
+          <p className="text-sm font-bold text-white">
+            {gridSize}×{gridSize} grid · {(spacingKm / 1.60934).toFixed(spacingKm % 1.60934 === 0 ? 0 : 1)} mi spacing
+          </p>
+          <p className="mt-0.5 text-xs text-slate-400">
+            Centre {centerLat.toFixed(5)}, {centerLng.toFixed(5)}
+            {detectedCity ? ' · ' + detectedCity + ', ' + detectedState + ' ' + detectedZip : ''}
+          </p>
+          <p className="mt-1 text-[11px] text-emerald-300">Click the map or drag ★ to move the grid.</p>
+        </div>
       </div>
       <CreditTopUpModal
         isOpen={isTopUpOpen}
