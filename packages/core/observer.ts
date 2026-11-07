@@ -9,8 +9,9 @@
  */
 export const OBSERVE_SH = `#!/system/bin/sh
 # observe v1
-SCAN=$1; PIN=$2; MAXS=$3
+SCAN=$1; PIN=$2; MAXS=$3; RUN=$4
 [ -n "$MAXS" ] || MAXS=420
+T=/sdcard/stakeout
 RT=/data/local/tmp/rt
 D="$RT/$SCAN"_"$PIN"
 mkdir -p "$D"; rm -f "$D"/*
@@ -20,14 +21,22 @@ X=$((W/2)); SW=$((W/4*2)); SH=$((H/4*2))
 screenrecord --size "$SW"x"$SH" --bit-rate 1200000 --time-limit 180 "$D/video.mp4" >/dev/null 2>&1 &
 REC=$!
 T0=$(date +%s); echo "rec_start=$T0" >> "$D/meta.txt"
-# Hands off while the template runs.
-while [ ! -f "$D/stop" ]; do
+# Hands off while the template runs (it ends by writing $T/$RUN.done).
+while [ ! -f "$D/stop" ] && [ ! -f "$T/$RUN.done" ]; do
   [ $(( $(date +%s) - T0 )) -ge "$MAXS" ] && break
   sleep 1
 done
 echo "rpa_end_t=$(( $(date +%s) - T0 ))" >> "$D/meta.txt"
 sleep 1
-# Read-only results pass: to the top of the list, then down to the footer.
+n=0
+# The template saves the results page and the full business list itself: use those.
+if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
+  [ -s "$T/$RUN"_serp.xml ] && cp "$T/$RUN"_serp.xml "$D/dump_$n.xml" && n=$((n+1))
+  cp "$T/$RUN"_finder.xml "$D/dump_$n.xml" && n=$((n+1))
+  echo "evidence=template" >> "$D/meta.txt"
+else
+echo "evidence=observer_pass" >> "$D/meta.txt"
+# Fallback read-only pass: to the top of the list, then down to the footer.
 i=0
 while [ $i -lt 6 ]; do input swipe $X $((H*30/100)) $X $((H*80/100)) 250; sleep 0.4; i=$((i+1)); done
 sleep 1.2
@@ -40,6 +49,8 @@ while [ $s -lt 14 ]; do
   uiautomator dump "$D/dump_$n.xml" >/dev/null 2>&1 && n=$((n+1))
   s=$((s+1))
 done
+fi
+[ -n "$RUN" ] && rm -f "$T/$RUN"_serp.xml "$T/$RUN"_finder.xml "$T/$RUN".done
 kill -INT $REC 2>/dev/null; wait $REC 2>/dev/null
 L=$((n-1))
 [ $L -ge 0 ] && cp "$D/dump_$L.xml" "$D/final.xml"

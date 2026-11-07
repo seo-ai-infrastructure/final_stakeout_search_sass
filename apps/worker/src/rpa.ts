@@ -13,6 +13,8 @@
  */
 import { duoplusPost } from '@stakeout/core/redis';
 import {
+  buildTaskConfig,
+  extractTemplateVars,
   formatServerTime,
   learnServerOffset,
   pickKeywordKey,
@@ -42,13 +44,10 @@ async function listUserTemplates(): Promise<{ id: string; name: string }[]> {
 
 async function templateVars(id: string): Promise<TemplateVar[]> {
   const res = await duoplusPost('/api/v1/automation/userTemplateInfo', { id });
-  const cfg: any[] = res?.data?.config ?? [];
-  return cfg.map((c) => ({
-    key: String(c.key ?? ''),
-    type: String(c.type ?? 'string'),
-    required: Boolean(c.required),
-    desc: String(c.desc ?? ''),
-  }));
+  const vars = extractTemplateVars(res?.data);
+  if (!vars.length)
+    console.warn('[rpa] template', id, 'returned no variables; response fields:', Object.keys(res?.data ?? {}).join(', ').slice(0, 200));
+  return vars;
 }
 
 /** The template for a surface (env id, else by name), with the variable that takes the keyword. */
@@ -118,13 +117,16 @@ export async function runRpaSearch(opts: {
   imageId: string;
   surface: RpaSurface;
   keyword: string;
+  /** Names the template's files on the phone (/sdcard/stakeout/<pinId>_*.xml, <pinId>.done). */
+  pinId: string;
   name: string;
   timeoutMs: number;
   onStarted?: () => void;
+  /** True once the template's own "done" file exists: finish without waiting for DuoPlus's status. */
+  doneCheck?: () => Promise<boolean>;
 }) {
   const t = await rpaTemplate(opts.surface);
   if (!t.keywordKey) throw new Error('RPA_NO_KEYWORD_VARIABLE in template ' + t.name + ' (set DUOPLUS_RPA_KEYWORD_KEY)');
-  const kw = t.vars.find((v) => v.key === t.keywordKey);
   await duoplusPost('/api/v1/automation/addTask', {
     template_id: t.id,
     template_type: 2,
@@ -134,7 +136,7 @@ export async function runRpaSearch(opts: {
       {
         image_id: opts.imageId,
         issue_at: formatServerTime(Date.now(), serverOffsetMin),
-        config: { [t.keywordKey]: { key: t.keywordKey, value: opts.keyword, type: kw?.type ?? 'string', required: true } },
+        config: buildTaskConfig(t.vars, t.keywordKey, opts.keyword, opts.pinId),
       },
     ],
   });
@@ -166,6 +168,8 @@ export async function runRpaSearch(opts: {
         opts.onStarted?.();
       }
       if (task.status === 3) return task.id;
+      // The template writes <pin_id>.done as its last step: that is the end of the search.
+      if (task.status === 1 && opts.doneCheck && (await opts.doneCheck().catch(() => false))) return task.id;
       if (task.status === 4 || task.status === 5) {
         const why = await failureDetail(task.id);
         throw new Error('RPA_TASK_FAILED ' + (task.status === 5 ? 'cancelled' : why || 'failed').slice(0, 200));

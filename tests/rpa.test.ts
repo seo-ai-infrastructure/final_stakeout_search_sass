@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatServerTime, learnServerOffset, pickKeywordKey, pickTemplate } from '../packages/core/rpaRules';
+import { buildTaskConfig, extractTemplateVars, formatServerTime, learnServerOffset, pickKeywordKey, pickTemplate } from '../packages/core/rpaRules';
 
 test('rpa: task times are written on DuoPlus clock', () => {
   const t = Date.UTC(2026, 10, 7, 16, 5, 9);
@@ -34,4 +34,24 @@ test('rpa: finds the keyword variable by name, or the only text variable', () =>
   assert.equal(pickKeywordKey([{ key: 'text1', type: 'textarea', required: true, desc: 'Search keyword' }, { key: 'x', type: 'string', required: false, desc: '' }]), 'text1');
   assert.equal(pickKeywordKey([{ key: 'only', type: 'string', required: true, desc: '' }]), 'only');
   assert.equal(pickKeywordKey([{ key: 'a', type: 'string', required: false, desc: '' }, { key: 'b', type: 'string', required: false, desc: '' }]), null);
+});
+
+test('rpa: a run sends every template variable, with the keyword and pin_id filled in', () => {
+  const vars = [
+    { key: 'keyword', type: 'string', required: true, desc: '', value: 'default kw' },
+    { key: 'pin_id', type: 'string', required: true, desc: '', value: 'test_1_1' },
+    { key: 'mb_text', type: 'string', required: true, desc: '', value: 'More businesses' },
+  ];
+  const cfg = buildTaskConfig(vars, 'keyword', 'painting contractors', 'ab12_3_4');
+  assert.equal(cfg.keyword.value, 'painting contractors');
+  assert.equal(cfg.pin_id.value, 'ab12_3_4');
+  assert.equal(cfg.mb_text.value, 'More businesses');
+});
+
+test('rpa: template variables are found even when nested or JSON-encoded', () => {
+  const v = [{ key: 'keyword', type: 'string', required: true, value: 'x' }];
+  assert.equal(extractTemplateVars({ config: v })[0].key, 'keyword');
+  assert.equal(extractTemplateVars({ template: { config: JSON.stringify(v) } })[0].key, 'keyword');
+  assert.equal(extractTemplateVars({ info: { detail: { config: v } } })[0].key, 'keyword');
+  assert.deepEqual(extractTemplateVars({ nothing: true }), []);
 });

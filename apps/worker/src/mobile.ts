@@ -598,7 +598,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     await ensureObserverInstalled(d);
     await shell(
       d,
-      `nohup sh ${RT_DIR}/observe.sh ${shellQuote(tagBase)} ${shellQuote(point)} ${rpaSecs + 60} >${RT_DIR}/last_run.log 2>&1 & echo $! > ${pidFile}`,
+      `nohup sh ${RT_DIR}/observe.sh ${shellQuote(tagBase)} ${shellQuote(point)} ${rpaSecs + 60} ${shellQuote(tag)} >${RT_DIR}/last_run.log 2>&1 & echo $! > ${pidFile}`,
     );
   } else {
     // One command starts the capture in the background and records its PID.
@@ -617,8 +617,10 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         imageId: d.imageId,
         surface: app[scan.targetType] as RpaSurface,
         keyword: scan.keyword,
+        pinId: tag,
         name: 'stakeout-' + p.id + '-' + tagBase,
         timeoutMs: rpaSecs * 1000,
+        doneCheck: async () => (await shell(d, `test -f /sdcard/stakeout/${tag}.done && echo y`).catch(() => '')).trim() === 'y',
       });
     } finally {
       // Template finished (or failed): the recorder now reads the results list and stops.

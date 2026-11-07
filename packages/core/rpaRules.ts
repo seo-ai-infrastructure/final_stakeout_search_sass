@@ -1,6 +1,6 @@
 /** Pure rules for running the search step through DuoPlus RPA templates. */
 export type RpaSurface = 'chrome' | 'maps' | 'google';
-export type TemplateVar = { key: string; type: string; required: boolean; desc: string };
+export type TemplateVar = { key: string; type: string; required: boolean; desc: string; value?: unknown };
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -42,4 +42,54 @@ export function pickKeywordKey(vars: TemplateVar[]): string | null {
   const named = texty.find((v) => /keyword|query|search|term|关键|kw/i.test(v.key + ' ' + v.desc));
   if (named) return named.key;
   return texty.length === 1 ? texty[0].key : null;
+}
+
+/**
+ * Every template variable for one run: the template's own defaults, with the keyword
+ * and the run's pin_id filled in (DuoPlus may require all required variables).
+ */
+export function buildTaskConfig(vars: TemplateVar[], keywordKey: string, keyword: string, pinId: string) {
+  const cfg: Record<string, { key: string; value: unknown; type: string; required: boolean }> = {};
+  for (const v of vars) {
+    const value = v.key === keywordKey ? keyword : v.key === 'pin_id' ? pinId : v.value ?? '';
+    cfg[v.key] = { key: v.key, value, type: v.type || 'string', required: v.required };
+  }
+  if (!cfg[keywordKey]) cfg[keywordKey] = { key: keywordKey, value: keyword, type: 'string', required: true };
+  return cfg;
+}
+
+/** Finds a template's variable list wherever DuoPlus puts it in a response (config may be nested or a JSON string). */
+export function extractTemplateVars(data: unknown): TemplateVar[] {
+  const seen = new Set<unknown>();
+  const visit = (o: unknown): TemplateVar[] | null => {
+    if (typeof o === 'string' && o.trim().startsWith('[')) {
+      try {
+        return visit(JSON.parse(o));
+      } catch {
+        return null;
+      }
+    }
+    if (!o || typeof o !== 'object' || seen.has(o)) return null;
+    seen.add(o);
+    if (Array.isArray(o)) {
+      if (o.length && o.every((c) => c && typeof c === 'object' && 'key' in c && 'type' in c))
+        return o.map((c: any) => ({ key: String(c.key), type: String(c.type ?? 'string'), required: Boolean(c.required), desc: String(c.desc ?? ''), value: c.value }));
+      for (const v of o) {
+        const r = visit(v);
+        if (r) return r;
+      }
+      return null;
+    }
+    const rec = o as Record<string, unknown>;
+    if ('config' in rec) {
+      const r = visit(rec.config);
+      if (r) return r;
+    }
+    for (const v of Object.values(rec)) {
+      const r = visit(v);
+      if (r) return r;
+    }
+    return null;
+  };
+  return visit(data) ?? [];
 }
