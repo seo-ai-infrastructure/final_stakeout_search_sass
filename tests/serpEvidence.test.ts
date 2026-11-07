@@ -1,0 +1,50 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { untarGz, readResultsPage, readLocalFinder, rankIn, sameBusiness, parseCard } from '../packages/core/serpEvidence';
+
+const fx = (f: string) => readFileSync(new URL('./fixtures/' + f, import.meta.url));
+
+test('evidence: a real bundle unpacks to its video and both snapshots', () => {
+  const files = untarGz(fx('mini-bundle.tar.gz'));
+  const names = [...files.keys()];
+  for (const f of ['video.mp4', 'serp.xml', 'final.xml']) assert.ok(names.some((n) => n.endsWith('/' + f)), f);
+  const serp = [...files].find(([n]) => n.endsWith('/serp.xml'))![1].toString('utf8');
+  assert.equal(serp, fx('real-r3c2-serp.xml').toString('utf8'));
+});
+
+test('evidence: the real results page, in Google order, ads labelled and unranked', () => {
+  const p = readResultsPage(fx('real-r3c2-serp.xml').toString('utf8'));
+  assert.equal(p.location, 'Mt. Juliet, TN');
+  assert.equal(p.googleLocation, 'Mt. Juliet, Tennessee - From your device');
+  assert.equal(p.localServicesAds.title, 'Painters | Mt. Juliet');
+  assert.deepEqual(p.localServicesAds.listings.map((l) => [l.name, l.ad]), [['Those Guys Painting Co', true], ['PaintPro LLC', true], ['A1 Painting LLC', true]]);
+  assert.deepEqual(p.pack.map((l) => [l.name, l.ad, l.pos]), [
+    ["Hunter's Painting", true, null],
+    ['Steve And Son Painting', false, 1],
+    ['McIntyre Painting', false, 2],
+    ['Mount Juliet Painting', false, 3],
+  ]);
+  const mc = p.pack.find((l) => l.name === 'McIntyre Painting')!;
+  assert.equal(mc.rating, '5.0'); assert.equal(mc.reviews, '53'); assert.match(mc.quote ?? '', /quality of the/);
+  assert.equal(p.peopleAlsoSearch.length, 6);
+  assert.equal(p.web[0].site, 'CertaPro Painters');
+  assert.ok(p.web.some((w) => w.ad && /Nashville Painting Company/.test(w.title)), 'sponsored web result');
+  assert.equal(rankIn(p.pack, 'McIntyre Painting'), 2);
+});
+
+test('evidence: the real Local Finder keeps an advertiser that also ranks organically', () => {
+  const f = readLocalFinder(fx('real-r3c2-finder.xml').toString('utf8'));
+  assert.equal(f.filter((l) => l.ad).length, 4);
+  assert.equal(f.filter((l) => !l.ad).length, 10);
+  assert.deepEqual(f.filter((l) => l.ad).map((l) => l.name), ['Those Guys Painting Co', "Hunter's Painting", 'A1 Painting LLC', 'Nashville Painting Company']);
+  assert.equal(rankIn(f, 'McIntyre Painting'), 2);
+  assert.equal(rankIn(f, 'Those Guys Painting Co'), 5, 'the organic copy is kept, not deduped against its ad');
+});
+
+test('evidence: business names match across LLC, Inc, & and punctuation', () => {
+  assert.ok(sameBusiness('Painters Tennessee, LLC', 'painters tennessee'));
+  assert.ok(sameBusiness('Steinger, Greene & Feiner', 'Steinger Greene and Feiner'));
+  assert.ok(!sameBusiness('McIntyre Painting', 'Mount Juliet Painting'));
+  assert.equal(parseCard('Plain text without a rating'), null);
+});

@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { EvidencePanel } from './EvidencePanel';
 import Link from 'next/link';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -68,6 +69,7 @@ export function GeoGridDashboard({
     [share, setShare] = useState(''),
     [projected, project] = useState<CompetitorMarketStat | null>(null),
     [mapWarning, setMapWarning] = useState('');
+  const [tab, setTab] = useState<'overview' | 'evidence'>('overview');
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null);
   useEffect(() => {
@@ -244,16 +246,34 @@ export function GeoGridDashboard({
           ],
         ].map(([label, n, unit]) => (
           <div
-            className="rounded-lg border border-slate-800 bg-slate-900 p-3"
+            className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"
             key={label}
           >
-            <div className="text-xs text-slate-400">{label}</div>
-            <strong className="text-2xl">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
+            <strong className="mt-1 block text-3xl font-extrabold tracking-tight">
               {n == null ? '—' : String(n) + unit}
             </strong>
           </div>
         ))}
       </div>
+      <nav aria-label="Report sections" className="flex gap-1 border-b border-slate-800">
+        {([['overview', 'Overview'], ['evidence', 'Evidence']] as const).map(([k, label]) => (
+          <button
+            key={k}
+            type="button"
+            onClick={() => setTab(k)}
+            aria-current={tab === k ? 'page' : undefined}
+            className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold ${tab === k ? 'border-emerald-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+          >
+            {label}
+            {k === 'evidence' && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">NEW</span>}
+          </button>
+        ))}
+      </nav>
+      {tab === 'evidence' && (
+        <EvidencePanel scan={scan} selected={selected} onSelect={select} shareToken={shared ? identifier : undefined} />
+      )}
+      <div className={tab === 'overview' ? 'space-y-5' : 'hidden'}>
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div>
           <p className="mb-2 text-sm text-slate-300">
@@ -348,6 +368,7 @@ export function GeoGridDashboard({
         activeProjectedBusiness={projected?.normalizedKey}
         onSelectCompetitorForMap={project}
       />
+      </div>
     </div>
   );
 }
