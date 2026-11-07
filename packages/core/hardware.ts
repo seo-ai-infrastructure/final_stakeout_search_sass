@@ -68,11 +68,15 @@ export function acceptedModels(profileModel: string, env: Settings = process.env
   return new Set<string>();
 }
 
+/** Scans no longer pick a phone model: every scan runs on whichever phone is free. */
+export const ANY_PHONE = 'Any';
+
 export function deviceMatchesProfile(
   device: { hardwareModel: string | null },
   profileModel: string,
   env: Settings = process.env,
 ) {
+  if (!profileModel || profileModel === ANY_PHONE) return true;
   return !!device.hardwareModel && acceptedModels(profileModel, env).has(norm(device.hardwareModel));
 }
 

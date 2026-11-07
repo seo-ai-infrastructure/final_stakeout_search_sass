@@ -32,10 +32,15 @@ test('invalid surfaces, coordinates, hardware and even-sized grids fail closed',
   for (const patch of [
     { gridSize: 4 },
     { centerLat: NaN },
-    { phoneModel: 'unregistered-model' },
     { targetType: 'bogus' },
   ])
     assert.throws(() => parseSpec({ ...spec, ...patch }));
+});
+test('scans no longer choose a phone: any brand/model input is ignored and stored as Any', () => {
+  const s = parseSpec({ ...spec, phoneBrand: 'Google', phoneModel: 'Pixel 8 Pro' });
+  assert.equal(s.phoneBrand, 'Any');
+  assert.equal(s.phoneModel, 'Any');
+  assert.doesNotThrow(() => parseSpec({ ...spec, phoneModel: 'unregistered-model' }));
 });
 test('schedules use UTC and campaign comparisons preserve geometry', () => {
   assert.equal(scheduleCron('daily'), '0 13 * * *');

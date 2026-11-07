@@ -2,7 +2,7 @@ import { phoneUsable, phoneInScope, expiresWithin, adbWhitelist, PHONE_STATUS } 
 import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { redis, duoplusPost } from '@stakeout/core/redis';
-import { deviceMatchesProfile, leasableDeviceWhere } from '@stakeout/core/hardware';
+import { leasableDeviceWhere } from '@stakeout/core/hardware';
 import { isDeviceAttributable, nextOutcomes, pauseReason } from '@stakeout/core/fleetHealth';
 import { RUN_PIN_SH_V2 } from '@stakeout/core/runner';
 import { push, shell } from './deviceShell';
@@ -292,7 +292,9 @@ async function leaseCandidates(phoneModel: string) {
     where: leasableDeviceWhere,
     orderBy: { slotIndex: 'asc' },
   });
-  return devices.filter((d) => deviceMatchesProfile(d, phoneModel));
+  // Scans no longer choose a phone model: any healthy phone in the fleet takes the point.
+  void phoneModel;
+  return devices;
 }
 
 export type LeaseResult =

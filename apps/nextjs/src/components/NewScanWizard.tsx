@@ -19,7 +19,6 @@ import {
 } from 'lucide-react';
 import { IspSelectorDropdown, type IspMode, type IspOption } from '@/components/IspSelectorDropdown';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
-import { phoneModels as PHONE_MODELS } from '@stakeout/core/hardware';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';
 const GRID_SIZES = [
@@ -43,8 +42,6 @@ export function NewScanWizard() {
   const [targetBusiness, setTargetBusiness] = useState('');
   const [centerLat, setCenterLat] = useState<number>(28.039465);
   const [centerLng, setCenterLng] = useState<number>(-81.949804);
-  const [phoneBrand, setPhoneBrand] = useState<string>('Samsung');
-  const [phoneModel, setPhoneModel] = useState<string>('Galaxy S23 Ultra');
   const [gridSize, setGridSize] = useState<number>(7);
   const [spacingKm, setSpacingKm] = useState<number>(1.60934);
   const [trackAiOverviews, setTrackAiOverviews] = useState<boolean>(true);
@@ -59,8 +56,6 @@ export function NewScanWizard() {
   const [ispSelected, setIspSelected] = useState<string[]>([]);
   const [ispOptions, setIspOptions] = useState<IspOption[]>([]);
   const [ispLoading, setIspLoading] = useState(false);
-  // Models with at least one online phone; null until loaded.
-  const [onlineModels, setOnlineModels] = useState<Set<string> | null>(null);
   // Session & UI State
   const [userId, setUserId] = useState<string>('');
   const [creditBalance, setCreditBalance] = useState<number>(0);
@@ -88,19 +83,6 @@ export function NewScanWizard() {
       } catch {}
     }
     loadUser();
-    fetch('/api/fleet/profiles', { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!Array.isArray(d?.profiles)) return;
-        const models = new Set<string>(d.profiles.map((p: { model: string }) => p.model));
-        setOnlineModels(models);
-        const first = d.profiles[0] as { brand: string; model: string } | undefined;
-        if (first && !models.has('Galaxy S23 Ultra')) {
-          setPhoneBrand(first.brand);
-          setPhoneModel(first.model);
-        }
-      })
-      .catch(() => {});
   }, []);
   // 2. Auto-detect local ZIP/City/State when coordinates move
   useEffect(() => {
@@ -267,10 +249,6 @@ export function NewScanWizard() {
       setErrorMsg(ispMode === 'single' ? 'Choose an ISP, or switch to Any ISP.' : 'Choose at least 2 ISPs for a mix.');
       return;
     }
-    if (modelUnavailable) {
-      setErrorMsg('No ' + phoneModel + ' is online. Choose another phone model.');
-      return;
-    }
     if (!creditSummary.hasEnoughCredits) {
       setIsTopUpOpen(true);
       return;
@@ -293,8 +271,6 @@ export function NewScanWizard() {
           gridSize,
           spacingKm,
           targetType,
-          phoneBrand,
-          phoneModel,
           trackAiOverviews,
           scheduleType,
         }),
@@ -311,8 +287,6 @@ export function NewScanWizard() {
     }
   }
   const isDesktop = targetType === 'desktop_aimode';
-  const modelUnavailable =
-    !isDesktop && onlineModels !== null && !onlineModels.has(phoneModel);
   const aiAddonLabel =
     targetType === 'mobile_maps'
       ? 'Track "Ask Maps" Generative AI Cards (+1 Cr/Pin)'
@@ -434,66 +408,11 @@ export function NewScanWizard() {
               />
             </div>
           </div>
-          {/* 4 & 5. Brand & Model of Phone */}
+          {/* 4. Size of Map Grid & Spacing */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
-                4. Phone Brand
-              </label>
-              <select
-                value={phoneBrand}
-                onChange={(e) => {
-                  const b = e.target.value;
-                  const models = PHONE_MODELS[b] ?? [];
-                  setPhoneBrand(b);
-                  setPhoneModel(
-                    models.find((m) => !onlineModels || onlineModels.has(m)) ??
-                      models[0] ??
-                      'Galaxy S23 Ultra',
-                  );
-                }}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-              >
-                {Object.keys(PHONE_MODELS).map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
-                5. Phone Model
-              </label>
-              <select
-                value={phoneModel}
-                onChange={(e) => setPhoneModel(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-              >
-                {(PHONE_MODELS[phoneBrand] ?? []).map((m) => {
-                  const offline =
-                    !isDesktop && onlineModels !== null && !onlineModels.has(m);
-                  return (
-                    <option key={m} value={m} disabled={offline}>
-                      {m}
-                      {offline ? ' (no phone online)' : ''}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-            {modelUnavailable && (
-              <p className="col-span-2 text-[11px] text-amber-300">
-                No {phoneModel} is online. Scans only run on the exact phone you
-                choose, so pick a model that’s available.
-              </p>
-            )}
-          </div>
-          {/* 6. Size of Map Grid & Spacing */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
-                6. Grid Matrix Size
+                4. Grid Matrix Size
               </label>
               <select
                 value={gridSize}
@@ -544,7 +463,7 @@ export function NewScanWizard() {
               <div className="space-y-0.5 pr-3">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-purple-200">
                   <Sparkles className="h-4 w-4 text-purple-400" />
-                  7. {aiAddonLabel}
+                  5. {aiAddonLabel}
                 </div>
                 <div className="text-[11px] text-slate-400">
                   Capture the AI panel, its text, and visible sources at each
@@ -562,7 +481,7 @@ export function NewScanWizard() {
           {/* 8. Automation Schedule */}
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
-              8. Search Execution Schedule
+              6. Search Execution Schedule
             </label>
             <div className="grid grid-cols-3 gap-2">
               {[

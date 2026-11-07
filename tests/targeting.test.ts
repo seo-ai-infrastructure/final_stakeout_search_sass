@@ -67,6 +67,9 @@ test('hardware is matched to the requested profile only', () => {
   assert.ok(deviceMatchesProfile({ hardwareModel: ' pixel 5 ' }, 'Pixel 5', {}));
   assert.ok(!deviceMatchesProfile({ hardwareModel: 'Pixel 5' }, 'Galaxy S23 Ultra', {}));
   assert.ok(!deviceMatchesProfile({ hardwareModel: null }, 'Pixel 5', {}));
+  // Scans run on any free phone.
+  assert.ok(deviceMatchesProfile({ hardwareModel: 'Pixel 5' }, 'Any', {}));
+  assert.ok(deviceMatchesProfile({ hardwareModel: null }, 'Any', {}));
   assert.ok(
     deviceMatchesProfile({ hardwareModel: 'SM-S918N' }, 'Galaxy S23 Ultra', {
       HARDWARE_MODEL_ALIASES_JSON: '{"Galaxy S23 Ultra":["SM-S918N"]}',

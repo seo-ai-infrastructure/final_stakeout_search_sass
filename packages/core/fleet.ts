@@ -26,8 +26,5 @@ export async function assertFleetSupports(targetType: string, phoneModel: string
     select: { hardwareModel: true },
   });
   if (!devices.some((d) => deviceMatchesProfile(d, phoneModel)))
-    throw new InputError(
-      'No ' + phoneModel + ' is online right now. Choose another phone model.',
-      409,
-    );
+    throw new InputError('No phones are online right now. Please try again in a few minutes.', 409);
 }

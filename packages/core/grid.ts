@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import zipcodes from 'zipcodes';
-import { phoneModels } from './hardware';
+import { ANY_PHONE } from './hardware';
 
 export class InputError extends Error {
   constructor(
@@ -47,8 +47,9 @@ export function parseSpec(input: Record<string, unknown>) {
     throw new InputError('Invalid grid size, spacing or AI option.');
   const targetType = String(input.targetType ?? 'mobile_maps');
   const scheduleType = String(input.scheduleType ?? 'once');
-  const phoneBrand = String(input.phoneBrand ?? 'Samsung');
-  const phoneModel = String(input.phoneModel ?? 'Galaxy S23 Ultra');
+  // No phone choice: a scan runs on whichever phone in the fleet is free.
+  const phoneBrand = ANY_PHONE;
+  const phoneModel = ANY_PHONE;
   // ISP choice: "any", one ISP for every point, or a mix spread across the grid.
   const legacyIsp = String(input.ispId ?? 'ANY');
   const ispMode = String(input.ispMode ?? (legacyIsp !== 'ANY' && legacyIsp !== 'MIX' ? 'single' : 'any'));
@@ -74,11 +75,8 @@ export function parseSpec(input: Record<string, unknown>) {
     ].includes(targetType)
   )
     throw new InputError('Choose a supported Android surface.');
-  if (
-    !['once', 'daily', 'weekly'].includes(scheduleType) ||
-    !phoneModels[phoneBrand]?.includes(phoneModel)
-  )
-    throw new InputError('Invalid schedule, phone profile, or ISP.');
+  if (!['once', 'daily', 'weekly'].includes(scheduleType))
+    throw new InputError('Invalid schedule.');
   return {
     keyword: keyword.trim(),
     targetBusiness: targetBusiness.trim(),
