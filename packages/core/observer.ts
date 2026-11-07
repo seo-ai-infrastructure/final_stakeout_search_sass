@@ -8,7 +8,7 @@
  * serp.xml, final.xml, meta.txt, video.mp4, status=done.
  */
 export const OBSERVE_SH = `#!/system/bin/sh
-# observe v1
+# observe v2
 SCAN=$1; PIN=$2; MAXS=$3; RUN=$4
 [ -n "$MAXS" ] || MAXS=420
 T=/sdcard/stakeout
@@ -57,5 +57,7 @@ L=$((n-1))
 [ -f "$D/dump_0.xml" ] && cp "$D/dump_0.xml" "$D/serp.xml"
 echo "dumps=$n" >> "$D/meta.txt"; echo "t_end=$(date +%s)" >> "$D/meta.txt"
 [ -s "$D/video.mp4" ] || exit 1
+# Pack the evidence exactly as run_pin.sh does: the worker pulls $RT/<scan>_<pin>.tar.gz.
+tar -czf "$D.tar.gz" -C "$RT" "$SCAN"_"$PIN" || exit 1
 echo done > "$D/status"
 `;
