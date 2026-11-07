@@ -5,8 +5,10 @@ type Settings = Record<string, string | undefined>;
 
 /** Rotation for new lists: 0 = new IP every request (default), -1 sticky, 1–3600 seconds. */
 export function listRotation(env: Settings = process.env) {
-  const n = Number(env.PROXY_LIST_ROTATION ?? 0);
-  return Number.isInteger(n) && n >= -1 && n <= 3600 ? n : 0;
+  // Sticky by default (-1): one exit IP per port, so the pre-flight gatekeeper checks
+  // the exact IP the search will use. 0 = new IP per request; N = rotate every N seconds.
+  const n = Number(env.PROXY_LIST_ROTATION ?? -1);
+  return Number.isInteger(n) && n >= -1 && n <= 3600 ? n : -1;
 }
 
 // ---------------------------------------------------------------------------

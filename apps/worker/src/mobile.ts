@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { db, type GridPin, type GridScan } from '@stakeout/db';
 import { listsForPin, normPlace, locationVerified } from '@stakeout/core/proxyLists';
+import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
+import { redis } from '@stakeout/core/redis';
 import { put, uploadURL, uploaded } from '@stakeout/core/r2';
 import { captureEnded, captureStarted, duoplusPost, updatePhone, type LeasedDevice } from './duoplus';
 import { pull, push, shell, transportFor } from './deviceShell';
@@ -130,12 +132,160 @@ const isUS = (c: ProxyCheck) => /^(us|usa|united states)$/i.test(c.country.trim(
  * then the market's any-ISP list. The phone's DuoPlus proxy record is only
  * rewritten when the phone has to change lists.
  */
+// ---------------------------------------------------------------------------
+// Pre-flight gatekeeper: one sticky proxy port per point, checked from the phone
+// ---------------------------------------------------------------------------
+
+const ANDROID_UA =
+  'Mozilla/5.0 (Linux; Android 13; SM-S918U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
+const PORT_REST_MS = Number(process.env.PROXY_PORT_REST_MINUTES ?? 30) * 60000;
+const PORT_BAD_MS = Number(process.env.PROXY_PORT_BAD_HOURS ?? 6) * 3600000;
+
+const gatePolicy = (): GatePolicy => {
+  const v = (process.env.PROXY_GATE ?? 'strict').toLowerCase();
+  return v === 'off' || v === 'deny' ? v : 'strict';
+};
+const extraAsns = () =>
+  (process.env.PROXY_ASN_ALLOW ?? '')
+    .split(',')
+    .map((v) => Number(v.trim().replace(/^AS/i, '')))
+    .filter((n) => Number.isInteger(n) && n > 0);
+
+/** GET a URL from the phone itself, through whatever network it is really using. */
+async function deviceGet(d: LeasedDevice, url: string): Promise<string> {
+  const q = shellQuote(url);
+  return (await shell(d, `curl -s --max-time 12 ${q} 2>/dev/null || wget -qO- -T 12 ${q} 2>/dev/null`, 25000).catch(() => '')).trim();
+}
+
+/** Google's homepage as this phone would get it: final URL, <html lang>, and "United States" count. */
+async function googleProbe(d: LeasedDevice): Promise<string> {
+  const f = `${RT_DIR}/gprobe.html`;
+  const ua = shellQuote(ANDROID_UA);
+  const lang = shellQuote('Accept-Language: en-US,en;q=0.9');
+  return shell(
+    d,
+    `rm -f ${f}; U=$(curl -s -L --max-time 15 -A ${ua} -H ${lang} -o ${f} -w '%{url_effective}' https://www.google.com/ 2>/dev/null) || ` +
+      `{ wget -q -T 15 -U ${ua} --header=${lang} -O ${f} https://www.google.com/ 2>/dev/null; U=''; }; ` +
+      `echo "$U"; grep -o '<html[^>]*lang="[^"]*"' ${f} 2>/dev/null | head -1; grep -c 'United States' ${f} 2>/dev/null; rm -f ${f}`,
+    30000,
+  ).catch(() => '');
+}
+
+/** Binds the proxy and GPS, then checks the exit through it: two geolocation services and Google itself. */
+async function preflightExit(d: LeasedDevice, p: Pin, isp: string) {
+  await applyNetworkAndGps(d, p);
+  await sleep(6000);
+  const token = process.env.IPINFO_TOKEN ? '?token=' + encodeURIComponent(process.env.IPINFO_TOKEN) : '';
+  const ipinfo = parseIpinfo(await deviceGet(d, (process.env.IP_CHECK_URL || 'https://ipinfo.io/json') + token));
+  const ipapi =
+    process.env.PROXY_GATE_IPAPI === 'false'
+      ? null
+      : parseIpapi(await deviceGet(d, 'http://ip-api.com/json/?fields=status,countryCode,region,regionName,city,isp,org,as,hosting,proxy,query'));
+  const google = process.env.PROXY_GATE_GOOGLE === 'false' ? null : parseGoogleProbe(await googleProbe(d));
+  const verdict = judgeExit({ ipinfo, ipapi, google }, { stateCode: p.stateCode, isp, policy: gatePolicy(), extraAsns: extraAsns() });
+  return { verdict, ipinfo, ipapi, google };
+}
+
+/**
+ * One proxy, one point: lease a port no other point is using and that hasn't been used in
+ * the last PROXY_PORT_REST_MINUTES. Ports that failed the gatekeeper are benched for hours.
+ * Falls back to a resting (but never benched) port rather than failing the point.
+ */
+async function leasePort(listId: number, ports: number[], seed: string, skip: Set<number>) {
+  const r = redis();
+  const order = portOrder(ports, seed).filter((port) => !skip.has(port));
+  const usable: number[] = [];
+  for (const port of order) {
+    if (await r.exists(`stakeout:portbad:${listId}:${port}`)) continue;
+    usable.push(port);
+    if (await r.set(`stakeout:port:${listId}:${port}`, seed, 'PX', PORT_REST_MS, 'NX')) return { port, reused: false };
+  }
+  return usable.length ? { port: usable[0], reused: true } : null;
+}
+const benchPort = (listId: number, port: number) => redis().set(`stakeout:portbad:${listId}:${port}`, '1', 'PX', PORT_BAD_MS).catch(() => null);
+
 async function provisionFromLists(device: LeasedDevice, p: Pin) {
   const isp = p.isp ?? '';
   const lists = await listsForPin(p.scan, p);
   if (!lists.length) throw new Error('PROXY_LIST_MISSING');
   const requireState = process.env.PROXY_REQUIRE_STATE_MATCH !== 'false';
   const tried: string[] = [];
+  // ADB phones: one sticky port per point, put through the pre-flight gatekeeper.
+  if (transportFor(device) === 'adb') {
+    const tries = Math.max(1, Number(process.env.PROXY_PORT_TRIES ?? 4));
+    for (const [i, list] of lists.entries()) {
+      const ports = list.ports as number[];
+      const label = list.isp ? 'LIST_' + (list.city ? 'CITY' : 'STATE') + '_ISP' : 'LIST_' + (list.city ? 'CITY' : 'STATE') + '_ANY_ISP';
+      const used = new Set<number>();
+      for (let t = 0; t < tries; t++) {
+        await device.assertOwned();
+        const lease = await leasePort(list.psListId, ports, p.id + ':' + list.psListId + ':' + t, used);
+        if (!lease) break;
+        used.add(lease.port);
+        try {
+          await duoplusPost('/api/v1/proxy/update', {
+            id: device.proxyId,
+            host: list.host,
+            port: lease.port,
+            user: list.login,
+            password: list.password,
+            protocol: 'socks5',
+            ip_scan_channel: 'ip2location',
+          });
+          if (device.proxyListId !== list.id) {
+            await db.devicePool.update({ where: { imageId: device.imageId }, data: { proxyListId: list.id } });
+            device.proxyListId = list.id;
+          }
+        } catch {
+          tried.push(label + ':' + lease.port + ':UPDATE_FAILED');
+          continue;
+        }
+        const g = await preflightExit(device, p, isp);
+        if (!g.verdict.ok) {
+          await benchPort(list.psListId, lease.port);
+          tried.push(label + ':' + lease.port + ':' + g.verdict.reasons.join('+'));
+          continue;
+        }
+        await db.proxyList.update({ where: { id: list.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+        const v = g.verdict;
+        return {
+          ip: v.ip ?? '',
+          org: g.ipinfo?.org || g.ipapi?.as || '',
+          city: g.ipinfo?.city || g.ipapi?.city || '',
+          region: g.ipinfo?.region || g.ipapi?.regionName || '',
+          country: g.ipinfo?.country || g.ipapi?.countryCode || '',
+          timezone: '',
+          proxySource: 'proxy-seller-list',
+          listId: list.psListId,
+          rungUsed: label,
+          rotation: list.rotation === 0 ? 'per_request' : list.rotation === -1 ? 'sticky' : list.rotation + 's',
+          ispRequested: isp || 'ANY',
+          ispRuleApplied: Boolean(isp) && i === 0,
+          ispObserved: v.network || null,
+          ispMatched: isp ? ispMatches(isp, v.network) : null,
+          stateMatched: true,
+          cityMatched: cityMatches(g.ipinfo?.city || g.ipapi?.city || '', p.city),
+          port: lease.port,
+          portReused: lease.reused,
+          rungsTried: tried,
+          // The gatekeeper's evidence, kept on the receipt.
+          gate: {
+            passed: true,
+            policy: gatePolicy(),
+            asn: v.asn,
+            network: v.network,
+            hosting: v.hosting,
+            sourcesAgree: v.sourcesAgree,
+            googleLang: v.googleLang,
+            googleHost: g.google?.host ?? null,
+            ipinfoIp: g.ipinfo?.ip ?? null,
+            ipapiIp: g.ipapi?.ip ?? null,
+          },
+        };
+      }
+    }
+    throw new Error('PROXY_GATE_REJECTED ' + tried.join(',').slice(0, 300));
+  }
   for (const [i, list] of lists.entries()) {
     await device.assertOwned();
     const ports = list.ports as number[];
@@ -382,6 +532,16 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
   let b: Awaited<ReturnType<typeof readBundleFile>>;
   if (pullEvidence) {
     await waitForBundleOnPhone();
+    // One proxy for the whole search: the exit after recording must be the one the
+    // gatekeeper approved before it. A changed exit fails the point (it is retried).
+    const approved = proof as { ip?: string; gate?: unknown; exitHeld?: boolean | null; exitAfter?: string | null };
+    if (approved?.gate && approved.ip) {
+      const token = process.env.IPINFO_TOKEN ? '?token=' + encodeURIComponent(process.env.IPINFO_TOKEN) : '';
+      const after = parseIpinfo(await deviceGet(d, (process.env.IP_CHECK_URL || 'https://ipinfo.io/json') + token));
+      approved.exitAfter = after?.ip ?? null;
+      approved.exitHeld = after ? after.ip === approved.ip : null;
+      if (after && after.ip !== approved.ip) throw new Error('PROXY_EXIT_CHANGED ' + approved.ip + '>' + after.ip);
+    }
     const local = join(dir, 'raw.tgz');
     await pull(d, folder + '.tar.gz', local);
     b = await readBundleFile(local, tag, dir);

@@ -122,7 +122,7 @@ export function phoneUsable(
  * Which DuoPlus phones Stakeout may use and set up. With DUOPLUS_PHONE_IDS set
  * ("x0Puo,UXsp5,AbC12") only those; otherwise every phone on the account that is on.
  */
-export function phoneInScope(imageId: string, env: { DUOPLUS_PHONE_IDS?: string } = process.env) {
+export function phoneInScope(imageId: string, env: Record<string, string | undefined> = process.env) {
   const ids = (env.DUOPLUS_PHONE_IDS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   return ids.length === 0 || ids.includes(imageId);
 }

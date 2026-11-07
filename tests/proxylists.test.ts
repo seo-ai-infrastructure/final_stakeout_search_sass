@@ -38,9 +38,10 @@ test('each grid point keeps one ISP; a mix spreads them evenly', () => {
   assert.equal(grid.join(''), 'ABCABCABC');
   assert.equal(ispForPin('single', ['A'], 2, 2, 3), 'A');
   assert.equal(ispForPin('any', [], 0, 0, 3), '');
-  assert.equal(listRotation({}), 0);
+  assert.equal(listRotation({}), -1); // sticky by default: one exit IP per port, checked before each point
   assert.equal(listRotation({ PROXY_LIST_ROTATION: '-1' }), -1);
-  assert.equal(listRotation({ PROXY_LIST_ROTATION: '9999' }), 0);
+  assert.equal(listRotation({ PROXY_LIST_ROTATION: '9999' }), -1); // invalid values fall back to sticky
+  assert.equal(listRotation({ PROXY_LIST_ROTATION: '0' }), 0);
 });
 
 test('scan settings accept any, one or a 2–6 ISP mix only', () => {
