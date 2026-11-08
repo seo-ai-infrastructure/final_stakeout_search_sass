@@ -74,3 +74,15 @@ test('evidence: a stale clipboard (not in this run’s AI Overview) is never ver
   assert.equal(a.verified, false);
   assert.equal(readAiCopy(fx('real-aio-copy.txt').toString('utf8')).verified, false, 'no snapshot to check against');
 });
+
+test('evidence: a results page whose AI Overview lists businesses is not a Local Finder', async () => {
+  const { isLocalFinder, readLocalFinder, readAiOverview } = await import('../packages/core/serpEvidence');
+  const page = fx('real-aio-list-no-finder.xml').toString('utf8');
+  assert.equal(isLocalFinder(page), false);
+  assert.deepEqual(readLocalFinder(page), [], 'nothing is read as Finder listings');
+  assert.deepEqual(readAiOverview(page)!.businesses.filter((b) => !b.ad).map((b) => b.name), [
+    'Great Plumber of Mt.Juliet', 'Southern Skye Plumbing', 'SteadyFlo Plumbing & Septic',
+    'Busy Bee Plumbing Heating & Air Conditioning', 'Robbins Plumbing and Drain Cleaning LLC',
+  ]);
+  assert.equal(isLocalFinder(fx('real-r3c2-finder.xml').toString('utf8')), true, 'the real Local Finder still is one');
+});

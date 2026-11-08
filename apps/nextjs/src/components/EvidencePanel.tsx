@@ -18,6 +18,7 @@ type Evidence = {
   capture?: Record<string, string> | null;
   events?: { time: string; event: string }[];
   localFinder: Listing[];
+  finderShown?: boolean | null;
   aiOverview: { paragraphs: string[]; businesses: Listing[] } | null;
   aiCopy?: {
     intro: string[];
@@ -162,7 +163,14 @@ export function EvidencePanel({
             ) : view === 'first' && ev.firstScreen ? (
               <PageView ev={{ ...ev, resultsPage: ev.firstScreen }} isTarget={isTarget} keyword={scan.keyword} />
             ) : view === 'finder' ? (
-              <FinderView list={ev.localFinder} isTarget={isTarget} googleLocation={ev.resultsPage?.googleLocation ?? null} />
+              ev.finderShown === false ? (
+                <div className="p-5 text-sm leading-relaxed text-gray-700">
+                  <p className="font-bold text-gray-900">No Local Finder on this page</p>
+                  <p className="mt-1">Google listed the businesses inside its AI Overview instead of showing a map pack, so there was no “More businesses” to open. This point is ranked in that list: see the AI Overview tab.</p>
+                </div>
+              ) : (
+                <FinderView list={ev.localFinder} isTarget={isTarget} googleLocation={ev.resultsPage?.googleLocation ?? null} />
+              )
             ) : view === 'ai' ? (
               <AiView ev={ev} isTarget={isTarget} />
             ) : (

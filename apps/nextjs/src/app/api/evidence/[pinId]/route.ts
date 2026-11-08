@@ -2,7 +2,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
 import { r2, bucket } from '@stakeout/core/r2';
 import { InputError } from '@stakeout/core/grid';
-import { untarGz, readResultsPage, readLocalFinder, readAiOverview, readAiCopy, uiLabels, rankIn, sameBusiness } from '@stakeout/core/serpEvidence';
+import { untarGz, readResultsPage, readLocalFinder, readAiOverview, readAiCopy, uiLabels, rankIn, sameBusiness, isLocalFinder } from '@stakeout/core/serpEvidence';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 
@@ -68,6 +68,7 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
     const body = JSON.stringify({
       pinId: pin.id,
       resultsPage,
+      finderShown: finder ? isLocalFinder(finder) : null,
       firstScreen: first ? readResultsPage(first) : null,
       capture,
       events,

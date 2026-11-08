@@ -171,7 +171,19 @@ export function readResultsPage(xml: string): ResultsPage {
 }
 
 /** The Local Finder list, in Google's order: ads (labelled, unranked) and organic listings. */
+/**
+ * True only for the Local Finder: its "Places" tab is the selected one (enabled="false"),
+ * as in the real snapshots. A results page (even one listing businesses in its AI Overview)
+ * is never a Local Finder.
+ */
+export function isLocalFinder(xml: string): boolean {
+  for (const m of xml.matchAll(/<node\b[^>]*>/g))
+    if (/content-desc="Places"/.test(m[0]) && /enabled="false"/.test(m[0])) return true;
+  return false;
+}
+
 export function readLocalFinder(xml: string): Listing[] {
+  if (!isLocalFinder(xml)) return [];
   const items: Omit<Listing, 'pos'>[] = [];
   for (const { cls, label } of uiLabels(xml)) {
     if (!isCardContainer(cls)) continue;

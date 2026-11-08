@@ -1,3 +1,4 @@
+import { isLocalFinder, readAiOverview, sameBusiness } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -764,6 +765,20 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     // language, an IP guess) fails and is refunded instead of being recorded.
     if ((surface === 'chrome' || surface === 'google') && !locationVerified(result.locationSource, p.stateCode, p.zip))
       throw new Error('LOCATION_UNVERIFIED');
+    // No Local Finder on this page: Google's AI Overview listed the businesses instead of a
+    // map pack, so there was no "More businesses". Rank in that list (and record that), rather
+    // than recording "0 listings, no rank".
+    let aiList: { rank: number | null; list: string[] } | null = null;
+    if (surface === 'chrome' && b.final && !isLocalFinder(b.final)) {
+      const list =
+        [...[...b.ai].reverse(), b.serp, b.final]
+          .filter((x): x is string => !!x)
+          .map((x) => readAiOverview(x)?.businesses.filter((y) => !y.ad).map((y) => y.name) ?? [])
+          .find((l) => l.length) ?? [];
+      const i = list.findIndex((n) => sameBusiness(n, scan.targetBusiness));
+      aiList = { rank: i >= 0 ? i + 1 : null, list };
+      Object.assign(proof, { finderShown: false, rankFrom: list.length ? 'ai_overview_list' : 'none' });
+    }
     const videoUrl = prefix + '/video.mp4',
       metaJsonUrl = prefix + '/meta.json';
     await put(videoUrl, b.video, 'video/mp4');
@@ -791,9 +806,9 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     );
     return {
       assignedDeviceId: d.imageId,
-      rankFound: result.targetRank,
+      rankFound: aiList ? aiList.rank : result.targetRank,
       matchedDumpIdx: result.matchedDumpIndex,
-      topCompetitors: result.orderedBusinesses,
+      topCompetitors: aiList ? aiList.list : result.orderedBusinesses,
       aiCitations: result.aiCitations,
       hasAiOverview: result.hasAiOverview,
       aiOverviewText: result.aiOverviewText,
