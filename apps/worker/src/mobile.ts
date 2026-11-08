@@ -621,7 +621,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         ).catch(() => '')
       ).replace(/\s+/g, ' ').trim();
     try {
-      await runRpaSearch({
+      const run = await runRpaSearch({
         imageId: d.imageId,
         surface: app[scan.targetType] as RpaSurface,
         keyword: scan.keyword,
@@ -633,6 +633,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       });
       const problem = await templateProblem();
       if (problem) throw new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160));
+      // Every result can be traced to the exact template (and DuoPlus task) that produced it.
+      Object.assign(proof, { rpaTemplate: { id: run.templateId, name: run.templateName, taskId: run.taskId } });
     } catch (e) {
       const problem = e instanceof Error && e.message.startsWith('RPA_SURFACE_ERROR') ? '' : await templateProblem();
       throw problem ? new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160)) : e;

@@ -17,6 +17,7 @@ export async function createScan(
   key: string,
   lead?: { email: string; holdForEmail?: boolean },
   templatePins?: ReturnType<typeof buildGrid>,
+  opts?: { free?: boolean },
 ) {
   const prior = await db.gridScan.findUnique({ where: { requestKey: key } });
   if (prior) {
@@ -29,7 +30,7 @@ export async function createScan(
   }
   const pins = templatePins ?? buildGrid(s),
     middle = pins[(pins.length - 1) / 2];
-  const cost = lead ? 0 : pins.length * (s.trackAiOverviews ? 2 : 1);
+  const cost = lead || opts?.free ? 0 : pins.length * (s.trackAiOverviews ? 2 : 1);
   try {
     return await db.$transaction(
       async (tx) => {
@@ -222,4 +223,15 @@ export async function cloneScheduledRun(
     });
     return null;
   }
+}
+
+/**
+ * Stops a scan: every point still pending is settled as failed with `reason` and refunded
+ * through settlePin (which only acts on PENDING points, so nothing is refunded twice).
+ * Points already completed are kept. Returns how many points were stopped.
+ */
+export async function stopScan(scanId: string, reason: string) {
+  const pending = await db.gridPin.findMany({ where: { scanId, status: 'PENDING' }, select: { id: true } });
+  for (const p of pending) await settlePin(p.id, { error: reason.slice(0, 200) });
+  return pending.length;
 }

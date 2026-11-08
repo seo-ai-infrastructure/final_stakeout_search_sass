@@ -339,8 +339,9 @@ async function leaseCandidates(phoneModel: string) {
     where: leasableDeviceWhere,
     orderBy: { slotIndex: 'asc' },
   });
-  // Scans no longer choose a phone model: any healthy phone in the fleet takes the point.
-  void phoneModel;
+  // Scans don't choose a phone model: any healthy phone takes the point. An admin test
+  // point can target one phone ("device:<imageId>").
+  if (phoneModel.startsWith('device:')) return devices.filter((d) => d.imageId === phoneModel.slice(7));
   return devices;
 }
 

@@ -169,9 +169,10 @@ export async function runRpaSearch(opts: {
         started = true;
         opts.onStarted?.();
       }
-      if (task.status === 3) return task.id;
+      if (task.status === 3) return { taskId: task.id, templateId: t.id, templateName: t.name };
       // The template writes <pin_id>.done as its last step: that is the end of the search.
-      if (task.status === 1 && opts.doneCheck && (await opts.doneCheck().catch(() => false))) return task.id;
+      if (task.status === 1 && opts.doneCheck && (await opts.doneCheck().catch(() => false)))
+        return { taskId: task.id, templateId: t.id, templateName: t.name };
       if (task.status === 4 || task.status === 5) {
         const why = await failureDetail(task.id);
         throw new Error('RPA_TASK_FAILED ' + (task.status === 5 ? 'cancelled' : why || 'failed').slice(0, 200));

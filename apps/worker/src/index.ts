@@ -1,6 +1,6 @@
 import { failureCode } from '@stakeout/core/fleetHealth';
 import 'dotenv/config';
-import { Queue, Worker, DelayedError, type Job } from 'bullmq';
+import { Queue, Worker, DelayedError, UnrecoverableError, type Job } from 'bullmq';
 import { db } from '@stakeout/db';
 import { registerStakeoutSchedule } from '@stakeout/core/scheduleHelper';
 import {
@@ -8,7 +8,7 @@ import {
   createRedisClient,
   redactRedisUrl,
 } from '@stakeout/core/redis';
-import { cloneScheduledRun, settlePin } from '@stakeout/core/scans';
+import { cloneScheduledRun, settlePin, stopScan } from '@stakeout/core/scans';
 import { listsForPin } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates } from './rpa';
 import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist } from './duoplus';
@@ -35,6 +35,8 @@ const queueConnection = redis(),
     connection: queueConnection,
   });
 
+/** Template failures (with no point completed) that stop a scan automatically. */
+const AUTO_PAUSE_TEMPLATE_FAILS = Number(process.env.AUTO_PAUSE_TEMPLATE_FAILS ?? 3);
 const NO_DEVICE_GRACE_MS = Number(process.env.NO_DEVICE_GRACE_MINUTES ?? 30) * 60000;
 
 async function execute(job: Job, token?: string) {
@@ -120,6 +122,25 @@ async function execute(job: Job, token?: string) {
     }
   } catch (e) {
     if (e instanceof DelayedError) throw e;
+    const msg = e instanceof Error ? e.message : 'PIN_FAILED';
+    if (/^RPA_(SURFACE_ERROR|TASK_FAILED|TASK_TIMEOUT|TEMPLATE_NOT_FOUND|NO_KEYWORD_VARIABLE)/.test(msg)) {
+      // The search template failed. If it keeps failing before any point has completed,
+      // stop the whole scan (refunded) instead of retrying every point three times.
+      const k = 'stakeout:tplfail:' + pin.scanId;
+      const n = await redis().incr(k).catch(() => 0);
+      if (n === 1) await redis().expire(k, 86400).catch(() => {});
+      const done = (await db.gridScan.findUnique({ where: { id: pin.scanId }, select: { completedPins: true } }))?.completedPins ?? 0;
+      if (n >= AUTO_PAUSE_TEMPLATE_FAILS && done === 0) {
+        const stopped = await stopScan(pin.scanId, 'AUTO_PAUSED: the search template failed on the first points (' + msg.slice(0, 120) + ')');
+        console.warn('[scan] auto-paused', pin.scanId, 'after', n, 'template failures;', stopped, 'points stopped and refunded');
+        throw new UnrecoverableError(msg);
+      }
+      // One more try (usually on another phone), not three full searches.
+      if (job.attemptsMade >= 1) {
+        await settlePin(pin.id, { error: msg });
+        throw new UnrecoverableError(msg);
+      }
+    }
     if (job.attemptsMade + 1 >= (job.opts.attempts ?? 1))
       await settlePin(pin.id, {
         error: e instanceof Error ? e.message : 'PIN_FAILED',
