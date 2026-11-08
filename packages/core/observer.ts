@@ -8,9 +8,10 @@
  * serp.xml, final.xml, meta.txt, video.mp4, status=done.
  */
 export const OBSERVE_SH = `#!/system/bin/sh
-# observe v7
-SCAN=$1; PIN=$2; MAXS=$3; RUN=$4
+# observe v8
+SCAN=$1; PIN=$2; MAXS=$3; RUN=$4; WAITREC=\${5:-0}
 [ -n "$MAXS" ] || MAXS=420
+TS=$(date +%s)
 T=/sdcard/stakeout
 RT=/data/local/tmp/rt
 D="$RT/$SCAN"_"$PIN"
@@ -18,12 +19,24 @@ mkdir -p "$D"; rm -f "$D"/*
 S=$(wm size | tail -n1 | sed 's/.*: //'); W=$(echo "$S" | cut -dx -f1); H=$(echo "$S" | cut -dx -f2)
 X=$((W/2)); SW=$((W/4*2)); SH=$((H/4*2))
 { echo "mode=rpa"; echo "scan=$SCAN"; echo "pin=$PIN"; } > "$D/meta.txt"
+# Templates that mark the moment (v3.9+: "$T/$RUN.rec", right before typing the keyword)
+# are recorded from that moment; if the marker never comes, recording starts anyway.
+TRIG=launch
+if [ -n "$RUN" ] && [ "$WAITREC" -gt 0 ] 2>/dev/null; then
+  TRIG=timeout
+  while [ $(( $(date +%s) - TS )) -lt "$WAITREC" ]; do
+    [ -e "$T/$RUN.rec" ] && { TRIG=marker; break; }
+    [ -f "$D/stop" ] || [ -f "$T/$RUN.done" ] && { TRIG=ended; break; }
+    sleep 0.3
+  done
+fi
+echo "rec_trigger=$TRIG" >> "$D/meta.txt"; echo "rec_wait=$(( $(date +%s) - TS ))" >> "$D/meta.txt"
 screenrecord --size "$SW"x"$SH" --bit-rate 1200000 --time-limit 180 "$D/video.mp4" >/dev/null 2>&1 &
 REC=$!
 T0=$(date +%s); echo "rec_start=$T0" >> "$D/meta.txt"
 # Hands off while the template runs (it ends by writing $T/$RUN.done).
 while [ ! -f "$D/stop" ] && [ ! -f "$T/$RUN.done" ]; do
-  [ $(( $(date +%s) - T0 )) -ge "$MAXS" ] && break
+  [ $(( $(date +%s) - TS )) -ge "$MAXS" ] && break
   sleep 1
 done
 echo "rpa_end_t=$(( $(date +%s) - T0 ))" >> "$D/meta.txt"

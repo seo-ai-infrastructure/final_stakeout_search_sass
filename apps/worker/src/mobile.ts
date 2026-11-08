@@ -598,9 +598,11 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
   if (rpaMode) {
     // The recorder only records while the template runs, then reads the results list.
     await ensureObserverInstalled(d);
+    // Templates that mark the moment they type (record_start, v3.9+) are recorded from there.
+    const waitRec = (await rpaTemplate(app[scan.targetType] as RpaSurface).catch(() => null))?.vars.some((v) => v.key === 'record_start') ? 120 : 0;
     await shell(
       d,
-      `nohup sh ${RT_DIR}/observe.sh ${shellQuote(tagBase)} ${shellQuote(point)} ${rpaSecs + 60} ${shellQuote(tag)} >${RT_DIR}/last_run.log 2>&1 & echo $! > ${pidFile}`,
+      `nohup sh ${RT_DIR}/observe.sh ${shellQuote(tagBase)} ${shellQuote(point)} ${rpaSecs + 60} ${shellQuote(tag)} ${waitRec} >${RT_DIR}/last_run.log 2>&1 & echo $! > ${pidFile}`,
     );
   } else {
     // One command starts the capture in the background and records its PID.
