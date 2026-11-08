@@ -8,7 +8,7 @@
  * serp.xml, final.xml, meta.txt, video.mp4, status=done.
  */
 export const OBSERVE_SH = `#!/system/bin/sh
-# observe v4
+# observe v5
 SCAN=$1; PIN=$2; MAXS=$3; RUN=$4
 [ -n "$MAXS" ] || MAXS=420
 T=/sdcard/stakeout
@@ -36,11 +36,23 @@ if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
   # AI Overview: collapsed (inside the results page) and, when the template expanded it, the full view.
   [ -s "$T/$RUN"_serp.xml ] && cp "$T/$RUN"_serp.xml "$D/aio_initial.xml"
   [ -s "$T/$RUN"_aio.xml ] && cp "$T/$RUN"_aio.xml "$D/aio_expanded.xml"
+  # Capture-only template extras: first screen, the page at the 3-pack, top of the Local Finder,
+  # the AI Overview as first shown, and its own manifest and event log.
+  [ -s "$T/$RUN"_serp_initial.xml ] && cp "$T/$RUN"_serp_initial.xml "$D/first_screen.xml"
+  [ -s "$T/$RUN"_pack.xml ] && cp "$T/$RUN"_pack.xml "$D/pack.xml"
+  [ -s "$T/$RUN"_finder_top.xml ] && cp "$T/$RUN"_finder_top.xml "$D/finder_top.xml"
+  [ -s "$T/$RUN"_aio_initial.xml ] && cp "$T/$RUN"_aio_initial.xml "$D/aio_initial.xml"
+  for x in capture.json events.tsv captures.tsv; do [ -s "$T/$RUN.$x" ] && cp "$T/$RUN.$x" "$D/$x"; done
   # Screenshots: the full AI Overview, and the tracked business visible on the results page / in the Local Finder.
   [ -s "$T/$RUN"_aio.png ] && cp "$T/$RUN"_aio.png "$D/shot_ai.png"
   [ -s "$T/$RUN"_pack_target.png ] && cp "$T/$RUN"_pack_target.png "$D/shot_pack.png"
   [ -s "$T/$RUN"_finder_target.png ] && cp "$T/$RUN"_finder_target.png "$D/shot_finder.png"
   echo "evidence=template" >> "$D/meta.txt"
+elif [ -n "$RUN" ] && { [ -e "$T/$RUN".blocked ] || [ -e "$T/$RUN".surface_error ]; }; then
+  # The template stopped itself (wrong page or blocked): keep its log, no scrolling.
+  echo "evidence=template_blocked" >> "$D/meta.txt"
+  for x in blocked surface_error; do [ -s "$T/$RUN.$x" ] && echo "$x=$(head -c 160 "$T/$RUN.$x" | tr '\n' ' ')" >> "$D/meta.txt"; done
+  for x in events.tsv captures.tsv; do [ -s "$T/$RUN.$x" ] && cp "$T/$RUN.$x" "$D/$x"; done
 else
 echo "evidence=observer_pass" >> "$D/meta.txt"
 # Fallback read-only pass: to the top of the list, then down to the footer.
@@ -57,7 +69,7 @@ while [ $s -lt 14 ]; do
   s=$((s+1))
 done
 fi
-[ -n "$RUN" ] && rm -f "$T/$RUN"_* "$T/$RUN".done
+[ -n "$RUN" ] && rm -rf "$T/$RUN"_* "$T/$RUN".*
 kill -INT $REC 2>/dev/null; wait $REC 2>/dev/null
 L=$((n-1))
 [ $L -ge 0 ] && cp "$D/dump_$L.xml" "$D/final.xml"

@@ -167,7 +167,9 @@ export function parseWebResults(
 ) {
   const organic: string[] = [],
     ads: WebAd[] = [],
-    seen = new Set<string>();
+    // An advertiser can also rank organically: de-duplicate within each group, never across.
+    seenOrganic = new Set<string>(),
+    seenAds = new Set<string>();
   let locationSource: string | null = null,
     noResults = false,
     cards = 0;
@@ -185,6 +187,7 @@ export function parseWebResults(
       if (!m || !(/reviews for/i.test(text) || text.includes('·'))) continue;
       const name = m[1].trim(),
         key = normalize(name);
+      const seen = m[2] ? seenOrganic : seenAds;
       if (!name || name.length > 180 || seen.has(key)) continue;
       seen.add(key);
       cards++;

@@ -41,12 +41,31 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
     };
     const serp = read('serp.xml'), finder = read('final.xml'), aio = read('aio_expanded.xml');
     const resultsPage = serp ? readResultsPage(serp) : null;
+    // Capture-only template extras: the first screen, its manifest and its timestamped event log.
+    const first = read('first_screen.xml');
+    let capture: Record<string, string> | null = null;
+    try {
+      const c = read('capture.json');
+      capture = c ? JSON.parse(c) : null;
+    } catch {
+      capture = null;
+    }
+    const events = (read('events.tsv') ?? '')
+      .split('\n')
+      .slice(1)
+      .map((l) => l.split('\t'))
+      .filter((x) => x.length >= 2 && x[1])
+      .slice(-40)
+      .map(([time, event]) => ({ time, event }));
     const localFinder = finder ? readLocalFinder(finder) : [];
     const aiOverview = aio ? readAiOverview(aio) : null;
     const target = pin.scan.targetBusiness;
     const body = JSON.stringify({
       pinId: pin.id,
       resultsPage,
+      firstScreen: first ? readResultsPage(first) : null,
+      capture,
+      events,
       localFinder,
       aiOverview,
       ranks: {

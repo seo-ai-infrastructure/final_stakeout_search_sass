@@ -14,11 +14,14 @@ type Evidence = {
     peopleAlsoSearch: string[];
     web: { site: string; url: string; title: string; ad: boolean }[];
   } | null;
+  firstScreen?: Evidence['resultsPage'];
+  capture?: Record<string, string> | null;
+  events?: { time: string; event: string }[];
   localFinder: Listing[];
   aiOverview: { paragraphs: string[]; businesses: Listing[] } | null;
   ranks: { pack: number | null; finder: number | null; ai: number | null };
 };
-type View = 'video' | 'page' | 'finder' | 'ai';
+type View = 'video' | 'first' | 'page' | 'finder' | 'ai';
 
 const norm = (s: string) =>
   s.toLowerCase().replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|ltd)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -83,6 +86,7 @@ export function EvidencePanel({
     return (i < 0 ? list : list.slice(0, i)).filter((l) => l.ad).length;
   };
   const tabs: [View, string][] = [['video', 'Video'], ['page', 'Results page'], ['finder', 'Local Finder']];
+  if (ev?.firstScreen) tabs.splice(1, 0, ['first', 'First screen']);
   if (ev?.aiOverview || ev?.resultsPage?.aiPreview) tabs.push(['ai', 'AI Overview']);
 
   return (
@@ -149,6 +153,8 @@ export function EvidencePanel({
               <Empty text="Rebuilding the page from this point’s snapshot…" />
             ) : !ev ? (
               <Empty text="The snapshot for this point isn’t available." />
+            ) : view === 'first' && ev.firstScreen ? (
+              <PageView ev={{ ...ev, resultsPage: ev.firstScreen }} isTarget={isTarget} keyword={scan.keyword} />
             ) : view === 'finder' ? (
               <FinderView list={ev.localFinder} isTarget={isTarget} googleLocation={ev.resultsPage?.googleLocation ?? null} />
             ) : view === 'ai' ? (
@@ -162,7 +168,9 @@ export function EvidencePanel({
         <p className="max-w-[360px] text-center text-xs leading-relaxed text-slate-400">
           {view === 'video'
             ? 'The real screen recording from this point’s phone.'
-            : 'Rebuilt from this point’s captured snapshot, in Google’s order. Ads are labelled and never ranked.'}
+            : view === 'first'
+              ? 'The page exactly as it first loaded, before any scrolling: what a searcher sees first.'
+              : 'Rebuilt from this point’s captured snapshot, in Google’s order. Ads are labelled and never ranked.'}
         </p>
       </section>
 
@@ -199,7 +207,29 @@ export function EvidencePanel({
             {pin.proxyMeta && (<><dt className="text-slate-400">Exit</dt><dd>{[pin.proxyMeta.city, pin.proxyMeta.region].filter(Boolean).join(', ')} · residential</dd></>)}
             {ev?.resultsPage?.googleLocation && (<><dt className="text-slate-400">Google’s location</dt><dd className="text-emerald-300">{ev.resultsPage.googleLocation}</dd></>)}
             <dt className="text-slate-400">Status</dt><dd>{pin.status.toLowerCase()}</dd>
+            {ev?.capture && (
+              <>
+                <dt className="text-slate-400">AI Overview</dt>
+                <dd>{(ev.capture.aio ?? '').replaceAll('_', ' ')}{ev.capture.aio_expansion && ev.capture.aio_expansion !== 'not_applicable' ? ' · ' + ev.capture.aio_expansion.replaceAll('_', ' ') : ''}</dd>
+                <dt className="text-slate-400">3-pack</dt><dd>{(ev.capture.pack ?? '').replaceAll('_', ' ')}</dd>
+                <dt className="text-slate-400">Local Finder</dt>
+                <dd>{ev.capture.finder_end === 'control_seen' ? 'whole list captured' : (ev.capture.finder ?? '').replaceAll('_', ' ')}</dd>
+              </>
+            )}
           </dl>
+          {ev?.events && ev.events.length > 0 && (
+            <details className="mt-4 rounded-xl bg-slate-950/60 p-3">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-200">Run timeline ({ev.events.length} steps)</summary>
+              <ol className="mt-2 space-y-1 text-xs text-slate-300">
+                {ev.events.map((e, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="shrink-0 font-mono text-slate-500">{e.time.slice(11, 19)}</span>
+                    <span>{e.event.replaceAll('_', ' ')}</span>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          )}
           {!shareToken && (pin.metaJsonUrl || pin.dumpsTarUrl) && (
             <div className="mt-4 flex flex-wrap gap-2">
               {pin.metaJsonUrl && <a className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-emerald-300 hover:border-emerald-400" href={pin.metaJsonUrl}>Receipt JSON</a>}

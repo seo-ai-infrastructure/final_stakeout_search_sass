@@ -35,7 +35,7 @@ export async function readBundleFile(tgzPath: string, tag: string, dir: string) 
       if (!name.startsWith(tag + '/') || entry.type !== 'File') return false;
       const leaf = name.slice(tag.length + 1);
       if (
-        !/^(video\.mp4|dump_\d{1,2}\.xml|final\.xml|serp\.xml|aio_(initial|expanded)\.xml|shot_(top|ai|pack|finder)\.png|flags\.txt|meta\.txt)$/.test(
+        !/^(video\.mp4|dump_\d{1,2}\.xml|final\.xml|serp\.xml|aio_(initial|expanded)\.xml|shot_(top|ai|pack|finder)\.png|first_screen\.xml|pack\.xml|finder_top\.xml|capture\.json|events\.tsv|captures\.tsv|flags\.txt|meta\.txt)$/.test(
           leaf,
         )
       )

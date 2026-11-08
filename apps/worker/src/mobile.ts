@@ -612,6 +612,14 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
   const deadline = Date.now() + (rpaMode ? (rpaSecs + 180) * 1000 : 240000);
   if (rpaMode) {
     await sleep(2000);
+    // The capture-only template marks a wrong page / blocked run on the phone itself.
+    const templateProblem = async () =>
+      (
+        await shell(
+          d,
+          `cd /sdcard/stakeout 2>/dev/null && for f in blocked surface_error; do [ -e ${tag}.$f ] && echo "$f: $(head -c 120 ${tag}.$f)"; done; true`,
+        ).catch(() => '')
+      ).replace(/\s+/g, ' ').trim();
     try {
       await runRpaSearch({
         imageId: d.imageId,
@@ -623,6 +631,11 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         timeoutMs: rpaSecs * 1000,
         doneCheck: async () => (await shell(d, `test -f /sdcard/stakeout/${tag}.done && echo y`).catch(() => '')).trim() === 'y',
       });
+      const problem = await templateProblem();
+      if (problem) throw new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160));
+    } catch (e) {
+      const problem = e instanceof Error && e.message.startsWith('RPA_SURFACE_ERROR') ? '' : await templateProblem();
+      throw problem ? new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160)) : e;
     } finally {
       // Template finished (or failed): the recorder now reads the results list and stops.
       await shell(d, `touch ${shellQuote(RT_DIR + '/' + tag + '/stop')}`).catch(() => {});
