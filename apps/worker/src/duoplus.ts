@@ -509,9 +509,22 @@ async function ownPublicIp(): Promise<string> {
 export async function ensureAdbWhitelist(force = false) {
   if (process.env.DUOPLUS_ADB_WHITELIST_AUTO === 'false' || !process.env.DUOPLUS_API_KEY) return;
   const ip = await ownPublicIp();
-  if (!ip || (ip === whitelistedFor && !force)) return;
-  const ips = adbWhitelist(ip, process.env.DUOPLUS_ADB_WHITELIST_EXTRA ?? '');
+  if (!ip) return;
+  // Railway can send traffic from more than one address, so every address seen in the
+  // last 30 days stays on the list (newest first, 10 at most): a new one is added, never swapped in.
+  const key = 'stakeout:adb:egress', now = Date.now();
+  let seen: string[] = [ip];
+  try {
+    await redis().zadd(key, now, ip);
+    await redis().zremrangebyscore(key, 0, now - 30 * 864e5);
+    seen = await redis().zrevrange(key, 0, 9);
+  } catch {
+    // Redis unavailable: whitelist this address (plus the extras) only
+  }
+  const ips = adbWhitelist(ip, [...seen, process.env.DUOPLUS_ADB_WHITELIST_EXTRA ?? ''].join(','));
+  const signature = [...ips].sort().join(',');
+  if (signature === whitelistedFor && !force) return;
   await duoplusPost('/api/v1/cloudPhone/setAdbIpWhitelist', { ips });
-  whitelistedFor = ip;
+  whitelistedFor = signature;
   console.log('[duoplus] ADB whitelist set to', ips.join(', '));
 }
