@@ -200,3 +200,51 @@ export function readAiOverview(xml: string): AiOverview | null {
 
 /** Organic position of the tracked business in a section, or null if absent. */
 export const rankIn = (list: Listing[], business: string) => list.find((l) => !l.ad && sameBusiness(l.name, business))?.pos ?? null;
+
+export type AiCopyBusiness = {
+  pos: number;
+  name: string;
+  /** Google's own business id (Knowledge Graph MID), e.g. "/g/11z8421vy4". */
+  kgmid: string;
+  url: string;
+  rating: string | null;
+  reviews: string | null;
+  category: string | null;
+  lines: string[];
+};
+export type AiCopy = { intro: string[]; businesses: AiCopyBusiness[]; citations: { n: number; url: string }[]; verified: boolean };
+
+const BIZ_LINE = /^(.+?) \((https:\/\/www\.google\.com\/search\?kgmid=([^&)\s]+)[^)\s]*)\)$/;
+const RATING_LINE = /^([0-5](?:\.\d)?)\((\d[\d.,]*K?)\)\s*·\s*(.+)$/;
+
+/**
+ * The AI Overview as copied with its own copy button: the intro, each business with its
+ * kgmid (Google's business id, so matching never depends on spelling) and the citations.
+ * `checkAgainst` is text from the same run's AI Overview snapshot: the copy is only
+ * verified if its businesses (or intro) appear there too, so a stale clipboard never counts.
+ */
+export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
+  const intro: string[] = [], businesses: AiCopyBusiness[] = [], citations: { n: number; url: string }[] = [];
+  let cur: AiCopyBusiness | null = null;
+  for (const raw of text.replace(/\r/g, '').split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    // A business starts its own line; a bullet (detail) that links a kgmid is not a new business.
+    const b = line.startsWith('•') ? null : BIZ_LINE.exec(line);
+    if (b && !businesses.some((x) => x.kgmid === decodeURIComponent(b[3]))) {
+      cur = { pos: businesses.length + 1, name: b[1].trim(), kgmid: decodeURIComponent(b[3]), url: b[2], rating: null, reviews: null, category: null, lines: [] };
+      businesses.push(cur);
+      continue;
+    }
+    for (const m of line.matchAll(/\[(\d+)\] \(([^)\s]+)\)/g)) citations.push({ n: Number(m[1]), url: m[2] });
+    const r = cur && !cur.rating ? RATING_LINE.exec(line) : null;
+    if (cur && r) Object.assign(cur, { rating: r[1], reviews: r[2], category: r[3].trim() });
+    else if (cur) cur.lines.push(line.replace(/^•\s*/, ''));
+    else intro.push(line);
+  }
+  const hay = norm(checkAgainst.join(' \n '));
+  const verified =
+    checkAgainst.length > 0 &&
+    (businesses.some((x) => hay.includes(norm(x.name))) || intro.some((l) => l.length > 12 && hay.includes(norm(l))));
+  return { intro, businesses, citations, verified };
+}

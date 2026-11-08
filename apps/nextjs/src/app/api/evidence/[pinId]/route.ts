@@ -2,7 +2,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
 import { r2, bucket } from '@stakeout/core/r2';
 import { InputError } from '@stakeout/core/grid';
-import { untarGz, readResultsPage, readLocalFinder, readAiOverview, rankIn } from '@stakeout/core/serpEvidence';
+import { untarGz, readResultsPage, readLocalFinder, readAiOverview, readAiCopy, uiLabels, rankIn, sameBusiness } from '@stakeout/core/serpEvidence';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 
@@ -60,6 +60,11 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
     const localFinder = finder ? readLocalFinder(finder) : [];
     const aiOverview = aio ? readAiOverview(aio) : null;
     const target = pin.scan.targetBusiness;
+    // The copied AI Overview counts only if it matches this run's own AI Overview snapshot.
+    const copied = read('aio_copy.txt');
+    const snapshotText = [aio, read('aio_initial.xml'), serp].filter(Boolean).flatMap((x) => uiLabels(x!).map((l) => l.label));
+    const aiCopy = copied ? readAiCopy(copied, snapshotText) : null;
+    const aiCopyRank = aiCopy?.verified ? (aiCopy.businesses.find((b) => sameBusiness(b.name, target))?.pos ?? null) : null;
     const body = JSON.stringify({
       pinId: pin.id,
       resultsPage,
@@ -68,10 +73,11 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
       events,
       localFinder,
       aiOverview,
+      aiCopy,
       ranks: {
         pack: resultsPage ? rankIn(resultsPage.pack, target) : null,
         finder: rankIn(localFinder, target),
-        ai: aiOverview ? rankIn(aiOverview.businesses, target) : null,
+        ai: aiCopy?.verified ? aiCopyRank : aiOverview ? rankIn(aiOverview.businesses, target) : null,
       },
     });
     if (cache.size > 300) cache.delete(cache.keys().next().value!);

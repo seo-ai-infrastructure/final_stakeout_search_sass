@@ -48,3 +48,29 @@ test('evidence: business names match across LLC, Inc, & and punctuation', () => 
   assert.ok(!sameBusiness('McIntyre Painting', 'Mount Juliet Painting'));
   assert.equal(parseCard('Plain text without a rating'), null);
 });
+
+test('evidence: the copied AI Overview yields businesses with Google ids, in order', async () => {
+  const { readAiCopy } = await import('../packages/core/serpEvidence');
+  const text = fx('real-aio-copy.txt').toString('utf8');
+  const a = readAiCopy(text, ['24/7 emergency plumbers serving Mt. Juliet, Tennessee:', 'Great Plumber of Mt. Juliet']);
+  assert.equal(a.verified, true);
+  assert.deepEqual(a.businesses.map((b) => [b.pos, b.name, b.kgmid]), [
+    [1, 'Great Plumber of Mt. Juliet', '/g/11z8421vy4'],
+    [2, 'Metro State Plumbing Services', '/g/11l2k9n227'],
+    [3, 'Mt. Juliet Plumbing And Leak Detection', '/g/11jj4sc8cf'],
+    [4, 'Roto-Rooter', '/g/11bbwnlg3g'],
+    [5, 'Lee Company', '/g/1q5grk4dl'],
+  ]);
+  const lee = a.businesses[4];
+  assert.deepEqual([lee.rating, lee.reviews, lee.category], ['4.8', '1.3K', 'HVAC contractor']);
+  assert.ok(a.businesses[3].lines.some((l) => /\$55 Off/.test(l)), 'offers kept');
+  assert.equal(a.citations.length, 4);
+  assert.deepEqual(a.intro, ['24/7 emergency plumbers serving Mt. Juliet, Tennessee:']);
+});
+
+test('evidence: a stale clipboard (not in this run’s AI Overview) is never verified', async () => {
+  const { readAiCopy } = await import('../packages/core/serpEvidence');
+  const a = readAiCopy(fx('real-aio-copy.txt').toString('utf8'), ['Best exterior painters in Mt. Juliet', 'McIntyre Painting']);
+  assert.equal(a.verified, false);
+  assert.equal(readAiCopy(fx('real-aio-copy.txt').toString('utf8')).verified, false, 'no snapshot to check against');
+});

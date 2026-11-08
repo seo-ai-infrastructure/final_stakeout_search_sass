@@ -19,6 +19,12 @@ type Evidence = {
   events?: { time: string; event: string }[];
   localFinder: Listing[];
   aiOverview: { paragraphs: string[]; businesses: Listing[] } | null;
+  aiCopy?: {
+    intro: string[];
+    businesses: { pos: number; name: string; kgmid: string; url: string; rating: string | null; reviews: string | null; category: string | null; lines: string[] }[];
+    citations: { n: number; url: string }[];
+    verified: boolean;
+  } | null;
   ranks: { pack: number | null; finder: number | null; ai: number | null };
 };
 type View = 'video' | 'first' | 'page' | 'finder' | 'ai';
@@ -87,7 +93,7 @@ export function EvidencePanel({
   };
   const tabs: [View, string][] = [['video', 'Video'], ['page', 'Results page'], ['finder', 'Local Finder']];
   if (ev?.firstScreen) tabs.splice(1, 0, ['first', 'First screen']);
-  if (ev?.aiOverview || ev?.resultsPage?.aiPreview) tabs.push(['ai', 'AI Overview']);
+  if (ev?.aiCopy || ev?.aiOverview || ev?.resultsPage?.aiPreview) tabs.push(['ai', 'AI Overview']);
 
   return (
     <div className="grid gap-6 xl:grid-cols-[280px_minmax(340px,380px)_1fr]">
@@ -184,8 +190,8 @@ export function EvidencePanel({
             <Stat
               label="AI Overview"
               value={ev?.ranks.ai}
-              note={ev?.aiOverview || ev?.resultsPage?.aiPreview ? (ev?.ranks.ai ? 'mentioned' : 'not mentioned') : 'none shown'}
-              text={ev && !ev.aiOverview && !ev.resultsPage?.aiPreview ? 'None' : undefined}
+              note={ev?.aiCopy || ev?.aiOverview || ev?.resultsPage?.aiPreview ? (ev?.ranks.ai ? 'mentioned' : 'not mentioned') : 'none shown'}
+              text={ev && !ev.aiCopy && !ev.aiOverview && !ev.resultsPage?.aiPreview ? 'None' : undefined}
             />
           </div>
           {advertisers.length > 0 && (
@@ -350,6 +356,38 @@ function FinderView({ list, isTarget, googleLocation }: { list: Listing[]; isTar
 
 function AiView({ ev, isTarget }: { ev: Evidence; isTarget: (n: string) => boolean }) {
   const ai = ev.aiOverview;
+  const copy = ev.aiCopy;
+  if (copy && copy.businesses.length)
+    return (
+      <div className="space-y-3 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-extrabold text-violet-800">AI Overview</p>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${copy.verified ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+            {copy.verified ? 'Copied from Google · verified' : 'Copy not verified'}
+          </span>
+        </div>
+        {copy.intro.map((t, i) => <p key={'i' + i} className="text-[13px] font-semibold text-gray-800">{t}</p>)}
+        <ol className="space-y-2">
+          {copy.businesses.map((b) => {
+            const me = isTarget(b.name);
+            return (
+              <li key={b.kgmid} className={`rounded-xl p-3 ${me ? 'border-2 border-emerald-600 bg-emerald-50' : 'border border-gray-200'}`}>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex h-6 min-w-[24px] items-center justify-center rounded-full text-[11px] font-extrabold ${me ? 'bg-emerald-600 text-white' : 'bg-violet-100 text-violet-800'}`}>{b.pos}</span>
+                  <a href={b.url} target="_blank" rel="noopener noreferrer" className="text-[13.5px] font-bold text-[#1a0dab] underline-offset-2 hover:underline">{b.name}</a>
+                </div>
+                <div className="mt-1 text-xs text-gray-700">
+                  {b.rating ? b.rating + ' ★' : ''}{b.reviews ? ' (' + b.reviews + ')' : ''}{b.category ? ' · ' + b.category : ''}
+                </div>
+                {b.lines.map((l, i) => <div key={i} className="mt-1 text-[11.5px] text-gray-600">{l.replace(/\s*\[\d+\] \([^)]*\)/g, '').replace(/ \(https?:[^)]*\)/g, '')}</div>)}
+                <div className="mt-1 font-mono text-[10px] text-gray-400">Google ID {b.kgmid}</div>
+              </li>
+            );
+          })}
+        </ol>
+        {copy.citations.length > 0 && <p className="text-[11px] text-gray-500">{copy.citations.length} cited source{copy.citations.length === 1 ? '' : 's'} in this AI Overview</p>}
+      </div>
+    );
   return (
     <div className="space-y-3 p-3">
       <p className="text-sm font-extrabold text-violet-800">AI Overview</p>

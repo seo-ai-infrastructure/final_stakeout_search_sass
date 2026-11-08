@@ -8,7 +8,7 @@
  * serp.xml, final.xml, meta.txt, video.mp4, status=done.
  */
 export const OBSERVE_SH = `#!/system/bin/sh
-# observe v5
+# observe v6
 SCAN=$1; PIN=$2; MAXS=$3; RUN=$4
 [ -n "$MAXS" ] || MAXS=420
 T=/sdcard/stakeout
@@ -42,6 +42,8 @@ if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
   [ -s "$T/$RUN"_pack.xml ] && cp "$T/$RUN"_pack.xml "$D/pack.xml"
   [ -s "$T/$RUN"_finder_top.xml ] && cp "$T/$RUN"_finder_top.xml "$D/finder_top.xml"
   [ -s "$T/$RUN"_aio_initial.xml ] && cp "$T/$RUN"_aio_initial.xml "$D/aio_initial.xml"
+  # The AI Overview copied with its own copy button (full text with links and Google business ids).
+  [ -s "$T/$RUN"_aio_copy.txt ] && cp "$T/$RUN"_aio_copy.txt "$D/aio_copy.txt"
   for x in capture.json events.tsv captures.tsv; do [ -s "$T/$RUN.$x" ] && cp "$T/$RUN.$x" "$D/$x"; done
   # Screenshots: the full AI Overview, and the tracked business visible on the results page / in the Local Finder.
   [ -s "$T/$RUN"_aio.png ] && cp "$T/$RUN"_aio.png "$D/shot_ai.png"
