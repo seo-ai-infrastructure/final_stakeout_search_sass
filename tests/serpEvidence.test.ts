@@ -80,9 +80,22 @@ test('evidence: a results page whose AI Overview lists businesses is not a Local
   const page = fx('real-aio-list-no-finder.xml').toString('utf8');
   assert.equal(isLocalFinder(page), false);
   assert.deepEqual(readLocalFinder(page), [], 'nothing is read as Finder listings');
-  assert.deepEqual(readAiOverview(page)!.businesses.filter((b) => !b.ad).map((b) => b.name), [
-    'Great Plumber of Mt.Juliet', 'Southern Skye Plumbing', 'SteadyFlo Plumbing & Septic',
-    'Busy Bee Plumbing Heating & Air Conditioning', 'Robbins Plumbing and Drain Cleaning LLC',
-  ]);
+  const names = readAiOverview(page)!.businesses.map((b) => b.name);
+  assert.ok(names.includes('Great Plumber of Mt.Juliet'));
+  for (const ad of ['SteadyFlo Plumbing & Septic', 'Busy Bee Plumbing Heating & Air Conditioning', 'Robbins Plumbing and Drain Cleaning LLC'])
+    assert.ok(!names.includes(ad), ad + ' is a Local Services Ad after the AI Overview, not an AI business');
   assert.equal(isLocalFinder(fx('real-r3c2-finder.xml').toString('utf8')), true, 'the real Local Finder still is one');
+});
+
+test('evidence: the AI Overview ends at its footer; ads after it and "Related results" are not its list', async () => {
+  const { readAiOverview } = await import('../packages/core/serpEvidence');
+  const ai = readAiOverview(fx('real-aio-expanded-related.xml').toString('utf8'))!;
+  assert.deepEqual(ai.businesses.map((b) => [b.pos, b.name]), [
+    [1, 'Great Plumber of Mt.Juliet'],
+    [2, 'Southern Skye Plumbing'],
+    [3, 'Music City Plumbing And Solutions'],
+    [4, 'Mr. Rooter Plumbing of Mt. Juliet'],
+    [5, 'Mid-Tn Plumbing'],
+  ]);
+  assert.deepEqual(ai.related.map((b) => b.name), ['Lee Company', 'Roto-Rooter Plumbing & Water Cleanup']);
 });

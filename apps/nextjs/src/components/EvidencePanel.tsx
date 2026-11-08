@@ -19,7 +19,7 @@ type Evidence = {
   events?: { time: string; event: string }[];
   localFinder: Listing[];
   finderShown?: boolean | null;
-  aiOverview: { paragraphs: string[]; businesses: Listing[] } | null;
+  aiOverview: { paragraphs: string[]; businesses: Listing[]; related?: Listing[] } | null;
   aiCopy?: {
     intro: string[];
     businesses: { pos: number; name: string; kgmid: string; url: string; rating: string | null; reviews: string | null; category: string | null; lines: string[] }[];
@@ -403,6 +403,12 @@ function AiView({ ev, isTarget }: { ev: Evidence; isTarget: (n: string) => boole
         <>
           {ai.paragraphs.map((t, i) => <p key={i} className="text-[13px] leading-relaxed text-gray-800">{t}</p>)}
           {ai.businesses.length > 0 && <ul className="space-y-2">{ai.businesses.map((l, i) => <Card key={'a' + i} l={l} isTarget={isTarget} />)}</ul>}
+          {!!ai.related?.length && (
+            <>
+              <p className="pt-1 text-xs font-bold uppercase tracking-wide text-gray-500">Related results (not ranked in the AI’s list)</p>
+              <ul className="space-y-2 opacity-80">{ai.related.map((l, i) => <Card key={'r' + i} l={l} isTarget={isTarget} />)}</ul>
+            </>
+          )}
         </>
       ) : (
         <p className="whitespace-pre-line text-[13px] leading-relaxed text-gray-800">{ev.resultsPage?.aiPreview}</p>
