@@ -37,7 +37,7 @@ const SPACING_OPTIONS = [
 export function NewScanWizard() {
   const router = useRouter();
   // All 8 User Inputs
-  const [targetType, setTargetType] = useState<TargetType>('mobile_maps');
+  const [targetType, setTargetType] = useState<TargetType>('mobile_chrome');
   const [keyword, setKeyword] = useState('emergency plumber');
   const [targetBusiness, setTargetBusiness] = useState('');
   const [centerLat, setCenterLat] = useState<number>(28.039465);
@@ -571,12 +571,17 @@ export function NewScanWizard() {
                     item.id !== 'desktop_aimode' ||
                     process.env.NEXT_PUBLIC_DESKTOP_ENABLED === 'true',
                 )
-                .map((item) => (
+                .map((item) => {
+                  // Surfaces without a working search template are shown but cannot be picked.
+                  const live = (process.env.NEXT_PUBLIC_ENABLED_SURFACES ?? 'mobile_chrome').split(',').map((x) => x.trim()).includes(item.id) || item.id === 'desktop_aimode';
+                  return (
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setTargetType(item.id as TargetType)}
-                    className={`rounded-lg border p-2.5 text-left transition ${
+                    disabled={!live}
+                    title={live ? undefined : 'Coming soon'}
+                    onClick={() => live && setTargetType(item.id as TargetType)}
+                    className={`rounded-lg border p-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${
                       targetType === item.id
                         ? 'border-emerald-500 bg-emerald-500/15 text-white'
                         : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700'
@@ -585,9 +590,10 @@ export function NewScanWizard() {
                     <div className="text-xs font-bold text-slate-100">
                       {item.title}
                     </div>
-                    <div className="text-[11px] text-slate-400">{item.sub}</div>
+                    <div className="text-[11px] text-slate-400">{live ? item.sub : 'Coming soon'}</div>
                   </button>
-                ))}
+                  );
+                })}
             </div>
           </div>
           {/* 2. Search Query & Business Name */}

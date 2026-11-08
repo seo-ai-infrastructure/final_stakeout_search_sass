@@ -8,7 +8,7 @@
  * serp.xml, final.xml, meta.txt, video.mp4, status=done.
  */
 export const OBSERVE_SH = `#!/system/bin/sh
-# observe v6
+# observe v7
 SCAN=$1; PIN=$2; MAXS=$3; RUN=$4
 [ -n "$MAXS" ] || MAXS=420
 T=/sdcard/stakeout
@@ -45,6 +45,8 @@ if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
   # The AI Overview copied with its own copy button (full text with links and Google business ids).
   [ -s "$T/$RUN"_aio_copy.txt ] && cp "$T/$RUN"_aio_copy.txt "$D/aio_copy.txt"
   for x in capture.json events.tsv captures.tsv; do [ -s "$T/$RUN.$x" ] && cp "$T/$RUN.$x" "$D/$x"; done
+  # The template taps "Update location" and leaves this marker (v3.7+); kept in meta.txt.
+  [ -e "$T/$RUN".location_refreshed ] && echo "location_refreshed=1" >> "$D/meta.txt"
   # Screenshots: the full AI Overview, and the tracked business visible on the results page / in the Local Finder.
   [ -s "$T/$RUN"_aio.png ] && cp "$T/$RUN"_aio.png "$D/shot_ai.png"
   [ -s "$T/$RUN"_pack_target.png ] && cp "$T/$RUN"_pack_target.png "$D/shot_pack.png"

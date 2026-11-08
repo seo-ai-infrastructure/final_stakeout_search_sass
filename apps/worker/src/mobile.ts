@@ -1,4 +1,5 @@
-import { isLocalFinder, readAiOverview, sameBusiness } from '@stakeout/core/serpEvidence';
+import { rpaTemplate } from './rpa';
+import { isLocalFinder, readAiOverview, readLocalFinder, sameBusiness } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -765,6 +766,17 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     // language, an IP guess) fails and is refunded instead of being recorded.
     if ((surface === 'chrome' || surface === 'google') && !locationVerified(result.locationSource, p.stateCode, p.zip))
       throw new Error('LOCATION_UNVERIFIED');
+    // A template that refreshes Google's location (it declares update_location_text, v3.7+)
+    // must prove it did; otherwise Google may have reused an earlier point's location.
+    if (surface === 'chrome') {
+      const tpl = await rpaTemplate('chrome').catch(() => null);
+      if (tpl?.vars.some((v) => v.key === 'update_location_text') && !/location_refreshed=1/.test(b.meta))
+        throw new Error("RPA_SURFACE_ERROR location_not_refreshed: the template finished without tapping Update location");
+      // Measurement: does the Local Finder's first view already hold the whole list?
+      if (b.finderTop && b.final)
+        console.info('[finder]', tag, 'organic listings at first view:', readLocalFinder(b.finderTop).filter((x) => !x.ad).length,
+          '· after scrolling:', readLocalFinder(b.final).filter((x) => !x.ad).length);
+    }
     // No Local Finder on this page: Google's AI Overview listed the businesses instead of a
     // map pack, so there was no "More businesses". Rank in that list (and record that), rather
     // than recording "0 listings, no rank".
