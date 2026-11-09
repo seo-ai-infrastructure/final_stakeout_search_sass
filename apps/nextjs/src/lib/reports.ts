@@ -1,5 +1,36 @@
 import { db, Prisma } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
+import { lookupCensus, type PinCensus } from '@stakeout/core/censusLookup';
+
+const CENSUS_VINTAGE = (process.env.CENSUS_VINTAGE || process.env.NEXT_PUBLIC_CENSUS_VINTAGE || '').trim();
+
+/**
+ * Each point's Census neighborhood (block group, tract, ZIP), looked up once per data vintage
+ * and saved on the point, so scans made before the data existed fill in the first time their
+ * report is opened. A slow or failed lookup never holds up the report: it is retried next time.
+ */
+async function fillCensus(pins: { id: string; lat: number; lng: number; stateCode: string; census: unknown }[]) {
+  if (!CENSUS_VINTAGE) return;
+  const missing = pins.filter((p) => (p.census as PinCensus | null)?.v !== CENSUS_VINTAGE);
+  if (!missing.length) return;
+  try {
+    const { byPin, failedFiles } = await Promise.race([
+      lookupCensus(missing.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, stateCode: p.stateCode })), CENSUS_VINTAGE),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out after 8 s')), 8000)),
+    ]);
+    const saves = [];
+    for (const p of missing) {
+      const c = byPin.get(p.id)!;
+      const found = Boolean(c.bg || c.tract || c.zcta);
+      if (found) p.census = c;
+      // A point with nothing found is saved only when every file was read, so a failed read is retried.
+      if (found || !failedFiles.length) saves.push(db.gridPin.update({ where: { id: p.id }, data: { census: c } }));
+    }
+    if (saves.length) await db.$transaction(saves);
+  } catch (e) {
+    console.error('[census] lookup skipped:', (e as Error).message);
+  }
+}
 export const pinSelect = {
   id: true,
   rowIdx: true,
@@ -20,6 +51,7 @@ export const pinSelect = {
   proxyMeta: true,
   metaJsonUrl: true,
   dumpsTarUrl: true,
+  census: true,
 } as const;
 export const reportSelect = {
   id: true,
@@ -48,6 +80,7 @@ export const reportSelect = {
 export async function report(where: Prisma.GridScanWhereInput) {
   const s = await db.gridScan.findFirst({ where, select: reportSelect });
   if (!s) throw new InputError('Report unavailable.', 404);
+  await fillCensus(s.pins);
   return {
     ...s,
     pins: s.pins.map((p) => {

@@ -9,6 +9,8 @@ import {
   type CompetitorMarketStat,
 } from './CompetitorLeaderboard';
 import { Protocol } from 'pmtiles';
+import type { PinCensus } from '@stakeout/core/censusLookup';
+import { buyingPower, passesFilters, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
 import {
   CENSUS_LAYERS,
   CENSUS_SOURCE_LABEL,
@@ -76,6 +78,7 @@ export type GridPinData = {
     rungUsed: string;
     country: string;
   } | null;
+  census?: PinCensus | null;
 };
 export type GridScanData = {
   id: string;
@@ -117,7 +120,8 @@ export function GeoGridDashboard({
     [censusLevel, setCensusLevel] = useState<CensusLevel>('auto'),
     [censusArea, setCensusArea] = useState<CensusArea | null>(null),
     [mapZoom, setMapZoom] = useState(11),
-    [mapReady, setMapReady] = useState(false);
+    [mapReady, setMapReady] = useState(false),
+    [bpFilters, setBpFilters] = useState<BuyingPowerFilters>(NO_FILTERS);
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null);
   useEffect(() => {
@@ -247,6 +251,7 @@ export function GeoGridDashboard({
               ? String(rank)
               : '20+';
       el.style.boxShadow = cited ? '0 0 0 4px #c084fc' : '';
+      el.style.opacity = passesFilters(p.census, bpFilters) ? '1' : '0.3';
       el.title =
         'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + p.status;
       el.onclick = () => select(p.id);
@@ -257,7 +262,7 @@ export function GeoGridDashboard({
     return () => {
       markers.forEach((v) => v.remove());
     };
-  }, [scan, projected]);
+  }, [scan, projected, bpFilters]);
   async function changeShare(action: string) {
     try {
       const r = await fetch('/api/scans/' + identifier, {
@@ -274,6 +279,18 @@ export function GeoGridDashboard({
   }
   if (!scan) return <p className="p-8">{error || 'Loading report…'}</p>;
   const pin = scan.pins.find((p) => p.id === selected);
+  const rankOf = (p: { id: string; rankFound: number | null }) =>
+    projected ? ((projected.pinRanks as Record<string, number | null | undefined>)[p.id] ?? null) : p.rankFound;
+  const bp = buyingPower(scan.pins, bpFilters, rankOf);
+  const hasCensus = scan.pins.some((p) => p.census?.tract?.inc != null);
+  const filtering = bpFilters.minOwnerPct > 0 || bpFilters.minIncome > 0;
+  const pct = (v: number | null) => (v === null ? 'n/a' : `${v.toFixed(1)}%`);
+  const pinArea = pin?.census?.bg?.inc != null && pin.census.bg.rel !== 0
+    ? describeArea('bg', pin.census.bg)
+    : pin?.census?.tract
+      ? describeArea('tract', pin.census.tract)
+      : null;
+  const pinZip = pin?.census?.zcta ? describeArea('zcta', pin.census.zcta) : null;
   return (
     <div className="mx-auto max-w-screen-2xl space-y-5 p-5">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -440,6 +457,96 @@ export function GeoGridDashboard({
                     individual households or searchers.
                   </p>
                 </>
+              )}
+              {hasCensus && (
+                <div className="space-y-2 border-t border-slate-800 pt-2">
+                  <p className="font-bold">Visibility where the buying power is</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded border border-slate-800 p-2">
+                      <p className="text-xs text-slate-400">Standard SoLV (top 3)</p>
+                      <p className="text-xl font-bold">{pct(bp.standard)}</p>
+                      <p className="text-xs text-slate-400">
+                        {bp.top3} of {bp.eligible} points; every point counts the same
+                      </p>
+                    </div>
+                    <div className="rounded border border-slate-800 p-2">
+                      <p className="text-xs text-slate-400">Buying-Power SoLV</p>
+                      <p className="text-xl font-bold">
+                        {pct(bp.buyingPower)}{' '}
+                        {bp.delta !== null && (
+                          <span className={'text-sm ' + (bp.delta >= 0 ? 'text-emerald-400' : 'text-rose-400')}>
+                            {bp.delta >= 0 ? '+' : ''}
+                            {bp.delta.toFixed(1)} pts
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Each point weighted by its tract&apos;s owner-occupied homes × median income ({bp.weightedPins}{' '}
+                        points in {bp.tracts} tracts)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <label className="inline-flex items-center gap-1">
+                      Homeowners at least
+                      <select
+                        value={bpFilters.minOwnerPct}
+                        onChange={(e) => setBpFilters({ ...bpFilters, minOwnerPct: Number(e.target.value) })}
+                        className="rounded border border-slate-700 bg-slate-950 px-1 py-0.5"
+                      >
+                        {[0, 50, 60, 70, 80].map((v) => (
+                          <option key={v} value={v}>
+                            {v ? `${v}%` : 'any'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="inline-flex items-center gap-1">
+                      Median income at least
+                      <select
+                        value={bpFilters.minIncome}
+                        onChange={(e) => setBpFilters({ ...bpFilters, minIncome: Number(e.target.value) })}
+                        className="rounded border border-slate-700 bg-slate-950 px-1 py-0.5"
+                      >
+                        {[0, 75000, 100000, 150000].map((v) => (
+                          <option key={v} value={v}>
+                            {v ? `$${v / 1000}k` : 'any'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {filtering && (
+                      <span className="text-slate-400">
+                        {bp.eligible} of {bp.observed} points match; the others are faded on the map.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              {pin && (pinArea || pinZip) && (
+                <div className="rounded border border-slate-800 p-2 text-xs">
+                  <p className="font-bold">
+                    Point {pin.rowIdx + 1},{pin.colIdx + 1}: its neighborhood
+                  </p>
+                  {pinArea && (
+                    <>
+                      <p className="text-slate-400">
+                        {pinArea.name} · {LEVEL_LABEL[pinArea.level]}
+                      </p>
+                      {pinArea.rows.map((r) => (
+                        <p key={r.label}>
+                          <span className="text-slate-400">{r.label}:</span> {r.value}
+                        </p>
+                      ))}
+                    </>
+                  )}
+                  {pinZip && (
+                    <p className="mt-1">
+                      <span className="text-slate-400">{pinZip.name}:</span> {pinZip.rows[0].value},{' '}
+                      {pinZip.rows[1].value.split(' (')[0]} homeowners
+                    </p>
+                  )}
+                </div>
               )}
             </div>
           )}

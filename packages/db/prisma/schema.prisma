@@ -139,6 +139,7 @@ model GridPin {
   aiOverviewText   String?  @db.Text
   aiCitations      Json?
   proxyMeta        Json?
+  census           Json?
   videoUrl         String?
   dumpsTarUrl      String?
   metaJsonUrl      String?

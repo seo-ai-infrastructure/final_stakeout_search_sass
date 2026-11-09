@@ -285,6 +285,13 @@ def upload():
                       config=Config(request_checksum_calculation='when_required',
                                     response_checksum_validation='when_required'))
     bucket = os.environ['R2_BUCKET_NAME']
+    if endpoint.endswith('/' + bucket):   # the dashboard shows the S3 API URL with the bucket on the end
+        endpoint = endpoint[: -len(bucket) - 1]
+        s3 = boto3.client('s3', endpoint_url=endpoint, region_name='auto',
+                          aws_access_key_id=os.environ['R2_ACCESS_KEY_ID'],
+                          aws_secret_access_key=os.environ['R2_SECRET_ACCESS_KEY'],
+                          config=Config(request_checksum_calculation='when_required',
+                                        response_checksum_validation='when_required'))
     files = sorted(p for p in OUT.rglob('*') if p.is_file() and p.name != 'manifest.json')
     for p in files + [OUT / 'manifest.json']:   # manifest last: it marks the build as complete
         key = f'{PREFIX}/{p.relative_to(OUT).as_posix()}'
