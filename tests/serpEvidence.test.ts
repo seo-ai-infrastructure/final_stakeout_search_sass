@@ -124,3 +124,41 @@ test('evidence: real map-pack page: the 3-pack in order, its ad labelled, Google
     'ad: Nashville Painting Company', '1: Steve And Son Painting', '2: McIntyre Painting', '3: Mount Juliet Painting',
   ]);
 });
+
+test('real Local Finder (9 Nov): 10 organic in Google order, 7 ads labelled, worker agrees', async () => {
+  const { isLocalFinder, readLocalFinder } = await import('../packages/core/serpEvidence');
+  const { parseWebResults } = await import('../apps/worker/src/xmlParser');
+  const x = fx('real-lf-2026-11-09.xml').toString('utf8');
+  const organic = [
+    'Great Plumber of Mt.Juliet', 'Southern Skye Plumbing', 'Music City Plumbing And Solutions', 'Metro State Plumbing services',
+    'Mt. Juliet Plumbing And Leak Detection', 'P&G Service Company', "Arvin's Plumbing", 'Covert Plumbing', 'Southern Sun Plumbing',
+    'Rapid Response Plumbing, Heating & Cooling',
+  ];
+  assert.equal(isLocalFinder(x), true);
+  const lf = readLocalFinder(x);
+  assert.deepEqual(lf.filter((l) => !l.ad).map((l) => l.name), organic);
+  assert.equal(lf.filter((l) => l.ad).length, 7);
+  assert.deepEqual(parseWebResults(x, [], [], 'Covert Plumbing').orderedBusinesses, organic);
+  assert.equal(parseWebResults(x, [], [], 'Covert Plumbing').targetRank, 8);
+});
+
+test('real map pack (9 Nov): the same top 3 as the Local Finder, its ad labelled', async () => {
+  const { readResultsPage, isLocalFinder } = await import('../packages/core/serpEvidence');
+  const x = fx('real-pack-2026-11-09.xml').toString('utf8');
+  assert.equal(isLocalFinder(x), false);
+  assert.deepEqual(readResultsPage(x).pack.map((b) => (b.ad ? 'ad: ' : b.pos + ': ') + b.name), [
+    'ad: Pioneer Heating, Cooling, Electrical & Plumbing', '1: Great Plumber of Mt.Juliet', '2: Southern Skye Plumbing', '3: Music City Plumbing And Solutions',
+  ]);
+});
+
+test('real AI Overview without a map pack (9 Nov): 8 businesses in order, McIntyre Painting first', async () => {
+  const { readAiOverview, isLocalFinder, sameBusiness } = await import('../packages/core/serpEvidence');
+  const x = fx('real-aio-2026-11-09.xml').toString('utf8');
+  assert.equal(isLocalFinder(x), false);
+  const names = readAiOverview(x)!.businesses.map((b) => b.name);
+  assert.deepEqual(names, [
+    'McIntyre Painting', 'Paint EZ of Nashville', 'Pointer Painting', 'Those Guys Painting Co',
+    'EastNashville CB LLC', 'Fresh Coat Painters of East Nashville', 'Cumberland Painting', 'The Ville Painting Co, LLC',
+  ]);
+  assert.equal(names.findIndex((n) => sameBusiness(n, 'McIntyre Painting')) + 1, 1, 'the AI-list rank the worker would store');
+});
