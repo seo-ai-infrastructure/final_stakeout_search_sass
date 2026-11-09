@@ -1,0 +1,61 @@
+name: Census build
+
+# Builds the Census map tiles and point-lookup files (tools/census/build.py) and uploads them to R2.
+# Run it by hand from GitHub: Actions > Census build > Run workflow. Once a year, after the Census
+# Bureau publishes a new ACS 5-year release, run it with the new year.
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: ACS 5-year end year (2024 = the 2020-2024 estimates)
+        default: '2024'
+        required: true
+      states:
+        description: State FIPS codes, e.g. 47 for a Tennessee test build. Leave blank for the whole country
+        default: ''
+        required: false
+      upload:
+        description: Upload the results to R2
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential libsqlite3-dev zlib1g-dev
+          git clone -q --depth 1 --branch 2.77.0 https://github.com/felt/tippecanoe.git /tmp/tippecanoe
+          make -C /tmp/tippecanoe -j"$(nproc)" > /dev/null
+          sudo make -C /tmp/tippecanoe install > /dev/null
+          tippecanoe --version
+          pip install --quiet geopandas==1.2.0 pyogrio==0.13.0 shapely pandas requests boto3
+
+      - name: Build
+        env:
+          YEAR: ${{ inputs.year }}
+          STATES: ${{ inputs.states }}
+          UPLOAD: ${{ inputs.upload && '1' || '0' }}
+          CENSUS_API_KEY: ${{ secrets.CENSUS_API_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: python tools/census/build.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: census-manifest
+          path: census-build/out/manifest.json
+          if-no-files-found: ignore

@@ -8,6 +8,49 @@ import {
   CompetitorLeaderboard,
   type CompetitorMarketStat,
 } from './CompetitorLeaderboard';
+import { Protocol } from 'pmtiles';
+import {
+  CENSUS_LAYERS,
+  CENSUS_SOURCE_LABEL,
+  CENSUS_VINTAGE,
+  LEVEL_LABEL,
+  METRICS,
+  autoLevelAt,
+  describeArea,
+  fillColor,
+  fillOpacity,
+  legend,
+  levelZoomRange,
+  type CensusArea,
+  type CensusLayer,
+  type CensusLevel,
+  type CensusMetric,
+} from '../lib/censusLayer';
+
+let pmtilesReady = false;
+/** The Census layer: the yearly tile file, drawn under the basemap's labels and the rank pins. */
+function addCensusLayers(m: maplibregl.Map) {
+  if (!pmtilesReady) {
+    maplibregl.addProtocol('pmtiles', new Protocol().tile);
+    pmtilesReady = true;
+  }
+  const beforeLabels = m.getStyle().layers?.find((l) => l.type === 'symbol')?.id;
+  m.addSource('census', {
+    type: 'vector',
+    url: `pmtiles://${window.location.origin}/api/census/${CENSUS_VINTAGE}.pmtiles`,
+    promoteId: 'id',
+  });
+  for (const layer of CENSUS_LAYERS) {
+    m.addLayer(
+      { id: `census-${layer}`, type: 'fill', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'fill-color': 'rgba(0,0,0,0)', 'fill-opacity': 0.5 } },
+      beforeLabels,
+    );
+    m.addLayer(
+      { id: `census-${layer}-line`, type: 'line', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'line-color': '#94a3b8', 'line-opacity': 0.35, 'line-width': 0.6 } },
+      beforeLabels,
+    );
+  }
+}
 export type GridPinData = {
   id: string;
   rowIdx: number;
@@ -70,6 +113,11 @@ export function GeoGridDashboard({
     [projected, project] = useState<CompetitorMarketStat | null>(null),
     [mapWarning, setMapWarning] = useState('');
   const [tab, setTab] = useState<'overview' | 'evidence'>('overview');
+  const [censusMetric, setCensusMetric] = useState<CensusMetric>(CENSUS_VINTAGE ? 'income' : 'off'),
+    [censusLevel, setCensusLevel] = useState<CensusLevel>('auto'),
+    [censusArea, setCensusArea] = useState<CensusArea | null>(null),
+    [mapZoom, setMapZoom] = useState(11),
+    [mapReady, setMapReady] = useState(false);
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null);
   useEffect(() => {
@@ -117,11 +165,34 @@ export function GeoGridDashboard({
       });
       m.addControl(new maplibregl.NavigationControl());
       map.current = m;
+      m.on('load', () => {
+        if (CENSUS_VINTAGE) {
+          try {
+            addCensusLayers(m);
+            const pick = (e: maplibregl.MapMouseEvent) => {
+              const visible = CENSUS_LAYERS.map((l) => `census-${l}`).filter(
+                (id) => m.getLayer(id) && m.getLayoutProperty(id, 'visibility') === 'visible',
+              );
+              const f = visible.length ? m.queryRenderedFeatures(e.point, { layers: visible })[0] : undefined;
+              setCensusArea(f ? describeArea(f.sourceLayer as CensusLayer, f.properties ?? {}) : null);
+            };
+            m.on('mousemove', pick);
+            m.on('click', pick);
+            m.on('mouseout', () => setCensusArea(null));
+          } catch (e) {
+            console.error('[census layer]', e);
+          }
+        }
+        setMapZoom(m.getZoom());
+        setMapReady(true);
+      });
+      m.on('zoomend', () => setMapZoom(m.getZoom()));
       const bounds = new maplibregl.LngLatBounds();
       scan.pins.forEach((p) => bounds.extend([p.lng, p.lat]));
       if (!bounds.isEmpty())
         m.fitBounds(bounds, { padding: 52, maxZoom: 14, duration: 0 });
       return () => {
+        setMapReady(false);
         m.remove();
         map.current = null;
       };
@@ -131,6 +202,22 @@ export function GeoGridDashboard({
       );
     }
   }, [scan?.id]);
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady || !m.getSource('census')) return;
+    for (const layer of CENSUS_LAYERS) {
+      const range = censusMetric === 'off' ? null : levelZoomRange(censusLevel, layer);
+      for (const id of [`census-${layer}`, `census-${layer}-line`]) {
+        m.setLayoutProperty(id, 'visibility', range ? 'visible' : 'none');
+        if (range) m.setLayerZoomRange(id, range[0], range[1]);
+      }
+      if (range && censusMetric !== 'off') {
+        m.setPaintProperty(`census-${layer}`, 'fill-color', fillColor(censusMetric) as never);
+        m.setPaintProperty(`census-${layer}`, 'fill-opacity', fillOpacity(censusMetric) as never);
+      }
+    }
+    if (censusMetric === 'off') setCensusArea(null);
+  }, [censusMetric, censusLevel, mapReady]);
   useEffect(() => {
     if (!map.current || !scan) return;
     const m = map.current;
@@ -288,6 +375,74 @@ export function GeoGridDashboard({
           </p>
           <div ref={container} className="h-[420px] rounded-lg bg-slate-900" />
           {mapWarning && <p>{mapWarning}</p>}
+          {CENSUS_VINTAGE && (
+            <div className="mt-3 space-y-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold">Neighborhood data</span>
+                <select
+                  aria-label="Neighborhood data shown under the map"
+                  value={censusMetric}
+                  onChange={(e) => setCensusMetric(e.target.value as CensusMetric)}
+                  className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                >
+                  <option value="income">Household income</option>
+                  <option value="owners">Homeowners</option>
+                  <option value="value">Home value</option>
+                  <option value="built">Year built</option>
+                  <option value="off">Off</option>
+                </select>
+                {censusMetric !== 'off' && (
+                  <select
+                    aria-label="Area size"
+                    value={censusLevel}
+                    onChange={(e) => setCensusLevel(e.target.value as CensusLevel)}
+                    className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                  >
+                    <option value="auto">Areas: auto ({LEVEL_LABEL[autoLevelAt(mapZoom)].toLowerCase()}s)</option>
+                    <option value="zcta">ZIP codes</option>
+                    <option value="tract">Census tracts</option>
+                    <option value="bg">Block groups</option>
+                  </select>
+                )}
+              </div>
+              {censusMetric !== 'off' && (
+                <>
+                  <p className="text-xs text-slate-400">{METRICS[censusMetric].label}</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                    {legend(censusMetric).map((item) => (
+                      <span key={item.label} className="inline-flex items-center gap-1">
+                        <span className="inline-block h-3 w-4 rounded-sm" style={{ background: item.color }} />
+                        {item.label}
+                      </span>
+                    ))}
+                  </div>
+                  {censusArea ? (
+                    <div className="rounded border border-slate-800 p-2 text-xs">
+                      <p className="font-bold">
+                        {censusArea.name} · {LEVEL_LABEL[censusArea.level]}
+                      </p>
+                      {censusArea.rows.map((r) => (
+                        <p key={r.label}>
+                          <span className="text-slate-400">{r.label}:</span> {r.value}
+                        </p>
+                      ))}
+                      {censusArea.uncertain && (
+                        <p className="text-amber-300">
+                          The income estimate here has a large margin of error, so it is faded on the map.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">Hover over or tap an area for its estimates.</p>
+                  )}
+                  <p className="text-[11px] text-slate-500">
+                    {CENSUS_SOURCE_LABEL}. Area estimates with 90% margins of error, not information about
+                    individual households or searchers.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
         </div>
         <aside className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4">
           <label className="block font-bold">

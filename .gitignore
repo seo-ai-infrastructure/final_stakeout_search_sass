@@ -10,3 +10,6 @@ __pycache__/
 *.mp4
 *.tar.gz
 .DS_Store
+
+# Census build working folder (tools/census/build.py)
+census-build/
