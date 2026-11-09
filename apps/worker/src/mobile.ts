@@ -766,14 +766,33 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     // On web surfaces Google states where it placed the search. It must say it used the
     // device and name this point's state or ZIP; anything else (another country, another
     // language, an IP guess) fails and is refunded instead of being recorded.
-    if ((surface === 'chrome' || surface === 'google') && !locationVerified(result.locationSource, p.stateCode, p.zip))
+    // A refused point keeps its evidence (the bundle is already uploaded): link it and upload
+    // its video, so the report shows what the phone saw. A later successful retry replaces it.
+    const keepRefusedEvidence = async () => {
+      if (!tarKey || !b?.video) return;
+      const refusedVideo = prefix + '/video.mp4';
+      await put(refusedVideo, b.video, 'video/mp4').catch(() => {});
+      await db.gridPin.update({ where: { id: p.id }, data: { dumpsTarUrl: tarKey, videoUrl: refusedVideo } }).catch(() => {});
+    };
+    if ((surface === 'chrome' || surface === 'google') && !locationVerified(result.locationSource, p.stateCode, p.zip)) {
+      await keepRefusedEvidence();
       throw new Error('LOCATION_UNVERIFIED');
+    }
+    // The template's own verdict, recorded by the recorder before cleanup: a failure marker
+    // or a ".done" that says "failed" means this point has no trustworthy result.
+    const verdict = /^(?:surface_error|blocked)=(.*)$/m.exec(b.meta)?.[1]?.trim() || (/^done_status=failed/m.test(b.meta) ? 'template reported failure' : '');
+    if (verdict) {
+      await keepRefusedEvidence();
+      throw new Error('RPA_SURFACE_ERROR ' + verdict.slice(0, 160));
+    }
     // A template that refreshes Google's location (it declares update_location_text, v3.7+)
     // must prove it did; otherwise Google may have reused an earlier point's location.
     if (surface === 'chrome') {
       const tpl = await rpaTemplate('chrome').catch(() => null);
-      if (tpl?.vars.some((v) => v.key === 'update_location_text') && !/location_refreshed=1/.test(b.meta))
-        throw new Error("RPA_SURFACE_ERROR location_not_refreshed: the template finished without tapping Update location");
+      if (tpl?.vars.some((v) => v.key === 'update_location_text') && !/location_refreshed=1/.test(b.meta)) {
+        await keepRefusedEvidence();
+        throw new Error("RPA_SURFACE_ERROR location_not_refreshed: the template finished without refreshing Google's location");
+      }
       // Measurement: does the Local Finder's first view already hold the whole list?
       if (b.finderTop && b.final)
         console.info('[finder]', tag, 'organic listings at first view:', readLocalFinder(b.finderTop).filter((x) => !x.ad).length,

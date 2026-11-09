@@ -8,7 +8,7 @@
  * serp.xml, final.xml, meta.txt, video.mp4, status=done.
  */
 export const OBSERVE_SH = `#!/system/bin/sh
-# observe v8
+# observe v9
 SCAN=$1; PIN=$2; MAXS=$3; RUN=$4; WAITREC=\${5:-0}
 [ -n "$MAXS" ] || MAXS=420
 TS=$(date +%s)
@@ -40,6 +40,11 @@ while [ ! -f "$D/stop" ] && [ ! -f "$T/$RUN.done" ]; do
   sleep 1
 done
 echo "rpa_end_t=$(( $(date +%s) - T0 ))" >> "$D/meta.txt"
+# The template's own verdict, recorded before cleanup (race-free for the worker).
+if [ -n "$RUN" ]; then
+  for x in blocked surface_error; do [ -s "$T/$RUN.$x" ] && echo "$x=$(head -c 160 "$T/$RUN.$x" | tr '\n' ' ')" >> "$D/meta.txt"; done
+  [ -s "$T/$RUN.done" ] && echo "done_status=$(head -c 20 "$T/$RUN.done" | tr -d '\n ')" >> "$D/meta.txt"
+fi
 sleep 1
 n=0
 # The template saves the results page and the full business list itself: use those.
@@ -58,6 +63,8 @@ if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
   # The AI Overview copied with its own copy button (full text with links and Google business ids).
   [ -s "$T/$RUN"_aio_copy.txt ] && cp "$T/$RUN"_aio_copy.txt "$D/aio_copy.txt"
   for x in capture.json events.tsv captures.tsv; do [ -s "$T/$RUN.$x" ] && cp "$T/$RUN.$x" "$D/$x"; done
+  # v4.0 diagnostics: location snapshot, failure snapshot, status receipt, event log.
+  for x in location.xml error.xml rpa_status.json rpa_events.tsv; do [ -s "$T/$RUN"_$x ] && cp "$T/$RUN"_$x "$D/$x"; done
   # The template taps "Update location" and leaves this marker (v3.7+); kept in meta.txt.
   [ -e "$T/$RUN".location_refreshed ] && echo "location_refreshed=1" >> "$D/meta.txt"
   # Screenshots: the full AI Overview, and the tracked business visible on the results page / in the Local Finder.
@@ -68,7 +75,7 @@ if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
 elif [ -n "$RUN" ] && { [ -e "$T/$RUN".blocked ] || [ -e "$T/$RUN".surface_error ]; }; then
   # The template stopped itself (wrong page or blocked): keep its log, no scrolling.
   echo "evidence=template_blocked" >> "$D/meta.txt"
-  for x in blocked surface_error; do [ -s "$T/$RUN.$x" ] && echo "$x=$(head -c 160 "$T/$RUN.$x" | tr '\n' ' ')" >> "$D/meta.txt"; done
+  for x in error.xml rpa_status.json rpa_events.tsv; do [ -s "$T/$RUN"_$x ] && cp "$T/$RUN"_$x "$D/$x"; done
   for x in events.tsv captures.tsv; do [ -s "$T/$RUN.$x" ] && cp "$T/$RUN.$x" "$D/$x"; done
 else
 echo "evidence=observer_pass" >> "$D/meta.txt"

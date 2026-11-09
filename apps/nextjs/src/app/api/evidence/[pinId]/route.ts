@@ -50,7 +50,7 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
     } catch {
       capture = null;
     }
-    const events = (read('events.tsv') ?? '')
+    const events = (read('events.tsv') ?? read('rpa_events.tsv') ?? '')
       .split('\n')
       .slice(1)
       .map((l) => l.split('\t'))
