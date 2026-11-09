@@ -162,3 +162,13 @@ test('real AI Overview without a map pack (9 Nov): 8 businesses in order, McInty
   ]);
   assert.equal(names.findIndex((n) => sameBusiness(n, 'McIntyre Painting')) + 1, 1, 'the AI-list rank the worker would store');
 });
+
+test("real AI Overview: Google's own copy and the snapshot list the same 6 businesses in the same order", async () => {
+  const { readAiCopy, readAiOverview, uiLabels } = await import('../packages/core/serpEvidence');
+  const snap = fx('real-uidump-aio-no-map-pack.xml').toString('utf8');
+  const copy = readAiCopy(fx('real-aio-copy-2026-11-09.txt').toString('utf8'), uiLabels(snap).map((l) => l.label));
+  assert.equal(copy.verified, true);
+  assert.deepEqual(copy.businesses.map((b) => b.name), readAiOverview(snap)!.businesses.map((b) => b.name));
+  assert.deepEqual(copy.businesses.map((b) => b.kgmid), ['/g/11z8421vy4', '/g/11jj4sc8cf', '/g/11vbjvks67', '/g/1q5grk4dl', '/g/11nnp_f2z4', '/g/11qqtb5hl0']);
+  assert.ok(copy.citations.some((c) => c.url === 'https://midtnplumbing.net/'), 'cited websites are kept');
+});
