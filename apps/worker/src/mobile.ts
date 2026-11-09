@@ -302,9 +302,11 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
       const used = new Set<number>();
       for (let t = 0; t < tries; t++) {
         await device.assertOwned();
-        // One sticky IP per phone for the whole scan: reuse the port this phone had on earlier points.
+        // A new IP for every point by default (PROXY_IP_PER=pin): each point leases a fresh port.
+        // PROXY_IP_PER=scan keeps one sticky IP per phone for the whole scan (reuses its earlier port).
+        const ipPerScan = (process.env.PROXY_IP_PER ?? 'pin').trim() === 'scan';
         const stickyKey = `stakeout:scanport:${p.scanId}:${device.imageId}:${list.psListId}`;
-        const prior = t === 0 ? Number((await redis().get(stickyKey).catch(() => null)) ?? NaN) : NaN;
+        const prior = ipPerScan && t === 0 ? Number((await redis().get(stickyKey).catch(() => null)) ?? NaN) : NaN;
         const reuse =
           Number.isInteger(prior) && ports.includes(prior) && !(await redis().exists(`stakeout:portbad:${list.psListId}:${prior}`));
         const lease = reuse ? { port: prior, reused: true } : await leasePort(list.psListId, ports, p.id + ':' + list.psListId + ':' + t, used);
