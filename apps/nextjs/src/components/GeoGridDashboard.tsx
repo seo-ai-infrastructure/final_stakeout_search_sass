@@ -317,7 +317,9 @@ export function GeoGridDashboard({
                   : (pin.proxyMeta as { finderShown?: boolean } | null)?.finderShown === false
                     ? pin.rankFound != null
                       ? `#${pin.rankFound} in the AI Overview’s list (no Local Finder on this page)`
-                      : 'Not in the AI Overview’s list (no Local Finder on this page)'
+                      : (pin.proxyMeta as { rankFrom?: string } | null)?.rankFrom === 'none'
+                        ? 'No local results on this page'
+                        : 'Not in the AI Overview’s list (no Local Finder on this page)'
                     : (pin.rankFound ?? 'Not in the top 10')}
               </p>
               {pin.proxyMeta && (

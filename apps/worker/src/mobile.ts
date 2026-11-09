@@ -770,10 +770,6 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         : { ...parsePinXmlBundle(b.final ? [...b.scroll, b.final] : b.scroll, aiDumps, scan.targetBusiness), ads: [], locationSource: null, locationFromIp: false };
     // Google said it located this search by IP, so the pin's GPS was not used:
     // the result is not a measurement at this coordinate. Fail (and refund) it.
-    if (result.locationFromIp) throw new Error('LOCATION_FROM_IP');
-    // On web surfaces Google states where it placed the search. It must say it used the
-    // device and name this point's state or ZIP; anything else (another country, another
-    // language, an IP guess) fails and is refunded instead of being recorded.
     // A refused point keeps its evidence (the bundle is already uploaded): link it and upload
     // its video, so the report shows what the phone saw. A later successful retry replaces it.
     const keepRefusedEvidence = async () => {
@@ -782,6 +778,13 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       await put(refusedVideo, b.video, 'video/mp4').catch(() => {});
       await db.gridPin.update({ where: { id: p.id }, data: { dumpsTarUrl: tarKey, videoUrl: refusedVideo } }).catch(() => {});
     };
+    if (result.locationFromIp) {
+      await keepRefusedEvidence();
+      throw new Error('LOCATION_FROM_IP');
+    }
+    // On web surfaces Google states where it placed the search. It must say it used the
+    // device and name this point's state or ZIP; anything else (another country, another
+    // language, an IP guess) fails and is refunded instead of being recorded.
     if ((surface === 'chrome' || surface === 'google') && !locationVerified(result.locationSource, p.stateCode, p.zip)) {
       await keepRefusedEvidence();
       throw new Error('LOCATION_UNVERIFIED');

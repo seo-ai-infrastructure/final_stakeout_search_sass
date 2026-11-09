@@ -197,7 +197,10 @@ export function parseWebResults(
         ads.push({ name, kind: m[4] === ',' ? 'local_services' : 'sponsored', position: cards });
       }
     }
-  if (!organic.length && !ads.length && !noResults)
+  // A real Google results page (it carries Google's location line) can legitimately hold no
+  // local listings at all, e.g. an informational "... costs near me" search: that is a result
+  // ("no local results"), not an error. Only an unrecognisable page is rejected.
+  if (!organic.length && !ads.length && !noResults && !locationSource)
     throw new Error('UNRECOGNIZED_RESULT_LAYOUT');
   const targetKey = normalize(target);
   const rank = organic.findIndex((n) => normalize(n) === targetKey);
