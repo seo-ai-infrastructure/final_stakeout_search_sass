@@ -201,22 +201,19 @@ export function readAiOverview(xml: string): AiOverview | null {
   const start = L.findIndex((x) => x.label === 'AI Overview');
   if (start < 0) return null;
   const paragraphs: string[] = [], biz: Omit<Listing, 'pos'>[] = [], related: Omit<Listing, 'pos'>[] = [];
-  let inRelated = false;
   for (const { cls, label } of L.slice(start + 1)) {
     // The AI Overview ends at its own footer (Copy text / Good response / More options for
     // response), at its collapsed "Show more AI Overview" button, or, failing those, at the
     // next ads block or "People also ask". Anything after it (e.g. Local Services Ads) is not AI.
     if (/^(Show less|Web results|People also search for|Page Navigation|Footer Links|Copy text|Good response|Bad response|Show more AI Overview|People also ask)$/.test(label)) break;
     if (/^More options for response/.test(label) || /^Sponsored/.test(label)) break;
-    if (label === 'Related results') {
-      inRelated = true;
-      continue;
-    }
+    // "Related results" is a Button that closes each group of cards (seen on two real pages);
+    // it does not start a separate list, so every card in the AI Overview counts, in order.
+    if (label === 'Related results') continue;
     const c = isCardContainer(cls) ? parseCard(label) : null;
-    if (c) (inRelated ? related : biz).push({ name: c.name, rating: c.rating, reviews: c.reviews, meta: c.meta, quote: c.quote, ad: false });
+    if (c) biz.push({ name: c.name, rating: c.rating, reviews: c.reviews, meta: c.meta, quote: c.quote, ad: false });
     else if (cls === 'TextView' && label.length > 2 && paragraphs.length < 80) paragraphs.push(label);
   }
-  // "Related results" are shown with the AI Overview but are not part of its own list.
   return { paragraphs, businesses: finish(biz), related: finish(related) };
 }
 

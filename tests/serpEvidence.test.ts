@@ -87,15 +87,40 @@ test('evidence: a results page whose AI Overview lists businesses is not a Local
   assert.equal(isLocalFinder(fx('real-r3c2-finder.xml').toString('utf8')), true, 'the real Local Finder still is one');
 });
 
-test('evidence: the AI Overview ends at its footer; ads after it and "Related results" are not its list', async () => {
+test('evidence: the AI Overview ends at its footer; ads after it are not in its list', async () => {
   const { readAiOverview } = await import('../packages/core/serpEvidence');
   const ai = readAiOverview(fx('real-aio-expanded-related.xml').toString('utf8'))!;
+  // Every card inside the AI Overview counts, in order; "Related results" buttons close groups.
   assert.deepEqual(ai.businesses.map((b) => [b.pos, b.name]), [
     [1, 'Great Plumber of Mt.Juliet'],
     [2, 'Southern Skye Plumbing'],
     [3, 'Music City Plumbing And Solutions'],
     [4, 'Mr. Rooter Plumbing of Mt. Juliet'],
     [5, 'Mid-Tn Plumbing'],
+    [6, 'Lee Company'],
+    [7, 'Roto-Rooter Plumbing & Water Cleanup'],
   ]);
-  assert.deepEqual(ai.related.map((b) => b.name), ['Lee Company', 'Roto-Rooter Plumbing & Water Cleanup']);
+  assert.deepEqual(ai.related, []);
+});
+
+test('evidence: real AI Overview with no map pack: all 6 cards in order, across "Related results" buttons', async () => {
+  const { readAiOverview, isLocalFinder } = await import('../packages/core/serpEvidence');
+  const x = fx('real-uidump-aio-no-map-pack.xml').toString('utf8');
+  assert.equal(isLocalFinder(x), false);
+  assert.ok(!/text="More businesses"/.test(x), 'no map pack, so no More businesses');
+  assert.deepEqual(readAiOverview(x)!.businesses.map((b) => b.name), [
+    'Great Plumber of Mt. Juliet', 'Mt. Juliet Plumbing And Leak Detection', 'Southern Skye Plumbing',
+    'Lee Company', 'Mid-TN Plumbing', 'Mr. Rooter Plumbing of Mt. Juliet',
+  ]);
+});
+
+test('evidence: real map-pack page: the 3-pack in order, its ad labelled, Google location from the device', async () => {
+  const { readResultsPage, isLocalFinder } = await import('../packages/core/serpEvidence');
+  const x = fx('real-uidump-mappack-noaio.xml').toString('utf8');
+  const page = readResultsPage(x);
+  assert.equal(isLocalFinder(x), false);
+  assert.equal(page.googleLocation, 'Mt. Juliet, Tennessee - From your device');
+  assert.deepEqual(page.pack.map((b) => (b.ad ? 'ad: ' : b.pos + ': ') + b.name), [
+    'ad: Nashville Painting Company', '1: Steve And Son Painting', '2: McIntyre Painting', '3: Mount Juliet Painting',
+  ]);
 });
