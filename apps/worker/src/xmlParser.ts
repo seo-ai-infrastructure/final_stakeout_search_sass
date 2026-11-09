@@ -171,6 +171,8 @@ export function parseWebResults(
     seenOrganic = new Set<string>(),
     seenAds = new Set<string>();
   let locationSource: string | null = null,
+    deviceLine: string | null = null,
+    otherLine: string | null = null,
     noResults = false,
     cards = 0;
   for (const root of trees(finalXml))
@@ -180,8 +182,12 @@ export function parseWebResults(
         throw new Error('FLAG_CAPTCHA_DETECTED');
       if (/no (places|results|matches) found|did not match any/i.test(text))
         noResults = true;
-      if (!locationSource && text.length < 160 && /\b(From your|Based on your)\b/i.test(text))
-        locationSource = text;
+      // Google's location line. AI Overview text can contain "Based on your location ..." before
+      // the real line, so a "From your device" line always wins over any other candidate.
+      if (text.length < 160 && /\b(From your|Based on your)\b/i.test(text)) {
+        if (/from your device/i.test(text)) deviceLine ??= text;
+        else otherLine ??= text;
+      }
       if (!/View$/.test(String(node.class ?? ''))) continue;
       const m = webCard.exec(text);
       if (!m || !(/reviews for/i.test(text) || text.includes('·'))) continue;
@@ -197,6 +203,7 @@ export function parseWebResults(
         ads.push({ name, kind: m[4] === ',' ? 'local_services' : 'sponsored', position: cards });
       }
     }
+  locationSource = deviceLine ?? otherLine;
   // A real Google results page (it carries Google's location line) can legitimately hold no
   // local listings at all, e.g. an informational "... costs near me" search: that is a result
   // ("no local results"), not an error. Only an unrecognisable page is rejected.
