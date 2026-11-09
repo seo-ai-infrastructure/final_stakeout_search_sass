@@ -598,6 +598,12 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
   if (rpaMode) {
     // The recorder only records while the template runs, then reads the results list.
     await ensureObserverInstalled(d);
+    // Housekeeping: run files older than 30 minutes (failed attempts, manual tests) are deleted.
+    // A phone runs one point at a time and a point takes minutes, so none of them is this run's.
+    await shell(
+      d,
+      `find ${RT_DIR} -mindepth 1 -maxdepth 1 ! -name "observe.*" -mmin +30 -exec rm -rf {} + 2>/dev/null; find /sdcard/stakeout -maxdepth 1 -type f -mmin +30 -delete 2>/dev/null; true`,
+    ).catch(() => {});
     // Templates that mark the moment they type (record_start, v3.9+) are recorded from there.
     const waitRec = (await rpaTemplate(app[scan.targetType] as RpaSurface).catch(() => null))?.vars.some((v) => v.key === 'record_start') ? 120 : 0;
     await shell(
@@ -787,8 +793,9 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     }
     // A template that refreshes Google's location (it declares update_location_text, v3.7+)
     // must prove it did; otherwise Google may have reused an earlier point's location.
-    if (surface === 'chrome') {
-      const tpl = await rpaTemplate('chrome').catch(() => null);
+    // The Google app shows the same results page as Chrome, so the same rules apply.
+    if (surface === 'chrome' || surface === 'google') {
+      const tpl = await rpaTemplate(surface).catch(() => null);
       if (tpl?.vars.some((v) => v.key === 'update_location_text') && !/location_refreshed=1/.test(b.meta)) {
         await keepRefusedEvidence();
         throw new Error("RPA_SURFACE_ERROR location_not_refreshed: the template finished without refreshing Google's location");
@@ -802,7 +809,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     // map pack, so there was no "More businesses". Rank in that list (and record that), rather
     // than recording "0 listings, no rank".
     let aiList: { rank: number | null; list: string[] } | null = null;
-    if (surface === 'chrome' && b.final && !isLocalFinder(b.final)) {
+    if ((surface === 'chrome' || surface === 'google') && b.final && !isLocalFinder(b.final)) {
       const list =
         [...[...b.ai].reverse(), b.serp, b.final]
           .filter((x): x is string => !!x)

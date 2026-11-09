@@ -11,6 +11,7 @@ export function TestPointCard() {
   const [bizId, setBizId] = useState('');
   const [keyword, setKeyword] = useState('');
   const [phone, setPhone] = useState('');
+  const [surface, setSurface] = useState('mobile_chrome');
   const [state, setState] = useState<{ busy: boolean; scanId?: string; error?: string }>({ busy: false });
   useEffect(() => {
     fetch('/api/businesses').then((r) => (r.ok ? r.json() : { businesses: [] })).then((d) => {
@@ -29,7 +30,7 @@ export function TestPointCard() {
     const res = await fetch('/api/admin/test-point', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword: keyword.trim(), targetBusiness: biz.name, centerLat: biz.centerLat, centerLng: biz.centerLng, targetType: biz.targetType, imageId: phone || undefined }),
+      body: JSON.stringify({ keyword: keyword.trim(), targetBusiness: biz.name, centerLat: biz.centerLat, centerLng: biz.centerLng, targetType: surface, imageId: phone || undefined }),
     });
     const d = await res.json().catch(() => ({}));
     setState(res.ok ? { busy: false, scanId: d.scanId } : { busy: false, error: d.error ?? 'Could not start the test point.' });
@@ -41,7 +42,7 @@ export function TestPointCard() {
       {!list.length ? (
         <p className="mt-4 text-sm text-slate-400">Save a business in New scan first.</p>
       ) : (
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_180px_auto] md:items-end">
+        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_170px_160px_auto] md:items-end">
           <label className="text-sm text-slate-300">Business
             <select value={bizId} onChange={(e) => { setBizId(e.target.value); setKeyword(list.find((b) => b.id === e.target.value)?.keywords[0] ?? ''); }} className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-white">
               {list.map((b) => <option key={b.id} value={b.id}>{b.name}{b.centerLabel ? ' · ' + b.centerLabel : ''}</option>)}
@@ -50,6 +51,13 @@ export function TestPointCard() {
           <label className="text-sm text-slate-300">Keyword
             <input list="test-point-keywords" value={keyword} onChange={(e) => setKeyword(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-white" />
             <datalist id="test-point-keywords">{biz?.keywords.map((k) => <option key={k} value={k} />)}</datalist>
+          </label>
+          <label className="text-sm text-slate-300">Surface
+            <select value={surface} onChange={(e) => setSurface(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-white">
+              <option value="mobile_chrome">Google Chrome</option>
+              <option value="mobile_maps">Google Maps app</option>
+              <option value="mobile_google">Google app</option>
+            </select>
           </label>
           <label className="text-sm text-slate-300">Phone
             <select value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-white">

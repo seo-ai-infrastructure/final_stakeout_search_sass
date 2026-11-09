@@ -8,7 +8,7 @@
  * serp.xml, final.xml, meta.txt, video.mp4, status=done.
  */
 export const OBSERVE_SH = `#!/system/bin/sh
-# observe v9
+# observe v10
 SCAN=$1; PIN=$2; MAXS=$3; RUN=$4; WAITREC=\${5:-0}
 [ -n "$MAXS" ] || MAXS=420
 TS=$(date +%s)
@@ -48,6 +48,12 @@ fi
 sleep 1
 n=0
 # The template saves the results page and the full business list itself: use those.
+# Maps app templates save one snapshot per screen of the results list (<pin_id>_list_<time>.xml),
+# because the app only exposes the listings on screen: keep them all, in order; the last is final.
+if [ -n "$RUN" ] && [ ! -s "$T/$RUN"_finder.xml ] && ls "$T/$RUN"_list_*.xml >/dev/null 2>&1; then
+  for f in $(ls "$T/$RUN"_list_*.xml | sort); do cp "$f" "$D/dump_$n.xml" && n=$((n+1)); done
+  cp "$(ls "$T/$RUN"_list_*.xml | sort | tail -1)" "$T/$RUN"_finder.xml
+fi
 if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
   [ -s "$T/$RUN"_serp.xml ] && cp "$T/$RUN"_serp.xml "$D/dump_$n.xml" && n=$((n+1))
   cp "$T/$RUN"_finder.xml "$D/dump_$n.xml" && n=$((n+1))
