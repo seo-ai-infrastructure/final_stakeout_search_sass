@@ -91,6 +91,24 @@ test('locationVerified: only a device location in the right state or ZIP counts'
   assert.equal(locationVerified('37121, Tennessee \u2013 From your device', 'TN', '37121'), true);
   assert.equal(locationVerified('Wilson County, TN - Based on your IP address', 'TN', '37121'), false); // IP guess
   assert.equal(locationVerified('O\u02bbzbekiston', 'TN', '37121'), false); // the 19:05 acceptance run
+  // Inside Nashville, Google abbreviates the state or names only the place (Hermitage, Donelson; 10 Nov):
+  assert.equal(locationVerified('Hermitage, Nashville, TN - From your device', 'TN', '37076'), true);
+  assert.equal(locationVerified('Donelson, Nashville, TN 37214 · From your device', 'TN', '37217'), true);
+  assert.equal(locationVerified('Donelson, Nashville - From your device', 'TN', '37217', 'Nashville'), true);
+  assert.equal(locationVerified('Hermitage - From your device', 'TN', '37076', 'Hermitage'), true);
+  // still strict: an IP guess, another state, or a bare device line with nothing matching all fail
+  assert.equal(locationVerified('Hermitage, Nashville, TN - Based on your IP address', 'TN', '37076', 'Hermitage'), false);
+  assert.equal(locationVerified('Louisville, KY - From your device', 'TN', '37076', 'Hermitage'), false);
+  assert.equal(locationVerified('Something, Tenneco - From your device', 'TN', '37076'), false);
+  assert.equal(locationVerified('From your device', 'TN', '37076', 'Old'), false);
   assert.equal(locationVerified('30301, Georgia - From your device', 'TN', '37121'), false); // wrong state
   assert.equal(locationVerified(null, 'TN', '37121'), false);
+});
+
+test('location wording never pauses a phone; real phone faults still count', async () => {
+  const { isDeviceAttributable } = await import('../packages/core/fleetHealth');
+  assert.equal(isDeviceAttributable('LOCATION_UNVERIFIED'), false);
+  assert.equal(isDeviceAttributable('LOCATION_FROM_IP'), false);
+  assert.equal(isDeviceAttributable('RPA_TASK_FAILED'), true);
+  assert.equal(isDeviceAttributable('RPA_SURFACE_ERROR'), true);
 });

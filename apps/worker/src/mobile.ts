@@ -786,7 +786,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     // On web surfaces Google states where it placed the search. It must say it used the
     // device and name this point's state or ZIP; anything else (another country, another
     // language, an IP guess) fails and is refunded instead of being recorded.
-    if ((surface === 'chrome' || surface === 'google') && !locationVerified(result.locationSource, p.stateCode, p.zip)) {
+    if ((surface === 'chrome' || surface === 'google') && !locationVerified(result.locationSource, p.stateCode, p.zip, p.city)) {
       await keepRefusedEvidence();
       throw new Error('LOCATION_UNVERIFIED');
     }

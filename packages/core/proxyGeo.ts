@@ -192,11 +192,16 @@ export function listTries(center: ListPlace, local: ListPlace | null, isp: strin
  * point's state or ZIP. A foreign-language page, an IP-based location, or the wrong state
  * all fail, so a phone whose proxy silently dropped can never record another country's results.
  */
-export function locationVerified(line: string | null | undefined, stateCode: string, zip: string) {
+export function locationVerified(line: string | null | undefined, stateCode: string, zip: string, city?: string | null) {
   const text = (line ?? '').trim();
   if (!/from your device/i.test(text)) return false;
   if (zip && text.includes(zip)) return true;
-  const name = US_STATE_NAMES[stateCode.toUpperCase()] ?? '';
+  const code = stateCode.toUpperCase();
+  const name = US_STATE_NAMES[code] ?? '';
   const squash = (v: string) => v.toLowerCase().replace(/[^a-z]/g, '');
-  return Boolean(name) && squash(text).includes(squash(name));
+  if (name && squash(text).includes(squash(name))) return true;
+  // Inside larger cities Google abbreviates: "Hermitage, Nashville, TN - From your device".
+  if (code.length === 2 && new RegExp(`(^|[\\s,(])${code}([\\s,)\\-–—]|$)`).test(text)) return true;
+  // Or names only the place: "Donelson, Nashville - From your device".
+  return Boolean(city && squash(city).length >= 4 && squash(text).includes(squash(city)));
 }

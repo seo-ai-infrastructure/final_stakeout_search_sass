@@ -13,7 +13,8 @@ export const OUTCOME_WINDOW = 20;
 export function isDeviceAttributable(code: string) {
   // Not the phone's fault: proxy/location problems, waiting for phones, storage (R2/S3) and
   // credential errors, DuoPlus API refusals and phones still applying settings.
-  return !/^(PROXY_|LOCATION_FROM_IP|ISP_TARGETING_NOT_CONFIGURED|NO_COMPATIBLE_DEVICE|DEVICE_WAIT_TIMEOUT|DEVICE_LEASE_LOST|UNSUPPORTED_SURFACE|R2_|NoSuchBucket|NoSuchKey|AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|InvalidArgument|InvalidBucketName|CredentialsProviderError|Credential|DuoPlus|DUOPLUS_|PHONE_STILL_CONFIGURING|PHONE_NOT_READY)/.test(
+  // LOCATION_* is about how Google described the place (or a proxy's location), not the phone itself.
+  return !/^(PROXY_|LOCATION_|ISP_TARGETING_NOT_CONFIGURED|NO_COMPATIBLE_DEVICE|DEVICE_WAIT_TIMEOUT|DEVICE_LEASE_LOST|UNSUPPORTED_SURFACE|R2_|NoSuchBucket|NoSuchKey|AccessDenied|InvalidAccessKeyId|SignatureDoesNotMatch|InvalidArgument|InvalidBucketName|CredentialsProviderError|Credential|DuoPlus|DUOPLUS_|PHONE_STILL_CONFIGURING|PHONE_NOT_READY)/.test(
     code,
   );
 }
