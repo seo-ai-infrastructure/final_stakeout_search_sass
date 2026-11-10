@@ -59,3 +59,16 @@ test('what AI cites: websites by number of points, and how often the business wa
   assert.deepEqual([a.points, a.shown, a.youNamed], [3, 2, 1]);
   assert.deepEqual(a.sources.map((s) => [s.label, s.points]), [['yelp.com', 2], ['Google Business Profiles', 1]]);
 });
+
+test('re-run pricing: the normal price per point, only for points that were refunded', async () => {
+  const { rerunCharge } = await import('../packages/core/rerun');
+  assert.deepEqual(rerunCharge([{ isRefunded: true }, { isRefunded: true }, { isRefunded: false }], 50, 25), { perPoint: 2, refunded: 2, credits: 4 });
+  assert.deepEqual(rerunCharge([{ isRefunded: false }], 18, 9), { perPoint: 2, refunded: 0, credits: 0 });
+});
+
+test('points whose evidence bundle is gone are left out of the market insights, not counted as empty', () => {
+  const gone = { ...pins[2], id: 'g', insights: { v: 0, unavailable: 'bundle_missing' } as never };
+  const p = paidPressure([...pins, gone]);
+  assert.equal(p.points, 3, 'the point without a bundle is not an observation');
+  assert.equal(aiSources([...pins, gone], 'You Painting').points, 3);
+});

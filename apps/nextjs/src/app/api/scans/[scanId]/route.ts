@@ -4,6 +4,7 @@ import { report } from '@/lib/reports';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { InputError, scheduleCron } from '@stakeout/core/grid';
+import { requestRerun } from '@stakeout/core/scans';
 type C = { params: Promise<{ scanId: string }> };
 export async function GET(_: Request, c: C) {
   try {
@@ -23,7 +24,11 @@ export async function POST(req: Request, c: C) {
       userId = (await getAuthenticatedUser()).id;
     const s = await db.gridScan.findFirst({ where: { id, userId } });
     if (!s) throw new InputError('Scan unavailable.', 404);
-    const { action } = await req.json();
+    const { action, pinIds } = await req.json();
+    if (action === 'rerun')
+      return Response.json(
+        await requestRerun(id, userId, Array.isArray(pinIds) ? pinIds.filter((x: unknown) => typeof x === 'string') : undefined),
+      );
     if (action === 'share') {
       await db.gridScan.updateMany({
         where: { id, userId, shareToken: null },

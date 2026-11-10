@@ -17,7 +17,8 @@ export async function backfillInsights(limit = 500) {
     LIMIT ${limit}`;
   if (!pins.length) return;
   let done = 0,
-    failed = 0;
+    failed = 0,
+    missing = 0;
   for (const p of pins) {
     try {
       let key = p.dumpsTarUrl;
@@ -38,9 +39,20 @@ export async function backfillInsights(limit = 500) {
       await db.gridPin.update({ where: { id: p.id }, data: { insights } });
       done++;
     } catch (e) {
+      const err = e as Error & { name?: string };
+      if (err.name === 'NoSuchKey' || /specified key does not exist/i.test(err.message)) {
+        // The bundle is gone (older scans): record that, so it is not retried at every start.
+        await db.gridPin.update({ where: { id: p.id }, data: { insights: { v: 0, unavailable: 'bundle_missing' } } }).catch(() => {});
+        missing++;
+        continue;
+      }
       failed++;
-      console.error('[insights] backfill', p.id, (e as Error).message);
+      console.error('[insights] backfill', p.id, err.message);
     }
   }
-  console.log(`[insights] backfilled ${done} of ${pins.length} point(s)${failed ? ` (${failed} failed, retried next start)` : ''}`);
+  console.log(
+    `[insights] backfilled ${done} of ${pins.length} point(s)` +
+      (missing ? ` · ${missing} without a stored bundle` : '') +
+      (failed ? ` · ${failed} failed, retried next start` : ''),
+  );
 }

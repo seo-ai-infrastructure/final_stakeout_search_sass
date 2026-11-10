@@ -10,6 +10,7 @@ import {
   type ScanSpec,
 } from './grid';
 import { ispForPin } from './proxyGeo';
+import { RERUN_MARKER, rerunCharge } from './rerun';
 
 export async function createScan(
   userId: string,
@@ -234,4 +235,56 @@ export async function stopScan(scanId: string, reason: string) {
   const pending = await db.gridPin.findMany({ where: { scanId, status: 'PENDING' }, select: { id: true } });
   for (const p of pending) await settlePin(p.id, { error: reason.slice(0, 200) });
   return pending.length;
+}
+
+export { RERUN_MARKER, rerunCharge } from './rerun';
+
+/**
+ * Puts a scan's failed points (or the chosen ones) back in line. Points that had been refunded are
+ * charged the normal price again, and refunded automatically if the re-run fails too. The scan
+ * reopens, and the worker queues the points ahead of waiting ones within seconds.
+ */
+export async function requestRerun(scanId: string, userId: string, pinIds?: string[]) {
+  return db.$transaction(
+    async (tx) => {
+      const scan = await tx.gridScan.findFirst({
+        where: { id: scanId, userId },
+        select: { id: true, creditsCharged: true, totalPins: true },
+      });
+      if (!scan) throw new InputError('Scan unavailable.', 404);
+      const points = await tx.gridPin.findMany({
+        where: { scanId, status: 'FAILED', ...(pinIds?.length ? { id: { in: pinIds } } : {}) },
+        select: { id: true, isRefunded: true },
+      });
+      if (!points.length) throw new InputError('There are no failed points to re-run.', 400);
+      const { perPoint, credits } = rerunCharge(points, scan.creditsCharged, scan.totalPins);
+      if (credits > 0) {
+        const paid = await tx.user.updateMany({
+          where: { id: userId, creditBalance: { gte: credits } },
+          data: { creditBalance: { decrement: credits } },
+        });
+        if (!paid.count)
+          throw new InputError(
+            `Re-running ${points.length === 1 ? 'this point' : `${points.length} points`} needs ${credits} credits.`,
+            402,
+          );
+      }
+      for (const p of points.filter((x) => x.isRefunded)) {
+        // One ledger row per point and reason: earlier refunds and re-runs keep numbered names.
+        const n = (await tx.creditLedger.count({ where: { pinId: p.id, reason: { startsWith: 'PIN_RETRY' } } })) + 1;
+        await tx.creditLedger.updateMany({ where: { pinId: p.id, reason: 'PIN_REFUND' }, data: { reason: `PIN_REFUND_${n}` } });
+        await tx.creditLedger.create({ data: { userId, amount: -perPoint, reason: `PIN_RETRY_${n}`, pinId: p.id, scanId } });
+      }
+      await tx.gridPin.updateMany({
+        where: { id: { in: points.map((p) => p.id) }, status: 'FAILED' },
+        data: { status: 'PENDING', lastError: RERUN_MARKER, isRefunded: false },
+      });
+      await tx.gridScan.update({
+        where: { id: scanId },
+        data: { failedPins: { decrement: points.length }, creditsRefunded: { decrement: credits }, status: 'RUNNING', completedAt: null },
+      });
+      return { points: points.length, credits };
+    },
+    { timeout: 20000 },
+  );
 }

@@ -9,7 +9,7 @@ import {
   createRedisClient,
   redactRedisUrl,
 } from '@stakeout/core/redis';
-import { cloneScheduledRun, settlePin, stopScan } from '@stakeout/core/scans';
+import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
 import { listsForPin } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates } from './rpa';
 import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist } from './duoplus';
@@ -278,11 +278,34 @@ function syncSoon() {
   if (Date.now() - lastFleetSync > 60000) lastFleetSync = Math.min(lastFleetSync, Date.now() - every + 30000);
 }
 
+/**
+ * Points the owner asked to re-run (RERUN_MARKER): queued ahead of waiting points within seconds.
+ * An old job left by the failed attempt is removed first, so it is never settled again.
+ */
+async function startReruns() {
+  const asked = await db.gridPin.findMany({
+    where: { status: 'PENDING', lastError: RERUN_MARKER },
+    select: { id: true },
+    take: 50,
+  });
+  for (const p of asked) {
+    const old = await pins.getJob(p.id);
+    if (old) {
+      if ((await old.getState()) === 'active') continue;
+      await old.remove().catch(() => {});
+    }
+    await pins.add('measure', { pinId: p.id }, { ...jobOptions, jobId: p.id, lifo: true });
+    await db.gridPin.updateMany({ where: { id: p.id, status: 'PENDING', lastError: RERUN_MARKER }, data: { lastError: null } });
+    console.log('[rerun] queued point', p.id);
+  }
+}
+
 async function tick() {
   if (busy) return;
   busy = true;
   try {
     await dispatch();
+    await startReruns();
     if (Date.now() - lastRepair > 300000) {
       lastRepair = Date.now();
       await reconcile();

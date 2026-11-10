@@ -67,6 +67,7 @@ export const reportSelect = {
   phoneModel: true,
   trackAiOverviews: true,
   totalPins: true,
+  creditsCharged: true,
   completedPins: true,
   failedPins: true,
   createdAt: true,

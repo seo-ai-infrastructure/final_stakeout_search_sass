@@ -128,6 +128,7 @@ export type GridScanData = {
   totalPins: number;
   completedPins: number;
   failedPins: number;
+  creditsCharged?: number;
   solv: number | null;
   arp: number | null;
   atrp: number | null;
@@ -160,7 +161,10 @@ export function GeoGridDashboard({
     [view3d, setView3d] = useState(false),
     [style3d, setStyle3d] = useState<'columns' | 'areas'>('columns'),
     [colorScale, setColorScale] = useState<'market' | 'national'>('market'),
-    [marketBreaks, setMarketBreaks] = useState<number[] | null>(null);
+    [marketBreaks, setMarketBreaks] = useState<number[] | null>(null),
+    [reloadKey, setReloadKey] = useState(0),
+    [rerunBusy, setRerunBusy] = useState(false),
+    [rerunNote, setRerunNote] = useState('');
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null);
   useEffect(() => {
@@ -194,7 +198,7 @@ export function GeoGridDashboard({
       alive = false;
       clearTimeout(timer);
     };
-  }, [identifier, shared]);
+  }, [identifier, shared, reloadKey]);
   useEffect(() => {
     if (!scan || !container.current) return;
     try {
@@ -411,6 +415,28 @@ export function GeoGridDashboard({
       setError((e as Error).message);
     }
   }
+  /** Re-runs failed points (all of them, or the ones given): charged per point, refunded if they fail again. */
+  async function rerun(pinIds?: string[]) {
+    setRerunBusy(true);
+    setRerunNote('');
+    try {
+      const r = await fetch('/api/scans/' + identifier, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'rerun', pinIds }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw Error(d.error);
+      setRerunNote(
+        `Re-running ${d.points === 1 ? '1 point' : `${d.points} points`}${d.credits ? ` (${d.credits} credits, refunded if it fails again)` : ''}. They run next on the first free phone.`,
+      );
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setRerunNote((e as Error).message);
+    } finally {
+      setRerunBusy(false);
+    }
+  }
   if (!scan) return <p className="p-8">{error || 'Loading report…'}</p>;
   const pin = scan.pins.find((p) => p.id === selected);
   const rankOf = (p: { id: string; rankFound: number | null }) =>
@@ -469,10 +495,23 @@ export function GeoGridDashboard({
         </div>
       )}
       {error && <p role="alert">{error}</p>}
-      <p className="text-sm">
-        {scan.status} · {scan.completedPins}/{scan.totalPins} completed ·{' '}
-        {scan.failedPins} failed
-      </p>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <p>
+          {scan.status} · {scan.completedPins}/{scan.totalPins} completed · {scan.failedPins} failed
+        </p>
+        {!shared && scan.failedPins > 0 && (
+          <button
+            type="button"
+            disabled={rerunBusy}
+            onClick={() => rerun()}
+            className="rounded-lg border border-emerald-500/60 px-3 py-1 font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
+          >
+            {rerunBusy ? 'Starting…' : `Re-run ${scan.failedPins === 1 ? 'the failed point' : `${scan.failedPins} failed points`}`}
+            {scan.creditsCharged && scan.totalPins ? ` (${(scan.creditsCharged / scan.totalPins) * scan.failedPins} credits)` : ''}
+          </button>
+        )}
+        {rerunNote && <p className="text-xs text-slate-300">{rerunNote}</p>}
+      </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {[
           ['SoLV', scan.solv, '%'],
@@ -797,6 +836,17 @@ export function GeoGridDashboard({
                         : 'Not in the AI Overview’s list (no Local Finder on this page)'
                     : (pin.rankFound ?? 'Not in the top 10')}
               </p>
+              {!shared && pin.status === 'FAILED' && (
+                <button
+                  type="button"
+                  disabled={rerunBusy}
+                  onClick={() => rerun([pin.id])}
+                  className="mt-1 rounded-lg bg-emerald-400 px-3 py-1.5 text-sm font-bold text-slate-950 hover:bg-emerald-300 disabled:opacity-50"
+                >
+                  {rerunBusy ? 'Starting…' : 'Re-run this point'}
+                  {scan.creditsCharged && scan.totalPins ? ` (${scan.creditsCharged / scan.totalPins} credits)` : ''}
+                </button>
+              )}
               {pin.proxyMeta && (
                 <p className="text-xs text-emerald-300">
                   Proxy exit ·{' '}

@@ -53,7 +53,7 @@ function milesBetween(a: { lat: number; lng: number }, b: { lat: number; lng: nu
 export function winningRadius(pins: InsightPin[], center: { lat: number; lng: number }) {
   const points = done(pins)
     .map((p) => {
-      const google = p.insights?.you?.miles ?? null;
+      const google = p.insights?.v === 1 ? (p.insights.you?.miles ?? null) : null;
       return { id: p.id, miles: google ?? milesBetween(p, center), fromGoogle: google !== null, rank: p.rankFound ?? null };
     })
     .sort((a, b) => a.miles - b.miles);
@@ -75,7 +75,7 @@ export function winningRadius(pins: InsightPin[], center: { lat: number; lng: nu
 
 /** 4. Paid pressure: who advertises where, and how many ads sit above the business in the Local Finder. */
 export function paidPressure(pins: InsightPin[]) {
-  const seen = done(pins).filter((p) => p.insights);
+  const seen = done(pins).filter((p) => p.insights?.v === 1);
   const rows = new Map<string, { name: string; points: Set<string>; where: Set<string> }>();
   let withAds = 0;
   const above: number[] = [];
@@ -102,7 +102,7 @@ export function paidPressure(pins: InsightPin[]) {
 
 /** 5. What AI cites: the websites the AI Overviews linked to across the grid, and whether they named the business. */
 export function aiSources(pins: InsightPin[], target: string) {
-  const seen = done(pins).filter((p) => p.insights);
+  const seen = done(pins).filter((p) => p.insights?.v === 1);
   const shown = seen.filter((p) => p.insights!.ai.shown);
   const counts = new Map<string, number>();
   for (const p of shown) for (const d of new Set(p.insights!.ai.sources)) counts.set(d, (counts.get(d) ?? 0) + 1);
