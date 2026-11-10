@@ -272,3 +272,12 @@ export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
     (businesses.some((x) => hay.includes(norm(x.name))) || intro.some((l) => l.length > 12 && hay.includes(norm(l))));
   return { intro, businesses, citations, verified };
 }
+
+/**
+ * Google's location line for one search: from the final snapshot when it has one, otherwise from
+ * the results page of the same search (the Local Finder snapshot sometimes lacks the line).
+ */
+export function searchLocationLine(fromFinal: string | null | undefined, serpXml: string | null | undefined): string | null {
+  if (fromFinal) return fromFinal;
+  return serpXml ? readResultsPage(serpXml).googleLocation : null;
+}

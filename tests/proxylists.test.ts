@@ -112,3 +112,15 @@ test('location wording never pauses a phone; real phone faults still count', asy
   assert.equal(isDeviceAttributable('RPA_TASK_FAILED'), true);
   assert.equal(isDeviceAttributable('RPA_SURFACE_ERROR'), true);
 });
+
+test("location line: when the Local Finder snapshot lacks it, the same search's results page provides it (R1-C3, 9 Nov)", async () => {
+  const { readFileSync } = await import('node:fs');
+  const { searchLocationLine, readResultsPage } = await import('../packages/core/serpEvidence');
+  const serp = readFileSync('tests/fixtures/real-r1c3-serp-2026-11-09.xml', 'utf8');
+  const finder = readFileSync('tests/fixtures/real-r1c3-finder-2026-11-09.xml', 'utf8');
+  assert.equal(readResultsPage(finder).googleLocation, null, 'the final snapshot had no location line');
+  const line = searchLocationLine(null, serp);
+  assert.equal(line, 'Mt. Juliet, Tennessee - From your device');
+  assert.equal(locationVerified(line, 'TN', '37121', 'Mount Juliet'), true);
+  assert.equal(searchLocationLine('Hermitage, TN - From your device', serp), 'Hermitage, TN - From your device', 'the final snapshot wins when it has one');
+});

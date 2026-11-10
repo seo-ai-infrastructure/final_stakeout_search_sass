@@ -1,6 +1,6 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, type PinInsights } from '@stakeout/core/pinInsights';
-import { isLocalFinder, readAiOverview, readLocalFinder, sameBusiness } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readAiOverview, readLocalFinder, sameBusiness } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -779,6 +779,11 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       await put(refusedVideo, b.video, 'video/mp4').catch(() => {});
       await db.gridPin.update({ where: { id: p.id }, data: { dumpsTarUrl: tarKey, videoUrl: refusedVideo } }).catch(() => {});
     };
+    // The Local Finder snapshot can lack Google's location line; the results page of the same search has it.
+    if ((surface === 'chrome' || surface === 'google') && !result.locationSource) {
+      const line = searchLocationLine(null, b.serp);
+      if (line) Object.assign(result, { locationSource: line, locationFromIp: /IP address/i.test(line) });
+    }
     if (result.locationFromIp) {
       await keepRefusedEvidence();
       throw new Error('LOCATION_FROM_IP');

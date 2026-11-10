@@ -224,7 +224,7 @@ async function reconcile() {
     },
     orderBy: { updatedAt: 'asc' },
     take: 50,
-    select: { id: true },
+    select: { id: true, updatedAt: true },
   });
   for (const p of pending) {
     const job = await pins.getJob(p.id);
@@ -234,10 +234,18 @@ async function reconcile() {
         { pinId: p.id },
         { ...jobOptions, jobId: p.id },
       );
-    else if ((await job.getState()) === 'failed')
-      await settlePin(p.id, {
-        error: job.failedReason || 'WORKER_INTERRUPTED',
-      });
+    else if ((await job.getState()) === 'failed') {
+      // A point put back to PENDING after its last attempt failed is a deliberate re-run:
+      // clear the old job and queue it again, instead of settling the old failure.
+      if (job.finishedOn && p.updatedAt.getTime() > job.finishedOn) {
+        await job.remove();
+        await pins.add('measure', { pinId: p.id }, { ...jobOptions, jobId: p.id });
+        console.log('[reconcile] re-running point', p.id);
+      } else
+        await settlePin(p.id, {
+          error: job.failedReason || 'WORKER_INTERRUPTED',
+        });
+    }
     await db.gridPin.updateMany({
       where: { id: p.id, status: 'PENDING' },
       data: { updatedAt: new Date() },
