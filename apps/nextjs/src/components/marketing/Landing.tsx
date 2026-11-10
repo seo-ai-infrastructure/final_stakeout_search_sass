@@ -33,70 +33,47 @@ const LISTINGS = [
   { name: 'Ace Rooter Service', rating: '4.4', reviews: '1,021' },
 ];
 
+/** The hero phone: a real recording from a real scan, not a mock-up (point 1,3 of a 5×5 grid, Mt. Juliet, TN). */
 function PhoneCapture() {
   return (
-    <div className="relative mx-auto w-[280px] sm:w-[300px]">
+    <figure className="relative mx-auto w-[280px] sm:w-[300px]">
       <div className="rounded-[40px] border border-[#2a3442] bg-[#0b0f15] p-2.5 shadow-[0_40px_120px_-30px_rgba(122,167,255,0.35)]">
-        <div className="mk-sweep overflow-hidden rounded-[32px] bg-[#f4f6f8] text-[#1f2933]">
+        <div className="overflow-hidden rounded-[32px] bg-black">
           <div className="flex items-center justify-between bg-[#0b0f15] px-4 py-2 text-[11px] text-white">
             <span className="mk-mono flex items-center gap-1.5 font-semibold">
-              <span className="mk-rec inline-block h-2 w-2 rounded-full bg-[#ff4d4d]" /> REC 00:13
+              <span className="mk-rec inline-block h-2 w-2 rounded-full bg-[#ff4d4d]" /> REC · real session
             </span>
-            <span className="mk-mono text-[#9aa7b8]">Android · Maps</span>
+            <span className="mk-mono text-[#9aa7b8]">Android · Chrome</span>
           </div>
-          <div className="px-3 pb-4 pt-3">
-            <div className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[13px] shadow-sm">
-              <span className="h-3 w-3 rounded-full border-2 border-[#5f6b7a]" aria-hidden="true" />
-              plumber near me
-            </div>
-            <div className="mt-3 rounded-2xl border border-[#d6e4ff] bg-[#eef4ff] p-3 text-[12px] leading-snug">
-              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-[#2f5bd3]">
-                <span aria-hidden="true">✦</span> Ask Maps
-              </div>
-              For 24-hour service nearby, <b>Harbor Plumbing Co.</b> and{' '}
-              <mark className="rounded bg-[#ffe08a] px-1 font-semibold text-[#1f2933]">Your Business</mark> are well reviewed.
-            </div>
-            <div className="relative mt-3 h-16 overflow-hidden rounded-xl bg-[#dfe7dc]">
-              <div className="absolute left-6 top-4 h-6 w-28 rotate-6 rounded bg-[#cfd9cc]" />
-              <div className="absolute right-4 top-2 h-12 w-20 -rotate-3 rounded bg-[#d3dccf]" />
-              <span className="absolute left-[46%] top-[38%] h-3 w-3 rounded-full bg-[#e2483d] ring-2 ring-white" />
-              <span className="absolute left-[64%] top-[20%] h-3 w-3 rounded-full bg-[#f5c451] ring-2 ring-white" />
-            </div>
-            <ol className="mt-2 space-y-1.5">
-              {LISTINGS.map((l, i) => (
-                <li
-                  key={l.name}
-                  className={
-                    'flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-[12px] ' +
-                    (l.you ? 'bg-[#fff6dc] ring-2 ring-[#f5c451]' : 'bg-white')
-                  }
-                >
-                  <span className={'mk-mono w-4 text-center font-semibold ' + (l.you ? 'text-[#a3720b]' : 'text-[#5f6b7a]')}>{i + 1}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-semibold">{l.name}</span>
-                    <span className="text-[11px] text-[#5f6b7a]">
-                      {l.rating} ★ ({l.reviews}) · Plumber
-                    </span>
-                  </span>
-                  {l.you && <span className="rounded-full bg-[#f5c451] px-2 py-0.5 text-[10px] font-bold text-[#1a1300]">YOU</span>}
-                </li>
-              ))}
-            </ol>
-          </div>
+          <video
+            className="block aspect-[9/16] w-full bg-black object-cover"
+            src="/media/real-run-mt-juliet.mp4"
+            poster="/media/real-run-mt-juliet-poster.jpg"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            aria-label="Screen recording of a real search for exterior painting contractors near me, at grid point 1,3 in Mt. Juliet, Tennessee"
+          />
         </div>
       </div>
-    </div>
+      <figcaption className="mt-3 text-center text-[11.5px] leading-snug text-[#9aa7b8]">
+        Real recording, not a mock-up: &ldquo;exterior painting contractors near me&rdquo;, point 1,3 of a 5×5 grid in Mt. Juliet, TN, 9 Nov 2026 at 3:47 PM CST.
+      </figcaption>
+    </figure>
   );
 }
 
+/** A real receipt: the run in the hero recording (9 Nov 2026, Mt. Juliet, TN). */
 const RECEIPT_ROWS: [string, string, boolean?][] = [
-  ['Keyword', 'plumber near me'],
-  ['Grid point', '3,3 · 36.214573, −86.536535'],
-  ['Captured', '2026-11-06 08:07:12 CST'],
-  ['Device', 'Android · Galaxy S23 Ultra'],
-  ['Network', 'Residential · Comcast Cable'],
-  ['Google located', '37122, Tennessee – From your device', true],
-  ['Result', 'Rank #2 · named in Ask Maps', true],
+  ['Keyword', 'exterior painting contractors near me'],
+  ['Grid point', '1,3 · 36.228862, −86.525138'],
+  ['Captured', '2026-11-09 15:47 CST'],
+  ['Device', 'Android phone · Chrome'],
+  ['Network', 'Residential connection'],
+  ['Google located', 'Mt. Juliet, Tennessee – From your device', true],
+  ['Result', '#2 in the map pack and Local Finder', true],
 ];
 
 function Receipt({ className = '' }: { className?: string }) {
@@ -106,7 +83,7 @@ function Receipt({ className = '' }: { className?: string }) {
       <div className="px-5 pb-5 pt-2">
         <div className="flex items-baseline justify-between border-b border-dashed border-[#2a3442] pb-2">
           <span className="mk-display text-sm font-semibold tracking-[0.18em] text-[#f5c451]">RECEIPT</span>
-          <span className="mk-mono text-[11px] text-[#9aa7b8]">#R-7F3K-2Q9M</span>
+          <span className="mk-mono text-[11px] text-[#9aa7b8]">#cmw9rplww000b</span>
         </div>
         <dl className="mt-3 space-y-1.5 text-[11.5px]">
           {RECEIPT_ROWS.map(([k, v, ok]) => (
@@ -118,11 +95,11 @@ function Receipt({ className = '' }: { className?: string }) {
         </dl>
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#2a3442] bg-[#0b0f15] px-3 py-2">
           <span className="mk-rec inline-block h-2 w-2 rounded-full bg-[#ff4d4d]" aria-hidden="true" />
-          <span className="text-[11.5px]">Screen recording · 2:47</span>
-          <span className="ml-auto text-[11px] text-[#7aa7ff]">▶ Watch</span>
+          <span className="text-[11.5px]">Screen recording · 0:37</span>
+          <a href="/media/real-run-mt-juliet.mp4" className="ml-auto text-[11px] text-[#7aa7ff] hover:underline">▶ Watch</a>
         </div>
         <p className="mk-mono mt-3 break-all text-[10.5px] leading-relaxed text-[#6b7686]">
-          SHA-256 9f2c41d0e6b8a37c55e1f0a9d2c4b7e8a41e
+          SHA-256 7de5f245cf107de8f10a4ef5d7ebeb985358cfb4662a623a8841c046f5b4bf70
         </p>
       </div>
     </div>
@@ -166,7 +143,7 @@ const COMPARE: { row: string; typical: string; stakeout: string }[] = [
   { row: 'Location', typical: 'Coordinates passed into a query', stakeout: "The phone's GPS is moved to each grid point, and Google's own location line is captured as proof" },
   { row: 'Network', typical: 'Data-center or random IPs', stakeout: 'A residential connection, from the ISP you choose, one or a mix' },
   { row: 'Proof', typical: 'A colored dot on a map', stakeout: 'A full screen recording, the screen data and a SHA-256 fingerprint for every point' },
-  { row: 'AI answers', typical: 'Rarely tracked', stakeout: 'AI Overviews and Ask Maps answers captured at every point: are you named?' },
+  { row: 'AI answers', typical: 'Rarely tracked', stakeout: 'AI Overviews captured at every point, with the sources they cited: are you named? (Ask Maps coming soon)' },
   { row: 'Ads', typical: 'Often mixed into the ranks', stakeout: 'Listed separately and never counted as a rank' },
 ];
 
@@ -175,7 +152,7 @@ const ANATOMY = [
   { n: '02', title: 'The exact spot', text: "Grid point and the GPS the phone used, to six decimal places. Google's own location line confirms it." },
   { n: '03', title: 'The real network', text: 'Residential connection, the internet provider it came from, and the exit city.' },
   { n: '04', title: 'The full results', text: 'Every business that ranked, in order, with ads set aside, read from the screen itself.' },
-  { n: '05', title: 'The AI answer', text: 'Whether Ask Maps or the AI Overview named the business, and which sources it trusted.' },
+  { n: '05', title: 'The AI answer', text: 'Whether the AI Overview named the business, and which sources it cited. Ask Maps answers are coming soon.' },
   { n: '06', title: 'The fingerprint', text: 'A SHA-256 hash of the evidence as captured, so anyone can check it has not changed.' },
 ];
 
@@ -193,7 +170,7 @@ function AiAnswers() {
     <section className="relative border-y border-[#1b2431] bg-[#080b10]">
       <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 sm:px-8 lg:grid-cols-[1fr_1.1fr]">
         <div>
-          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">Ask Maps · AI Overviews</p>
+          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">AI Overviews · Ask Maps coming soon</p>
           <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
             The AI Answer Is the <span className="mk-gold-text">New #1 Spot.</span>
           </h2>
@@ -202,7 +179,7 @@ function AiAnswers() {
           </p>
           <ul className="mt-7 space-y-4">
             {[
-              ['Who the AI recommends, at every point', 'The full Ask Maps and AI Overview answer is saved in each receipt, not reduced to a yes or no.'],
+              ['Who the AI recommends, at every point', 'The full AI Overview answer is saved in each receipt, not reduced to a yes or no. Ask Maps answers are coming soon.'],
               ['Named, or left out?', `See the points where the answer includes you, and where it sends people to a competitor instead.`],
               ['What the AI trusted', 'The sources an AI Overview cited, so you know which reviews, directories and pages to work on.'],
             ].map(([t, d]) => (
@@ -219,7 +196,7 @@ function AiAnswers() {
             <div className="space-y-3">
               <div className="rounded-2xl border border-[#d6e4ff]/20 bg-[#0f1624] p-4">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps · point 2,6</span>
+                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps preview · point 2,6</span>
                   <span className="rounded-full bg-[#ff6b6b]/15 px-2 py-0.5 font-semibold text-[#ff9b9b]">Not named</span>
                 </div>
                 <p className="mt-2 text-[13px] leading-relaxed text-[#c9d3df]">
@@ -228,7 +205,7 @@ function AiAnswers() {
               </div>
               <div className="rounded-2xl border border-[#3ddc97]/30 bg-[#0d1a16] p-4">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps · point 4,4</span>
+                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps preview · point 4,4</span>
                   <span className="rounded-full bg-[#3ddc97]/15 px-2 py-0.5 font-semibold text-[#3ddc97]">Named first</span>
                 </div>
                 <p className="mt-2 text-[13px] leading-relaxed text-[#c9d3df]">
@@ -259,7 +236,7 @@ function AiAnswers() {
               </figcaption>
             </figure>
           </div>
-          <p className="mt-3 text-[12px] text-[#6b7686]">Illustrative answers and grid.</p>
+          <p className="mt-3 text-[12px] text-[#6b7686]">Illustrative answers and grid. Ask Maps capture is coming soon.</p>
         </div>
       </div>
     </section>
@@ -314,12 +291,12 @@ function Territory() {
         </div>
       </div>
       <div>
-        <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Up to 980 competitor positions per 7×7 scan</p>
+        <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Up to 490 competitor positions per 7×7 scan</p>
         <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
           Know Who&apos;s Beating You, <span className="mk-gold-text">Street by Street.</span>
         </h2>
         <p className="mt-5 text-lg leading-relaxed text-[#c9d3df]">
-          Every point saves the whole top 20, not just your rank. So one scan shows you every competitor, where each one wins, and the exact streets where you lose, with the video to prove it.
+          Every point saves the whole top 10, not just your rank. So one scan shows you every competitor, where each one wins, and the exact streets where you lose, with the video to prove it.
         </p>
         <ul className="mt-7 space-y-4">
           {[
@@ -345,8 +322,8 @@ const ITEMS: [string, string][] = [
   ['Screen recordings, about 2 hours in total', '49'],
   ['GPS-set locations, one per grid point', '49'],
   ['Residential connections, ISP named', '49'],
-  ['Ranked listings captured (up to 20 per point)', '980'],
-  ['AI answers checked (Ask Maps / AI Overview)', '49'],
+  ['Ranked listings captured (up to 10 per point)', '490'],
+  ['AI Overviews checked (with AI tracking on)', '49'],
   ['SHA-256 evidence fingerprints', '49'],
   ['Client share link, no login needed', '1'],
 ];
@@ -395,7 +372,7 @@ function ValueStack() {
                 {[
                   ['~50 mi', 'of driving between 49 points a mile apart'],
                   ['~7 hrs', 'driving, parking, searching, recording'],
-                  ['980', 'listings to write down by hand, at most'],
+                  ['490', 'listings to write down by hand, at most'],
                   ['0', 'fingerprints proving nothing was edited'],
                 ].map(([n, l]) => (
                   <div key={l} className="rounded-xl border border-[#1b2431] bg-[#0f141c] px-4 py-3.5">
@@ -418,6 +395,141 @@ function ValueStack() {
 }
 
 /* ------------------------------------------------------------------ page */
+
+/* ------------------------------------------------------------------ real proof */
+
+const PROOF_FRAMES: [string, string, string][] = [
+  ['/media/real-proof-location.jpg', 'Google placed the phone', 'Google’s own location line: “Mt. Juliet, TN”, from the phone’s GPS, not a guess from its IP.'],
+  ['/media/real-proof-ranks.jpg', 'The ranks, as Google showed them', 'The sponsored card above (never counted), then #1 Steve And Son, #2 McIntyre Painting at 2.0 mi, #3 Mount Juliet Painting.'],
+  ['/media/real-proof-finder.jpg', 'The Local Finder behind it', 'Tapping “More businesses” opens the full list: every business at this point, read from the screen in order.'],
+];
+
+/** Frames from the hero recording: what a receipt is made of. */
+function RealProof() {
+  return (
+    <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
+      <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#3ddc97]">Not a mock-up · frames from the recording above</p>
+      <h2 className="mk-display mx-auto mt-3 max-w-4xl text-center text-4xl font-bold leading-tight sm:text-5xl">
+        One point, <span className="mk-gold-text">three pieces of proof.</span>
+      </h2>
+      <div className="mt-12 grid gap-6 md:grid-cols-3">
+        {PROOF_FRAMES.map(([src, title, text]) => (
+          <figure key={src} className="overflow-hidden rounded-2xl border border-[#1b2431] bg-[#0c1118]">
+            <img src={src} alt={title} loading="lazy" className="block h-72 w-full object-cover object-top" />
+            <figcaption className="p-5">
+              <p className="font-semibold">{title}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-[#9aa7b8]">{text}</p>
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ buying power */
+
+const MONEY_POINTS: [string, string][] = [
+  ['Buying-Power SoLV', 'Your share of the top 3 weighted by owner-occupied homes × median income, next to the standard score: visible to 31% of searches can mean 46% of the money.'],
+  ['Neighborhood data at every point', 'U.S. Census ACS 2020–2024 for every block group, tract and ZIP: household income, homeowners, home value, year built.'],
+  ['Who owns the valuable ground', 'Each competitor’s share of the grid’s buying power where they hold the top 3.'],
+  ['Your winning radius', 'How far from your business you hold the top 3, from Google’s own distances.'],
+  ['Paid pressure', 'Who advertises at your points, and how many ads sit above you.'],
+  ['What AI cites', 'The websites Google’s AI Overviews linked to across your grid, so you know which listings to fix first.'],
+];
+
+/** The real 3D report: rank against buying power. */
+function WhereTheMoneyIs() {
+  return (
+    <section className="border-y border-[#1b2431] bg-[#080b10]">
+      <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 sm:px-8 lg:grid-cols-[1.25fr_1fr]">
+        <figure>
+          <img src="/media/real-report-3d.jpg" alt="A real Stakeout report in 3D: each grid point is a column, its height the point’s share of the grid’s buying power and its colour the rank there" loading="lazy" className="w-full rounded-2xl border border-[#1b2431]" />
+          <figcaption className="mt-3 text-[12px] leading-relaxed text-[#6b7686]">
+            A real report (Mt. Juliet, TN, 5×5). Column height: the point’s share of the grid’s buying power. Colour: the rank there. The grey × is a point that failed; one click re-ran it, and failed points are credited back automatically.
+          </figcaption>
+        </figure>
+        <div>
+          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Ranks meet the U.S. Census</p>
+          <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
+            Rank where the <span className="mk-gold-text">money</span> is.
+          </h2>
+          <p className="mt-5 leading-relaxed text-[#9aa7b8]">
+            A #1 in a neighborhood of renters isn’t worth a #1 among homeowners. Every report maps your ranks onto the neighborhoods around them, in 2D or 3D.
+          </p>
+          <ul className="mt-8 space-y-4">
+            {MONEY_POINTS.map(([t, d]) => (
+              <li key={t} className="flex gap-3">
+                <Check className="mt-1 shrink-0 text-[#3ddc97]" />
+                <span>
+                  <span className="font-semibold">{t}.</span> <span className="text-[#9aa7b8]">{d}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ pricing and FAQ */
+
+const PRICE_ROWS: [string, string][] = [
+  ['Your first 3×3 scan, AI tracking included', '$1'],
+  ['Every grid point, Chrome or Google Maps app', '1 credit'],
+  ['With AI Overview tracking (Chrome)', '+1 credit'],
+  ['A point that fails', 'credited back automatically'],
+  ['Re-running a failed point', '1 click, same price'],
+];
+
+const FAQ: [string, string][] = [
+  ['Are these really phones?', 'Yes. Every point is its own Android session in the real Chrome or Google Maps app, recorded from the search to the last result.'],
+  ['How do you know Google used the right location?', 'The phone’s GPS is moved to each grid point, and in Chrome the location is refreshed and proven by Google’s own location line, saved on every receipt. A point where Google used anything else is refused, not counted.'],
+  ['What happens when a point fails?', 'Its credits come back automatically, and you can re-run it from the report in one click.'],
+  ['What do my clients see?', 'A share link to the report, no login: the grid, every recording, the receipts and the neighborhood data.'],
+  ['Do you track Ask Maps?', 'Not yet: it’s coming soon. Google Maps app scans already track the results list, with ads set aside. AI Overviews are tracked in Chrome today.'],
+];
+
+function Pricing() {
+  return (
+    <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
+      <div className="grid gap-12 lg:grid-cols-2">
+        <div>
+          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Pricing</p>
+          <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">
+            One credit per point. <span className="mk-gold-text">That’s it.</span>
+          </h2>
+          <dl className="mt-8 divide-y divide-[#1b2431] rounded-2xl border border-[#1b2431] bg-[#0c1118]">
+            {PRICE_ROWS.map(([k, v]) => (
+              <div key={k} className="flex items-baseline justify-between gap-4 px-5 py-4">
+                <dt className="text-[#c9d3df]">{k}</dt>
+                <dd className="mk-mono shrink-0 font-semibold text-[#eef2f7]">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="mt-4 text-sm leading-relaxed text-[#9aa7b8]">
+            Start with a full 3×3 scan for $1, once per account. After that, a 3×3 grid is 9 credits and a 7×7 is 49 (98 with AI tracking), from credit packs of 500, 750, 3,000 and 7,500 credits.
+          </p>
+        </div>
+        <div>
+          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">Questions</p>
+          <div className="mt-6 space-y-3">
+            {FAQ.map(([q, a]) => (
+              <details key={q} className="group rounded-2xl border border-[#1b2431] bg-[#0c1118] px-5 py-4">
+                <summary className="cursor-pointer list-none font-semibold marker:hidden">
+                  {q}
+                  <span className="float-right text-[#6b7686] transition group-open:rotate-45">+</span>
+                </summary>
+                <p className="mt-3 text-sm leading-relaxed text-[#9aa7b8]">{a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function Landing() {
   return (
@@ -450,7 +562,7 @@ export default function Landing() {
               </Link>
             </div>
             <ul className="mt-9 grid max-w-xl grid-cols-1 gap-x-6 gap-y-3 text-sm text-[#c9d3df] sm:grid-cols-2">
-              {['Video receipt for every grid point', 'GPS set on the phone itself', 'Residential ISP you choose', 'AI Overviews & Ask Maps tracked'].map((t) => (
+              {['Video receipt for every grid point', 'GPS set on the phone itself', 'Residential ISP you choose', 'AI Overviews tracked · Ask Maps soon'].map((t) => (
                 <li key={t} className="flex items-center gap-2.5"><Check className="text-[#3ddc97]" />{t}</li>
               ))}
             </ul>
@@ -468,6 +580,8 @@ export default function Landing() {
         </div>
       </section>
 
+
+      <RealProof />
 
       {/* A PHONE AT EVERY POINT */}
       <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
@@ -505,8 +619,8 @@ export default function Landing() {
             {[
               {
                 tag: 'Google Maps app',
-                title: 'The Map Pack, and Ask Maps',
-                points: ['The full results list, top 20, with ads set aside', 'Ask Maps answers: are you named, and next to whom?', 'Every scroll on video'],
+                title: 'The Maps results list',
+                points: ['The results list, top 10, with Sponsored and Google Verified ads set aside', 'Every scroll on video, every screen read', 'Ask Maps answers: coming soon'],
               },
               {
                 tag: 'Chrome on Android',
@@ -559,6 +673,7 @@ export default function Landing() {
       <AiAnswers />
 
       <Territory />
+      <WhereTheMoneyIs />
 
       {/* THE TAGLINE: EVERY DATA POINT COMES WITH A RECEIPT */}
       <section className="relative overflow-hidden border-y border-[#1b2431]">
@@ -631,6 +746,8 @@ export default function Landing() {
       <ValueStack />
 
       {/* CALLS TO ACTION */}
+      <Pricing />
+
       <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
         <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
           <div className="relative overflow-hidden rounded-3xl border border-[#2a3442] bg-[#0c1118] p-10">
@@ -653,7 +770,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <SiteFooter note="Example screens and receipt values are illustrative." />
+      <SiteFooter note="The hero recording, its frames, the receipt beside it and the 3D report are real (Mt. Juliet, TN, 9 Nov 2026). The grids, the territory map, the interactive receipt printer and the AI answer examples are illustrative." />
     </div>
   );
 }

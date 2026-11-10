@@ -86,6 +86,8 @@ export function buildPinInsights(input: {
     named = copy.businesses.map((b) => b.name);
   }
   if (!named.length && input.aiExpanded) named = readAiOverview(input.aiExpanded)?.businesses.map((b) => b.name) ?? [];
-  const shown = Boolean(input.aiCopy || input.aiExpanded || page?.aiPreview);
+  // An AI Overview was shown only if one was copied or a snapshot actually holds one: a saved
+  // aio_ snapshot file on its own proves nothing (the template saves one on every page).
+  const shown = Boolean(input.aiCopy?.trim() || (input.aiExpanded && readAiOverview(input.aiExpanded)) || page?.aiPreview);
   return { v: 1, finder, you, ads, adsAboveYou, ai: { shown, sources, named } };
 }

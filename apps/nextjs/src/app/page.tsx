@@ -9,7 +9,7 @@ import Landing from '@/components/marketing/Landing';
 export const metadata: Metadata = {
   title: 'Stakeout Search: Every Data Point Comes with a Receipt',
   description:
-    'Local rank tracking on real Android phones. GPS set at every grid point, residential ISPs you choose, AI Overviews and Ask Maps tracked, and a screen recording behind every result.',
+    'Local rank tracking on real Android phones, in Chrome and the Google Maps app. GPS set at every grid point, residential ISPs you choose, AI Overviews tracked, and a screen recording behind every result.',
 };
 
 export default function Home() {

@@ -41,3 +41,10 @@ test("insights from Google's own copied AI Overview: cited websites in order, an
   assert.ok(i.ai.sources.length >= 1 && i.ai.sources.every((d) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(d)), JSON.stringify(i.ai.sources));
   assert.equal(new Set(i.ai.sources).size, i.ai.sources.length, 'each website once');
 });
+
+test('AI Overview "shown" only when a snapshot really holds one (not because an aio_ file exists)', () => {
+  const none = buildPinInsights({ serp: null, finder: null, aiExpanded: read('real-uidump-mappack-noaio.xml'), target: 'x' });
+  assert.equal(none.ai.shown, false, 'a map-pack page with no AI Overview');
+  const some = buildPinInsights({ serp: null, finder: null, aiExpanded: read('real-aio-list-no-finder.xml'), target: 'x' });
+  assert.equal(some.ai.shown, true);
+});

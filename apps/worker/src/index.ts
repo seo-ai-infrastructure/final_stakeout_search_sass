@@ -10,7 +10,7 @@ import {
   redactRedisUrl,
 } from '@stakeout/core/redis';
 import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
-import { listsForPin } from '@stakeout/core/proxyLists';
+import { listsForPin, releaseIdleProxyLists } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates } from './rpa';
 import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist } from './duoplus';
 import { measureDesktop } from './desktop';
@@ -110,11 +110,13 @@ async function execute(job: Job, token?: string) {
         lastWhitelistFix = Date.now();
         await ensureAdbWhitelist(true).catch(() => {});
       }
-      if (e instanceof Error && e.message === 'FLAG_CAPTCHA_DETECTED')
+      if (e instanceof Error && e.message === 'FLAG_CAPTCHA_DETECTED') {
         await db.devicePool.update({
           where: { imageId: d.imageId },
           data: { cooldownUntil: new Date(Date.now() + 35 * 60000) },
         });
+        await noteCaptcha(d.imageId);
+      }
       throw e;
     } finally {
       // Pace only real searches: setup failures (ADB, proxy, DuoPlus) don't need a rest.
@@ -259,16 +261,42 @@ function searched(e: unknown) {
   return !/^(ADB_|PROXY_|DuoPlus|DUOPLUS_|PHONE_|RPA_TEMPLATE|RPA_NO_KEYWORD|NO_COMPATIBLE|DEVICE_LEASE)/.test(failureCode(e));
 }
 
-/** A rest after every search on a phone (SEARCH_GAP_SECONDS, randomised); never shortens a longer one. */
+/**
+ * A rest after every search on a phone (SEARCH_GAP_SECONDS, randomised); never shortens a longer one.
+ * A shorter gap protects itself: after a captcha that phone rests the safe gap
+ * (SEARCH_GAP_SAFE_SECONDS, default 120 s) for six hours, and two captchas within an hour
+ * anywhere put the whole fleet back on the safe gap for six hours.
+ */
 async function restPhone(imageId: string) {
-  const base = Number(process.env.SEARCH_GAP_SECONDS ?? 120);
+  let base = Number(process.env.SEARCH_GAP_SECONDS ?? 120);
+  const safe = Number(process.env.SEARCH_GAP_SAFE_SECONDS ?? 120);
+  if (safe > base && (await redis().exists(`stakeout:gapsafe:${imageId}`, 'stakeout:gapsafe:all').catch(() => 0)))
+    base = safe;
   if (!(base > 0)) return;
   const until = new Date(Date.now() + base * 1000 * (0.8 + Math.random() * 0.6));
   await db.devicePool.updateMany({ where: { imageId, cooldownUntil: { lt: until } }, data: { cooldownUntil: until } }).catch(() => {});
 }
+/** A captcha: this phone (and, past two in an hour, every phone) goes back to the safe gap for six hours. */
+async function noteCaptcha(imageId: string) {
+  const safe = Number(process.env.SEARCH_GAP_SAFE_SECONDS ?? 120);
+  await redis().set(`stakeout:gapsafe:${imageId}`, '1', 'EX', 6 * 3600).catch(() => {});
+  const n = await redis().incr('stakeout:captchas:lasthour').catch(() => 0);
+  if (n === 1) await redis().expire('stakeout:captchas:lasthour', 3600).catch(() => {});
+  if (n >= 2) await redis().set('stakeout:gapsafe:all', '1', 'EX', 6 * 3600).catch(() => {});
+  const day = new Date().toISOString().slice(0, 10);
+  await redis().incr('stakeout:captchas:' + day).catch(() => {});
+  await redis().expire('stakeout:captchas:' + day, 30 * 86400).catch(() => {});
+  console.warn(
+    `[captcha] ${imageId}: back to the ${safe}s gap for 6 h` +
+      (n >= 2 ? ` · ${n} captchas this hour, the whole fleet is on the safe gap for 6 h` : '') +
+      ` (gap now ${process.env.SEARCH_GAP_SECONDS ?? 120}s)`,
+  );
+}
+
 let lastWhitelistFix = 0;
 let busy = false,
   lastRepair = Date.now(),
+  lastProxyRelease = 0,
   lastFleetSync = 0,
   fleetSyncRunning = false;
 
@@ -306,6 +334,11 @@ async function tick() {
   try {
     await dispatch();
     await startReruns();
+    // Once a minute: with no scan queued or running, proxy lists are deleted (idle phones still use bandwidth).
+    if (Date.now() - lastProxyRelease > 60000) {
+      lastProxyRelease = Date.now();
+      await releaseIdleProxyLists().catch((e) => console.warn('[proxy] release skipped:', (e as Error).message));
+    }
     if (Date.now() - lastRepair > 300000) {
       lastRepair = Date.now();
       await reconcile();

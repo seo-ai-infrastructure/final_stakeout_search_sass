@@ -29,7 +29,7 @@ export const listsEnabled = (env: Settings = process.env) => Boolean(env.PROXY_S
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function psCall(path: string, body?: unknown, expectText = false): Promise<any> {
+async function psCall(path: string, body?: unknown, expectText = false, method?: 'DELETE'): Promise<any> {
   const key = process.env.PROXY_SELLER_API_KEY?.trim();
   if (!key) throw new Error('PROXY_SELLER_API_KEY_MISSING');
   const endpoint = path.split('?')[0];
@@ -37,7 +37,7 @@ async function psCall(path: string, body?: unknown, expectText = false): Promise
     let res: Response;
     try {
       res = await fetch(BASE + key + '/' + path, {
-        method: body === undefined ? 'GET' : 'POST',
+        method: method ?? (body === undefined ? 'GET' : 'POST'),
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(60000),
@@ -100,7 +100,8 @@ export async function resolveMarket(city: string, stateCode: string): Promise<Ma
 export async function ensureList(m: Pick<Market, 'region' | 'city'>, isp: string, rotation = listRotation()) {
   const where = { region_city_isp_rotation: { region: m.region, city: m.city, isp, rotation } };
   const existing = await db.proxyList.findUnique({ where });
-  if (existing) return existing;
+  // Marked as just used, so the idle clean-up never deletes a list a scan is being prepared with.
+  if (existing) return db.proxyList.update({ where: { id: existing.id }, data: { lastUsedAt: new Date() } });
   const created = await psCall('resident/list/add', {
     title: ['stakeout', 'US', m.region, m.city || '*', isp || '*', 'r' + rotation].join('|').slice(0, 120),
     whitelist: '',
@@ -194,5 +195,47 @@ export async function listsForPin(
     const found = await db.proxyList.findUnique({ where: { region_city_isp_rotation: { ...t, rotation } } });
     if (found) lists.push(found);
   }
+  if (!lists.length) {
+    // Lists are deleted while no scan runs (see releaseIdleProxyLists); a scan that started around
+    // that moment recreates the centre city's lists it needs: the chosen ISP, then any ISP.
+    for (const isp of pin.isp ? [pin.isp, ''] : ['']) {
+      try {
+        lists.push(await ensureList(center, isp, rotation));
+      } catch (e) {
+        console.warn('[proxy] could not recreate list', center.region, center.city, isp || '*', (e as Error).message);
+      }
+    }
+  }
   return lists;
+}
+
+/**
+ * Proxy-Seller bills bandwidth whenever a phone still points at a list, even while idle. So when
+ * no scan is queued or running, every list not used in the last two minutes is deleted, in
+ * Proxy-Seller and here; the next scan creates fresh lists (ensureList, or listsForPin above).
+ * Returns how many were deleted.
+ */
+export async function releaseIdleProxyLists(minIdleMs = 2 * 60000) {
+  const open = () => db.gridScan.count({ where: { status: { in: ['QUEUED', 'RUNNING'] } } });
+  if (await open()) return 0;
+  const lists = await db.proxyList.findMany({
+    where: { lastUsedAt: { lt: new Date(Date.now() - minIdleMs) } },
+    select: { id: true, psListId: true },
+  });
+  let deleted = 0;
+  for (const l of lists) {
+    if (await open()) break; // a scan just started: keep the rest
+    try {
+      await psCall('resident/list/delete', { id: l.psListId }, false, 'DELETE');
+    } catch (e) {
+      if (!/not-found/i.test((e as Error).message)) {
+        console.warn('[proxy] could not delete list', l.psListId, (e as Error).message);
+        continue;
+      }
+    }
+    await db.proxyList.delete({ where: { id: l.id } }).catch(() => {});
+    deleted++;
+  }
+  if (deleted) console.log(`[proxy] no scans running: deleted ${deleted} proxy list(s), so idle phones use no paid bandwidth`);
+  return deleted;
 }
