@@ -863,6 +863,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         finder: b.final,
         aiExpanded: b.ai.reduce<string | null>((a, x) => (x.length > (a?.length ?? 0) ? x : a), null),
         aiCopy: b.aiCopy,
+        mapsScreens: surface === 'maps' ? [...b.scroll, b.final] : undefined,
         target: scan.targetBusiness,
       });
     } catch (e) {

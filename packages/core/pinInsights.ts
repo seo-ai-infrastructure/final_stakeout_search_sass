@@ -1,4 +1,4 @@
-import { isLocalFinder, readAiCopy, readAiOverview, readLocalFinder, readResultsPage, sameBusiness } from './serpEvidence';
+import { isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder, readMapsList, readResultsPage, sameBusiness } from './serpEvidence';
 
 /**
  * A compact record of what the phone saw at one point, saved on the point (GridPin.insights) so
@@ -13,7 +13,7 @@ export type PinInsights = {
   /** The tracked business in the Local Finder here: organic position and distance from the phone. */
   you: { pos: number | null; miles: number | null };
   /** Advertisers at this point, once each per place. */
-  ads: { name: string; where: 'results' | 'local_services' | 'finder' }[];
+  ads: { name: string; where: 'results' | 'local_services' | 'finder' | 'maps' }[];
   /** Ads shown before the business's own card in the Local Finder (null when it is not listed). */
   adsAboveYou: number | null;
   /** The AI Overview: whether one was shown, the websites it cited (in order) and the businesses it named. */
@@ -49,17 +49,22 @@ export function buildPinInsights(input: {
   finder: string | null;
   aiExpanded?: string | null;
   aiCopy?: string | null;
+  /** Maps app points: every list snapshot in order (the final one included). */
+  mapsScreens?: (string | null | undefined)[];
   target: string;
 }): PinInsights {
-  const list = input.finder && isLocalFinder(input.finder) ? readLocalFinder(input.finder) : [];
-  const finder: InsightListing[] = list.map((l) => ({
-    name: l.name,
-    pos: l.pos,
-    ad: l.ad,
-    miles: toMiles(l.distance),
-    rating: l.rating ? Number(l.rating) : null,
-    reviews: toCount(l.reviews),
-  }));
+  const maps = input.mapsScreens?.some((x) => isMapsList(x)) ? readMapsList(input.mapsScreens) : null;
+  const list = maps ? [] : input.finder && isLocalFinder(input.finder) ? readLocalFinder(input.finder) : [];
+  const finder: InsightListing[] = maps
+    ? maps.map((c) => ({ name: c.name, pos: c.pos, ad: c.ad, miles: toMiles(c.distance), rating: c.rating ? Number(c.rating) : null, reviews: toCount(c.reviews) }))
+    : list.map((l) => ({
+        name: l.name,
+        pos: l.pos,
+        ad: l.ad,
+        miles: toMiles(l.distance),
+        rating: l.rating ? Number(l.rating) : null,
+        reviews: toCount(l.reviews),
+      }));
   const youAt = finder.findIndex((l) => !l.ad && sameBusiness(l.name, input.target));
   const you = youAt >= 0 ? { pos: finder[youAt].pos, miles: finder[youAt].miles } : { pos: null, miles: null };
 
@@ -70,7 +75,7 @@ export function buildPinInsights(input: {
   const page = input.serp ? readResultsPage(input.serp) : null;
   for (const l of page?.pack ?? []) if (l.ad) add(l.name, 'results');
   for (const l of page?.localServicesAds.listings ?? []) add(l.name, 'local_services');
-  for (const l of finder) if (l.ad) add(l.name, 'finder');
+  for (const l of finder) if (l.ad) add(l.name, maps ? 'maps' : 'finder');
   const adsAboveYou = youAt >= 0 ? finder.slice(0, youAt).filter((l) => l.ad).length : null;
 
   let sources: string[] = [],

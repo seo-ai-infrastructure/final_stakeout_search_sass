@@ -2,7 +2,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
 import { r2, bucket } from '@stakeout/core/r2';
 import { InputError } from '@stakeout/core/grid';
-import { untarGz, readResultsPage, readLocalFinder, readAiOverview, readAiCopy, uiLabels, rankIn, sameBusiness, isLocalFinder } from '@stakeout/core/serpEvidence';
+import { untarGz, readResultsPage, readLocalFinder, readAiOverview, readAiCopy, uiLabels, rankIn, sameBusiness, isLocalFinder, isMapsList, readMapsList } from '@stakeout/core/serpEvidence';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 
@@ -57,7 +57,18 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
       .filter((x) => x.length >= 2 && x[1])
       .slice(-40)
       .map(([time, event]) => ({ time, event }));
-    const localFinder = finder ? readLocalFinder(finder) : [];
+    // A Maps app point: the results list rebuilt from every screen, in the order they were taken.
+    const maps = isMapsList(finder)
+      ? readMapsList([
+          ...[...files]
+            .filter(([path]) => /(^|\/)dump_\d+\.xml$/.test(path))
+            .sort((a, b) => Number(/dump_(\d+)/.exec(a[0])![1]) - Number(/dump_(\d+)/.exec(b[0])![1]))
+            .map(([, data]) => data.toString('utf8')),
+          finder,
+        ])
+      : null;
+    const mapsYou = maps?.find((c) => !c.ad && sameBusiness(c.name, pin.scan.targetBusiness)) ?? null;
+    const localFinder = finder && !maps ? readLocalFinder(finder) : [];
     const aiOverview = aio ? readAiOverview(aio) : null;
     const target = pin.scan.targetBusiness;
     // The copied AI Overview counts only if it matches this run's own AI Overview snapshot.
@@ -73,9 +84,12 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
       capture,
       events,
       localFinder,
+      maps,
+      mapsAdsAbove: maps ? maps.filter((c) => c.ad && (!mapsYou || c.listPos < mapsYou.listPos)).length : null,
       aiOverview,
       aiCopy,
       ranks: {
+        maps: maps ? (mapsYou?.pos ?? null) : null,
         pack: resultsPage ? rankIn(resultsPage.pack, target) : null,
         finder: rankIn(localFinder, target),
         ai: aiCopy?.verified ? aiCopyRank : aiOverview ? rankIn(aiOverview.businesses, target) : null,

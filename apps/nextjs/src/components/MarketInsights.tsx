@@ -5,7 +5,7 @@ import { aiSources, groundOwners, paidPressure, winningRadius } from '../lib/mar
 import { rankColor } from '../lib/gridColumns';
 
 const pct = (v: number | null) => (v === null ? 'n/a' : `${v >= 10 ? v.toFixed(0) : v.toFixed(1)}%`);
-const WHERE: Record<string, string> = { results: 'results page', local_services: 'Local Services', finder: 'Local Finder' };
+const WHERE: Record<string, string> = { results: 'results page', local_services: 'Local Services', finder: 'Local Finder', maps: 'Maps results' };
 
 function Card({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (

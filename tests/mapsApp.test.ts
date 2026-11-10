@@ -29,3 +29,29 @@ test('Maps app: a screen with no card titles (photos, hours) adds nothing and is
   assert.throws(() => parsePinXmlBundle([scrolled], [], 'x'), /UNRECOGNIZED_RESULT_LAYOUT/);
   assert.doesNotThrow(() => parsePinXmlBundle([top, scrolled], [], 'x'));
 });
+
+test('Maps evidence: the list is rebuilt card by card from the real screens, ads first and unranked', async () => {
+  const { readMapsList, isMapsList } = await import('../packages/core/serpEvidence');
+  assert.equal(isMapsList(top), true);
+  const list = readMapsList([top, swiped, scrolled]);
+  assert.deepEqual(list.map((c) => [c.name, c.ad, c.adKind, c.pos, c.listPos]), [
+    ['Those Guys Painting Co', true, 'local_services', null, 1],
+    ['Nash Painting', true, 'local_services', null, 2],
+  ]);
+  const a = list[0];
+  assert.deepEqual([a.rating, a.reviews], ['5.0', '165']);
+  assert.deepEqual(a.lines, ['Painter · 12+ years in business', 'Open · Closes 7 PM · Serves Mt. Juliet', 'Free estimate · Flat rate pricing']);
+  assert.deepEqual(list[1].lines, ['Painter · 17+ years in business']);
+  assert.equal(readMapsList([scrolled]).length, 0, 'a screen with no card names adds nothing');
+});
+
+test('Maps insights: ads are recorded as Maps results ads, and Chrome points are unaffected', async () => {
+  const { buildPinInsights } = await import('../packages/core/pinInsights');
+  const i = buildPinInsights({ serp: null, finder: scrolled, mapsScreens: [top, swiped, scrolled], target: 'McIntyre Painting' });
+  assert.deepEqual(i.ads, [{ name: 'Those Guys Painting Co', where: 'maps' }, { name: 'Nash Painting', where: 'maps' }]);
+  assert.deepEqual(i.you, { pos: null, miles: null });
+  assert.equal(i.adsAboveYou, null, 'not listed: no count');
+  assert.equal(i.finder.length, 2);
+  const chrome = buildPinInsights({ serp: null, finder: readFileSync('tests/fixtures/real-lf-2026-11-09.xml', 'utf8'), target: 'Southern Skye Plumbing' });
+  assert.equal(chrome.you.pos, 2, 'the Local Finder path is unchanged');
+});

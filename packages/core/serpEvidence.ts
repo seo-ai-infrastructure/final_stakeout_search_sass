@@ -281,3 +281,98 @@ export function searchLocationLine(fromFinal: string | null | undefined, serpXml
   if (fromFinal) return fromFinal;
   return serpXml ? readResultsPage(serpXml).googleLocation : null;
 }
+
+/** One result card from the native Google Maps app, rebuilt from its list snapshots. */
+export type MapsCard = {
+  name: string;
+  /** Paid placement: "Sponsored" (Local Services Ads also say "Google Verified"). */
+  ad: boolean;
+  adKind: 'local_services' | 'sponsored' | null;
+  /** Organic position (ads have none). */
+  pos: number | null;
+  /** Position in the list counting ads, from the top. */
+  listPos: number;
+  rating: string | null;
+  reviews: string | null;
+  /** Detail lines as shown: "Painter · 12+ years in business", "Open · Closes 7 PM · Serves Mt. Juliet". */
+  lines: string[];
+  quote: string | null;
+  distance: string | null;
+};
+
+const xmlText = (v: string) =>
+  v.replace(/[\u00a0\u2009\u202f]/g, ' ').replace(/&#10;/g, ' ').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+const nodeAttr = (tag: string, k: string) => xmlText((new RegExp(`\\s${k}="([^"]*)"`).exec(tag) ?? [])[1] ?? '');
+
+/** Is this snapshot the native Maps results list? */
+export function isMapsList(xml: string | null | undefined) {
+  return Boolean(xml && /resource-id="[^"]*search_list_layout"/.test(xml));
+}
+
+/** The cards on one Maps screen: each child of the results list, its title and its texts in order. */
+function mapsScreen(xml: string) {
+  const cards: { name: string | null; texts: string[] }[] = [];
+  let depth = 0,
+    listDepth = -1,
+    cur: { name: string | null; texts: string[] } | null = null;
+  for (const m of xml.matchAll(/<node\b[^>]*?(\/?)>|<\/node>/g)) {
+    if (m[0] === '</node>') {
+      if (listDepth >= 0 && depth === listDepth) (listDepth = -1), (cur = null);
+      depth--;
+      continue;
+    }
+    const d = depth + 1,
+      tag = m[0],
+      rid = nodeAttr(tag, 'resource-id').split('/').pop();
+    if (listDepth < 0 && rid === 'search_list_layout') listDepth = d;
+    else if (listDepth >= 0 && d === listDepth + 1) cards.push((cur = { name: null, texts: [] }));
+    if (listDepth >= 0 && d > listDepth && cur) {
+      const text = nodeAttr(tag, 'text').trim();
+      if (rid === 'title' && text && !cur.name) cur.name = text;
+      else if (text) cur.texts.push(text);
+    }
+    if (m[1] !== '/') depth = d;
+  }
+  return cards;
+}
+
+/**
+ * The Maps results list, rebuilt from every snapshot of one search in order. Native Maps
+ * snapshots hold only what is on screen, so a card's details are merged from every screen it
+ * was seen on; cards whose name was never on screen are left out.
+ */
+export function readMapsList(screens: (string | null | undefined)[]): MapsCard[] {
+  const out: MapsCard[] = [];
+  for (const xml of screens) {
+    if (!isMapsList(xml)) continue;
+    for (const c of mapsScreen(xml!)) {
+      if (!c.name) continue;
+      let card = out.find((x) => sameBusiness(x.name, c.name!));
+      if (!card) {
+        card = { name: c.name, ad: false, adKind: null, pos: null, listPos: out.length + 1, rating: null, reviews: null, lines: [], quote: null, distance: null };
+        out.push(card);
+      }
+      const lines: string[] = [];
+      for (const t of c.texts) {
+        if (/^sponsored$/i.test(t)) card.ad = true;
+        else if (/^google verified$/i.test(t)) card.adKind = 'local_services';
+        else if (/^[0-5][.,]\d stars?/i.test(t)) {
+          const r = /^([0-5][.,]\d) stars?(?: \(([\d.,]+K?)\))?/i.exec(t)!;
+          card.rating ??= r[1].replace(',', '.');
+          card.reviews ??= r[2] ?? null;
+        } else if (/^["“].*["”]$/.test(t)) card.quote ??= t.replace(/^["“]|["”]$/g, '');
+        else if (/^\s*·/.test(t) && lines.length) lines[lines.length - 1] += ' ' + t.trim();
+        else lines.push(t.trim());
+      }
+      for (const l of lines) if (!card.lines.includes(l)) card.lines.push(l);
+      const d = /(?:^|·)\s*(\d+(?:\.\d+)?) ?(mi|ft|km)\b/.exec(card.lines.join(' · '));
+      if (d) card.distance ??= `${d[1]} ${d[2]}`;
+    }
+  }
+  let organic = 0;
+  for (const c of out) {
+    if (c.ad) c.adKind ??= 'sponsored';
+    else c.pos = ++organic;
+  }
+  return out;
+}

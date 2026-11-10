@@ -29,11 +29,16 @@ export async function backfillInsights(limit = 500) {
         for (const [path, data] of files) if (path === name || path.endsWith('/' + name)) return data.toString('utf8');
         return null;
       };
+      const dumps = [...files]
+        .filter(([path]) => /(^|\/)dump_\d+\.xml$/.test(path))
+        .sort((a, b) => Number(/dump_(\d+)/.exec(a[0])![1]) - Number(/dump_(\d+)/.exec(b[0])![1]))
+        .map(([, data]) => data.toString('utf8'));
       const insights = buildPinInsights({
         serp: read('serp.xml'),
         finder: read('final.xml'),
         aiExpanded: read('aio_expanded.xml'),
         aiCopy: read('aio_copy.txt'),
+        mapsScreens: [...dumps, read('final.xml')],
         target: p.target,
       });
       await db.gridPin.update({ where: { id: p.id }, data: { insights } });

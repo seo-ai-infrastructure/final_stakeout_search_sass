@@ -29,9 +29,13 @@ type Evidence = {
     citations: { n: number; url: string }[];
     verified: boolean;
   } | null;
-  ranks: { pack: number | null; finder: number | null; ai: number | null };
+  maps?: MapsCard[] | null;
+  mapsAdsAbove?: number | null;
+  ranks: {
+    maps?: number | null; pack: number | null; finder: number | null; ai: number | null };
 };
-type View = 'video' | 'first' | 'page' | 'finder' | 'ai';
+type View = 'video' | 'first' | 'page' | 'finder' | 'ai' | 'maps';
+type MapsCard = { name: string; ad: boolean; adKind: 'local_services' | 'sponsored' | null; pos: number | null; listPos: number; rating: string | null; reviews: string | null; lines: string[]; quote: string | null; distance: string | null };
 
 const norm = (s: string) =>
   s.toLowerCase().replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|ltd)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -96,12 +100,14 @@ export function EvidencePanel({
       ? describeArea('tract', census.tract)
       : null;
   const zipArea = census?.zcta ? describeArea('zcta', census.zcta) : null;
-  const organic: Ahead[] = (ev?.localFinder ?? []).filter((l) => !l.ad);
+  const organic: Ahead[] = ev?.maps
+    ? ev.maps.filter((c) => !c.ad).map((c) => ({ name: c.name, pos: c.pos, rating: c.rating, reviews: c.reviews, distance: c.distance }))
+    : (ev?.localFinder ?? []).filter((l) => !l.ad);
   const aiNamed: Ahead[] = ev?.aiCopy?.businesses?.length
     ? ev.aiCopy.businesses.map((b) => ({ name: b.name, pos: b.pos, rating: b.rating, reviews: b.reviews }))
     : (ev?.aiOverview?.businesses ?? []).map((b, i) => ({ name: b.name, pos: b.pos ?? i + 1, rating: b.rating, reviews: b.reviews }));
   const ahead = organic.length
-    ? { source: 'Local Finder', list: organic }
+    ? { source: ev?.maps ? 'Maps app results' : 'Local Finder', list: organic }
     : aiNamed.length
       ? { source: 'AI Overview list', list: aiNamed }
       : null;
@@ -118,9 +124,12 @@ export function EvidencePanel({
     const i = list.findIndex((l) => !l.ad && isTarget(l.name));
     return (i < 0 ? list : list.slice(0, i)).filter((l) => l.ad).length;
   };
-  const tabs: [View, string][] = [['video', 'Video'], ['page', 'Results page'], ['finder', 'Local Finder']];
-  if (ev?.firstScreen) tabs.splice(1, 0, ['first', 'First screen']);
-  if (ev?.aiCopy || ev?.aiOverview || ev?.resultsPage?.aiPreview) tabs.push(['ai', 'AI Overview']);
+  const isMaps = Boolean(ev?.maps) || scan.targetType === 'mobile_maps';
+  const tabs: [View, string][] = isMaps
+    ? [['video', 'Video'], ['maps', 'Maps results']]
+    : [['video', 'Video'], ['page', 'Results page'], ['finder', 'Local Finder']];
+  if (!isMaps && ev?.firstScreen) tabs.splice(1, 0, ['first', 'First screen']);
+  if (!isMaps && (ev?.aiCopy || ev?.aiOverview || ev?.resultsPage?.aiPreview)) tabs.push(['ai', 'AI Overview']);
 
   return (
     <div className="grid gap-6 xl:grid-cols-[280px_minmax(340px,380px)_1fr]">
@@ -189,6 +198,12 @@ export function EvidencePanel({
               <Empty text="Rebuilding the page from this point’s snapshot…" />
             ) : !ev ? (
               <Empty text="The snapshot for this point isn’t available." />
+            ) : view === 'maps' ? (
+              ev.maps?.length ? (
+                <MapsView cards={ev.maps} isTarget={isTarget} keyword={scan.keyword} />
+              ) : (
+                <Empty text="No Maps results were captured for this point." />
+              )
             ) : view === 'first' && ev.firstScreen ? (
               <PageView ev={{ ...ev, resultsPage: ev.firstScreen }} isTarget={isTarget} keyword={scan.keyword} />
             ) : view === 'finder' ? (
@@ -222,7 +237,15 @@ export function EvidencePanel({
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <h2 className="text-sm font-bold">{scan.targetBusiness} at R{pin.rowIdx + 1}·C{pin.colIdx + 1}</h2>
           <div className="mt-4 grid grid-cols-3 gap-3">
-            <Stat label="3-pack" value={ev?.ranks.pack} note={ev?.resultsPage ? adsAbove(ev.resultsPage.pack) + ' ad(s) above' : '—'} />
+{isMaps ? (
+              <>
+                <Stat label="Maps rank" value={ev ? (ev.ranks.maps ?? null) : pin.rankFound} note={ev?.maps ? `${ev.mapsAdsAbove ?? 0} ad(s) above` : 'organic rank'} />
+                <Stat label="Ads" value={null} text={ev?.maps ? String(ev.maps.filter((c) => c.ad).length) : '—'} note="paid cards in the list" />
+                <Stat label="Ask Maps" value={null} text="Soon" note="AI answers in Maps" />
+              </>
+            ) : (
+              <>
+                        <Stat label="3-pack" value={ev?.ranks.pack} note={ev?.resultsPage ? adsAbove(ev.resultsPage.pack) + ' ad(s) above' : '—'} />
             <Stat label="Local Finder" value={ev ? ev.ranks.finder : pin.rankFound} note={ev ? adsAbove(ev.localFinder) + ' ad(s) above' : 'organic rank'} />
             <Stat
               label="AI Overview"
@@ -230,6 +253,8 @@ export function EvidencePanel({
               note={ev?.aiCopy || ev?.aiOverview || ev?.resultsPage?.aiPreview ? (ev?.ranks.ai ? 'mentioned' : 'not mentioned') : 'none shown'}
               text={ev && !ev.aiCopy && !ev.aiOverview && !ev.resultsPage?.aiPreview ? 'None' : undefined}
             />
+              </>
+            )}
           </div>
           {advertisers.length > 0 && (
             <>
@@ -358,6 +383,51 @@ export function EvidencePanel({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+/** The Maps app's results list, rebuilt from the point's snapshots in the app's order. */
+function MapsView({ cards, isTarget, keyword }: { cards: MapsCard[]; isTarget: (n: string) => boolean; keyword: string }) {
+  return (
+    <div className="text-gray-900">
+      <div className="mx-3 mt-3 flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[13px] shadow ring-1 ring-gray-200">
+        <span className="min-w-0 flex-1 truncate">{keyword}</span>
+        <span className="text-gray-400">✕</span>
+      </div>
+      <p className="mx-4 mb-1 mt-4 text-lg font-bold">Results</p>
+      <ol className="divide-y divide-gray-100">
+        {cards.map((c) => {
+          const you = !c.ad && isTarget(c.name);
+          return (
+            <li key={c.name} className={'flex gap-3 px-4 py-3 ' + (you ? 'bg-emerald-50 ring-2 ring-inset ring-emerald-400' : '')}>
+              <span className={'mt-0.5 grid h-6 min-w-6 place-items-center rounded-full px-1 text-[11px] font-bold ' + (c.ad ? 'bg-gray-100 text-gray-500' : you ? 'bg-emerald-500 text-white' : 'bg-gray-800 text-white')}>
+                {c.ad ? 'Ad' : c.pos}
+              </span>
+              <div className="min-w-0 flex-1 text-[12.5px] leading-snug">
+                {c.ad && (
+                  <p className="text-[11px] font-bold text-gray-500">
+                    Sponsored{c.adKind === 'local_services' ? ' · Google Verified' : ''}
+                  </p>
+                )}
+                <p className="text-[15px] font-semibold text-gray-900">{c.name}</p>
+                {c.rating && (
+                  <p className="text-gray-600">
+                    <span className="font-semibold text-gray-800">{c.rating}</span> <span className="text-amber-500">★</span>
+                    {c.reviews ? ` (${c.reviews})` : ''}
+                  </p>
+                )}
+                {c.lines.map((l) => (
+                  <p key={l} className="text-gray-600">
+                    {l}
+                  </p>
+                ))}
+                {c.quote && <p className="mt-1 italic text-gray-500">“{c.quote}”</p>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }
