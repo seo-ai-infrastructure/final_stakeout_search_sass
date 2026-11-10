@@ -51,6 +51,27 @@ function aiPanels(n: Node): Node[] {
     return [n];
   return [];
 }
+/**
+ * The native Google Maps results list (2026): each result card is a direct child of the list
+ * (resource-id search_list_layout), its business name is the element with resource-id "title",
+ * and an ad carries a "Sponsored" label in the same card ("Google Verified" ads are Local
+ * Services Ads). Off-screen cards are not in a native snapshot, so every screen is read.
+ * Returns null when the screen has no results list.
+ */
+export function mapsListCards(root: Node): { name: string; ad: boolean; kind: 'sponsored' | 'local_services' }[] | null {
+  const list = walk(root).find((n) => rid(n) === 'search_list_layout');
+  if (!list) return null;
+  const cards: { name: string; ad: boolean; kind: 'sponsored' | 'local_services' }[] = [];
+  for (const card of list.node ?? []) {
+    const nodes = walk(card);
+    const title = nodes.find((n) => rid(n) === 'title' && label(n));
+    if (!title) continue;
+    const ad = nodes.some((n) => /^sponsored$/i.test(label(n)));
+    cards.push({ name: label(title), ad, kind: nodes.some((n) => /^google verified$/i.test(label(n))) ? 'local_services' : 'sponsored' });
+  }
+  return cards;
+}
+
 export function parsePinXmlBundle(
   scroll: string[],
   ai: string[],
@@ -58,12 +79,28 @@ export function parsePinXmlBundle(
 ) {
   if (!scroll.length) throw new Error('NO_RESULT_DUMPS');
   const names: string[] = [],
-    seen = new Set<string>();
+    seen = new Set<string>(),
+    ads: { name: string; kind: 'sponsored' | 'local_services'; position: number }[] = [];
   let matchedDumpIndex: number | null = null,
     hasAiOverview = false,
-    noResults = false;
+    noResults = false,
+    mapsList = false;
   scroll.forEach((xml, index) => {
     for (const root of trees(xml)) {
+      const cards = mapsListCards(root);
+      if (cards) {
+        mapsList = true;
+        for (const c of cards) {
+          if (c.ad) {
+            if (!ads.some((a) => normalize(a.name) === normalize(c.name)))
+              ads.push({ name: c.name, kind: c.kind, position: names.length + ads.length + 1 });
+          } else if (!seen.has(normalize(c.name)) && names.length < 20) {
+            seen.add(normalize(c.name));
+            names.push(c.name);
+            if (normalize(c.name) === normalize(target)) matchedDumpIndex = index;
+          }
+        }
+      }
       const panels = new Set(aiPanels(root).flatMap(walk));
       for (const node of walk(root)) {
         const text = label(node);
@@ -75,7 +112,7 @@ export function parsePinXmlBundle(
           )
         )
           noResults = true;
-        if (panels.has(node)) continue;
+        if (panels.has(node) || cards) continue;
         let name = placeTitle.test(rid(node)) ? text : '';
         const imageCard = String(node['content-desc'] ?? '');
         if (!name && rating.test(imageCard))
@@ -98,7 +135,8 @@ export function parsePinXmlBundle(
   });
   const aiResult = parseAiPanels(ai, target);
   hasAiOverview = aiResult.hasAiOverview;
-  if (!names.length && !noResults && !hasAiOverview)
+  // A recognised Maps results list is a result even when only ads were on screen.
+  if (!names.length && !noResults && !hasAiOverview && !(mapsList && ads.length))
     throw new Error('UNRECOGNIZED_RESULT_LAYOUT');
   const targetKey = normalize(target);
   const rank = names.findIndex((n) => normalize(n) === targetKey);
@@ -106,6 +144,7 @@ export function parsePinXmlBundle(
     orderedBusinesses: names,
     targetRank: rank < 0 ? null : rank + 1,
     matchedDumpIndex,
+    ads,
     ...aiResult,
   };
 }

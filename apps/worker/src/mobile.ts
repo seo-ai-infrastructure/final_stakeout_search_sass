@@ -768,7 +768,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     const result =
       (surface === 'chrome' || surface === 'google') && b.final
         ? parseWebResults(b.final, b.scroll, aiDumps, scan.targetBusiness)
-        : { ...parsePinXmlBundle(b.final ? [...b.scroll, b.final] : b.scroll, aiDumps, scan.targetBusiness), ads: [], locationSource: null, locationFromIp: false };
+        : { ...parsePinXmlBundle(b.final ? [...b.scroll, b.final] : b.scroll, aiDumps, scan.targetBusiness), locationSource: null, locationFromIp: false };
     // Google said it located this search by IP, so the pin's GPS was not used:
     // the result is not a measurement at this coordinate. Fail (and refund) it.
     // A refused point keeps its evidence (the bundle is already uploaded): link it and upload
