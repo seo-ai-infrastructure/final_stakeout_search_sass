@@ -66,6 +66,7 @@ export async function readBundleFile(tgzPath: string, tag: string, dir: string) 
     raw,
     fingerprints,
     serp: entries.includes('serp.xml') ? await readFile(join(folder, 'serp.xml'), 'utf8') : null,
+    aiCopy: entries.includes('aio_copy.txt') ? await readFile(join(folder, 'aio_copy.txt'), 'utf8') : null,
     finderTop: entries.includes('finder_top.xml') ? await readFile(join(folder, 'finder_top.xml'), 'utf8') : null,
     meta: entries.includes('meta.txt') ? await readFile(join(folder, 'meta.txt'), 'utf8') : '',
     final: finalXml,

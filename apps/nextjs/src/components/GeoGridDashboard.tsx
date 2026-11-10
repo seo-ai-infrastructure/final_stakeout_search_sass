@@ -10,6 +10,8 @@ import {
 } from './CompetitorLeaderboard';
 import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
+import type { PinInsights } from '@stakeout/core/pinInsights';
+import { MarketInsights } from './MarketInsights';
 import { buyingPower, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
 import { gridColumns, RANK_COLORS } from '../lib/gridColumns';
 import {
@@ -110,6 +112,7 @@ export type GridPinData = {
     country: string;
   } | null;
   census?: PinCensus | null;
+  insights?: PinInsights | null;
 };
 export type GridScanData = {
   id: string;
@@ -834,6 +837,7 @@ export function GeoGridDashboard({
           )}
         </aside>
       </div>
+      <MarketInsights scan={scan} />
       <CompetitorLeaderboard
         pins={scan.pins}
         targetBusiness={scan.targetBusiness}

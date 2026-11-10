@@ -140,6 +140,7 @@ model GridPin {
   aiCitations      Json?
   proxyMeta        Json?
   census           Json?
+  insights         Json?
   videoUrl         String?
   dumpsTarUrl      String?
   metaJsonUrl      String?

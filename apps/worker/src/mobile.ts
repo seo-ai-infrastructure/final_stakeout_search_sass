@@ -1,4 +1,5 @@
 import { rpaTemplate } from './rpa';
+import { buildPinInsights, type PinInsights } from '@stakeout/core/pinInsights';
 import { isLocalFinder, readAiOverview, readLocalFinder, sameBusiness } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -849,11 +850,25 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       }),
       'application/json',
     );
+    // What the phone saw, compactly (Local Finder with distances, advertisers, AI sources), for reports.
+    let pinInsights: PinInsights | null = null;
+    try {
+      pinInsights = buildPinInsights({
+        serp: b.serp,
+        finder: b.final,
+        aiExpanded: b.ai.reduce<string | null>((a, x) => (x.length > (a?.length ?? 0) ? x : a), null),
+        aiCopy: b.aiCopy,
+        target: scan.targetBusiness,
+      });
+    } catch (e) {
+      console.error('[insights]', (e as Error).message);
+    }
     return {
       assignedDeviceId: d.imageId,
       rankFound: aiList ? aiList.rank : result.targetRank,
       matchedDumpIdx: result.matchedDumpIndex,
       topCompetitors: aiList ? aiList.list : result.orderedBusinesses,
+      insights: pinInsights ?? undefined,
       aiCitations: result.aiCitations,
       hasAiOverview: result.hasAiOverview,
       aiOverviewText: result.aiOverviewText,

@@ -52,6 +52,7 @@ export const pinSelect = {
   metaJsonUrl: true,
   dumpsTarUrl: true,
   census: true,
+  insights: true,
 } as const;
 export const reportSelect = {
   id: true,
@@ -93,6 +94,8 @@ export async function report(where: Prisma.GridScanWhereInput) {
         videoUrl: p.videoUrl
           ? route + 'video' + (token ? '&share=' + token : '')
           : null,
+        // The report needs each point's summary, not its whole Local Finder list (the Evidence tab reads that).
+        insights: p.insights ? { ...(p.insights as Record<string, unknown>), finder: undefined } : null,
         metaJsonUrl: !token && p.metaJsonUrl ? route + 'meta' : null,
         dumpsTarUrl: !token && p.dumpsTarUrl ? route + 'bundle' : null,
         proxyMeta: m

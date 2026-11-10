@@ -1,4 +1,5 @@
 import { failureCode } from '@stakeout/core/fleetHealth';
+import { backfillInsights } from './insightsBackfill';
 import 'dotenv/config';
 import { Queue, Worker, DelayedError, UnrecoverableError, type Job } from 'bullmq';
 import { db } from '@stakeout/db';
@@ -312,6 +313,10 @@ process.once('SIGTERM', () => void close());
 console.info(
   `Stakeout Telemetry Engine online · target=${redactRedisUrl()} · stakeout-pins + stakeout-recurring-schedules`,
 );
+// Points finished before per-point insights existed get them once, from their stored bundles.
+setTimeout(() => {
+  backfillInsights().catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));
+}, 60_000);
 if ((process.env.SEARCH_MODE ?? '').toLowerCase() === 'rpa') {
   console.info('[rpa] SEARCH_MODE=rpa: the search step runs your DuoPlus RPA template');
   void describeRpaTemplates();
