@@ -862,7 +862,11 @@ export function NewScanWizard() {
             </p>
           )}
         </div>
-        <div ref={mapContainerRef} className="absolute inset-0" />
+        {/* MapLibre's stylesheet makes every map container position: relative, which would cancel
+            "absolute inset-0" and collapse the map to zero height: the wrapper fills the panel instead. */}
+        <div className="absolute inset-0">
+          <div ref={mapContainerRef} className="h-full w-full" />
+        </div>
         {mapState !== 'ready' && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
             <p className="rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-sm text-slate-300">
