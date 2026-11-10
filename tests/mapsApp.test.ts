@@ -55,3 +55,10 @@ test('Maps insights: ads are recorded as Maps results ads, and Chrome points are
   const chrome = buildPinInsights({ serp: null, finder: readFileSync('tests/fixtures/real-lf-2026-11-09.xml', 'utf8'), target: 'Southern Skye Plumbing' });
   assert.equal(chrome.you.pos, 2, 'the Local Finder path is unchanged');
 });
+
+test('Maps scans never carry (or pay for) the AI add-on until Ask Maps is captured', async () => {
+  const { parseSpec } = await import('../packages/core/grid');
+  const base = { keyword: 'painters near me', targetBusiness: 'McIntyre Painting', centerLat: 36.2, centerLng: -86.5, gridSize: 3, spacingKm: 1.60934, trackAiOverviews: true, scheduleType: 'once' };
+  assert.equal(parseSpec({ ...base, targetType: 'mobile_maps' }).trackAiOverviews, false);
+  assert.equal(parseSpec({ ...base, targetType: 'mobile_chrome' }).trackAiOverviews, true);
+});

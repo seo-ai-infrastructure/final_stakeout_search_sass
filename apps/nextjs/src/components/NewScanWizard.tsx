@@ -234,7 +234,7 @@ export function NewScanWizard() {
     const totalPins = gridSize * gridSize;
     const isDesktop = targetType.startsWith('desktop_');
     const baseCost = isDesktop ? 2 : 1;
-    const aiAddon = !isDesktop && trackAiOverviews ? 1 : 0;
+    const aiAddon = !isDesktop && targetType !== 'mobile_maps' && trackAiOverviews ? 1 : 0;
     const costPerPin = baseCost + aiAddon;
     const totalCost = totalPins * costPerPin;
     const spanMiles = ((gridSize - 1) * spacingKm * 0.621371).toFixed(1);
@@ -462,10 +462,10 @@ export function NewScanWizard() {
   }
   const runKeywords = picked.length ? picked : [keyword.trim()].filter(Boolean);
   const isDesktop = targetType === 'desktop_aimode';
-  const aiAddonLabel =
-    targetType === 'mobile_maps'
-      ? 'Track "Ask Maps" Generative AI Cards (+1 Cr/Pin)'
-      : 'Track Google AI Overviews & Citations (+1 Cr/Pin)';
+  const askMapsSoon = targetType === 'mobile_maps';
+  const aiAddonLabel = askMapsSoon
+    ? 'Track "Ask Maps" AI answers (coming soon)'
+    : 'Track Google AI Overviews & Citations (+1 Cr/Pin)';
   return (
     <div className="flex min-h-[calc(100vh-4rem)] w-full flex-col lg:h-[calc(100vh-4rem)] lg:overflow-hidden bg-slate-950 text-slate-100 lg:flex-row">
       {/* LEFT PANEL: ALL 8 CONFIGURATION INPUTS */}
@@ -685,15 +685,17 @@ export function NewScanWizard() {
                   5. {aiAddonLabel}
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  Capture the AI panel, its text, and visible sources at each
-                  grid point.
+                  {askMapsSoon
+                    ? 'Maps scans track the Maps results list. Ask Maps answers are coming soon, and are not charged.'
+                    : 'Capture the AI panel, its text, and visible sources at each grid point.'}
                 </div>
               </div>
               <input
                 type="checkbox"
-                checked={trackAiOverviews}
+                checked={askMapsSoon ? false : trackAiOverviews}
+                disabled={askMapsSoon}
                 onChange={(e) => setTrackAiOverviews(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-purple-500"
+                className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-purple-500 disabled:opacity-40"
               />
             </label>
           </div>

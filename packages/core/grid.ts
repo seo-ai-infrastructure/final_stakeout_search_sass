@@ -84,7 +84,9 @@ export function parseSpec(input: Record<string, unknown>) {
     centerLng,
     gridSize,
     spacingKm,
-    trackAiOverviews: targetType === 'desktop_aimode' || trackAiOverviews,
+    // The Maps app's AI answers ("Ask Maps") are not captured yet, so Maps scans never carry
+    // (or pay for) the AI add-on.
+    trackAiOverviews: targetType === 'desktop_aimode' || (targetType !== 'mobile_maps' && trackAiOverviews),
     targetType,
     scheduleType,
     phoneBrand,
