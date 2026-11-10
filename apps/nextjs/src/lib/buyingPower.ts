@@ -59,3 +59,44 @@ export function buyingPower(
     tracts: pinsPerTract.size,
   };
 }
+
+/**
+ * Each point's share of the grid's buying power (0 to 1), with the same weighting as the score.
+ * Geography only, so it holds while a scan is still running: every point with a tract estimate counts.
+ */
+export function pointShares(pins: BuyingPowerPin[]): Map<string, number> {
+  const perTract = new Map<string, number>();
+  for (const p of pins) {
+    const t = weightArea(p.census);
+    if (t?.id && t.inc && t.own) perTract.set(t.id, (perTract.get(t.id) ?? 0) + 1);
+  }
+  const weights = new Map<string, number>();
+  let total = 0;
+  for (const p of pins) {
+    const t = weightArea(p.census);
+    if (!t?.id || !t.inc || !t.own) continue;
+    const w = (t.inc * t.own) / perTract.get(t.id)!;
+    weights.set(p.id, w);
+    total += w;
+  }
+  return new Map([...weights].map(([id, w]) => [id, total > 0 ? w / total : 0]));
+}
+
+/**
+ * Where winning matters most: completed points outside the top 3, the largest share of
+ * buying power first. A point's opportunity rank is its place in this order.
+ */
+export function opportunityOrder(
+  pins: BuyingPowerPin[],
+  rankOf: (p: BuyingPowerPin) => number | null | undefined = (p) => p.rankFound,
+): string[] {
+  const shares = pointShares(pins);
+  return pins
+    .filter((p) => p.status === 'COMPLETED' && shares.has(p.id))
+    .filter((p) => {
+      const r = rankOf(p);
+      return !(typeof r === 'number' && r >= 1 && r <= 3);
+    })
+    .sort((a, b) => shares.get(b.id)! - shares.get(a.id)!)
+    .map((p) => p.id);
+}

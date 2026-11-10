@@ -35,3 +35,18 @@ test('buying power: filters keep only matching points, and the ranks shown can b
   assert.equal(competitor.top3, 1);
   assert.equal(Math.round(competitor.buyingPower! * 10) / 10, Math.round((1000 * 4e6) / 143e6) / 10);
 });
+
+test('point worth: shares of the grid add up to 100%, and opportunities put the biggest share outside the top 3 first', async () => {
+  const { pointShares, opportunityOrder } = await import('../apps/nextjs/src/lib/buyingPower');
+  const shares = pointShares(pins);
+  const sum = [...shares.values()].reduce((a, b) => a + b, 0);
+  assert.ok(Math.abs(sum - 1) < 1e-9);
+  assert.equal(shares.has('f'), false, 'no estimate: no share');
+  // rich tract (2 points) holds 135M of 143M+8M/…: a and b split it equally
+  assert.equal(shares.get('a'), shares.get('b'));
+  assert.ok(shares.get('a')! > shares.get('c')!);
+  // a, b are top 3; c (rank 8) and d (not found) are outside, equal shares (same tract); e failed; f no estimate
+  assert.deepEqual(opportunityOrder(pins).sort(), ['c', 'd']);
+  // a competitor view where a is outside the top 3 makes a the biggest opportunity
+  assert.equal(opportunityOrder(pins, (p) => (p.id === 'a' ? 9 : p.rankFound))[0], 'a');
+});

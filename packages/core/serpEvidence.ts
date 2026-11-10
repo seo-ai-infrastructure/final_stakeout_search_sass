@@ -59,6 +59,8 @@ export type Listing = {
   ad: boolean;
   /** Organic position within its section (ads have none). */
   pos: number | null;
+  /** Distance from the phone as Google showed it ("0.4 mi"); none for businesses that hide their address. */
+  distance?: string | null;
 };
 
 const CARD = /^(.*?)\s+(About this result\s+)?Rated ([0-5](?:[.,]\d)?) out of 5,?\s*([\s\S]*)$/;
@@ -71,13 +73,16 @@ export function parseCard(label: string): (Omit<Listing, 'ad' | 'pos'> & { organ
   if (rv) rest = rest.replace(rv[0], '');
   const q = /["“]([^"”]{3,})["”]/.exec(rest);
   if (q) rest = rest.replace(q[0], '');
+  const meta = clean(rest.replace(/^[\s·,]+/, '').replace(/\s·\s*$/, ''));
+  const d = /(?:^|·)\s*(\d+(?:[.,]\d+)?) ?(mi|ft|km)\b/.exec(meta);
   return {
     name: m[1].trim(),
     rating: m[3].replace(',', '.'),
     reviews: rv ? rv[1] : null,
-    meta: clean(rest.replace(/^[\s·,]+/, '').replace(/\s·\s*$/, '')),
+    meta,
     quote: q ? q[1].trim() : null,
     organicMarker: Boolean(m[2]),
+    distance: d ? `${d[1].replace(',', '.')} ${d[2]}` : null,
   };
 }
 
@@ -189,7 +194,7 @@ export function readLocalFinder(xml: string): Listing[] {
     if (!isCardContainer(cls)) continue;
     const c = parseCard(label);
     // In the Local Finder every organic card carries "About this result"; ads never do.
-    if (c) items.push({ name: c.name, rating: c.rating, reviews: c.reviews, meta: c.meta, quote: c.quote, ad: !c.organicMarker });
+    if (c) items.push({ name: c.name, rating: c.rating, reviews: c.reviews, meta: c.meta, quote: c.quote, ad: !c.organicMarker, distance: c.distance });
   }
   return finish(items);
 }

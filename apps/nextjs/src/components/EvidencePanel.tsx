@@ -1,8 +1,11 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import type { GridPinData, GridScanData } from './GeoGridDashboard';
+import { describeArea, LEVEL_LABEL } from '../lib/censusLayer';
+import { opportunityOrder, pointShares } from '../lib/buyingPower';
 
-type Listing = { name: string; rating: string | null; reviews: string | null; meta: string; quote: string | null; ad: boolean; pos: number | null };
+type Listing = { name: string; rating: string | null; reviews: string | null; meta: string; quote: string | null; ad: boolean; pos: number | null; distance?: string | null };
+type Ahead = { name: string; pos: number | null; rating: string | null; reviews: string | null; distance?: string | null };
 type Evidence = {
   pinId: string;
   resultsPage: {
@@ -81,6 +84,28 @@ export function EvidencePanel({
   if (!pin) return <p className="text-slate-400">No points in this scan yet.</p>;
   const target = norm(scan.targetBusiness);
   const isTarget = (n: string) => norm(n) === target;
+  // The point dossier: who is ahead here, and what this point is worth.
+  const shares = useMemo(() => pointShares(scan.pins), [scan.pins]);
+  const opportunities = useMemo(() => opportunityOrder(scan.pins), [scan.pins]);
+  const share = pin ? shares.get(pin.id) : undefined;
+  const oppRank = pin ? opportunities.indexOf(pin.id) : -1;
+  const census = pin?.census;
+  const area = census?.bg?.inc != null && census.bg.rel !== 0
+    ? describeArea('bg', census.bg)
+    : census?.tract
+      ? describeArea('tract', census.tract)
+      : null;
+  const zipArea = census?.zcta ? describeArea('zcta', census.zcta) : null;
+  const organic: Ahead[] = (ev?.localFinder ?? []).filter((l) => !l.ad);
+  const aiNamed: Ahead[] = ev?.aiCopy?.businesses?.length
+    ? ev.aiCopy.businesses.map((b) => ({ name: b.name, pos: b.pos, rating: b.rating, reviews: b.reviews }))
+    : (ev?.aiOverview?.businesses ?? []).map((b, i) => ({ name: b.name, pos: b.pos ?? i + 1, rating: b.rating, reviews: b.reviews }));
+  const ahead = organic.length
+    ? { source: 'Local Finder', list: organic }
+    : aiNamed.length
+      ? { source: 'AI Overview list', list: aiNamed }
+      : null;
+  const you = ahead?.list.find((l) => isTarget(l.name));
   const advertisers = ev
     ? [...new Set([
         ...(ev.resultsPage?.localServicesAds.listings ?? []).map((l) => l.name),
@@ -217,11 +242,88 @@ export function EvidencePanel({
             </>
           )}
         </div>
+        {ahead && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+            <h2 className="text-sm font-bold">Who&apos;s ahead here</h2>
+            <p className="mt-1 text-xs text-slate-400">
+              {ahead.source} at this point
+              {organic.length > 0 ? ', with each business’s distance from the phone as Google showed it' : ''}.
+            </p>
+            <ol className="mt-3 space-y-2 text-sm">
+              {ahead.list.slice(0, 3).map((l) => (
+                <AheadRow key={l.name} l={l} you={isTarget(l.name)} showDistance={organic.length > 0} />
+              ))}
+              {you && (you.pos ?? 99) > 3 && (
+                <>
+                  <li className="text-center text-xs text-slate-500">…</li>
+                  <AheadRow l={you} you showDistance={organic.length > 0} />
+                </>
+              )}
+            </ol>
+            {!you && <p className="mt-3 text-xs text-slate-400">{scan.targetBusiness} isn&apos;t in this list here.</p>}
+            {organic.length > 0 && organic.slice(0, 3).some((l) => !l.distance) && (
+              <p className="mt-3 text-xs text-slate-500">
+                No distance means the business hides its address (a service-area business), so Google shows none.
+              </p>
+            )}
+          </div>
+        )}
+        {(area || zipArea || share !== undefined) && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+            <h2 className="text-sm font-bold">This point&apos;s neighborhood</h2>
+            {share !== undefined && (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="rounded-xl bg-slate-950/60 p-3">
+                  <p className="text-xs text-slate-400">Share of this grid&apos;s buying power</p>
+                  <p className="text-2xl font-bold">{(share * 100).toFixed(1)}%</p>
+                  <p className="text-xs text-slate-500">owner-occupied homes × median income of its tract</p>
+                </div>
+                <div className="rounded-xl bg-slate-950/60 p-3">
+                  <p className="text-xs text-slate-400">Opportunity</p>
+                  <p className="text-2xl font-bold">
+                    {pin.status !== 'COMPLETED' ? '…' : oppRank >= 0 ? `#${oppRank + 1} of ${opportunities.length}` : 'Top 3'}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {pin.status !== 'COMPLETED'
+                      ? 'once this point is scanned'
+                      : oppRank === 0
+                        ? 'the most valuable point you are not winning'
+                        : oppRank > 0
+                          ? 'among points where you are outside the top 3'
+                          : 'you are already top 3 here'}
+                  </p>
+                </div>
+              </div>
+            )}
+            {area && (
+              <div className="mt-3 text-sm">
+                <p className="text-xs text-slate-400">
+                  {area.name} · {LEVEL_LABEL[area.level]}
+                </p>
+                {area.rows.map((r) => (
+                  <p key={r.label}>
+                    <span className="text-slate-400">{r.label}:</span> {r.value}
+                  </p>
+                ))}
+              </div>
+            )}
+            {zipArea && (
+              <p className="mt-2 text-sm">
+                <span className="text-slate-400">{zipArea.name}:</span> {zipArea.rows[0].value},{' '}
+                {zipArea.rows[1].value.split(' (')[0]} homeowners
+              </p>
+            )}
+            <p className="mt-3 text-[11px] text-slate-500">
+              U.S. Census Bureau, ACS 2020–2024 5-year estimates for the area around this point, not information about
+              individual households or searchers.
+            </p>
+          </div>
+        )}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
           <h2 className="text-sm font-bold">Receipt</h2>
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             <dt className="text-slate-400">GPS</dt><dd>{pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}</dd>
-            <dt className="text-slate-400">Area</dt><dd>{[pin.city, pin.stateCode, pin.zip].filter(Boolean).join(' ')}</dd>
+            <dt className="text-slate-400">Area</dt><dd>{[pin.city, pin.stateCode, pin.census?.zcta?.id ?? pin.zip].filter(Boolean).join(' ')}</dd>
             {pin.proxyMeta && (<><dt className="text-slate-400">Exit</dt><dd>{[pin.proxyMeta.city, pin.proxyMeta.region].filter(Boolean).join(', ')} · residential</dd></>)}
             {ev?.resultsPage?.googleLocation && (<><dt className="text-slate-400">Google’s location</dt><dd className="text-emerald-300">{ev.resultsPage.googleLocation}</dd></>)}
             <dt className="text-slate-400">Status</dt><dd>{pin.status.toLowerCase()}</dd>
@@ -257,6 +359,24 @@ export function EvidencePanel({
         </div>
       </section>
     </div>
+  );
+}
+
+function AheadRow({ l, you, showDistance }: { l: Ahead; you: boolean; showDistance: boolean }) {
+  return (
+    <li className={'flex items-baseline justify-between gap-3 rounded-lg px-2 py-1 ' + (you ? 'bg-emerald-500/10 text-emerald-200' : '')}>
+      <span className="min-w-0">
+        <span className="font-bold">#{l.pos ?? '–'}</span> {l.name}
+        {you && <span className="ml-1 text-xs">(you)</span>}
+        {l.rating && (
+          <span className="ml-1 text-xs text-slate-400">
+            ★{l.rating}
+            {l.reviews ? ` (${l.reviews})` : ''}
+          </span>
+        )}
+      </span>
+      {showDistance && <span className="shrink-0 text-xs text-slate-400">{l.distance ?? 'no distance shown'}</span>}
+    </li>
   );
 }
 

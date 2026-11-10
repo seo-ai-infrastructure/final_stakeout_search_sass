@@ -300,7 +300,7 @@ export function GeoGridCompareView({
         container: mapAContainerRef.current,
         style:
           process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
-          'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+          'https://tiles.openfreemap.org/styles/dark',
         center: [scanA.centerLng, scanA.centerLat],
         zoom: 11.5,
         attributionControl: { compact: true },
@@ -309,7 +309,7 @@ export function GeoGridCompareView({
         container: mapBContainerRef.current,
         style:
           process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
-          'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+          'https://tiles.openfreemap.org/styles/dark',
         center: [scanB.centerLng, scanB.centerLat],
         zoom: 11.5,
         attributionControl: { compact: true },

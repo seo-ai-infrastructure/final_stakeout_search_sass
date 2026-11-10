@@ -163,7 +163,7 @@ export function GeoGridDashboard({
         container: container.current,
         style:
           process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
-          'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+          'https://tiles.openfreemap.org/styles/dark',
         center: [scan.centerLng, scan.centerLat],
         zoom: 11,
       });

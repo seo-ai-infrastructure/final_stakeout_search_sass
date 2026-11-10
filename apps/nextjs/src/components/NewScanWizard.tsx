@@ -254,7 +254,7 @@ export function NewScanWizard() {
         container: mapContainerRef.current,
         style:
           process.env.NEXT_PUBLIC_MAP_STYLE_URL ||
-          'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+          'https://tiles.openfreemap.org/styles/dark',
         center: [centerLng, centerLat],
         zoom: 11.5,
         attributionControl: { compact: true },
