@@ -46,8 +46,8 @@ function short(unit: MetricDef['unit'], v: number) {
 }
 
 /** MapLibre fill colour: six steps on the metric; areas without an estimate stay clear. */
-export function fillColor(metric: Exclude<CensusMetric, 'off'>) {
-  const m = METRICS[metric];
+export function fillColor(metric: Exclude<CensusMetric, 'off'>, breaks?: number[] | null) {
+  const m = { ...METRICS[metric], breaks: breaks ?? METRICS[metric].breaks };
   const colors = m.reversed ? [...PALETTE].reverse() : PALETTE;
   const step: unknown[] = ['step', ['to-number', ['get', m.prop]], colors[0]];
   m.breaks.forEach((b, i) => step.push(b, colors[i + 1]));
@@ -59,8 +59,8 @@ export function fillOpacity(metric: Exclude<CensusMetric, 'off'>, opacity = 0.5)
   return metric === 'income' ? ['case', ['==', ['get', 'rel'], 0], opacity * 0.4, opacity] : opacity;
 }
 
-export function legend(metric: Exclude<CensusMetric, 'off'>) {
-  const m = METRICS[metric];
+export function legend(metric: Exclude<CensusMetric, 'off'>, breaks?: number[] | null) {
+  const m = { ...METRICS[metric], breaks: breaks ?? METRICS[metric].breaks };
   const colors = m.reversed ? [...PALETTE].reverse() : PALETTE;
   const b = m.breaks;
   const labels =
@@ -108,4 +108,28 @@ export function describeArea(level: CensusLayer, p: Record<string, unknown>): Ce
     rows.push({ label: m.label, value });
   }
   return { level, name: String(p.nm ?? p.id ?? ''), rows, uncertain: num('rel') === 0 };
+}
+
+/**
+ * "Compare within this market": six classes holding equal numbers of the areas around the grid,
+ * rounded to clean values ($1k, 1%, a year). Null when there are too few distinct values to split.
+ */
+export function quantileBreaks(metric: Exclude<CensusMetric, 'off'>, values: number[], classes = 6): number[] | null {
+  const v = values.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  if (v.length < classes * 2) return null;
+  const unit = METRICS[metric].unit;
+  const round = (x: number) => (unit === 'money' ? Math.round(x / 1000) * 1000 : Math.round(x));
+  const breaks: number[] = [];
+  for (let i = 1; i < classes; i++) {
+    const q = round(v[Math.min(v.length - 1, Math.floor((i * v.length) / classes))]);
+    if (breaks.length && q <= breaks[breaks.length - 1]) return null;
+    breaks.push(q);
+  }
+  return breaks;
+}
+
+/** 3D neighborhoods: height from owner-occupied homes, scaled per level so all three read alike. */
+export const METERS_PER_HOME: Record<CensusLayer, number> = { bg: 1.6, tract: 0.5, zcta: 0.07 };
+export function extrusionHeight(layer: CensusLayer) {
+  return ['*', ['coalesce', ['to-number', ['get', 'own']], 0], METERS_PER_HOME[layer]];
 }

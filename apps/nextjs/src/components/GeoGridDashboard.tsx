@@ -10,7 +10,8 @@ import {
 } from './CompetitorLeaderboard';
 import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
-import { buyingPower, passesFilters, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
+import { buyingPower, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
+import { gridColumns, RANK_COLORS } from '../lib/gridColumns';
 import {
   CENSUS_LAYERS,
   CENSUS_SOURCE_LABEL,
@@ -23,6 +24,8 @@ import {
   fillOpacity,
   legend,
   levelZoomRange,
+  quantileBreaks,
+  extrusionHeight,
   type CensusArea,
   type CensusLayer,
   type CensusLevel,
@@ -51,7 +54,35 @@ function addCensusLayers(m: maplibregl.Map) {
       { id: `census-${layer}-line`, type: 'line', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'line-color': '#94a3b8', 'line-opacity': 0.35, 'line-width': 0.6 } },
       beforeLabels,
     );
+    m.addLayer(
+      { id: `census-${layer}-3d`, type: 'fill-extrusion', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'fill-extrusion-color': '#74a9cf', 'fill-extrusion-height': 0, 'fill-extrusion-opacity': 0.88 } },
+    );
   }
+}
+
+/** The 3D grid: one column per point (height = buying power, colour = rank), lit for depth. */
+function addGridColumns(m: maplibregl.Map, onPick: (id: string) => void) {
+  m.addSource('grid-columns', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  m.addLayer({
+    id: 'grid-columns',
+    type: 'fill-extrusion',
+    source: 'grid-columns',
+    layout: { visibility: 'none' },
+    paint: {
+      'fill-extrusion-color': ['get', 'color'],
+      'fill-extrusion-height': ['get', 'h'],
+      'fill-extrusion-base': 0,
+      'fill-extrusion-opacity': 0.93,
+      'fill-extrusion-vertical-gradient': true,
+    },
+  });
+  m.setLight({ anchor: 'viewport', color: '#ffffff', intensity: 0.45, position: [1.4, 210, 35] });
+  m.on('click', 'grid-columns', (e) => {
+    const id = e.features?.[0]?.properties?.id;
+    if (id) onPick(String(id));
+  });
+  m.on('mouseenter', 'grid-columns', () => (m.getCanvas().style.cursor = 'pointer'));
+  m.on('mouseleave', 'grid-columns', () => (m.getCanvas().style.cursor = ''));
 }
 export type GridPinData = {
   id: string;
@@ -121,7 +152,11 @@ export function GeoGridDashboard({
     [censusArea, setCensusArea] = useState<CensusArea | null>(null),
     [mapZoom, setMapZoom] = useState(11),
     [mapReady, setMapReady] = useState(false),
-    [bpFilters, setBpFilters] = useState<BuyingPowerFilters>(NO_FILTERS);
+    [bpFilters, setBpFilters] = useState<BuyingPowerFilters>(NO_FILTERS),
+    [view3d, setView3d] = useState(false),
+    [style3d, setStyle3d] = useState<'columns' | 'areas'>('columns'),
+    [colorScale, setColorScale] = useState<'market' | 'national'>('market'),
+    [marketBreaks, setMarketBreaks] = useState<number[] | null>(null);
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null);
   useEffect(() => {
@@ -174,7 +209,7 @@ export function GeoGridDashboard({
           try {
             addCensusLayers(m);
             const pick = (e: maplibregl.MapMouseEvent) => {
-              const visible = CENSUS_LAYERS.map((l) => `census-${l}`).filter(
+              const visible = CENSUS_LAYERS.flatMap((l) => [`census-${l}`, `census-${l}-3d`]).filter(
                 (id) => m.getLayer(id) && m.getLayoutProperty(id, 'visibility') === 'visible',
               );
               const f = visible.length ? m.queryRenderedFeatures(e.point, { layers: visible })[0] : undefined;
@@ -186,6 +221,11 @@ export function GeoGridDashboard({
           } catch (e) {
             console.error('[census layer]', e);
           }
+        }
+        try {
+          addGridColumns(m, select);
+        } catch (e) {
+          console.error('[3D grid]', e);
         }
         setMapZoom(m.getZoom());
         setMapReady(true);
@@ -209,19 +249,98 @@ export function GeoGridDashboard({
   useEffect(() => {
     const m = map.current;
     if (!m || !mapReady || !m.getSource('census')) return;
+    const breaks = colorScale === 'market' ? marketBreaks : null;
+    const areas3d = view3d && style3d === 'areas';
     for (const layer of CENSUS_LAYERS) {
       const range = censusMetric === 'off' ? null : levelZoomRange(censusLevel, layer);
-      for (const id of [`census-${layer}`, `census-${layer}-line`]) {
-        m.setLayoutProperty(id, 'visibility', range ? 'visible' : 'none');
-        if (range) m.setLayerZoomRange(id, range[0], range[1]);
-      }
+      const show = (id: string, on: boolean) => {
+        m.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+        if (on && range) m.setLayerZoomRange(id, range[0], range[1]);
+      };
+      show(`census-${layer}`, Boolean(range) && !areas3d);
+      show(`census-${layer}-line`, Boolean(range));
+      show(`census-${layer}-3d`, Boolean(range) && areas3d);
       if (range && censusMetric !== 'off') {
-        m.setPaintProperty(`census-${layer}`, 'fill-color', fillColor(censusMetric) as never);
+        const color = fillColor(censusMetric, breaks) as never;
+        m.setPaintProperty(`census-${layer}`, 'fill-color', color);
         m.setPaintProperty(`census-${layer}`, 'fill-opacity', fillOpacity(censusMetric) as never);
+        m.setPaintProperty(`census-${layer}-3d`, 'fill-extrusion-color', color);
       }
     }
     if (censusMetric === 'off') setCensusArea(null);
-  }, [censusMetric, censusLevel, mapReady]);
+  }, [censusMetric, censusLevel, mapReady, colorScale, marketBreaks, view3d, style3d]);
+  // "Compare within this market": colour steps from the areas loaded around the grid.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady || !m.getSource('census') || colorScale !== 'market' || censusMetric === 'off') return;
+    const compute = () => {
+      const level = censusLevel === 'auto' ? autoLevelAt(m.getZoom()) : censusLevel;
+      const prop = METRICS[censusMetric].prop;
+      const seen = new Set<string>(),
+        values: number[] = [];
+      for (const f of m.querySourceFeatures('census', { sourceLayer: level })) {
+        const id = String(f.properties?.id ?? ''),
+          v = Number(f.properties?.[prop]);
+        if (!id || seen.has(id) || !Number.isFinite(v)) continue;
+        seen.add(id);
+        values.push(v);
+      }
+      const b = quantileBreaks(censusMetric, values);
+      setMarketBreaks((prev) => (JSON.stringify(prev) === JSON.stringify(b) ? prev : b));
+    };
+    compute();
+    m.on('idle', compute);
+    return () => {
+      m.off('idle', compute);
+    };
+  }, [mapReady, colorScale, censusMetric, censusLevel]);
+  // The 3D grid's columns follow the ranks shown (competitor view), the filters and the data.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady || !scan || !m.getSource('grid-columns')) return;
+    const fc = gridColumns(
+      scan.pins,
+      pointShares(scan.pins),
+      (p) => (projected ? ((projected.pinRanks as Record<string, number | null | undefined>)[p.id] ?? null) : p.rankFound),
+      scan.spacingKm,
+      (p) => !passesFilters(scan.pins.find((x) => x.id === p.id)?.census, bpFilters),
+    );
+    (m.getSource('grid-columns') as maplibregl.GeoJSONSource).setData(fc as never);
+    m.setLayoutProperty('grid-columns', 'visibility', view3d && style3d === 'columns' ? 'visible' : 'none');
+  }, [scan, projected, bpFilters, mapReady, view3d, style3d]);
+  // Entering 3D tilts and turns the camera; leaving it flattens the view. Only on the switch itself,
+  // so changing the metric never undoes the angle a viewer chose.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady) return;
+    m.easeTo(view3d ? { pitch: 58, bearing: -18, duration: 1400 } : { pitch: 0, bearing: 0, duration: 900 });
+  }, [view3d, mapReady]);
+  // The columns (or neighborhoods) grow out of the ground whenever they appear.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady || !view3d) return;
+    const prop = censusMetric === 'off' ? 'inc' : METRICS[censusMetric].prop;
+    let start: number | null = null,
+      raf = 0;
+    const grow = (t: number) => {
+      start ??= t;
+      const k = Math.min(1, (t - start) / 1300),
+        ease = 1 - Math.pow(1 - k, 3);
+      if (style3d === 'columns' && m.getLayer('grid-columns'))
+        m.setPaintProperty('grid-columns', 'fill-extrusion-height', ['*', ['get', 'h'], ease]);
+      if (style3d === 'areas')
+        for (const layer of CENSUS_LAYERS)
+          if (m.getLayer(`census-${layer}-3d`))
+            m.setPaintProperty(`census-${layer}-3d`, 'fill-extrusion-height', [
+              '*',
+              ['case', ['has', prop], extrusionHeight(layer), 0],
+              ease,
+            ] as never);
+      if (k < 1) raf = requestAnimationFrame(grow);
+    };
+    raf = requestAnimationFrame(grow);
+    return () => cancelAnimationFrame(raf);
+  }, [view3d, style3d, mapReady, censusMetric, scan?.id]);
   useEffect(() => {
     if (!map.current || !scan) return;
     const m = map.current;
@@ -390,7 +509,72 @@ export function GeoGridDashboard({
             Showing {projected?.businessName ?? scan.targetBusiness} · purple
             ring = AI appearance
           </p>
-          <div ref={container} className="h-[420px] rounded-lg bg-slate-900" />
+          <div className="relative">
+            <div ref={container} className="h-[420px] rounded-lg bg-slate-900" />
+            <div className="absolute left-3 top-3 z-10 flex flex-col items-start gap-2">
+              <div className="inline-flex overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 text-xs font-bold shadow-lg backdrop-blur">
+                {(['2D', '3D'] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    aria-pressed={(v === '3D') === view3d}
+                    onClick={() => setView3d(v === '3D')}
+                    className={'px-3 py-1.5 transition ' + ((v === '3D') === view3d ? 'bg-emerald-400 text-slate-950' : 'text-slate-200 hover:bg-slate-800')}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+              {view3d && (
+                <div className="inline-flex overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 text-xs font-semibold shadow-lg backdrop-blur">
+                  <button
+                    type="button"
+                    aria-pressed={style3d === 'columns'}
+                    onClick={() => setStyle3d('columns')}
+                    className={'px-3 py-1.5 transition ' + (style3d === 'columns' ? 'bg-slate-200 text-slate-950' : 'text-slate-200 hover:bg-slate-800')}
+                  >
+                    Rank × buying power
+                  </button>
+                  {CENSUS_VINTAGE && (
+                    <button
+                      type="button"
+                      aria-pressed={style3d === 'areas'}
+                      onClick={() => {
+                        setStyle3d('areas');
+                        if (censusMetric === 'off') setCensusMetric('income');
+                      }}
+                      className={'px-3 py-1.5 transition ' + (style3d === 'areas' ? 'bg-slate-200 text-slate-950' : 'text-slate-200 hover:bg-slate-800')}
+                    >
+                      Neighborhoods
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            {view3d && (
+              <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[75%] rounded-lg border border-slate-700 bg-slate-950/85 p-2.5 text-[11px] text-slate-200 shadow-lg backdrop-blur">
+                {style3d === 'columns' ? (
+                  <>
+                    <p className="font-bold">Height = the point&apos;s share of this grid&apos;s buying power</p>
+                    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+                      {([['Top 3', RANK_COLORS.top], ['#4–10', RANK_COLORS.mid], ['#11+', RANK_COLORS.low], ['Not found', RANK_COLORS.none]] as const).map(([label, color]) => (
+                        <span key={label} className="inline-flex items-center gap-1">
+                          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-slate-400">Tall red: valuable ground you&apos;re losing. Tall green: valuable ground you&apos;re winning.</p>
+                  </>
+                ) : (
+                  <p className="font-bold">
+                    Height = owner-occupied homes · colour ={' '}
+                    {censusMetric === 'off' ? 'household income' : METRICS[censusMetric].label.toLowerCase()}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
           {mapWarning && <p>{mapWarning}</p>}
           {CENSUS_VINTAGE && (
             <div className="mt-3 space-y-2 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm">
@@ -421,12 +605,26 @@ export function GeoGridDashboard({
                     <option value="bg">Block groups</option>
                   </select>
                 )}
+                {censusMetric !== 'off' && (
+                  <select
+                    aria-label="Colour scale"
+                    value={colorScale}
+                    onChange={(e) => setColorScale(e.target.value as 'market' | 'national')}
+                    className="rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                  >
+                    <option value="market">Colours: compare within this market</option>
+                    <option value="national">Colours: national steps</option>
+                  </select>
+                )}
               </div>
               {censusMetric !== 'off' && (
                 <>
-                  <p className="text-xs text-slate-400">{METRICS[censusMetric].label}</p>
+                  <p className="text-xs text-slate-400">
+                    {METRICS[censusMetric].label}
+                    {colorScale === 'market' && marketBreaks ? ' · six equal groups of the areas around this grid' : ' · national steps'}
+                  </p>
                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-                    {legend(censusMetric).map((item) => (
+                    {legend(censusMetric, colorScale === 'market' ? marketBreaks : null).map((item) => (
                       <span key={item.label} className="inline-flex items-center gap-1">
                         <span className="inline-block h-3 w-4 rounded-sm" style={{ background: item.color }} />
                         {item.label}

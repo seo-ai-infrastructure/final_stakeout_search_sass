@@ -35,3 +35,15 @@ test('Census area details: estimates with margins of error, homeowner counts, mi
   assert.equal(a.uncertain, false);
   assert.equal(describeArea('bg', { id: 'x', inc: 50000, rel: 0 }).uncertain, true);
 });
+
+test('market colours: six equal groups of the areas around the grid, rounded to clean values', async () => {
+  const { quantileBreaks, legend, fillColor } = await import('../apps/nextjs/src/lib/censusLayer');
+  const incomes = Array.from({ length: 60 }, (_, i) => 80000 + i * 1500); // $80k..$168.5k
+  const b = quantileBreaks('income', incomes)!;
+  assert.equal(b.length, 5);
+  assert.ok(b.every((x, i) => x % 1000 === 0 && (i === 0 || x > b[i - 1])));
+  assert.deepEqual(legend('income', b).map((i) => i.label)[0], `Under $${b[0] / 1000}k`);
+  assert.equal(((fillColor('income', b) as unknown[])[2] as unknown[])[3], b[0]);
+  assert.equal(quantileBreaks('income', [100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000]), null, 'no spread: fall back to national steps');
+  assert.equal(quantileBreaks('owners', [50, 60]), null, 'too few areas');
+});
