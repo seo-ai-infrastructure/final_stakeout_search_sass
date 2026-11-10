@@ -9,6 +9,7 @@ node_modules/
 __pycache__/
 *.mp4
 *.tar.gz
+!tests/fixtures/*.tar.gz
 .DS_Store
 
 # Census build working folder (tools/census/build.py)
