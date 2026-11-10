@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { autoLevelAt, describeArea, fillColor, fillOpacity, legend, levelZoomRange, PALETTE } from '../apps/nextjs/src/lib/censusLayer';
 
-test('Census legend: six labelled steps per metric, older homes darkest', () => {
+test('Census legend: six labelled steps per metric, older homes brightest', () => {
   assert.deepEqual(legend('income').map((i) => i.label), ['Under $40k', '$40k–$60k', '$60k–$80k', '$80k–$100k', '$100k–$150k', '$150k+']);
   assert.deepEqual(legend('owners').map((i) => i.label), ['Under 30%', '30%–45%', '45%–60%', '60%–75%', '75%–90%', '90%+']);
   const built = legend('built');
   assert.deepEqual(built.map((i) => i.label), ['Before 1950', '1950–1969', '1970–1989', '1990–2004', '2005–2014', '2015 or later']);
-  assert.equal(built[0].color, PALETTE[PALETTE.length - 1]);
+  assert.equal(built[0].color, '#f1f5f9', 'older homes are the brightest step');
 });
 
 test('Census colours: a step on the value, and areas without an estimate stay clear', () => {
@@ -15,8 +15,8 @@ test('Census colours: a step on the value, and areas without an estimate stay cl
   assert.deepEqual(e.slice(0, 2), ['case', ['has', 'inc']]);
   assert.deepEqual((e[2] as unknown[]).slice(0, 4), ['step', ['to-number', ['get', 'inc']], PALETTE[0], 40000]);
   assert.equal(e[3], 'rgba(0,0,0,0)');
-  assert.deepEqual(fillOpacity('income'), ['case', ['==', ['get', 'rel'], 0], 0.2, 0.5]);
-  assert.equal(fillOpacity('owners'), 0.5);
+  assert.deepEqual(fillOpacity('income'), ['case', ['==', ['get', 'rel'], 0], 0.22, 0.55]);
+  assert.equal(fillOpacity('owners'), 0.55);
 });
 
 test('Census detail: auto picks ZIPs, then tracts, then block groups as you zoom in', () => {
@@ -46,4 +46,31 @@ test('market colours: six equal groups of the areas around the grid, rounded to 
   assert.equal(((fillColor('income', b) as unknown[])[2] as unknown[])[3], b[0]);
   assert.equal(quantileBreaks('income', [100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000, 100000]), null, 'no spread: fall back to national steps');
   assert.equal(quantileBreaks('owners', [50, 60]), null, 'too few areas');
+});
+
+test('Census colours on the dark map: one family per metric, dark for low values and bright for high', async () => {
+  const { PALETTES, legend } = await import('../apps/nextjs/src/lib/censusLayer');
+  const lum = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  for (const [metric, ramp] of Object.entries(PALETTES)) {
+    for (let i = 1; i < ramp.length; i++) assert.ok(lum(ramp[i]) > lum(ramp[i - 1]), `${metric} step ${i} is brighter`);
+  }
+  assert.equal(legend('income')[5].color, '#67e8f9');
+  assert.equal(legend('owners')[5].color, '#e9d5ff');
+  assert.notEqual(legend('income')[3].color, legend('owners')[3].color);
+  // no ramp uses the rank pins' green, amber or red
+  const pins = ['#10b981', '#f59e0b', '#ef4444'];
+  for (const ramp of Object.values(PALETTES)) for (const c of ramp) assert.ok(!pins.includes(c));
+});
+
+test('basemap clean-up hides points of interest and keeps everything else', async () => {
+  const { declutterBasemap } = await import('../apps/nextjs/src/lib/censusLayer');
+  const hidden: string[] = [];
+  declutterBasemap({
+    getStyle: () => ({ layers: [{ id: 'poi_label', 'source-layer': 'poi' }, { id: 'place_city', 'source-layer': 'place' }, { id: 'road', 'source-layer': 'transportation' }] }),
+    setLayoutProperty: (id) => hidden.push(id),
+  });
+  assert.deepEqual(hidden, ['poi_label']);
 });

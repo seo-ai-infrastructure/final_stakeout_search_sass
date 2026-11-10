@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { declutterBasemap } from '../lib/censusLayer';
 import {
   TrendingUp,
   TrendingDown,
@@ -317,6 +318,8 @@ export function GeoGridCompareView({
     } catch {
       return;
     }
+    mapA.on('load', () => declutterBasemap(mapA));
+    mapB.on('load', () => declutterBasemap(mapB));
     mapA.addControl(new maplibregl.NavigationControl(), 'bottom-left');
     mapB.addControl(new maplibregl.NavigationControl(), 'bottom-right');
     mapARef.current = mapA;

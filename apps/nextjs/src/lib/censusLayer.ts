@@ -18,7 +18,7 @@ type MetricDef = {
   moe?: string;
   /** Upper bounds of the first five colour steps; values above the last fall in the sixth. */
   breaks: number[];
-  /** Darkest colour for the lowest values instead of the highest (older homes). */
+  /** Brightest colour for the lowest values instead of the highest (older homes stand out). */
   reversed?: boolean;
   unit: 'money' | 'percent' | 'year';
 };
@@ -30,8 +30,21 @@ export const METRICS: Record<Exclude<CensusMetric, 'off'>, MetricDef> = {
   built: { label: 'Median year built', prop: 'yb', moe: 'yb_m', breaks: [1950, 1970, 1990, 2005, 2015], reversed: true, unit: 'year' },
 };
 
-/** Six muted blue steps, so green, yellow and orange rank pins stay readable on top. */
-export const PALETTE = ['#f1eef6', '#d0d1e6', '#a6bddb', '#74a9cf', '#2b8cbe', '#045a8d'];
+/**
+ * Six steps per metric, dark (low) to bright (high), for the dark basemap: low values sink into the
+ * charcoal and the areas that matter light up. One colour family per metric, so switching metrics is
+ * obvious at a glance, and none is green, amber or red, the colours of the rank pins.
+ */
+export const PALETTES: Record<Exclude<CensusMetric, 'off'>, string[]> = {
+  income: ['#16222f', '#1e3a5f', '#2563eb', '#0284c7', '#06b6d4', '#67e8f9'],
+  owners: ['#1f192e', '#31254d', '#4c3575', '#7c3aed', '#a855f7', '#e9d5ff'],
+  value: ['#24141d', '#4a1d35', '#831843', '#be185d', '#ec4899', '#fbcfe8'],
+  built: ['#1c1f24', '#33383f', '#565d66', '#8a919a', '#c0c6cd', '#f1f5f9'],
+};
+/** The income ramp, kept for callers that want a single palette. */
+export const PALETTE = PALETTES.income;
+const paletteFor = (metric: Exclude<CensusMetric, 'off'>) =>
+  METRICS[metric].reversed ? [...PALETTES[metric]].reverse() : PALETTES[metric];
 
 export function formatValue(unit: MetricDef['unit'], v: number) {
   if (unit === 'money') return '$' + Math.round(v).toLocaleString('en-US');
@@ -48,20 +61,20 @@ function short(unit: MetricDef['unit'], v: number) {
 /** MapLibre fill colour: six steps on the metric; areas without an estimate stay clear. */
 export function fillColor(metric: Exclude<CensusMetric, 'off'>, breaks?: number[] | null) {
   const m = { ...METRICS[metric], breaks: breaks ?? METRICS[metric].breaks };
-  const colors = m.reversed ? [...PALETTE].reverse() : PALETTE;
+  const colors = paletteFor(metric);
   const step: unknown[] = ['step', ['to-number', ['get', m.prop]], colors[0]];
   m.breaks.forEach((b, i) => step.push(b, colors[i + 1]));
   return ['case', ['has', m.prop], step, 'rgba(0,0,0,0)'];
 }
 
 /** Areas whose income estimate is very uncertain (margin of error above ~30% of the value) are faded. */
-export function fillOpacity(metric: Exclude<CensusMetric, 'off'>, opacity = 0.5) {
-  return metric === 'income' ? ['case', ['==', ['get', 'rel'], 0], opacity * 0.4, opacity] : opacity;
+export function fillOpacity(metric: Exclude<CensusMetric, 'off'>, opacity = 0.55) {
+  return metric === 'income' ? ['case', ['==', ['get', 'rel'], 0], Math.round(opacity * 40) / 100, opacity] : opacity;
 }
 
 export function legend(metric: Exclude<CensusMetric, 'off'>, breaks?: number[] | null) {
   const m = { ...METRICS[metric], breaks: breaks ?? METRICS[metric].breaks };
-  const colors = m.reversed ? [...PALETTE].reverse() : PALETTE;
+  const colors = paletteFor(metric);
   const b = m.breaks;
   const labels =
     m.unit === 'year'
@@ -132,4 +145,13 @@ export function quantileBreaks(metric: Exclude<CensusMetric, 'off'>, values: num
 export const METERS_PER_HOME: Record<CensusLayer, number> = { bg: 1.6, tract: 0.5, zcta: 0.07 };
 export function extrusionHeight(layer: CensusLayer) {
   return ['*', ['coalesce', ['to-number', ['get', 'own']], 0], METERS_PER_HOME[layer]];
+}
+
+/**
+ * Basemap clean-up for every Stakeout map: shop and restaurant icons are hidden, since a basemap
+ * POI can be mistaken for a tracked business. Roads, places and street names stay.
+ */
+export function declutterBasemap(m: { getStyle: () => { layers?: { id: string; [k: string]: unknown }[] }; setLayoutProperty: (id: string, p: string, v: unknown) => void }) {
+  for (const l of m.getStyle().layers ?? [])
+    if (l['source-layer'] === 'poi') m.setLayoutProperty(l.id, 'visibility', 'none');
 }

@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { declutterBasemap } from '../lib/censusLayer';
 import {
   Smartphone,
   Monitor,
@@ -263,6 +264,7 @@ export function NewScanWizard() {
       setMapState('error');
       return;
     }
+    map.on('load', () => declutterBasemap(map));
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', (e) => {
       setCenterLat(Number(e.lngLat.lat.toFixed(6)));

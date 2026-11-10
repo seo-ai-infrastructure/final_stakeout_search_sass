@@ -26,6 +26,7 @@ import {
   fillOpacity,
   legend,
   levelZoomRange,
+  declutterBasemap,
   quantileBreaks,
   extrusionHeight,
   type CensusArea,
@@ -49,11 +50,11 @@ function addCensusLayers(m: maplibregl.Map) {
   });
   for (const layer of CENSUS_LAYERS) {
     m.addLayer(
-      { id: `census-${layer}`, type: 'fill', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'fill-color': 'rgba(0,0,0,0)', 'fill-opacity': 0.5 } },
+      { id: `census-${layer}`, type: 'fill', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'fill-color': 'rgba(0,0,0,0)', 'fill-opacity': 0.55 } },
       beforeLabels,
     );
     m.addLayer(
-      { id: `census-${layer}-line`, type: 'line', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'line-color': '#94a3b8', 'line-opacity': 0.35, 'line-width': 0.6 } },
+      { id: `census-${layer}-line`, type: 'line', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'line-color': '#ffffff', 'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.9, 0.2], 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2, 1] } },
       beforeLabels,
     );
     m.addLayer(
@@ -208,6 +209,7 @@ export function GeoGridDashboard({
       m.addControl(new maplibregl.NavigationControl());
       map.current = m;
       m.on('load', () => {
+        declutterBasemap(m);
         if (CENSUS_VINTAGE) {
           try {
             addCensusLayers(m);
@@ -217,10 +219,20 @@ export function GeoGridDashboard({
               );
               const f = visible.length ? m.queryRenderedFeatures(e.point, { layers: visible })[0] : undefined;
               setCensusArea(f ? describeArea(f.sourceLayer as CensusLayer, f.properties ?? {}) : null);
+              const next = f?.sourceLayer && f.id !== undefined ? { source: 'census', sourceLayer: f.sourceLayer, id: f.id } : null;
+              if (hovered && (!next || next.id !== hovered.id || next.sourceLayer !== hovered.sourceLayer))
+                m.setFeatureState(hovered, { hover: false });
+              if (next) m.setFeatureState(next, { hover: true });
+              hovered = next;
             };
+            let hovered: { source: string; sourceLayer: string; id: string | number } | null = null;
             m.on('mousemove', pick);
             m.on('click', pick);
-            m.on('mouseout', () => setCensusArea(null));
+            m.on('mouseout', () => {
+              setCensusArea(null);
+              if (hovered) m.setFeatureState(hovered, { hover: false });
+              hovered = null;
+            });
           } catch (e) {
             console.error('[census layer]', e);
           }
