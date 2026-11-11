@@ -20,7 +20,7 @@ function Card({ title, subtitle, children }: { title: string; subtitle: string; 
 function Bar({ value, you }: { value: number; you?: boolean }) {
   return (
     <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-      <div className={'h-full rounded-full ' + (you ? 'bg-emerald-400' : 'bg-sky-400/80')} style={{ width: `${Math.max(2, Math.min(100, value))}%` }} />
+      <div className={'h-full rounded-full ' + (you ? 'bg-emerald-400' : 'bg-slate-400')} style={{ width: `${Math.max(2, Math.min(100, value))}%` }} />
     </div>
   );
 }
@@ -60,7 +60,7 @@ function RadiusChart({ points, radius }: { points: { id: string; miles: number; 
           <rect x={L} y={T} width={x(radius) - L} height={H - T - B} className="fill-emerald-400/10" />
           <line x1={x(radius)} x2={x(radius)} y1={T} y2={H - B} className="stroke-emerald-400" strokeDasharray="4 3" />
           <text x={Math.min(x(radius) + 4, W - R - 60)} y={T + 10} className="fill-emerald-300 text-[9px] font-bold">
-            {radius} mi
+            {radius.toFixed(1)} mi
           </text>
         </g>
       )}
@@ -99,11 +99,11 @@ export function MarketInsights({ scan }: { scan: GridScanData }) {
                     {radius.beyond.total === 0 ? (
                       <>
                         You hold the top 3 across the whole grid: all {radius.within.total} points, out to its edge at{' '}
-                        <span className="font-bold text-emerald-300">{radius.radius} mi</span>.
+                        <span className="font-bold text-emerald-300">{radius.radius.toFixed(1)} mi</span>.
                       </>
                     ) : (
                       <>
-                        You hold the top 3 out to <span className="font-bold text-emerald-300">{radius.radius} mi</span>: top 3 at{' '}
+                        You hold the top 3 out to <span className="font-bold text-emerald-300">{radius.radius.toFixed(1)} mi</span>: top 3 at{' '}
                         {radius.within.top3} of {radius.within.total} points within it, {radius.beyond.top3} of {radius.beyond.total} beyond.
                       </>
                     )}

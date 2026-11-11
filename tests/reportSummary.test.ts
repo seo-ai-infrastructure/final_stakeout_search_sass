@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rankDistribution, reportSummary } from '../apps/nextjs/src/lib/reportSummary';
+import { rankDistribution, reportSummary, bandOf, verdictFor } from '../apps/nextjs/src/lib/reportSummary';
 
 const pin = (id: string, rank: number | null, extra: Record<string, unknown> = {}) =>
   ({ id, status: 'COMPLETED', rankFound: rank, lat: 28.04, lng: -81.95, topCompetitors: ['Rival Co', "Stuart's Plumbing", 'Third LLC'], ...extra }) as any;
@@ -29,4 +29,9 @@ test('summary: headline numbers and plain-language findings come from the scan d
   assert.match(all.findings[0], /top 3 at every point \(2 of 2\), and #1 at 1\./);
   assert.deepEqual(s.leaders, [{ name: 'Rival Co', points: 4, isYou: false }], 'who holds #1: the first name at each point');
   assert.deepEqual(reportSummary({ targetBusiness: 'X', centerLat: 0, centerLng: 0, pins: [] }).findings, []);
+});
+
+test('rank bands and the headline verdict', () => {
+  assert.deepEqual([1, 2, 3, 4, 10, 11, null, undefined].map((r) => bandOf(r)), ['first', 'top3', 'top3', 'top10', 'top10', 'beyond', 'absent', 'absent']);
+  assert.deepEqual([100, 70, 69.9, 40, 39.9, 0, null].map((v) => verdictFor(v).label), ['Strong', 'Strong', 'Patchy', 'Patchy', 'Weak', 'Weak', 'No result yet']);
 });

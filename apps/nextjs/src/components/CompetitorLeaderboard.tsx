@@ -1,14 +1,7 @@
 // apps/nextjs/src/components/CompetitorLeaderboard.tsx
 'use client';
 import React, { useMemo, useState } from 'react';
-import {
-  Trophy,
-  Search,
-  ArrowUpDown,
-  Eye,
-  Download,
-  Sparkles,
-} from 'lucide-react';
+import { Search, ArrowUpDown, Download, Sparkles } from 'lucide-react';
 import type { GridPinData } from './GeoGridDashboard';
 export interface CompetitorMarketStat {
   businessName: string;
@@ -37,6 +30,8 @@ interface CompetitorLeaderboardProps {
   /** normalizedKey of the competitor currently projected on the map. */
   activeProjectedBusiness?: string | null;
   onSelectCompetitorForMap?: (competitor: CompetitorMarketStat | null) => void;
+  /** Each business's share of the grid's buying power (percent), keyed by its lower-cased name. */
+  buyingPower?: Record<string, number | null>;
 }
 type SortField =
   | 'solv'
@@ -53,7 +48,9 @@ export function CompetitorLeaderboard({
   targetBusiness,
   activeProjectedBusiness,
   onSelectCompetitorForMap,
+  buyingPower,
 }: CompetitorLeaderboardProps) {
+  const [showAll, setShowAll] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const [sortBy, setSortBy] = useState<SortField>('solv');
   const [sortDesc, setSortDesc] = useState<boolean>(true);
@@ -312,18 +309,19 @@ export function CompetitorLeaderboard({
       </div>
     );
   }
+  // The top 10 (and always the tracked business) until "Show all"; a filter shows every match.
+  const visible = showAll || searchFilter ? filteredAndSorted : filteredAndSorted.filter((c, i) => i < 10 || c.isTarget);
+  // The AI column only appears when an AI Overview showed at some point: otherwise every row would read zero.
+  const showAi = totalAiTriggeredPins > 0;
   return (
-    <div className="flex h-full w-full flex-col bg-slate-950 text-slate-100">
+    <div className="flex w-full flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 text-slate-100">
       {/* Top Action & Filter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 bg-slate-900/80 px-6">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Trophy className="h-5 w-5 text-emerald-400" />
-            <h2 className="text-base font-bold text-white">
-              Competitor Share of Local Voice (SoLV) & AI Citation Leaderboard
-            </h2>
+            <h2 className="text-sm font-bold text-white">Competitor leaderboard</h2>
             <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs font-semibold text-emerald-400 border">
-              {leaderboard.length} Entities Tracked
+              {leaderboard.length} businesses
             </span>
             {totalAiTriggeredPins > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/15 px-2.5 py-0.5 text-xs">
@@ -334,8 +332,7 @@ export function CompetitorLeaderboard({
             )}
           </div>
           <p className="mt-0.5 text-xs text-slate-400">
-            Select a business to see its ranks and AI appearances across{' '}
-            {completedPins.length} completed pins.
+            Select a business to see its ranks on the map, across {completedPins.length} completed points.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -369,256 +366,145 @@ export function CompetitorLeaderboard({
         </div>
       </div>
       {/* Leaderboard Table */}
-      <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse text-left text-xs">
-          <thead className="sticky top-0 z-10 border-b border-slate-800 bg-slate-900/95 text-[11px] font-semibold">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[820px] border-collapse text-left text-xs">
+          <thead className="border-b border-slate-800 text-[11px] font-semibold text-slate-400">
             <tr>
-              <th className="py-3.5 pl-6 pr-3 w-14">#</th>
-              <th className="px-3 py-3.5">Business / Cited Entity</th>
-              <th className="px-3 py-3.5">
-                <button
-                  type="button"
-                  onClick={() => handleSort('solv')}
-                  className="inline-flex items-center gap-1 hover:text-white"
-                >
-                  SoLV (Top 3) <ArrowUpDown className="h-3 w-3" />
+              <th className="w-12 py-3 pl-5 pr-2">#</th>
+              <th className="px-3 py-3">Business</th>
+              <th className="px-3 py-3">
+                <button type="button" onClick={() => handleSort('solv')} className="inline-flex items-center gap-1 hover:text-white">
+                  Top 3 at <ArrowUpDown className="h-3 w-3" />
                 </button>
               </th>
-              <th className="px-3 py-3.5">
-                <button
-                  type="button"
-                  onClick={() => handleSort('aiCitationSharePct')}
-                  className="inline-flex items-center gap-1 text-purple-300 hover:text-purple-200"
-                >
-                  <Sparkles className="h-3 w-3 text-purple-400" />
-                  AI Citation Share <ArrowUpDown className="h-3 w-3" />
+              <th className="px-3 py-3">Buying power</th>
+              <th className="px-3 py-3">
+                <button type="button" onClick={() => handleSort('arp')} className="inline-flex items-center gap-1 hover:text-white">
+                  Avg rank <ArrowUpDown className="h-3 w-3" />
                 </button>
               </th>
-              <th className="px-3 py-3.5">
-                <button
-                  type="button"
-                  onClick={() => handleSort('atrp')}
-                  className="inline-flex items-center gap-1 hover:text-white"
-                >
-                  ATRP <ArrowUpDown className="h-3 w-3" />
+              <th className="px-3 py-3">
+                <button type="button" onClick={() => handleSort('foundPinsCount')} className="inline-flex items-center gap-1 hover:text-white">
+                  Found at <ArrowUpDown className="h-3 w-3" />
                 </button>
               </th>
-              <th className="px-3 py-3.5">
-                <button
-                  type="button"
-                  onClick={() => handleSort('arp')}
-                  className="inline-flex items-center gap-1 hover:text-white"
-                >
-                  ARP <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="px-3 py-3.5">
-                <button
-                  type="button"
-                  onClick={() => handleSort('foundPinsCount')}
-                  className="inline-flex items-center gap-1 hover:text-white"
-                >
-                  Grid Presence <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="px-3 py-3.5 w-60">
-                Pin Rank Distribution (1–20+)
-              </th>
-              <th className="py-3.5 pl-3 pr-6 text-right">Map Projection</th>
+              <th className="w-44 px-3 py-3">Rank spread</th>
+              {showAi && (
+                <th className="px-3 py-3">
+                  <button type="button" onClick={() => handleSort('aiCitationSharePct')} className="inline-flex items-center gap-1 text-violet-300 hover:text-violet-200">
+                    <Sparkles className="h-3 w-3" /> AI citations <ArrowUpDown className="h-3 w-3" />
+                  </button>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-800/70">
-            {filteredAndSorted.map((comp, idx) => {
+            {visible.map((comp) => {
               const total = completedPins.length;
               const pTop3 = (comp.top3Count / total) * 100;
               const p4to10 = (comp.rank4to10Count / total) * 100;
               const p11to20 = (comp.rank11to20Count / total) * 100;
-              const isProjected =
-                activeProjectedBusiness === comp.normalizedKey;
+              const isProjected = activeProjectedBusiness === comp.normalizedKey;
+              const bp = buyingPower?.[comp.normalizedKey];
+              // The row is the control: it puts this business's ranks on the map (again, or the tracked business, puts the map back).
+              const toggle = () => onSelectCompetitorForMap?.(isProjected || comp.isTarget ? null : comp);
               return (
                 <tr
                   key={comp.normalizedKey}
-                  className={`transition-colors ${
-                    comp.isTarget
-                      ? 'bg-emerald-500/10 hover:bg-emerald-500/15'
-                      : isProjected
-                        ? 'bg-sky-500/10 hover:bg-sky-500/15'
-                        : 'hover:bg-slate-900/70'
+                  onClick={toggle}
+                  className={`cursor-pointer transition-colors ${
+                    isProjected ? 'bg-amber-400/10 hover:bg-amber-400/15' : comp.isTarget ? 'bg-emerald-500/10 hover:bg-emerald-500/15' : 'hover:bg-slate-800/60'
                   }`}
                 >
-                  {/* Standing # */}
-                  <td className="py-3.5 pl-6 pr-3 font-mono font-bold text-slate-300">
-                    <span
-                      className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs ${
-                        idx === 0
-                          ? 'bg-amber-400 text-slate-950 font-extrabold'
-                          : idx === 1
-                            ? 'bg-slate-300 text-slate-950 font-bold'
-                            : idx === 2
-                              ? 'bg-amber-700 text-white font-bold'
-                              : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
-                      {idx + 1}
-                    </span>
-                  </td>
-                  {/* Business Name + Badges */}
-                  <td className="px-3 py-3.5 font-medium text-white">
+                  <td className="py-3 pl-5 pr-2 font-mono font-bold text-slate-400">{filteredAndSorted.indexOf(comp) + 1}</td>
+                  <td className="px-3 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="truncate max-w-[240px]">
-                        {comp.businessName}
-                      </span>
-                      {comp.isTarget && (
-                        <span className="rounded bg-emerald-500 px-1.5 py-0.5 text-[10px] font-extrabold uppercase">
-                          Your Target
-                        </span>
-                      )}
-                      {comp.foundPinsCount === 0 && comp.aiCitedCount > 0 && (
-                        <span className="rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-semibold">
-                          AI-Only Source
-                        </span>
-                      )}
-                      {isProjected && !comp.isTarget && (
-                        <span className="rounded bg-sky-400 px-1.5 py-0.5 text-[10px] font-extrabold uppercase">
-                          Projected on Map
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  {/* SoLV % */}
-                  <td className="px-3 py-3.5">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-sm font-extrabold ${
-                          comp.solv >= 50
-                            ? 'text-emerald-400'
-                            : comp.solv >= 20
-                              ? 'text-amber-400'
-                              : 'text-slate-300'
-                        }`}
-                      >
-                        {comp.solv.toFixed(1)}%
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        ({comp.top3Count} pins)
-                      </span>
-                    </div>
-                  </td>
-                  {/* NEW: AI Overview / Ask Maps Citation Share (%) */}
-                  <td className="px-3 py-3.5">
-                    {comp.aiCitedCount > 0 ? (
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 text-sm font-extrabold text-purple-300">
-                            <Sparkles className="h-3 w-3 text-purple-400" />
-                            {comp.aiCitationSharePct.toFixed(1)}%
-                          </span>
-                          <span className="text-[11px] text-slate-400">
-                            ({comp.aiCitedCount}/{total} pins)
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-slate-800">
-                            <div
-                              className="h-full bg-purple-500"
-                              style={{
-                                width: `${Math.min(100, comp.aiCitationSharePct)}%`,
-                              }}
-                            />
-                          </div>
-                          {totalAiTriggeredPins > 0 && (
-                            <span className="text-[10px] font-mono text-purple-300/80">
-                              {comp.aiShareWhenTriggeredPct.toFixed(0)}% of AI
-                              SERPs
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-[11px] text-slate-500">
-                        0.0% (0 pins)
-                      </span>
-                    )}
-                  </td>
-                  {/* ATRP */}
-                  <td className="px-3 py-3.5 font-mono font-semibold text-slate-200">
-                    {comp.atrp.toFixed(2)}
-                  </td>
-                  {/* ARP */}
-                  <td className="px-3 py-3.5 font-mono text-slate-300">
-                    {comp.foundPinsCount > 0 ? comp.arp.toFixed(2) : '—'}
-                  </td>
-                  {/* Grid Presence */}
-                  <td className="px-3 py-3.5">
-                    <div className="text-slate-200 font-medium">
-                      {comp.foundPinsCount}/{total} pins ({comp.coveragePct}%)
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      {comp.foundPinsCount > 0
-                        ? `Best Rank: #${comp.bestRank}`
-                        : 'Not in Local Pack'}
-                    </div>
-                  </td>
-                  {/* Visual Stacked Bar: Green (1-3), Yellow (4-10), Red (11-20), Grey (20+) */}
-                  <td className="px-3 py-3.5">
-                    <div className="space-y-1">
-                      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-800">
-                        <div
-                          style={{ width: `${pTop3}%` }}
-                          className="bg-emerald-500"
-                          title={`Top 3: ${comp.top3Count} pins`}
-                        />
-                        <div
-                          style={{ width: `${p4to10}%` }}
-                          className="bg-amber-500"
-                          title={`Rank 4–10: ${comp.rank4to10Count} pins`}
-                        />
-                        <div
-                          style={{ width: `${p11to20}%` }}
-                          className="bg-red-500"
-                          title={`Rank 11–20: ${comp.rank11to20Count} pins`}
-                        />
-                      </div>
-                      <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                        <span className="text-emerald-400">
-                          1-3: {comp.top3Count}
-                        </span>
-                        <span className="text-amber-400">
-                          4-10: {comp.rank4to10Count}
-                        </span>
-                        <span className="text-red-400">
-                          11-20: {comp.rank11to20Count}
-                        </span>
-                        <span className="text-slate-500">
-                          20+: {comp.unrankedCount}
-                        </span>
-                      </div>
-                    </div>
-                  </td>
-                  {/* Action: Project Competitor's Ranks & AI Citations onto MapLibre Grid */}
-                  <td className="py-3.5 pl-3 pr-6 text-right">
-                    {onSelectCompetitorForMap && (
                       <button
                         type="button"
-                        onClick={() =>
-                          onSelectCompetitorForMap(isProjected ? null : comp)
-                        }
-                        className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
-                          isProjected
-                            ? 'border-sky-400 bg-sky-500/20 text-sky-300'
-                            : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-emerald-500/50 hover:text-white'
-                        }`}
+                        aria-pressed={isProjected}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggle();
+                        }}
+                        className={'max-w-[240px] truncate text-left text-[13px] ' + (comp.isTarget ? 'font-bold text-emerald-300' : 'font-medium text-white hover:underline')}
                       >
-                        <Eye className="h-3.5 w-3.5" />
-                        {isProjected ? 'Viewing Grid' : 'View Grid'}
+                        {comp.businessName}
                       </button>
+                      {comp.isTarget && <span className="rounded bg-emerald-400 px-1.5 py-0.5 text-[10px] font-extrabold uppercase text-slate-950">You</span>}
+                      {isProjected && !comp.isTarget && <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-extrabold uppercase text-slate-950">On the map</span>}
+                      {comp.foundPinsCount === 0 && comp.aiCitedCount > 0 && <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-violet-200">AI source only</span>}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="text-slate-200">
+                      {comp.top3Count} of {total} · <span className="font-bold">{comp.solv.toFixed(0)}%</span>
+                    </div>
+                    <div className="mt-1 h-1.5 rounded bg-slate-800">
+                      <div className={'h-1.5 rounded ' + (comp.isTarget ? 'bg-emerald-400' : 'bg-slate-400')} style={{ width: `${Math.min(100, comp.solv)}%` }} />
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    {bp == null ? (
+                      <span className="text-slate-500">—</span>
+                    ) : (
+                      <>
+                        <div className="text-slate-200">{Math.round(bp)}%</div>
+                        <div className="mt-1 h-1.5 rounded bg-slate-800">
+                          <div className="h-1.5 rounded bg-amber-400" style={{ width: `${Math.min(100, bp)}%` }} />
+                        </div>
+                      </>
                     )}
                   </td>
+                  <td className="px-3 py-3 text-sm font-semibold text-slate-100">{comp.foundPinsCount > 0 ? comp.arp.toFixed(1) : '—'}</td>
+                  <td className="px-3 py-3">
+                    <div className="text-slate-200">
+                      {comp.foundPinsCount} of {total}
+                    </div>
+                    <div className="text-[11px] text-slate-500">{comp.foundPinsCount > 0 ? `best #${comp.bestRank}` : 'not in the results'}</div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <div
+                      className="flex h-2 w-full overflow-hidden rounded-full bg-slate-800"
+                      role="img"
+                      aria-label={`Top 3 at ${comp.top3Count} points, ranks 4 to 10 at ${comp.rank4to10Count}, lower at ${comp.rank11to20Count}, not found at ${comp.unrankedCount}`}
+                    >
+                      <div style={{ width: `${pTop3}%` }} className="bg-emerald-500" />
+                      <div style={{ width: `${p4to10}%` }} className="bg-amber-400" />
+                      <div style={{ width: `${p11to20}%` }} className="bg-orange-500" />
+                    </div>
+                  </td>
+                  {showAi && (
+                    <td className="px-3 py-3">
+                      {comp.aiCitedCount > 0 ? (
+                        <>
+                          <div className="font-bold text-violet-300">{comp.aiCitationSharePct.toFixed(0)}%</div>
+                          <div className="text-[11px] text-slate-500">
+                            {comp.aiCitedCount} of {total} points
+                          </div>
+                        </>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               );
             })}
           </tbody>
         </table>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 px-5 py-3">
+        <div className="flex flex-wrap gap-4 text-[11px] text-slate-400">
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />top 3</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-400" />#4–10</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-orange-500" />#11 and lower</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm border border-slate-500 bg-slate-800" />not found</span>
+        </div>
+        {filteredAndSorted.length > 10 && !searchFilter && (
+          <button type="button" onClick={() => setShowAll((v) => !v)} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">
+            {showAll ? 'Show the top 10' : `Show all ${filteredAndSorted.length} businesses`}
+          </button>
+        )}
       </div>
     </div>
   );

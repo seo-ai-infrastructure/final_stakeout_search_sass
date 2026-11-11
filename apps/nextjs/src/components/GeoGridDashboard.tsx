@@ -11,7 +11,9 @@ import {
 import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
 import type { PinInsights } from '@stakeout/core/pinInsights';
-import { ReportSummaryTop, ReportCharts } from './ReportSummary';
+import { ReportVerdict, RankDistributionCard, AiCoverageCard, ProofStrip } from './ReportSummary';
+import { bandOf, type RankBucket } from '../lib/reportSummary';
+import { groundOwners } from '../lib/marketInsights';
 import { MarketInsights } from './MarketInsights';
 import { buyingPower, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
 import { gridColumns, RANK_COLORS } from '../lib/gridColumns';
@@ -166,6 +168,8 @@ export function GeoGridDashboard({
     [reloadKey, setReloadKey] = useState(0),
     [rerunBusy, setRerunBusy] = useState(false),
     [stopBusy, setStopBusy] = useState(false),
+    // A rank band chosen in the Rank distribution card: pins outside it are dimmed on the map.
+    [rankBand, setRankBand] = useState<RankBucket['key'] | null>(null),
     [rerunNote, setRerunNote] = useState('');
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null);
@@ -391,7 +395,7 @@ export function GeoGridDashboard({
               ? String(rank)
               : '20+';
       el.style.boxShadow = cited ? '0 0 0 4px #c084fc' : '';
-      el.style.opacity = passesFilters(p.census, bpFilters) ? '1' : '0.3';
+      el.style.opacity = passesFilters(p.census, bpFilters) && (!rankBand || bandOf(rank) === rankBand) ? '1' : '0.25';
       el.title =
         'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + p.status;
       el.onclick = () => select(p.id);
@@ -402,7 +406,7 @@ export function GeoGridDashboard({
     return () => {
       markers.forEach((v) => v.remove());
     };
-  }, [scan, projected, bpFilters]);
+  }, [scan, projected, bpFilters, rankBand]);
   async function changeShare(action: string) {
     try {
       const r = await fetch('/api/scans/' + identifier, {
@@ -548,7 +552,6 @@ export function GeoGridDashboard({
         )}
         {rerunNote && <p className="text-xs text-slate-300">{rerunNote}</p>}
       </div>
-      <ReportSummaryTop scan={scan} />
       <nav aria-label="Report sections" className="flex gap-1 border-b border-slate-800">
         {([['overview', 'Overview'], ['evidence', 'Evidence']] as const).map(([k, label]) => (
           <button
@@ -574,7 +577,7 @@ export function GeoGridDashboard({
             ring = AI appearance
           </p>
           <div className="relative">
-            <div ref={container} className="h-[420px] rounded-lg bg-slate-900" />
+            <div ref={container} className="h-[520px] rounded-lg bg-slate-900" />
             <div className="absolute left-3 top-3 z-10 flex flex-col items-start gap-2">
               <div className="inline-flex overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 text-xs font-bold shadow-lg backdrop-blur">
                 {(['2D', '3D'] as const).map((v) => (
@@ -813,6 +816,8 @@ export function GeoGridDashboard({
             </div>
           )}
         </div>
+        <div className="space-y-4">
+        <ReportVerdict scan={scan} />
         <aside className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4">
           <label className="block font-bold">
             Pin evidence
@@ -908,15 +913,30 @@ export function GeoGridDashboard({
             </>
           )}
         </aside>
+        </div>
       </div>
-      <ReportCharts scan={scan} />
-      <MarketInsights scan={scan} />
-      <CompetitorLeaderboard
-        pins={scan.pins}
-        targetBusiness={scan.targetBusiness}
-        activeProjectedBusiness={projected?.normalizedKey}
-        onSelectCompetitorForMap={project}
+      <div className="grid items-start gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+        <RankDistributionCard scan={scan} band={rankBand} onBand={setRankBand} />
+        <CompetitorLeaderboard
+          pins={scan.pins}
+          targetBusiness={scan.targetBusiness}
+          activeProjectedBusiness={projected?.normalizedKey}
+          onSelectCompetitorForMap={project}
+          buyingPower={Object.fromEntries(
+            groundOwners(scan.pins, scan.targetBusiness, 999).rows.map((r) => [r.name.trim().toLowerCase().replace(/\s+/g, ' '), r.buyingPower]),
+          )}
+        />
+      </div>
+      <AiCoverageCard scan={scan} />
+      <ProofStrip
+        scan={scan}
+        onOpen={(id) => {
+          select(id);
+          setTab('evidence');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
       />
+      <MarketInsights scan={scan} />
       </div>
     </div>
   );

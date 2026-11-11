@@ -17,6 +17,18 @@ export function rankDistribution(pins: InsightPin[]): { total: number; buckets: 
   return { total: done.length, buckets: raw.map(([key, label, count]) => ({ key, label, count, pct: done.length ? (100 * count) / done.length : 0 })) };
 }
 
+/** The band a rank falls in (null: the business was not found at that point). */
+export function bandOf(rank: number | null | undefined): RankBucket['key'] {
+  if (rank == null) return 'absent';
+  return rank === 1 ? 'first' : rank <= 3 ? 'top3' : rank <= 10 ? 'top10' : 'beyond';
+}
+
+/** One word for the headline score: how much of the grid the business holds. */
+export function verdictFor(solv: number | null | undefined): { label: string; tone: 'strong' | 'patchy' | 'weak' | 'none' } {
+  if (solv == null) return { label: 'No result yet', tone: 'none' };
+  return solv >= 70 ? { label: 'Strong', tone: 'strong' } : solv >= 40 ? { label: 'Patchy', tone: 'patchy' } : { label: 'Weak', tone: 'weak' };
+}
+
 const pct = (n: number) => `${Math.round(n)}%`;
 const points = (n: number) => (n === 1 ? '1 point' : `${n} points`);
 
@@ -92,6 +104,8 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
     distribution: dist,
     owners: owners.rows,
     leaders,
+    radiusMiles: radius?.radius ?? null,
+    adsAboveYou: paid.avgAdsAboveYou,
     ai,
     findings,
   };
