@@ -78,7 +78,7 @@ Checkout uses one-time Orders v2 captures. The PDF lists subscription and legacy
 
 ## 7. Smoke test and operate
 
-1. Run one Lakeland 3×3 Google Maps scan with Ask Maps on. Verify an 18-credit debit, 9 distinct coordinates and a matching phone lease. Open one pin and compare the parsed order with its recording and XML.
+1. Run one Lakeland 3×3 Google Chrome scan with AI Overview tracking on. Verify an 18-credit debit, 9 distinct coordinates and a matching phone lease. (A Google Maps app scan is always 9 credits: Ask Maps capture is not built yet.) Open one pin and compare the parsed order with its recording and XML.
 2. On a completed run, open the leaderboard, project a competitor's ranks onto the map, verify a purple AI ring against the captured panel, then export CSV. A text mention and an explicit source pill both count toward the PDF-defined AI appearance metric. The pin detail preserves the text and extracted source labels separately.
 3. Repeat the same settings. Open the before/after view and check both cameras, the three pin modes and both recordings. Open a shared link while signed out, then revoke it from the owner report.
 4. On the public homepage submit a separate teaser. It creates nine real jobs and takes no user credits. The generated report updates as the worker completes pins. The lead email is stored with the scan. An operator can retrieve these leads by filtering `GridScan.leadEmail IS NOT NULL`.

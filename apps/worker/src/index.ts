@@ -11,7 +11,7 @@ import {
 } from '@stakeout/core/redis';
 import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
 import { listsForPin, releaseIdleProxyLists } from '@stakeout/core/proxyLists';
-import { describeRpaTemplates } from './rpa';
+import { describeRpaTemplates, rpaTemplate } from './rpa';
 import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist } from './duoplus';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
@@ -293,6 +293,30 @@ async function noteCaptcha(imageId: string) {
   );
 }
 
+/**
+ * What the admin page's "System health" card shows: written every minute, so a missing key or
+ * template is visible there instead of only in the logs.
+ */
+async function reportHealth() {
+  const template = async (surface: 'chrome' | 'maps') => {
+    const t = await rpaTemplate(surface).catch(() => null);
+    const v = t?.vars.find((x) => x.key === 'template_version')?.value;
+    return t ? { id: t.id, name: t.name, version: v == null || v === '' ? null : String(v) } : null;
+  };
+  const health = {
+    at: new Date().toISOString(),
+    proxySellerKey: Boolean(process.env.PROXY_SELLER_API_KEY),
+    searchGapSeconds: Number(process.env.SEARCH_GAP_SECONDS ?? 120),
+    templates: { chrome: await template('chrome'), maps: await template('maps') },
+    proxyLists: await db.proxyList.count(),
+    openScans: await db.gridScan.count({ where: { status: { in: ['QUEUED', 'RUNNING'] } } }),
+    pointsWithoutInsights: Number(
+      (await db.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM "GridPin" WHERE status = 'COMPLETED' AND insights IS NULL AND "dumpsTarUrl" IS NOT NULL`)[0]?.n ?? 0,
+    ),
+  };
+  await redis().set('stakeout:health', JSON.stringify(health), 'EX', 900);
+}
+
 let lastWhitelistFix = 0;
 let busy = false,
   lastRepair = Date.now(),
@@ -344,6 +368,7 @@ async function tick() {
     if (Date.now() - lastProxyRelease > 60000) {
       lastProxyRelease = Date.now();
       await releaseIdleProxyLists().catch((e) => console.warn('[proxy] release skipped:', (e as Error).message));
+      await reportHealth().catch((e) => console.warn('[health] not reported:', (e as Error).message));
     }
     if (Date.now() - lastRepair > 300000) {
       lastRepair = Date.now();

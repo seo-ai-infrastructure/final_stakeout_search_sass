@@ -72,8 +72,14 @@ export async function GET() {
     const locks = lockKeys.length ? await redis().mget(...lockKeys) : [];
     const lockOf = new Map(devices.map((d, i) => [d.imageId, locks[i]]));
     const health = await fleetHealth(devices, locks.filter(Boolean).length);
+    // The worker's own status record (written every minute): null when the worker is not running.
+    const system = await redis()
+      .get('stakeout:health')
+      .then((v) => (v ? JSON.parse(v) : null))
+      .catch(() => null);
     return Response.json({
       health,
+      system,
       devices: await Promise.all(
         devices.map(async (d) => {
           const value = lockOf.get(d.imageId) ?? null;

@@ -1,4 +1,4 @@
-import { market, InputError } from '@stakeout/core/grid';
+import { market, InputError, ispOffered } from '@stakeout/core/grid';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { ispDirectory } from '@/lib/ispDirectory';
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       return Response.json({
         detectedMarket,
         proxyMarket: { region: m.region, city: m.city, level: m.level },
-        isps: m.isps.map((name) => ({ name })),
+        isps: m.isps.filter(ispOffered).map((name) => ({ name })),
       });
     }
     return Response.json({

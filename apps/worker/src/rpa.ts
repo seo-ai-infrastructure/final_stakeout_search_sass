@@ -126,8 +126,14 @@ export async function runRpaSearch(opts: {
   onStarted?: () => void;
   /** True once the template's own "done" file exists: finish without waiting for DuoPlus's status. */
   doneCheck?: () => Promise<boolean>;
+  /** True when the point was stopped (the user stopped the scan): the phone's task is cancelled. */
+  stopCheck?: () => Promise<boolean>;
 }) {
   const t = await rpaTemplate(opts.surface);
+  // DuoPlus keeps a template's name whatever is imported into it, so the template itself declares
+  // its version (a variable named template_version) and every receipt records it.
+  const version = t.vars.find((v) => v.key === 'template_version')?.value;
+  const ran = (taskId: string) => ({ taskId, templateId: t.id, templateName: t.name, templateVersion: version == null || version === '' ? null : String(version) });
   if (!t.keywordKey) throw new Error('RPA_NO_KEYWORD_VARIABLE in template ' + t.name + ' (set DUOPLUS_RPA_KEYWORD_KEY)');
   await duoplusPost('/api/v1/automation/addTask', {
     template_id: t.id,
@@ -169,14 +175,18 @@ export async function runRpaSearch(opts: {
         started = true;
         opts.onStarted?.();
       }
-      if (task.status === 3) return { taskId: task.id, templateId: t.id, templateName: t.name };
+      if (task.status === 3) return ran(task.id);
       // The template writes <pin_id>.done as its last step: that is the end of the search.
       if (task.status === 1 && opts.doneCheck && (await opts.doneCheck().catch(() => false)))
-        return { taskId: task.id, templateId: t.id, templateName: t.name };
+        return ran(task.id);
       if (task.status === 4 || task.status === 5) {
         const why = await failureDetail(task.id);
         throw new Error('RPA_TASK_FAILED ' + (task.status === 5 ? 'cancelled' : why || 'failed').slice(0, 200));
       }
+    }
+    if (opts.stopCheck && (await opts.stopCheck().catch(() => false))) {
+      if (task) await cancelRpaTask(task.id);
+      throw new Error('CANCELLED: stopped by the user');
     }
     await sleep(4000);
   }

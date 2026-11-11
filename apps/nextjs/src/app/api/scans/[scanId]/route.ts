@@ -4,7 +4,7 @@ import { report } from '@/lib/reports';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { InputError, scheduleCron } from '@stakeout/core/grid';
-import { requestRerun } from '@stakeout/core/scans';
+import { requestRerun, stopScan } from '@stakeout/core/scans';
 type C = { params: Promise<{ scanId: string }> };
 export async function GET(_: Request, c: C) {
   try {
@@ -21,10 +21,21 @@ export async function GET(_: Request, c: C) {
 export async function POST(req: Request, c: C) {
   try {
     const id = (await c.params).scanId,
-      userId = (await getAuthenticatedUser()).id;
+      me = await getAuthenticatedUser(),
+      userId = me.id;
+    const { action, pinIds } = await req.json();
+    // Stop: the owner, or an admin for any scan. Finished points are kept; every point still
+    // pending is settled and refunded, and the worker cancels a phone task that is under way.
+    if (action === 'stop') {
+      const open = await db.gridScan.findFirst({
+        where: { id, ...(me.role === 'ADMIN' ? {} : { userId }), status: { in: ['QUEUED', 'RUNNING'] } },
+        select: { id: true },
+      });
+      if (!open) throw new InputError('This scan is not running.', 400);
+      return Response.json({ stopped: await stopScan(id, 'CANCELLED: stopped by the user') });
+    }
     const s = await db.gridScan.findFirst({ where: { id, userId } });
     if (!s) throw new InputError('Scan unavailable.', 404);
-    const { action, pinIds } = await req.json();
     if (action === 'rerun')
       return Response.json(
         await requestRerun(id, userId, Array.isArray(pinIds) ? pinIds.filter((x: unknown) => typeof x === 'string') : undefined),

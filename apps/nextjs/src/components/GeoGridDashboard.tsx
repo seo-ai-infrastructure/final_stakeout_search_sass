@@ -164,6 +164,7 @@ export function GeoGridDashboard({
     [marketBreaks, setMarketBreaks] = useState<number[] | null>(null),
     [reloadKey, setReloadKey] = useState(0),
     [rerunBusy, setRerunBusy] = useState(false),
+    [stopBusy, setStopBusy] = useState(false),
     [rerunNote, setRerunNote] = useState('');
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null);
@@ -437,6 +438,27 @@ export function GeoGridDashboard({
       setRerunBusy(false);
     }
   }
+  /** Stops the scan: finished points are kept, the rest are refunded, and a phone that is mid-search is cancelled. */
+  async function stop() {
+    if (!window.confirm('Stop this scan? Finished points are kept, and every point that has not finished is refunded.')) return;
+    setStopBusy(true);
+    setRerunNote('');
+    try {
+      const r = await fetch('/api/scans/' + identifier, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw Error(d.error);
+      setRerunNote(`Stopped: ${d.stopped === 1 ? '1 point' : `${d.stopped} points`} refunded.`);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      setRerunNote((e as Error).message);
+    } finally {
+      setStopBusy(false);
+    }
+  }
   if (!scan) return <p className="p-8">{error || 'Loading report…'}</p>;
   const pin = scan.pins.find((p) => p.id === selected);
   const rankOf = (p: { id: string; rankFound: number | null }) =>
@@ -502,6 +524,16 @@ export function GeoGridDashboard({
         <p>
           {scan.status} · {scan.completedPins}/{scan.totalPins} completed · {scan.failedPins} failed
         </p>
+        {!shared && (scan.status === 'RUNNING' || scan.status === 'QUEUED') && (
+          <button
+            type="button"
+            disabled={stopBusy}
+            onClick={stop}
+            className="rounded-lg border border-rose-500/60 px-3 py-1 font-semibold text-rose-300 hover:bg-rose-500/10 disabled:opacity-50"
+          >
+            {stopBusy ? 'Stopping…' : 'Stop scan'}
+          </button>
+        )}
         {!shared && scan.failedPins > 0 && (
           <button
             type="button"

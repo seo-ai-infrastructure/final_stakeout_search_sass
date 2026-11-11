@@ -48,10 +48,55 @@ interface FleetHealth {
 const pct = (v: number | null) => (v == null ? '—' : Math.round(v * 100) + '%');
 const dur = (sec: number | null) =>
   sec == null ? '—' : sec < 90 ? Math.round(sec) + 's' : sec < 5400 ? Math.round(sec / 60) + 'm' : (sec / 3600).toFixed(1) + 'h';
+type TemplateInfo = { id: string; name: string; version: string | null } | null;
+type SystemHealth = {
+  at: string;
+  proxySellerKey: boolean;
+  searchGapSeconds: number;
+  templates: { chrome: TemplateInfo; maps: TemplateInfo };
+  proxyLists: number;
+  openScans: number;
+  pointsWithoutInsights: number;
+};
+
+/** The worker's own status, so a missing key or template is visible here instead of only in the logs. */
+function SystemHealthCard({ system }: { system: SystemHealth | null }) {
+  const age = system ? Math.round((Date.now() - new Date(system.at).getTime()) / 1000) : null;
+  const tpl = (t: TemplateInfo) => (t ? `${t.id} · ${t.version ? 'version ' + t.version : 'no version declared (' + t.name + ')'}` : 'not found');
+  const rows: [string, boolean, string][] = system
+    ? [
+        ['Worker', age !== null && age < 240, age !== null && age < 240 ? `reported ${age}s ago` : `last report ${age}s ago: it may be down`],
+        ['Proxy-Seller key on the worker', system.proxySellerKey, system.proxySellerKey ? 'set: idle proxy lists are deleted' : 'missing: idle proxy lists cannot be deleted and keep using bandwidth'],
+        ['Chrome template', Boolean(system.templates.chrome), tpl(system.templates.chrome)],
+        ['Maps template', Boolean(system.templates.maps), tpl(system.templates.maps)],
+        ['Proxy lists', system.openScans > 0 || system.proxyLists === 0, `${system.proxyLists} list(s) · ${system.openScans} scan(s) open${system.openScans === 0 && system.proxyLists > 0 ? ': should be deleted within a few minutes' : ''}`],
+        ['Insights', system.pointsWithoutInsights < 25, `${system.pointsWithoutInsights} point(s) waiting for insights`],
+      ]
+    : [['Worker', false, 'no status report: the worker is not running, or has not reported yet']];
+  return (
+    <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+      <h2 className="text-sm font-bold text-white">System health</h2>
+      <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+        {rows.map(([label, ok, note]) => (
+          <li key={label} className="flex items-start gap-2 text-sm">
+            <span className={'mt-1 h-2.5 w-2.5 shrink-0 rounded-full ' + (ok ? 'bg-emerald-400' : 'bg-rose-500')} />
+            <span>
+              <span className="font-semibold text-slate-200">{label}</span>
+              <span className="block text-xs text-slate-400">{note}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {system && <p className="mt-3 text-xs text-slate-500">Pause between searches on a phone: {system.searchGapSeconds}s.</p>}
+    </section>
+  );
+}
+
 export default function AdminDeviceFleetPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [devices, setDevices] = useState<EnrichedDevice[]>([]);
   const [health, setHealth] = useState<FleetHealth | null>(null);
+  const [system, setSystem] = useState<SystemHealth | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const [bannerMsg, setBannerMsg] = useState<{
@@ -83,6 +128,7 @@ export default function AdminDeviceFleetPage() {
         const data = await res.json();
         if (Array.isArray(data.devices)) setDevices(data.devices);
         if (data.health) setHealth(data.health);
+        setSystem(data.system ?? null);
       }
       setLoading(false);
     } catch {
@@ -246,6 +292,7 @@ export default function AdminDeviceFleetPage() {
             </button>
           </div>
         </div>
+        {system !== undefined && <SystemHealthCard system={system} />}
         {health && (
           <section aria-label="Fleet health" className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
             <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">

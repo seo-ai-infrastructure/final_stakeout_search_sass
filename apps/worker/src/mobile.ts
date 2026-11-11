@@ -344,9 +344,10 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
           }
         }
         await redis().set(devKey, list.psListId + ':' + lease.port, 'EX', 24 * 3600).catch(() => {});
-        // "Mix of ISPs": the ISP is a preference, so an IP from the any-ISP list only has to be
-        // residential and in the right state. "One ISP" (and ISP-specific lists) still require it.
-        const g = await preflightExit(device, p, !list.isp && p.scan.ispMode !== 'one' ? '' : isp);
+        // "Mix of ISPs" (ispMode 'mix'): the ISP is a preference, so an IP from the any-ISP list
+        // only has to be residential and in the right state. A single chosen ISP (ispMode 'single')
+        // and every ISP-specific list still require the ISP.
+        const g = await preflightExit(device, p, !list.isp && p.scan.ispMode === 'mix' ? '' : isp);
         // The phone is now bound to its current record, so a replaced one can go.
         if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
         if (!g.verdict.ok) {
@@ -636,6 +637,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         ).catch(() => '')
       ).replace(/\s+/g, ' ').trim();
     try {
+      let stopLooked = Date.now();
       const run = await runRpaSearch({
         imageId: d.imageId,
         surface: app[scan.targetType] as RpaSurface,
@@ -645,11 +647,17 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         name: 'stakeout-' + p.id + '-' + tagBase,
         timeoutMs: rpaSecs * 1000,
         doneCheck: async () => (await shell(d, `test -f /sdcard/stakeout/${tag}.done && echo y`).catch(() => '')).trim() === 'y',
+        // A stopped scan settles its points at once; looked up at most every 12 s while the phone works.
+        stopCheck: async () => {
+          if (Date.now() - stopLooked < 12000) return false;
+          stopLooked = Date.now();
+          return (await db.gridPin.findUnique({ where: { id: p.id }, select: { status: true } }))?.status !== 'PENDING';
+        },
       });
       const problem = await templateProblem();
       if (problem) throw new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160));
       // Every result can be traced to the exact template (and DuoPlus task) that produced it.
-      Object.assign(proof, { rpaTemplate: { id: run.templateId, name: run.templateName, taskId: run.taskId } });
+      Object.assign(proof, { rpaTemplate: { id: run.templateId, name: run.templateName, version: run.templateVersion, taskId: run.taskId } });
     } catch (e) {
       const problem = e instanceof Error && e.message.startsWith('RPA_SURFACE_ERROR') ? '' : await templateProblem();
       throw problem ? new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160)) : e;

@@ -12,6 +12,15 @@ export class InputError extends Error {
 }
 
 export { phoneModels } from './hardware';
+/**
+ * ISPs that are never offered: their networks are registered as business rather than residential,
+ * so every one of their IPs fails the residential check and the point can only fail
+ * (ISP_EXCLUDE, comma-separated; default: Tillman Fiberco, AS53366).
+ */
+export const excludedIsps = () =>
+  (process.env.ISP_EXCLUDE ?? 'Tillman Fiberco').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+export const ispOffered = (name: string) => !excludedIsps().includes(name.trim().toLowerCase());
+
 export function parseSpec(input: Record<string, unknown>) {
   const { keyword, targetBusiness, centerLat, centerLng } = input;
   if (
@@ -55,6 +64,7 @@ export function parseSpec(input: Record<string, unknown>) {
   const ispMode = String(input.ispMode ?? (legacyIsp !== 'ANY' && legacyIsp !== 'MIX' ? 'single' : 'any'));
   const rawIsps = Array.isArray(input.isps) ? input.isps : ispMode === 'single' && legacyIsp !== 'ANY' ? [legacyIsp] : [];
   const isps = [...new Set(rawIsps.map((v) => String(v).trim()))];
+  if (isps.some((v) => !ispOffered(v))) throw new InputError('That ISP is not available here. Choose another.');
   if (
     !['any', 'single', 'mix'].includes(ispMode) ||
     isps.some((v) => !v || v.length > 120 || /[\u0000-\u001f]/.test(v)) ||

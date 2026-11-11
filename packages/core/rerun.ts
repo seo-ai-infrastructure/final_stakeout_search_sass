@@ -11,7 +11,7 @@ export function rerunCharge(points: { isRefunded: boolean }[], creditsCharged: n
 /**
  * The ISP a re-run point should use. A point that failed for want of a working proxy would fail
  * the same way on the same ISP, so in "Mix of ISPs" mode it moves to the next ISP of the scan's
- * mix (or any ISP when the mix has no other). "One ISP" mode keeps the ISP the user chose, and
+ * mix (or any ISP when the mix has no other). A single chosen ISP (mode "single") is kept, and
  * points that failed for other reasons keep theirs.
  */
 export function rerunIsp(current: string | null, mode: string | null, isps: unknown, lastError: string | null): string | null {

@@ -16,7 +16,7 @@ Stakeout measures where a business appears across a US search grid. An agency ch
 ## First scan
 
 1. Complete cloud setup and bootstrap one dedicated DuoPlus phone. The admin fleet table displays the model reported by Android.
-2. Sign in to `/new-scan`, select that hardware profile, choose Google Maps, and center the grid on the business. A 3×3 grid costs **9 credits**, or **18 credits** with Ask Maps capture.
+2. Sign in to `/new-scan`, select that hardware profile, choose Google Chrome or the Google Maps app, and center the grid on the business. A 3×3 grid costs **9 credits**; Chrome scans cost **18 credits** with AI Overview tracking. Ask Maps capture is not built yet, so Maps scans never carry the AI add-on.
 3. Open the new report from `/scans`. Select a completed pin to inspect its recording, result order, AI text, observed proxy exit, and raw evidence.
 4. Click **Share report** to generate a client link. **Revoke link** removes access to that report and comparisons that depend on it.
 5. Choose a daily or weekly schedule to produce comparable runs. **Compare vs. previous** opens both maps and recordings. The before and after runs must belong to the same agency and use matching campaign settings.
