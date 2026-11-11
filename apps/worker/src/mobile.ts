@@ -300,6 +300,17 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
     for (const [i, list] of lists.entries()) {
       const ports = list.ports as number[];
       const label = list.isp ? 'LIST_' + (list.city ? 'CITY' : 'STATE') + '_ISP' : 'LIST_' + (list.city ? 'CITY' : 'STATE') + '_ANY_ISP';
+      // A list created moments ago is not usable yet: Proxy-Seller needs about a minute before its
+      // ports answer, and until then DuoPlus refuses every one ("The proxy must detect
+      // availability"). Lists are deleted while idle, so a scan's first point always meets a new
+      // list: wait for it instead of spending ports and attempts on it.
+      const warmup = Math.max(0, Number(process.env.PROXY_LIST_WARMUP_SECONDS ?? 75)) * 1000;
+      const age = Date.now() - new Date(list.createdAt).getTime();
+      if (age >= 0 && age < warmup) {
+        console.info('[proxy] list', list.psListId, 'is', Math.round(age / 1000) + 's old: waiting', Math.round((warmup - age) / 1000) + 's for it to become usable');
+        await sleep(warmup - age);
+        await device.assertOwned();
+      }
       const used = new Set<number>();
       for (let t = 0; t < tries; t++) {
         await device.assertOwned();
