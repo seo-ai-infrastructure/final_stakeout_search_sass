@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { SiteHeader, SiteFooter } from './SiteChrome';
+import { SiteHeader, SiteFooter, JoinLink } from './SiteChrome';
 import { WALL, AI_NAMED, rankStyle } from './demoData';
 import ReceiptPrinter from './ReceiptPrinter';
 import './marketing.css';
@@ -557,9 +557,7 @@ export default function Landing() {
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link href="/demo" className="mk-btn-primary rounded-xl px-6 py-3.5 text-base font-semibold">See the live demo map →</Link>
-              <Link href="/login?mode=register" className="rounded-xl border border-[#2a3442] bg-[#0c1118] px-6 py-3.5 text-base font-semibold hover:border-[#3a4658]">
-                Create your account
-              </Link>
+              <JoinLink className="rounded-xl border border-[#2a3442] bg-[#0c1118] px-6 py-3.5 text-base font-semibold hover:border-[#3a4658]" />
             </div>
             <ul className="mt-9 grid max-w-xl grid-cols-1 gap-x-6 gap-y-3 text-sm text-[#c9d3df] sm:grid-cols-2">
               {['Video receipt for every grid point', 'GPS set on the phone itself', 'Residential ISP you choose', 'AI Overviews tracked · Ask Maps soon'].map((t) => (
@@ -757,7 +755,7 @@ export default function Landing() {
               <p className="mt-4 max-w-xl text-lg text-[#9aa7b8]">Explore the live demo map, no account needed, then run your first real grid.</p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Link href="/demo" className="mk-btn-primary rounded-xl px-6 py-3.5 font-semibold">See the live demo map →</Link>
-                <Link href="/login?mode=register" className="rounded-xl border border-[#2a3442] px-6 py-3.5 font-semibold hover:border-[#3a4658]">Create your account</Link>
+                <JoinLink className="rounded-xl border border-[#2a3442] px-6 py-3.5 font-semibold hover:border-[#3a4658]" />
               </div>
             </div>
           </div>

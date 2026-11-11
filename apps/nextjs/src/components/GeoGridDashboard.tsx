@@ -462,12 +462,15 @@ export function GeoGridDashboard({
           </p>
         </div>
         {shared ? (
-          <Link
-            className="rounded border border-emerald-500 p-2 text-emerald-300"
-            href="/login?mode=register"
-          >
-            Create agency account
-          </Link>
+          // New accounts are closed unless NEXT_PUBLIC_SIGNUPS_OPEN=true: no sign-up button on shared reports.
+          process.env.NEXT_PUBLIC_SIGNUPS_OPEN === 'true' ? (
+            <Link
+              className="rounded border border-emerald-500 p-2 text-emerald-300"
+              href="/login?mode=register"
+            >
+              Create agency account
+            </Link>
+          ) : null
         ) : (
           <div className="flex flex-wrap items-center gap-3">
             <Link

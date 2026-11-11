@@ -26,8 +26,10 @@ function LoginFormContent() {
   const nextPath = /^\/(scans|new-scan|admin)(\/|\?|$)/.test(requested)
     ? requested
     : '/scans';
+  // New accounts are closed unless NEXT_PUBLIC_SIGNUPS_OPEN=true (the server enforces SIGNUPS_OPEN too).
+  const signups = process.env.NEXT_PUBLIC_SIGNUPS_OPEN === 'true';
   const [mode, setMode] = useState<'login' | 'register'>(
-    searchParams.get('mode') === 'register' ? 'register' : 'login',
+    signups && searchParams.get('mode') === 'register' ? 'register' : 'login',
   );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -86,7 +88,12 @@ function LoginFormContent() {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/95 p-8 shadow-2xl">
           {/* Mode Toggle Tabs */}
-          <div className="mb-6 grid grid-cols-2 rounded-xl border border-slate-800 bg-slate-950 p-1">
+          {!signups && (
+            <p className="mb-6 rounded-xl border border-slate-800 bg-slate-950 px-4 py-3 text-center text-xs text-slate-400">
+              New accounts are by invitation only for now.
+            </p>
+          )}
+          <div className={(signups ? '' : 'hidden ') + 'mb-6 grid grid-cols-2 rounded-xl border border-slate-800 bg-slate-950 p-1'}>
             <button
               type="button"
               onClick={() => {
@@ -120,8 +127,7 @@ function LoginFormContent() {
             <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/25">
               <Coins className="h-4 w-4 shrink-0 text-emerald-400" />
               <span>
-                Confirm your email after signing up to receive your{' '}
-                <strong>starter credits</strong>.
+                Confirm your email after signing up to <strong>activate your account</strong>.
               </span>
             </div>
           )}

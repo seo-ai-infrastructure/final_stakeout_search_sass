@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { SiteHeader, SiteFooter } from './SiteChrome';
+import { SiteHeader, SiteFooter, JoinLink } from './SiteChrome';
 import SmoothingDemo from './SmoothingDemo';
 import './marketing.css';
 
@@ -230,7 +230,7 @@ export default function Truth() {
             <p className="mx-auto mt-5 max-w-2xl text-lg text-[#9aa7b8]">Real phones. Real GPS. Real residential networks. A recording behind every square, including the ones that failed.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link href="/demo" className="mk-btn-primary rounded-xl px-6 py-3.5 font-semibold">See the live demo map →</Link>
-              <Link href="/login?mode=register" className="rounded-xl border border-[#2a3442] px-6 py-3.5 font-semibold hover:border-[#3a4658]">Create your account</Link>
+              <JoinLink className="rounded-xl border border-[#2a3442] px-6 py-3.5 font-semibold hover:border-[#3a4658]" />
             </div>
           </div>
         </div>

@@ -1,5 +1,17 @@
 import Link from 'next/link';
 
+/** New accounts are closed unless NEXT_PUBLIC_SIGNUPS_OPEN=true. */
+export const SIGNUPS_OPEN = process.env.NEXT_PUBLIC_SIGNUPS_OPEN === 'true';
+
+/** The "create an account" button, or "Sign in" while new accounts are closed. */
+export function JoinLink({ className }: { className: string }) {
+  return SIGNUPS_OPEN ? (
+    <Link href="/login?mode=register" className={className}>Create your account</Link>
+  ) : (
+    <Link href="/login" className={className}>Sign in</Link>
+  );
+}
+
 export function Logo() {
   return (
     <Link href="/" className="flex items-center gap-2.5" aria-label="Stakeout Search home">
@@ -23,7 +35,7 @@ export function SiteHeader() {
           <Link href="/demo" className="hidden rounded-lg px-3 py-2 text-[#9aa7b8] hover:text-white sm:block">Live demo</Link>
           <Link href="/agency" className="hidden rounded-lg px-3 py-2 text-[#9aa7b8] hover:text-white md:block">Done for you</Link>
           <Link href="/login" className="rounded-lg px-3 py-2 text-[#eef2f7] hover:bg-[#111823]">Sign in</Link>
-          <Link href="/login?mode=register" className="mk-btn-primary rounded-lg px-4 py-2 font-semibold">Get started</Link>
+          {SIGNUPS_OPEN && <Link href="/login?mode=register" className="mk-btn-primary rounded-lg px-4 py-2 font-semibold">Get started</Link>}
         </nav>
       </div>
     </header>

@@ -48,6 +48,7 @@ export async function getAuthenticatedUser() {
     (await cookies()).get(SESSION_COOKIE_NAME)?.value,
   );
   const user = id ? await db.user.findUnique({ where: { id } }) : null;
-  if (!user) throw new Error('UNAUTHORIZED');
+  // A blocked account's existing sessions stop working at once.
+  if (!user || user.role === 'BLOCKED') throw new Error('UNAUTHORIZED');
   return user;
 }

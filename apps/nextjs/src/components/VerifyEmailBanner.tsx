@@ -18,7 +18,7 @@ export function VerifyEmailBanner({ email }: { email: string }) {
   }
   return (
     <div role="status" className="border-b border-amber-500/30 bg-amber-950/30 px-5 py-2.5 text-sm text-amber-100">
-      Confirm {email} to activate your starter credits.{' '}
+      Confirm {email} to activate your account.{' '}
       {state === 'sent' ? (
         <span>We sent a new link.</span>
       ) : (

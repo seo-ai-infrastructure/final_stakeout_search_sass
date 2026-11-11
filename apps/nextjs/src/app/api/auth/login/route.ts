@@ -12,6 +12,8 @@ import {
   completeVerification,
   sendVerification,
   verificationRequired,
+  signupsOpen,
+  BLOCKED_ROLE,
 } from '@/lib/verification';
 import { errorResponse } from '@/lib/api';
 import { InputError } from '@stakeout/core/grid';
@@ -38,6 +40,7 @@ export async function POST(req: Request) {
     let user;
     let verificationSent = false;
     if (body.mode === 'register') {
+      if (!signupsOpen()) throw new InputError('New accounts are closed right now.', 403);
       if (email.endsWith('@internal.invalid'))
         throw new InputError('Use your agency email address.');
       if (pass.length < 8)
@@ -81,6 +84,8 @@ export async function POST(req: Request) {
       const valid = await verifyPassword(pass, user?.passwordHash ?? DUMMY_HASH);
       if (!user?.passwordHash || !valid)
         throw new InputError('Invalid email or password.', 401);
+      // Said only after the password checks out, so it never reveals which addresses exist.
+      if (user.role === BLOCKED_ROLE) throw new InputError('This account is closed.', 403);
     }
     const res = NextResponse.json({
       success: true,
