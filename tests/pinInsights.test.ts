@@ -77,3 +77,17 @@ test('AI sources from a real informational AI Overview (11 Nov, Lakeland): every
   assert.equal(i.ai.shown, true);
   assert.equal(i.ai.sources.length, 9);
 });
+
+test('AI Overview layout from a real page: the answer as one sentence, then nine source cards', async () => {
+  const { readAiOverviewLayout } = await import('../packages/core/serpEvidence');
+  const a = readAiOverviewLayout(read('real-aio-sources-2026-11-11.xml'))!;
+  assert.deepEqual(a.answer, [{ kind: 'p', text: 'Emergency plumbing services in Lakeland, FL typically start around $300 for basic emergency dispatches, with total costs varying depending on the time of day, hourly labor rates, and dispatch or service call fees.' }]);
+  assert.equal(a.sources.length, 9);
+  assert.deepEqual([a.sources[0].title, a.sources[0].site, a.sources[0].date], ['How Much Does an Emergency Plumber Cost? [2026 Data] | Angi', "Angie's List", null]);
+  assert.match(a.sources[0].snippet, /^The timing of your emergency/);
+  assert.deepEqual([a.sources[2].site, a.sources[2].date], ['Housecall Pro', 'Jun 5, 2026']);
+  assert.match(a.sources[2].snippet, /^Plumbers typically charge \$75/);
+  assert.equal(a.sources[8].site, 'rotorooter.com');
+  assert.equal(readAiOverviewLayout(read('real-uidump-mappack-noaio.xml')), null, 'no AI Overview');
+  assert.equal(readAiOverviewLayout(read('real-aio-list-no-finder.xml')), null, 'a business-list overview has no source cards');
+});

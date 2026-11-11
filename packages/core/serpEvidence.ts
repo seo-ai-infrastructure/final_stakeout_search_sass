@@ -376,3 +376,50 @@ export function readMapsList(screens: (string | null | undefined)[]): MapsCard[]
   }
   return out;
 }
+
+export type AiSource = { title: string; site: string; date: string | null; snippet: string };
+export type AiLayout = { answer: { kind: 'p' | 'h'; text: string }[]; sources: AiSource[] };
+
+const AI_END = /^(Show less|Web results|People also search for|People also ask|Page Navigation|Footer Links|Copy text|Good response|Bad response|Show more AI Overview|Ads)$/;
+const joinText = (a: string, b: string) => (!a ? b : /^[,.;:!?)%]/.test(b) ? a + b : a + ' ' + b);
+
+/**
+ * An AI Overview as Google lays it out: the answer (its fragments joined back into sentences, with
+ * headings kept apart), then the source cards. Each source card is a title link, the source's
+ * name, an "About this result" button, sometimes a date, then a snippet. Null when the snapshot
+ * has no AI Overview, no source cards, or lists businesses (those are read by readAiOverview).
+ */
+export function readAiOverviewLayout(xml: string | null | undefined): AiLayout | null {
+  if (!xml) return null;
+  const L = uiLabels(xml);
+  const start = L.findIndex((x) => x.label === 'AI Overview');
+  if (start < 0) return null;
+  const span: string[] = [];
+  for (const { label } of L.slice(start + 1)) {
+    const t = label.trim();
+    if (AI_END.test(t) || /^More options for response/.test(t) || /^Sponsored/.test(t)) break;
+    if (t) span.push(t);
+  }
+  const marks = span.map((t, i) => (t === 'About this result' ? i : -1)).filter((i) => i >= 2 && span[i - 1] !== 'About this result');
+  // An overview that lists businesses (a map and business cards) keeps its numbered-list display.
+  if (!marks.length || readAiOverview(xml)?.businesses.length) return null;
+  const sources: AiSource[] = marks.map((m, k) => {
+    const end = k + 1 < marks.length ? marks[k + 1] - 2 : span.length;
+    const body = span.slice(m + 1, end).filter((t) => t !== 'About this result');
+    const dated = body.length > 1 && /^[A-Z][a-z]{2,8}\.? \d{1,2}, \d{4}\s*—?$/.test(body[0]);
+    const snippet = body.slice(dated ? 1 : 0).reduce(joinText, '');
+    return { title: span[m - 2], site: span[m - 1], date: dated ? body[0].replace(/\s*—$/, '') : null, snippet: snippet.length > 420 ? snippet.slice(0, 419).trimEnd() + '…' : snippet };
+  });
+  const answer: AiLayout['answer'] = [];
+  let cur = '';
+  for (const t of span.slice(0, marks[0] - 2)) {
+    // A short line with no closing punctuation, after a finished sentence, is a heading.
+    const heading = /[.:!?]$/.test(cur) && t.length < 80 && /^[A-Z0-9]/.test(t) && !/[.,:;!?]$/.test(t) && !/^[,.;:!?)]/.test(t);
+    if (heading) {
+      answer.push({ kind: 'p', text: cur }, { kind: 'h', text: t });
+      cur = '';
+    } else cur = joinText(cur, t);
+  }
+  if (cur) answer.push({ kind: 'p', text: cur });
+  return { answer, sources };
+}

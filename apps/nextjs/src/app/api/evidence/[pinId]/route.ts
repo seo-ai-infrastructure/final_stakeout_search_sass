@@ -2,7 +2,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
 import { r2, bucket } from '@stakeout/core/r2';
 import { InputError } from '@stakeout/core/grid';
-import { untarGz, readResultsPage, readLocalFinder, readAiOverview, readAiCopy, uiLabels, rankIn, sameBusiness, isLocalFinder, isMapsList, readMapsList } from '@stakeout/core/serpEvidence';
+import { untarGz, readResultsPage, readLocalFinder, readAiOverview, readAiCopy, uiLabels, rankIn, sameBusiness, isLocalFinder, isMapsList, readMapsList, readAiOverviewLayout } from '@stakeout/core/serpEvidence';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 
@@ -87,6 +87,8 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
       maps,
       mapsAdsAbove: maps ? maps.filter((c) => c.ad && (!mapsYou || c.listPos < mapsYou.listPos)).length : null,
       aiOverview,
+      // The answer and its source cards, as Google lays them out (null for business-list overviews).
+      aiLayout: aio ? readAiOverviewLayout(aio) : null,
       aiCopy,
       ranks: {
         maps: maps ? (mapsYou?.pos ?? null) : null,

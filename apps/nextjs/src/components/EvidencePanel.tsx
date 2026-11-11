@@ -23,6 +23,7 @@ type Evidence = {
   localFinder: Listing[];
   finderShown?: boolean | null;
   aiOverview: { paragraphs: string[]; businesses: Listing[]; related?: Listing[] } | null;
+  aiLayout?: { answer: { kind: 'p' | 'h'; text: string }[]; sources: { title: string; site: string; date: string | null; snippet: string }[] } | null;
   aiCopy?: {
     intro: string[];
     businesses: { pos: number; name: string; kgmid: string; url: string; rating: string | null; reviews: string | null; category: string | null; lines: string[] }[];
@@ -216,7 +217,7 @@ export function EvidencePanel({
                 <FinderView list={ev.localFinder} isTarget={isTarget} googleLocation={ev.resultsPage?.googleLocation ?? null} />
               )
             ) : view === 'ai' ? (
-              <AiView ev={ev} isTarget={isTarget} />
+              <AiView ev={ev} isTarget={isTarget} target={scan.targetBusiness} />
             ) : (
               <PageView ev={ev} isTarget={isTarget} keyword={scan.keyword} />
             )}
@@ -556,9 +557,56 @@ function FinderView({ list, isTarget, googleLocation }: { list: Listing[]; isTar
   );
 }
 
-function AiView({ ev, isTarget }: { ev: Evidence; isTarget: (n: string) => boolean }) {
+function AiView({ ev, isTarget, target }: { ev: Evidence; isTarget: (n: string) => boolean; target: string }) {
   const ai = ev.aiOverview;
   const copy = ev.aiCopy;
+  const layout = ev.aiLayout;
+  // An answer with cited sources: shown as Google lays it out, the answer first, then each source.
+  if (layout && !(copy && copy.businesses.length)) {
+    const name = target.trim().toLowerCase();
+    const mentions = (t: string) => name.length > 2 && t.toLowerCase().includes(name);
+    const named = layout.answer.some((a) => mentions(a.text)) || layout.sources.some((x) => mentions(x.title) || mentions(x.site) || mentions(x.snippet));
+    return (
+      <div className="space-y-4 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-extrabold text-violet-800">✦ AI Overview</p>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${named ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'}`}>
+            {named ? `${target} is named` : `${target} is not named`}
+          </span>
+        </div>
+        <div className="space-y-2 rounded-xl bg-violet-50/60 p-3">
+          {layout.answer.map((a, i) =>
+            a.kind === 'h' ? (
+              <p key={i} className="pt-1 text-[13px] font-bold text-gray-900">{a.text}</p>
+            ) : (
+              <p key={i} className={`text-[13.5px] leading-relaxed text-gray-900 ${mentions(a.text) ? 'rounded bg-emerald-100 px-1' : ''}`}>{a.text}</p>
+            ),
+          )}
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+            Sources Google cited ({layout.sources.length})
+          </p>
+          <ol className="space-y-2">
+            {layout.sources.map((x, i) => {
+              const me = mentions(x.title) || mentions(x.site) || mentions(x.snippet);
+              return (
+                <li key={i} className={`rounded-xl p-3 ${me ? 'border-2 border-emerald-600 bg-emerald-50' : 'border border-gray-200 bg-white'}`}>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-gray-800 px-1 text-[10px] font-extrabold text-white">{i + 1}</span>
+                    <span className="min-w-0 truncate text-[12.5px] font-bold text-gray-900">{x.site}</span>
+                    {x.date && <span className="shrink-0 text-[11px] text-gray-500">· {x.date}</span>}
+                  </div>
+                  <p className="mt-1 text-[13px] font-semibold leading-snug text-[#1a0dab]">{x.title}</p>
+                  {x.snippet && <p className="mt-1 line-clamp-3 text-[12px] leading-snug text-gray-600">{x.snippet}</p>}
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </div>
+    );
+  }
   if (copy && copy.businesses.length)
     return (
       <div className="space-y-3 p-3">
