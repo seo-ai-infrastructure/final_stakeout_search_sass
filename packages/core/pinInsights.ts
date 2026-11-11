@@ -1,4 +1,4 @@
-import { isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder, readMapsList, readResultsPage, sameBusiness } from './serpEvidence';
+import { isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder, readMapsList, readResultsPage, sameBusiness, uiLabels } from './serpEvidence';
 
 /**
  * A compact record of what the phone saw at one point, saved on the point (GridPin.insights) so
@@ -44,6 +44,37 @@ export function domainOf(url: string): string | null {
   }
 }
 
+/**
+ * The sources an AI Overview cites, read from a snapshot, in order. Each source card is a title
+ * link, the source's name ("Angie's List", "Housecall Pro", or a domain such as
+ * "proplumberlakeland.com"), then an "About this result" button: the label just before that
+ * button is the source. Layouts without those buttons fall back to any domain shown inside the
+ * AI Overview. Reading stops at the AI Overview's own end (its footer, its collapsed button, or
+ * the next ads block), so ads are never counted. The page keeps the collapsed part too.
+ */
+export function aiSourcesFromSnapshot(xml: string | null | undefined): string[] {
+  if (!xml) return [];
+  const L = uiLabels(xml);
+  const start = L.findIndex((x) => x.label === 'AI Overview');
+  if (start < 0) return [];
+  const span: string[] = [];
+  for (const { label } of L.slice(start + 1)) {
+    if (/^(Copy text|Good response|Bad response|More options for response|Show more AI Overview|Ads|Sponsored|People also ask)$/.test(label)) break;
+    span.push(label.trim());
+  }
+  const out: string[] = [];
+  const add = (v: string) => {
+    const d = /^(?:https?:\/\/)?(?:www\.)?((?:[a-z0-9-]+\.)+[a-z]{2,})(?:\/\S*)?$/i.exec(v);
+    const name = d ? d[1].toLowerCase() : v;
+    if (name && !out.some((o) => o.toLowerCase() === name.toLowerCase())) out.push(name);
+  };
+  span.forEach((v, i) => {
+    if (v === 'About this result' && i > 0 && span[i - 1] !== 'About this result') add(span[i - 1]);
+  });
+  if (!out.length) for (const v of span) if (/^(?:https?:\/\/)?(?:www\.)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/\S*)?$/i.test(v)) add(v);
+  return out;
+}
+
 export function buildPinInsights(input: {
   serp: string | null;
   finder: string | null;
@@ -86,8 +117,16 @@ export function buildPinInsights(input: {
     named = copy.businesses.map((b) => b.name);
   }
   if (!named.length && input.aiExpanded) named = readAiOverview(input.aiExpanded)?.businesses.map((b) => b.name) ?? [];
+  // No copied text: the cited websites come straight from the AI Overview in the snapshot.
+  if (!sources.length) {
+    const fromAi = aiSourcesFromSnapshot(input.aiExpanded);
+    sources = fromAi.length ? fromAi : aiSourcesFromSnapshot(input.serp);
+  }
+  if (!named.length && input.serp) named = readAiOverview(input.serp)?.businesses.map((b) => b.name) ?? [];
   // An AI Overview was shown only if one was copied or a snapshot actually holds one: a saved
   // aio_ snapshot file on its own proves nothing (the template saves one on every page).
-  const shown = Boolean(input.aiCopy?.trim() || (input.aiExpanded && readAiOverview(input.aiExpanded)) || page?.aiPreview);
+  const shown = Boolean(
+    input.aiCopy?.trim() || (input.aiExpanded && readAiOverview(input.aiExpanded)) || page?.aiPreview || (input.serp && readAiOverview(input.serp)),
+  );
   return { v: 1, finder, you, ads, adsAboveYou, ai: { shown, sources, named } };
 }

@@ -48,3 +48,32 @@ test('AI Overview "shown" only when a snapshot really holds one (not because an 
   const some = buildPinInsights({ serp: null, finder: null, aiExpanded: read('real-aio-list-no-finder.xml'), target: 'x' });
   assert.equal(some.ai.shown, true);
 });
+
+test('AI sources come from the snapshot when nothing was copied: only inside the AI Overview, never from the ads after it', async () => {
+  const { aiSourcesFromSnapshot } = await import('../packages/core/pinInsights');
+  const node = (text: string, cls = 'android.widget.TextView') => `<node index="0" text="${text}" resource-id="" class="${cls}" package="com.android.chrome" content-desc="" bounds="[0,0][100,100]" />`;
+  const xml = `<?xml version="1.0"?><hierarchy rotation="0">${[
+    node('Sponsored'), node('adsite.com'),
+    node('AI Overview'),
+    node('Emergency plumbing services in Lakeland typically start around $300.'),
+    node('Angie&apos;s List'), node('proplumberlakeland.com'), node('https://www.rotorooter.com/lakeland/'), node('proplumberlakeland.com'),
+    node('Show more AI Overview', 'android.widget.Button'),
+    node('Ads'), node('another-ad.com'),
+  ].join('')}</hierarchy>`;
+  assert.deepEqual(aiSourcesFromSnapshot(xml), ['proplumberlakeland.com', 'rotorooter.com']);
+  assert.deepEqual(aiSourcesFromSnapshot(null), []);
+  const i = buildPinInsights({ serp: xml, finder: null, target: 'x' });
+  assert.deepEqual(i.ai.sources, ['proplumberlakeland.com', 'rotorooter.com'], 'insights use them without a copy');
+});
+
+test('AI sources from a real informational AI Overview (11 Nov, Lakeland): every source card, in order, names and domains', async () => {
+  const { aiSourcesFromSnapshot } = await import('../packages/core/pinInsights');
+  const serp = read('real-aio-sources-2026-11-11.xml');
+  assert.deepEqual(aiSourcesFromSnapshot(serp), [
+    "Angie's List", 'Facebook', 'Housecall Pro', 'proplumberlakeland.com', 'Paul Bunyan Plumbing & Drains',
+    'ACS Home Services', 'Roto-Rooter', 'plumbinglakeland.com', 'rotorooter.com',
+  ]);
+  const i = buildPinInsights({ serp, finder: null, target: "Stuart's Plumbing" });
+  assert.equal(i.ai.shown, true);
+  assert.equal(i.ai.sources.length, 9);
+});

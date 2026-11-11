@@ -297,6 +297,7 @@ let lastWhitelistFix = 0;
 let busy = false,
   lastRepair = Date.now(),
   lastProxyRelease = 0,
+  lastInsightsBackfill = Date.now(),
   lastFleetSync = 0,
   fleetSyncRunning = false;
 
@@ -334,6 +335,11 @@ async function tick() {
   try {
     await dispatch();
     await startReruns();
+    // Every 30 minutes: points still without insights get them from their stored bundles.
+    if (Date.now() - lastInsightsBackfill > 30 * 60000) {
+      lastInsightsBackfill = Date.now();
+      void backfillInsights().catch((e) => console.warn('[insights] backfill skipped:', (e as Error).message));
+    }
     // Once a minute: with no scan queued or running, proxy lists are deleted (idle phones still use bandwidth).
     if (Date.now() - lastProxyRelease > 60000) {
       lastProxyRelease = Date.now();
