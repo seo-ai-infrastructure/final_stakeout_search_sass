@@ -10,7 +10,7 @@ import {
   type ScanSpec,
 } from './grid';
 import { ispForPin } from './proxyGeo';
-import { RERUN_MARKER, rerunCharge } from './rerun';
+import { RERUN_MARKER, rerunCharge, rerunIsp } from './rerun';
 
 export async function createScan(
   userId: string,
@@ -249,12 +249,12 @@ export async function requestRerun(scanId: string, userId: string, pinIds?: stri
     async (tx) => {
       const scan = await tx.gridScan.findFirst({
         where: { id: scanId, userId },
-        select: { id: true, creditsCharged: true, totalPins: true },
+        select: { id: true, creditsCharged: true, totalPins: true, ispMode: true, isps: true },
       });
       if (!scan) throw new InputError('Scan unavailable.', 404);
       const points = await tx.gridPin.findMany({
         where: { scanId, status: 'FAILED', ...(pinIds?.length ? { id: { in: pinIds } } : {}) },
-        select: { id: true, isRefunded: true },
+        select: { id: true, isRefunded: true, isp: true, lastError: true },
       });
       if (!points.length) throw new InputError('There are no failed points to re-run.', 400);
       const { perPoint, credits } = rerunCharge(points, scan.creditsCharged, scan.totalPins);
@@ -279,6 +279,11 @@ export async function requestRerun(scanId: string, userId: string, pinIds?: stri
         where: { id: { in: points.map((p) => p.id) }, status: 'FAILED' },
         data: { status: 'PENDING', lastError: RERUN_MARKER, isRefunded: false },
       });
+      // A point that failed for want of a working proxy moves to another ISP of the mix.
+      for (const p of points) {
+        const isp = rerunIsp(p.isp, scan.ispMode, scan.isps, p.lastError);
+        if (isp !== p.isp) await tx.gridPin.update({ where: { id: p.id }, data: { isp } });
+      }
       await tx.gridScan.update({
         where: { id: scanId },
         data: { failedPins: { decrement: points.length }, creditsRefunded: { decrement: credits }, status: 'RUNNING', completedAt: null },

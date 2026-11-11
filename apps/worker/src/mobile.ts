@@ -344,7 +344,9 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
           }
         }
         await redis().set(devKey, list.psListId + ':' + lease.port, 'EX', 24 * 3600).catch(() => {});
-        const g = await preflightExit(device, p, isp);
+        // "Mix of ISPs": the ISP is a preference, so an IP from the any-ISP list only has to be
+        // residential and in the right state. "One ISP" (and ISP-specific lists) still require it.
+        const g = await preflightExit(device, p, !list.isp && p.scan.ispMode !== 'one' ? '' : isp);
         // The phone is now bound to its current record, so a replaced one can go.
         if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
         if (!g.verdict.ok) {
