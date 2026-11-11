@@ -26,6 +26,7 @@ test('summary: headline numbers and plain-language findings come from the scan d
   const none = reportSummary({ targetBusiness: 'X', centerLat: 0, centerLng: 0, pins: [pin('a', null), pin('b', 9)] });
   assert.match(none.findings[0], /not in the top 3 at any of the 2 points/);
   const all = reportSummary({ targetBusiness: 'X', centerLat: 0, centerLng: 0, pins: [pin('a', 1), pin('b', 3)] });
-  assert.match(all.findings[0], /top 3 at every point \(2 of 2\)/);
+  assert.match(all.findings[0], /top 3 at every point \(2 of 2\), and #1 at 1\./);
+  assert.deepEqual(s.leaders, [{ name: 'Rival Co', points: 4, isYou: false }], 'who holds #1: the first name at each point');
   assert.deepEqual(reportSummary({ targetBusiness: 'X', centerLat: 0, centerLng: 0, pins: [] }).findings, []);
 });

@@ -37,13 +37,25 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
   const you = owners.rows.find((r) => r.isYou);
   const rival = owners.rows.filter((r) => !r.isYou).sort((a, b) => b.top3Points - a.top3Points)[0];
 
+  // Who holds #1 at each completed point (the first name in the point's ordered results).
+  const firsts = new Map<string, { name: string; points: number; isYou: boolean }>();
+  for (const p of scan.pins) {
+    const name = p.status === 'COMPLETED' ? p.topCompetitors?.[0] : null;
+    if (!name) continue;
+    const key = name.toLowerCase().trim();
+    const row = firsts.get(key) ?? { name, points: 0, isYou: key === scan.targetBusiness.toLowerCase().trim() };
+    row.points++;
+    firsts.set(key, row);
+  }
+  const leaders = [...firsts.values()].sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+
   const findings: string[] = [];
   if (dist.total) {
     findings.push(
       top3 === 0
         ? `${scan.targetBusiness} is not in the top 3 at any of the ${points(dist.total)}.`
         : top3 === dist.total
-          ? `${scan.targetBusiness} is in the top 3 at every point (${dist.total} of ${dist.total}).`
+          ? `${scan.targetBusiness} is in the top 3 at every point (${dist.total} of ${dist.total}), and #1 at ${dist.buckets[0].count}.`
           : `${scan.targetBusiness} is in the top 3 at ${top3} of ${points(dist.total)} (${pct((100 * top3) / dist.total)}), and #1 at ${dist.buckets[0].count}.`,
     );
     if (dist.buckets[4].count) findings.push(`It does not appear in the results at ${points(dist.buckets[4].count)}.`);
@@ -79,6 +91,7 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
     found: found.length,
     distribution: dist,
     owners: owners.rows,
+    leaders,
     ai,
     findings,
   };

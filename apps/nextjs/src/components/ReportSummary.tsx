@@ -12,10 +12,10 @@ export function ReportSummaryTop({ scan }: { scan: GridScanData }) {
   const delta = s.standard !== null && s.buyingPower !== null ? s.buyingPower - s.standard : null;
   const tiles: [string, string, string][] = [
     ['SoLV', num(scan.solv, '%'), s.completed ? `top 3 at ${s.top3} of ${s.completed} points` : 'no completed points yet'],
-    ['Buying-Power SoLV', num(s.buyingPower, '%'), delta === null ? 'needs neighborhood data' : `${delta >= 0 ? '+' : ''}${delta.toFixed(0)} points against standard SoLV`],
+    ['Buying-Power SoLV', num(s.buyingPower, '%'), delta === null ? 'needs neighborhood data' : Math.round(delta) === 0 ? 'the same as standard SoLV' : `${delta > 0 ? '+' : ''}${delta.toFixed(0)} points against standard SoLV`],
     ['Average rank', num(s.avgRank, '', 1), s.completed ? `where found: ${s.found} of ${s.completed} points` : '—'],
     ['ATRP', num(scan.atrp, '', 1), 'average across every point'],
-    ['AI Overview', scan.trackAiOverviews ? num(scan.aioTriggerRate, '%') : '—', scan.trackAiOverviews ? `of points showed one · named in ${num(scan.aioCitationRate, '%')}` : 'AI tracking was off for this scan'],
+    ['AI Overview', scan.trackAiOverviews ? num(scan.aioTriggerRate, '%') : '—', !scan.trackAiOverviews ? 'AI tracking was off for this scan' : !scan.aioTriggerRate ? 'none appeared at any point' : `of points showed one · named in ${num(scan.aioCitationRate, '%')}`],
   ];
   return (
     <div className="space-y-3">
@@ -69,12 +69,30 @@ export function ReportCharts({ scan }: { scan: GridScanData }) {
         </div>
         <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-300 sm:grid-cols-3">
           {s.distribution.buckets.map((b) => (
-            <li key={b.key} className="flex items-center gap-2">
+            <li key={b.key} className={'flex items-center gap-2 ' + (b.count ? '' : 'opacity-40')}>
               <span className={'h-2.5 w-2.5 shrink-0 rounded-sm ' + TONE[b.key]} />
               {b.label}: <strong className="text-white">{b.count}</strong> <span className="text-slate-500">({Math.round(b.pct)}%)</span>
             </li>
           ))}
         </ul>
+        {s.leaders.length > 0 && (
+          <div className="mt-5 border-t border-slate-800 pt-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Who holds #1</h3>
+            <ul className="mt-2 space-y-2">
+              {s.leaders.slice(0, 6).map((l) => (
+                <li key={l.name} className="text-xs">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className={'truncate ' + (l.isYou ? 'font-bold text-emerald-300' : 'text-slate-200')}>{l.name}{l.isYou ? ' (you)' : ''}</span>
+                    <span className="shrink-0 text-slate-400">#1 at {l.points} of {s.completed} points</span>
+                  </div>
+                  <div className="mt-1 h-2 rounded bg-slate-800">
+                    <div className={'h-2 rounded ' + (l.isYou ? 'bg-emerald-400' : 'bg-slate-400')} style={{ width: (100 * l.points) / s.completed + '%' }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <div className={box}>
@@ -107,7 +125,13 @@ export function ReportCharts({ scan }: { scan: GridScanData }) {
         )}
       </div>
 
-      {showAi && (
+      {showAi && s.ai.shown === 0 && (
+        <div className={box + ' lg:col-span-2'}>
+          <h2 className="text-sm font-bold text-white">AI Overview coverage</h2>
+          <p className="mt-1 text-sm text-slate-300">No AI Overview appeared at any of the {s.ai.points} points checked for this keyword.</p>
+        </div>
+      )}
+      {showAi && s.ai.shown > 0 && (
         <div className={box + ' lg:col-span-2'}>
           <h2 className="text-sm font-bold text-white">AI Overview coverage</h2>
           <div className="mt-3 grid gap-4 sm:grid-cols-3">
