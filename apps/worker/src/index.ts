@@ -10,8 +10,9 @@ import {
   redactRedisUrl,
 } from '@stakeout/core/redis';
 import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
-import { listsForPin, releaseIdleProxyLists } from '@stakeout/core/proxyLists';
-import { describeRpaTemplates, rpaTemplate } from './rpa';
+import { listsForPin, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
+import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
+import { getSettings } from '@stakeout/core/settings';
 import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist } from './duoplus';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
@@ -268,7 +269,8 @@ function searched(e: unknown) {
  * anywhere put the whole fleet back on the safe gap for six hours.
  */
 async function restPhone(imageId: string) {
-  let base = Number(process.env.SEARCH_GAP_SECONDS ?? 120);
+  // An admin can change the pause from the Device fleet page; it applies within about 15 seconds.
+  let base = (await getSettings()).searchGapSeconds;
   const safe = Number(process.env.SEARCH_GAP_SAFE_SECONDS ?? 120);
   if (safe > base && (await redis().exists(`stakeout:gapsafe:${imageId}`, 'stakeout:gapsafe:all').catch(() => 0)))
     base = safe;
@@ -297,7 +299,32 @@ async function noteCaptcha(imageId: string) {
  * What the admin page's "System health" card shows: written every minute, so a missing key or
  * template is visible there instead of only in the logs.
  */
+let templatesReadAt = Date.now(),
+  templatesReloadSeen = 0,
+  trafficAt = 0,
+  traffic: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null = null;
+
 async function reportHealth() {
+  // Templates are re-read when an admin asks (stakeout:templates:reload) and every 10 minutes
+  // anyway, so importing a template into DuoPlus never needs a worker restart.
+  const asked = Number((await redis().get('stakeout:templates:reload').catch(() => null)) ?? 0);
+  if (asked > templatesReloadSeen || Date.now() - templatesReadAt > 10 * 60000) {
+    templatesReloadSeen = Math.max(asked, templatesReloadSeen);
+    clearTemplateCache();
+    templatesReadAt = Date.now();
+  }
+  // Proxy traffic, every 10 minutes (the API is rate-limited): the day's first reading is kept, so
+  // "used today" is the difference.
+  if (process.env.PROXY_SELLER_API_KEY && Date.now() - trafficAt > 10 * 60000) {
+    trafficAt = Date.now();
+    const p = await residentPackage().catch(() => null);
+    if (p && p.usedBytes !== null) {
+      const dayKey = 'stakeout:traffic:' + new Date().toISOString().slice(0, 10);
+      await redis().set(dayKey, String(p.usedBytes), 'EX', 3 * 86400, 'NX').catch(() => {});
+      const first = Number((await redis().get(dayKey).catch(() => null)) ?? p.usedBytes);
+      traffic = { limitBytes: p.limitBytes, usedBytes: p.usedBytes, leftBytes: p.leftBytes, todayBytes: Math.max(0, p.usedBytes - first), expires: p.expires, at: new Date().toISOString() };
+    }
+  }
   const template = async (surface: 'chrome' | 'maps') => {
     const t = await rpaTemplate(surface).catch(() => null);
     const v = t?.vars.find((x) => x.key === 'template_version')?.value;
@@ -306,7 +333,9 @@ async function reportHealth() {
   const health = {
     at: new Date().toISOString(),
     proxySellerKey: Boolean(process.env.PROXY_SELLER_API_KEY),
-    searchGapSeconds: Number(process.env.SEARCH_GAP_SECONDS ?? 120),
+    searchGapSeconds: (await getSettings()).searchGapSeconds,
+    templatesReadAt: new Date(templatesReadAt).toISOString(),
+    traffic,
     templates: { chrome: await template('chrome'), maps: await template('maps') },
     proxyLists: await db.proxyList.count(),
     openScans: await db.gridScan.count({ where: { status: { in: ['QUEUED', 'RUNNING'] } } }),

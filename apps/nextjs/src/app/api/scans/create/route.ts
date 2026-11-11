@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createScan } from '@stakeout/core/scans';
 import { parseSpec, market, buildGrid, InputError } from '@stakeout/core/grid';
+import { getSettings, ispAllowed } from '@stakeout/core/settings';
 import { targetableIspCodes } from '@stakeout/core/proxySeller';
 import { listsEnabled, prepareGridProxies } from '@stakeout/core/proxyLists';
 import { assertFleetSupports } from '@stakeout/core/fleet';
@@ -14,6 +15,8 @@ export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser(),
       s = parseSpec(await req.json());
+      const settings = await getSettings();
+      if (s.isps.some((v: string) => !ispAllowed(v, settings))) throw new InputError('That ISP is not available here. Choose another.');
     const key = req.headers.get('Idempotency-Key') ?? randomUUID();
     if (!/^[\w-]{8,80}$/.test(key))
       throw new InputError('Invalid request key.');

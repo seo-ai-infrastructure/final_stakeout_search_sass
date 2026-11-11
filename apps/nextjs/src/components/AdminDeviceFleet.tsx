@@ -74,8 +74,14 @@ function SystemHealthCard({ system }: { system: SystemHealth | null }) {
         ['Insights', system.pointsWithoutInsights < 25, `${system.pointsWithoutInsights} point(s) waiting for insights`],
       ]
     : [['Worker', false, 'no status report: the worker is not running, or has not reported yet']];
+  const failing = rows.filter(([, ok]) => !ok).map(([label]) => label);
   return (
-    <section className="mb-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+    <section className={'mb-6 rounded-2xl border p-5 ' + (failing.length ? 'border-rose-500/60 bg-rose-950/20' : 'border-slate-800 bg-slate-900/60')}>
+      {failing.length > 0 && (
+        <p role="alert" className="mb-4 rounded-xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white">
+          Needs attention: {failing.join(', ')}
+        </p>
+      )}
       <h2 className="text-sm font-bold text-white">System health</h2>
       <ul className="mt-3 grid gap-2 sm:grid-cols-2">
         {rows.map(([label, ok, note]) => (

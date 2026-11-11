@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getSettings } from '@stakeout/core/settings';
 import { db, Prisma } from '@stakeout/db';
 import {
   hashPassword,
@@ -12,7 +13,6 @@ import {
   completeVerification,
   sendVerification,
   verificationRequired,
-  signupsOpen,
   BLOCKED_ROLE,
 } from '@/lib/verification';
 import { errorResponse } from '@/lib/api';
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     let user;
     let verificationSent = false;
     if (body.mode === 'register') {
-      if (!signupsOpen()) throw new InputError('New accounts are closed right now.', 403);
+      if (!(await getSettings()).signupsOpen) throw new InputError('New accounts are closed right now.', 403);
       if (email.endsWith('@internal.invalid'))
         throw new InputError('Use your agency email address.');
       if (pass.length < 8)

@@ -1,4 +1,5 @@
-import { market, InputError, ispOffered } from '@stakeout/core/grid';
+import { market, InputError } from '@stakeout/core/grid';
+import { getSettings, ispAllowed } from '@stakeout/core/settings';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { ispDirectory } from '@/lib/ispDirectory';
@@ -19,12 +20,13 @@ export async function GET(req: Request) {
     if (!p.has('lat') || !p.has('lng') || !Number.isFinite(lat) || !Number.isFinite(lng))
       throw new InputError('Coordinates required.');
     const detectedMarket = market(lat, lng);
+    const settings = await getSettings();
     if (listsEnabled()) {
       const m = await resolveMarket(detectedMarket.city, detectedMarket.stateCode);
       return Response.json({
         detectedMarket,
         proxyMarket: { region: m.region, city: m.city, level: m.level },
-        isps: m.isps.filter(ispOffered).map((name) => ({ name })),
+        isps: m.isps.filter((name) => ispAllowed(name, settings)).map((name) => ({ name })),
       });
     }
     return Response.json({

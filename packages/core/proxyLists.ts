@@ -74,6 +74,13 @@ async function geoRows() {
 }
 
 /** Market for a city, cached in the database for 7 days so most scans skip the GEO download. */
+/** The residential package's traffic, in bytes: what was bought, used and left (Proxy-Seller resident/package). */
+export async function residentPackage() {
+  const d = await psCall('resident/package');
+  const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  return { limitBytes: n(d?.traffic_limit), usedBytes: n(d?.traffic_usage), leftBytes: n(d?.traffic_left), expires: typeof d?.expired_at === 'string' ? d.expired_at : null, active: d?.is_active !== false };
+}
+
 export async function resolveMarket(city: string, stateCode: string): Promise<Market> {
   const key = marketKey(city, stateCode);
   const cached = await db.proxyMarket.findUnique({ where: { key } });

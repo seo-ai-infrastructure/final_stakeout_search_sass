@@ -30,6 +30,8 @@ let offsetLearned = false;
 
 type Template = { id: string; name: string; vars: TemplateVar[]; keywordKey: string | null };
 const templateCache = new Map<RpaSurface, Template>();
+/** Forgets the templates read from DuoPlus, so the next search reads them again (after an import). */
+export const clearTemplateCache = () => templateCache.clear();
 
 async function listUserTemplates(): Promise<{ id: string; name: string }[]> {
   const out: { id: string; name: string }[] = [];

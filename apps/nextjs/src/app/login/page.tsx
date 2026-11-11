@@ -1,6 +1,6 @@
 // apps/nextjs/src/app/login/page.tsx
 'use client';
-import React, { useState, Suspense } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Crosshair,
@@ -27,10 +27,21 @@ function LoginFormContent() {
     ? requested
     : '/scans';
   // New accounts are closed unless NEXT_PUBLIC_SIGNUPS_OPEN=true (the server enforces SIGNUPS_OPEN too).
-  const signups = process.env.NEXT_PUBLIC_SIGNUPS_OPEN === 'true';
+  // An admin can open or close sign-ups from the Device fleet page, so the page asks the server.
+  const [signups, setSignups] = useState(process.env.NEXT_PUBLIC_SIGNUPS_OPEN === 'true');
   const [mode, setMode] = useState<'login' | 'register'>(
     signups && searchParams.get('mode') === 'register' ? 'register' : 'login',
   );
+  useEffect(() => {
+    fetch('/api/auth/config', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        setSignups(Boolean(d.signupsOpen));
+        if (!d.signupsOpen) setMode('login');
+        else if (searchParams.get('mode') === 'register') setMode('register');
+      })
+      .catch(() => {});
+  }, [searchParams]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');

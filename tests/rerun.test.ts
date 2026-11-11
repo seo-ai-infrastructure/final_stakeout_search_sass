@@ -12,13 +12,3 @@ test('re-run ISP: a proxy failure in "Mix of ISPs" moves to the next ISP; other 
   assert.equal(rerunIsp('Tillman Fiberco', 'mix', mix, 'LOCATION_UNVERIFIED'), 'Tillman Fiberco', 'other failures keep theirs');
   assert.equal(rerunIsp(null, 'mix', mix, gate), 'Spectrum Business');
 });
-
-test('ISPs that cannot pass the residential check are never offered or accepted', async () => {
-  const { ispOffered, parseSpec } = await import('../packages/core/grid');
-  assert.equal(ispOffered('Tillman Fiberco'), false);
-  assert.equal(ispOffered('  tillman fiberco '), false, 'whatever the case or spacing');
-  assert.equal(ispOffered('Spectrum'), true);
-  const base = { keyword: 'plumber', targetBusiness: 'x', centerLat: 28.04, centerLng: -81.95, gridSize: 3, spacingKm: 1.60934, scheduleType: 'once', targetType: 'mobile_chrome' };
-  assert.throws(() => parseSpec({ ...base, ispMode: 'mix', isps: ['Spectrum', 'Tillman Fiberco'] }), /not available/);
-  assert.deepEqual(parseSpec({ ...base, ispMode: 'mix', isps: ['Spectrum', 'Frontier Communications'] }).isps, ['Spectrum', 'Frontier Communications']);
-});
