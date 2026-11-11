@@ -1,5 +1,6 @@
 // apps/nextjs/src/app/(dashboard)/admin/devices/page.tsx
 'use client';
+import { AdminOps } from './AdminOps';
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
@@ -293,6 +294,7 @@ export default function AdminDeviceFleetPage() {
           </div>
         </div>
         {system !== undefined && <SystemHealthCard system={system} />}
+        <AdminOps />
         {health && (
           <section aria-label="Fleet health" className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
             <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
