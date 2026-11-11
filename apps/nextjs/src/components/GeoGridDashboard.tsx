@@ -11,6 +11,7 @@ import {
 import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
 import type { PinInsights } from '@stakeout/core/pinInsights';
+import { ReportSummaryTop, ReportCharts } from './ReportSummary';
 import { MarketInsights } from './MarketInsights';
 import { buyingPower, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
 import { gridColumns, RANK_COLORS } from '../lib/gridColumns';
@@ -547,33 +548,7 @@ export function GeoGridDashboard({
         )}
         {rerunNote && <p className="text-xs text-slate-300">{rerunNote}</p>}
       </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        {[
-          ['SoLV', scan.solv, '%'],
-          ['ARP', scan.arp, ''],
-          ['ATRP', scan.atrp, ''],
-          [
-            'AI trigger',
-            scan.trackAiOverviews ? scan.aioTriggerRate : null,
-            '%',
-          ],
-          [
-            'AI citation share',
-            scan.trackAiOverviews ? scan.aioCitationRate : null,
-            '%',
-          ],
-        ].map(([label, n, unit]) => (
-          <div
-            className="rounded-xl border border-slate-800 bg-slate-900/70 p-4"
-            key={label}
-          >
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</div>
-            <strong className="mt-1 block text-3xl font-extrabold tracking-tight">
-              {n == null ? '—' : String(n) + unit}
-            </strong>
-          </div>
-        ))}
-      </div>
+      <ReportSummaryTop scan={scan} />
       <nav aria-label="Report sections" className="flex gap-1 border-b border-slate-800">
         {([['overview', 'Overview'], ['evidence', 'Evidence']] as const).map(([k, label]) => (
           <button
@@ -934,6 +909,7 @@ export function GeoGridDashboard({
           )}
         </aside>
       </div>
+      <ReportCharts scan={scan} />
       <MarketInsights scan={scan} />
       <CompetitorLeaderboard
         pins={scan.pins}
