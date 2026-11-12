@@ -103,3 +103,13 @@ test('no Local Finder: the results page map pack gives the rank (real page, 12 N
   assert.equal(rankWithoutFinder([ai], [ai], 'x').from, 'ai_overview_list', 'a page with no pack still falls back to the AI Overview list');
   assert.deepEqual(rankWithoutFinder([null], [null], 'x'), { rank: null, list: [], from: 'none' });
 });
+
+test('the map pack ends at "See more on Google": nothing after it is read as a pack listing', async () => {
+  const { readResultsPage } = await import('../packages/core/serpEvidence');
+  const page = read('real-pack4-see-more-2026-11-12.xml');
+  assert.deepEqual(readResultsPage(page)!.pack.map((l) => l.name), ['1-Tom-Plumber Lakeland', '1 Time Plumbing', 'Nest Plumbing LLC', "Stuart's Plumbing"]);
+  // Even if Google later renders the "Related websites" entries as the same kind of card, they stay out of the pack.
+  const asCards = page.replace(/class="android\.view\.View"([^>]*content-desc="(?:Roto-Rooter|Before You Dig|Vanguard Plumbing)[^"]*")/g, 'class="android.widget.Button"$1')
+    .replace(/(text="(?:Roto-Rooter|Before You Dig|Vanguard Plumbing)[^"]*"[^>]*)class="android\.view\.View"/g, '$1class="android.widget.Button"');
+  assert.equal(readResultsPage(asCards)!.pack.length, 4);
+});

@@ -147,12 +147,13 @@ export function readResultsPage(xml: string): ResultsPage {
       continue;
     }
     if (mode === 'lsa') {
-      if (label === 'Show more' || label === 'More businesses') { mode = 'top'; continue; }
+      if (label === 'Show more' || label === 'More businesses' || label === 'See more on Google') { mode = 'top'; continue; }
       if (card) lsa.push({ ...card, ad: true });
       continue;
     }
     if (mode === 'pack') {
-      if (label === 'More businesses' || label === 'More places') { mode = 'top'; continue; }
+      // The pack ends at its link to the full list: "More businesses", or "See more on Google" since Nov 2026.
+      if (label === 'More businesses' || label === 'More places' || label === 'See more on Google') { mode = 'top'; continue; }
       if (card) { pack.push({ ...card, ad: nextIsAd }); nextIsAd = false; }
       continue;
     }
