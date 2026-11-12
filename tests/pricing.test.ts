@@ -50,3 +50,16 @@ test('the $1 payment test is for admins only; the payment alert says who paid an
   assert.equal(sb.subject, '[Sandbox] Payment: Starter, $197, a@b.com');
   assert.ok(sb.lines.some((l) => /no real money moved/.test(l)) && !sb.lines.some((l) => /onboarding call/.test(l)));
 });
+
+test('onboarding status: only "no" keeps the plans out of reach; an admin can waive it', async () => {
+  const { onboardingStatus } = await import('../apps/nextjs/src/lib/pricing');
+  const a = { paid: false, waived: false, admin: false, beforePricing: false };
+  assert.equal(onboardingStatus(a), 'no');
+  assert.equal(onboardingStatus({ ...a, waived: true }), 'waived');
+  assert.equal(onboardingStatus({ ...a, paid: true, waived: true }), 'paid');
+  assert.equal(onboardingStatus({ ...a, admin: true }), 'exempt');
+  assert.equal(onboardingStatus({ ...a, beforePricing: true }), 'exempt');
+  // What each can buy: onboarding only for 'no', the plans for everyone else.
+  for (const [st, first] of [['no', 'onboarding'], ['waived', 'starter'], ['paid', 'starter'], ['exempt', 'starter']] as const)
+    assert.equal(itemsFor({ onboarded: st !== 'no' })[0].key, first, st);
+});

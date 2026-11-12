@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 
 type OpenScan = { id: string; keyword: string; targetBusiness: string; targetType: string; gridSize: number; status: string; totalPins: number; completedPins: number; failedPins: number; createdAt: string; owner: string };
-type Account = { id: string; email: string; role: string; credits: number; confirmed: boolean; createdAt: string; scans: number };
+type Account = { id: string; email: string; role: string; credits: number; confirmed: boolean; createdAt: string; scans: number; onboarding: 'exempt' | 'paid' | 'waived' | 'no' };
 
 type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
@@ -32,7 +32,7 @@ export function AdminOps() {
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   // A new account's one-time password. It is kept on screen, beside the button that made it, until
   // dismissed: the status note above is out of view from here and is cleared by the next action.
-  const [created, setCreated] = useState<{ email: string; password: string; copied?: boolean } | null>(null);
+  const [created, setCreated] = useState<{ email: string; password?: string; url?: string; emailed?: boolean; copied?: boolean } | null>(null);
   const [credit, setCredit] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
@@ -196,6 +196,7 @@ export function AdminOps() {
               <tr>
                 <th className="py-2 pr-4 font-medium">Email</th>
                 <th className="py-2 pr-4 font-medium">Status</th>
+                <th className="py-2 pr-4 font-medium">Onboarding</th>
                 <th className="py-2 pr-4 font-medium">Credits</th>
                 <th className="py-2 pr-4 font-medium">Scans</th>
                 <th className="py-2 pr-4 font-medium">Joined</th>
@@ -211,10 +212,50 @@ export function AdminOps() {
                       {u.role === 'BLOCKED' ? 'Blocked' : u.role === 'ADMIN' ? 'Admin' : u.role === 'SYSTEM' ? 'System' : u.confirmed ? 'Active' : 'Email not confirmed'}
                     </span>
                   </td>
+                  <td className="py-2 pr-4">
+                    {u.role === 'SYSTEM' ? (
+                      <span className="text-slate-500">—</span>
+                    ) : (
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className={u.onboarding === 'no' ? 'text-amber-300' : 'text-slate-300'}>
+                          {u.onboarding === 'paid' ? 'Paid' : u.onboarding === 'waived' ? 'Waived' : u.onboarding === 'exempt' ? 'Not required' : 'Not yet'}
+                        </span>
+                        {(u.onboarding === 'no' || u.onboarding === 'waived') && (
+                          <button
+                            type="button"
+                            disabled={busy !== ''}
+                            className={btn + ' border border-slate-600 py-1 text-slate-200 hover:bg-slate-800'}
+                            onClick={() =>
+                              run('onb:' + u.id, { action: 'set_onboarded', userId: u.id, on: u.onboarding === 'no' }, (d) =>
+                                d.on ? `${d.email} can now buy plans without paying for onboarding.` : `${d.email} must buy onboarding before a plan again.`,
+                              )
+                            }
+                          >
+                            {u.onboarding === 'no' ? 'Mark onboarded' : 'Undo'}
+                          </button>
+                        )}
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 pr-4 text-slate-200">{u.credits}</td>
                   <td className="py-2 pr-4 text-slate-200">{u.scans}</td>
                   <td className="py-2 pr-4 text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td className="py-2 text-right">
+                    {(u.role === 'AGENCY' || u.role === 'ADMIN') && (
+                      <button
+                        type="button"
+                        disabled={busy !== ''}
+                        className={btn + ' mr-2 border border-slate-600 py-1 text-slate-200 hover:bg-slate-800'}
+                        onClick={() =>
+                          run('pw:' + u.id, { action: 'password_link', userId: u.id }, (d) => {
+                            setCreated({ email: String(d.email), url: String(d.url), emailed: Boolean(d.emailed) });
+                            return `Password link made for ${d.email}. It is shown under the Accounts table.`;
+                          })
+                        }
+                      >
+                        Password link
+                      </button>
+                    )}
                     {u.role === 'AGENCY' && (
                       <button type="button" disabled={busy !== ''} className={btn + ' border border-rose-500/60 py-1 text-rose-300 hover:bg-rose-500/10'} onClick={() => window.confirm(`Block ${u.email}? They will be signed out and unable to sign in.`) && run('block:' + u.id, { action: 'block', userId: u.id }, () => `${u.email} is blocked.`)}>
                         Block
@@ -239,8 +280,8 @@ export function AdminOps() {
             className={btn + ' border border-emerald-500/60 text-emerald-300 hover:bg-emerald-500/10'}
             onClick={async () => {
               const ok = await run('invite', { action: 'create_account', email: invite }, (d) => {
-                setCreated({ email: String(d.email), password: String(d.password) });
-                return `Account created for ${d.email}. Its one-time password is shown beside the Create account button.`;
+                setCreated({ email: String(d.email), password: String(d.password), url: d.url ? String(d.url) : undefined, emailed: Boolean(d.emailed) });
+                return `Account created for ${d.email}. Its sign-in details are shown beside the Create account button.`;
               });
               if (ok) setInvite('');
             }}
@@ -251,29 +292,50 @@ export function AdminOps() {
         </div>
         {created && (
           <div role="alert" className="mt-3 rounded-lg border border-amber-400/60 bg-amber-400/10 p-4">
-            <p className="text-sm font-bold text-amber-200">Save this password now. It cannot be shown again.</p>
+            <p className="text-sm font-bold text-amber-200">
+              {created.password ? 'Save these sign-in details now. The password cannot be shown again.' : 'Password link. It cannot be shown again.'}
+            </p>
             <dl className="mt-3 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-sm">
               <dt className="text-slate-400">Account</dt>
               <dd className="font-mono text-white">{created.email}</dd>
-              <dt className="text-slate-400">Password</dt>
-              <dd className="flex flex-wrap items-center gap-2">
-                <code className="select-all rounded bg-slate-950 px-2 py-1 font-mono text-base text-white">{created.password}</code>
-                <button
-                  type="button"
-                  className={btn + ' border border-slate-600 text-slate-200 hover:bg-slate-800'}
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(`Sign in at https://www.stakeoutsearch.com/login\nEmail: ${created.email}\nPassword: ${created.password}`);
-                    setCreated({ ...created, copied: true });
-                  }}
-                >
-                  {created.copied ? 'Copied' : 'Copy sign-in details'}
-                </button>
-              </dd>
+              {created.password && (
+                <>
+                  <dt className="text-slate-400">Password</dt>
+                  <dd><code className="select-all rounded bg-slate-950 px-2 py-1 font-mono text-base text-white">{created.password}</code></dd>
+                </>
+              )}
+              {created.url && (
+                <>
+                  <dt className="text-slate-400">Their link</dt>
+                  <dd className="min-w-0"><code className="block select-all break-all rounded bg-slate-950 px-2 py-1 font-mono text-xs text-white">{created.url}</code></dd>
+                </>
+              )}
             </dl>
-            <p className="mt-3 text-xs text-slate-400">Nothing is emailed to them: send these details yourself. Adding credits or any other action will not remove this box.</p>
-            <button type="button" className={btn + ' mt-3 border border-amber-400/60 text-amber-200 hover:bg-amber-400/10'} onClick={() => setCreated(null)}>
-              I have saved it
-            </button>
+            <p className="mt-3 text-xs text-slate-300">
+              {created.url
+                ? created.emailed
+                  ? `The link was emailed to ${created.email}. It lets them choose their own password, works once, and lasts 7 days.`
+                  : 'The link was NOT emailed (the mailer is unavailable): send it to them yourself. It lets them choose their own password, works once, and lasts 7 days.'
+                : 'Nothing was emailed to them: send these details yourself.'}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={btn + ' border border-slate-600 text-slate-200 hover:bg-slate-800'}
+                onClick={() => {
+                  const lines = created.url
+                    ? [`Choose your Stakeout Search password here: ${created.url}`, `Your sign-in email is ${created.email}.`]
+                    : ['Sign in at https://www.stakeoutsearch.com/login', `Email: ${created.email}`, `Password: ${created.password}`];
+                  void navigator.clipboard?.writeText(lines.join('\n'));
+                  setCreated({ ...created, copied: true });
+                }}
+              >
+                {created.copied ? 'Copied' : created.url ? 'Copy a message with the link' : 'Copy sign-in details'}
+              </button>
+              <button type="button" className={btn + ' border border-amber-400/60 text-amber-200 hover:bg-amber-400/10'} onClick={() => setCreated(null)}>
+                Done
+              </button>
+            </div>
           </div>
         )}
       </section>

@@ -6,6 +6,8 @@ import { redis } from '@stakeout/core/redis';
 import { getSettings, saveSettings } from '@stakeout/core/settings';
 import { getAuthenticatedUser, hashPassword } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
+import { ONBOARDING_WAIVED, onboardingOf } from '@/lib/paypal';
+import { sendPasswordLink } from '@/lib/passwordLinks';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +35,7 @@ export async function GET() {
         select: { id: true, email: true, role: true, creditBalance: true, emailVerifiedAt: true, createdAt: true, _count: { select: { scans: true } } },
       }),
     ]);
+    const onboarding = await onboardingOf(users);
     const settings = await getSettings(true);
     const r = redis();
     const day = (offset: number) => new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
@@ -80,7 +83,7 @@ export async function GET() {
       capacity,
       captchas: { today: Number(capToday ?? 0), yesterday: Number(capYesterday ?? 0) },
       scans: scans.map((s) => ({ ...s, owner: s.user.email, user: undefined })),
-      users: users.map((u) => ({ id: u.id, email: u.email, role: u.role, credits: u.creditBalance, confirmed: Boolean(u.emailVerifiedAt), createdAt: u.createdAt, scans: u._count.scans })),
+      users: users.map((u) => ({ id: u.id, email: u.email, role: u.role, credits: u.creditBalance, confirmed: Boolean(u.emailVerifiedAt), createdAt: u.createdAt, scans: u._count.scans, onboarding: onboarding.get(u.id) ?? 'no' })),
     });
   } catch (e) {
     return errorResponse(e);
@@ -146,13 +149,31 @@ export async function POST(req: Request) {
       return Response.json({ ok: true });
     }
 
+    if (b.action === 'set_onboarded') {
+      const u = await db.user.findUnique({ where: { id: String(b.userId) }, select: { id: true, email: true } });
+      if (!u) throw new InputError('No such account.');
+      // A zero-credit ledger entry: no schema change, and a dated record of the waiver.
+      if (b.on) await db.creditLedger.upsert({ where: { externalEventId: 'onboarding-waived:' + u.id }, update: {}, create: { userId: u.id, amount: 0, reason: ONBOARDING_WAIVED, externalEventId: 'onboarding-waived:' + u.id } });
+      else await db.creditLedger.deleteMany({ where: { userId: u.id, reason: ONBOARDING_WAIVED } });
+      return Response.json({ email: u.email, on: Boolean(b.on) });
+    }
+
+    if (b.action === 'password_link') {
+      const u = await db.user.findUnique({ where: { id: String(b.userId) }, select: { id: true, email: true, role: true } });
+      if (!u || u.role === 'SYSTEM') throw new InputError('No such account.');
+      if (u.role === 'BLOCKED') throw new InputError('Unblock the account first.');
+      return Response.json({ email: u.email, ...(await sendPasswordLink(u, { days: 7, invited: false })) });
+    }
+
     if (b.action === 'create_account') {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || email.endsWith('@internal.invalid')) throw new InputError('Enter a valid email address.');
       if (await db.user.findUnique({ where: { email }, select: { id: true } })) throw new InputError('That address already has an account.');
       // An invited account: confirmed already, with a one-time password shown once to the admin.
       const password = randomBytes(9).toString('base64url');
-      await db.user.create({ data: { email, passwordHash: await hashPassword(password), role: 'AGENCY', emailVerifiedAt: new Date() } });
-      return Response.json({ email, password });
+      const u = await db.user.create({ data: { email, passwordHash: await hashPassword(password), role: 'AGENCY', emailVerifiedAt: new Date() }, select: { id: true, email: true } });
+      // They also get a link to choose their own password, so the admin never has to pass one on.
+      const link = await sendPasswordLink(u, { days: 7, invited: true }).catch(() => ({ url: '', emailed: false }));
+      return Response.json({ email, password, ...link });
     }
 
     throw new InputError('Unknown action.');

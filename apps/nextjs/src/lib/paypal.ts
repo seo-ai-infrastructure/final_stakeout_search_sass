@@ -1,26 +1,33 @@
 import { db } from '@stakeout/db';
 import { paypalBase, paypalProblem } from './paypalBase';
 import { InputError } from '@stakeout/core/grid';
-import { ONBOARDING, itemsFor, paymentNotice, type PriceItem } from './pricing';
+import { ONBOARDING, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
 
 /** Accounts created before this pricing took effect, and admins, go straight to the plans. */
 const PRICING_START = new Date('2026-11-12T00:00:00Z');
+/** A zero-credit ledger entry an admin adds to waive onboarding (paid another way, or a guest). */
+export const ONBOARDING_WAIVED = 'ONBOARDING_WAIVED';
+
+/** Whether each account has onboarding behind it, and why. One query per source, for any number of accounts. */
+export async function onboardingOf(users: { id: string; role: string; createdAt: Date }[]): Promise<Map<string, Onboarding>> {
+  const ids = users.map((u) => u.id);
+  const [paid, waived] = await Promise.all([
+    db.paymentOrder.findMany({ where: { userId: { in: ids }, credits: ONBOARDING.credits, captureId: { not: null } }, select: { userId: true } }),
+    db.creditLedger.findMany({ where: { userId: { in: ids }, reason: ONBOARDING_WAIVED }, select: { userId: true } }),
+  ]);
+  const paidIds = new Set(paid.map((x) => x.userId)), waivedIds = new Set(waived.map((x) => x.userId));
+  return new Map(
+    users.map((u) => [u.id, onboardingStatus({ paid: paidIds.has(u.id), waived: waivedIds.has(u.id), admin: u.role === 'ADMIN', beforePricing: u.createdAt < PRICING_START })] as [string, Onboarding]),
+  );
+}
 
 /**
- * What this account can buy now: the one-time onboarding until it has been paid for, then the
+ * What this account can buy now: the one-time onboarding until it is paid for or waived, then the
  * monthly plans and extra credits. Prices live in lib/pricing.ts.
  */
 export async function catalogFor(user: { id: string; role: string; createdAt: Date }): Promise<PriceItem[]> {
-  const exempt = user.role === 'ADMIN' || user.createdAt < PRICING_START;
-  const onboarded =
-    exempt ||
-    Boolean(
-      await db.paymentOrder.findFirst({
-        where: { userId: user.id, credits: ONBOARDING.credits, captureId: { not: null } },
-        select: { id: true },
-      }),
-    );
+  const onboarded = (await onboardingOf([user])).get(user.id) !== 'no';
   return itemsFor({ onboarded, admin: user.role === 'ADMIN' });
 }
 

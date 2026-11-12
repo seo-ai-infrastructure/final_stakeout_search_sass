@@ -1,5 +1,6 @@
 // apps/nextjs/src/app/login/page.tsx
 'use client';
+import Link from 'next/link';
 import React, { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -185,9 +186,16 @@ function LoginFormContent() {
               </div>
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
-                Password
-              </label>
+              <div className="flex items-baseline justify-between">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300">
+                  Password
+                </label>
+                {mode === 'login' && (
+                  <Link href="/set-password" className="text-xs text-emerald-300 hover:underline">
+                    Forgot password?
+                  </Link>
+                )}
+              </div>
               <div className="relative mt-1.5">
                 <Lock className="absolute left-3.5 top-2.5 h-4 w-4 text-slate-500" />
                 <input

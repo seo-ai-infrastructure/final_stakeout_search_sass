@@ -61,3 +61,12 @@ export const perCredit = (i: Pick<PriceItem, 'credits' | 'cents'>) => i.cents / 
 export const usd = (cents: number) => '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 });
 /** How many 5×5 scans a number of credits covers, with and without AI Overview tracking. */
 export const scans5x5 = (credits: number) => ({ plain: Math.floor(credits / 25), withAi: Math.floor(credits / 50) });
+
+export type Onboarding = 'exempt' | 'paid' | 'waived' | 'no';
+/**
+ * Where an account stands on onboarding. Paid beats waived beats exempt, so the list shows the
+ * strongest reason; only 'no' keeps the plans out of reach.
+ */
+export function onboardingStatus(a: { paid: boolean; waived: boolean; admin: boolean; beforePricing: boolean }): Onboarding {
+  return a.paid ? 'paid' : a.waived ? 'waived' : a.admin || a.beforePricing ? 'exempt' : 'no';
+}
