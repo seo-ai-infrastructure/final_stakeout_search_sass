@@ -9,7 +9,7 @@ type Props = {
   onBalanceUpdated: (n: number) => void;
 };
 export function CreditTopUpModal(p: Props) {
-  const [packs, setPacks] = useState<{ credits: number; cents: number }[]>([]),
+  const [packs, setPacks] = useState<{ key: string; name: string; credits: number; cents: number; blurb: string }[]>([]),
     [credits, choose] = useState(500),
     [error, setError] = useState('');
   useEffect(() => {
@@ -20,7 +20,7 @@ export function CreditTopUpModal(p: Props) {
           setPacks(d.packs ?? []);
           choose(d.packs?.[0]?.credits ?? 500);
         })
-        .catch(() => setError('Unable to load credit packs.'));
+        .catch(() => setError('Unable to load the price list.'));
   }, [p.isOpen]);
   if (!p.isOpen) return null;
   async function post(path: string, payload: unknown) {
@@ -43,24 +43,29 @@ export function CreditTopUpModal(p: Props) {
         className="w-full max-w-md space-y-5 rounded-xl bg-slate-900 p-6"
       >
         <div className="flex justify-between">
-          <h2 className="text-lg font-bold">Buy scan credits</h2>
+          <h2 className="text-lg font-bold">{packs.length === 1 && packs[0].key === 'onboarding' ? 'Start with onboarding' : 'Buy scan credits'}</h2>
           <button onClick={p.onClose}>Close</button>
         </div>
         <p>Current balance · {p.currentBalance}</p>
         {clientId && packs.length > 0 ? (
           <>
-            <select
-              aria-label="Credit pack"
-              className="w-full rounded bg-slate-800 p-3"
-              value={credits}
-              onChange={(e) => choose(+e.target.value)}
-            >
+            <div role="radiogroup" aria-label="What to buy" className="space-y-2">
               {packs.map((k) => (
-                <option key={k.credits} value={k.credits}>
-                  {k.credits} credits · USD {(k.cents / 100).toFixed(2)}
-                </option>
+                <label
+                  key={k.credits}
+                  className={'flex cursor-pointer items-start gap-3 rounded-lg border p-3 ' + (credits === k.credits ? 'border-emerald-400 bg-emerald-500/10' : 'border-slate-700 hover:bg-slate-800')}
+                >
+                  <input type="radio" name="pack" className="mt-1" checked={credits === k.credits} onChange={() => choose(k.credits)} />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="font-semibold">{k.name}</span>
+                      <span className="shrink-0 font-bold">USD {(k.cents / 100).toFixed(2)}</span>
+                    </span>
+                    <span className="block text-sm text-slate-400">{k.blurb}</span>
+                  </span>
+                </label>
               ))}
-            </select>
+            </div>
             <PayPalScriptProvider
               options={{ clientId, currency: 'USD', intent: 'capture' }}
             >
@@ -84,7 +89,7 @@ export function CreditTopUpModal(p: Props) {
             </PayPalScriptProvider>
           </>
         ) : (
-          <p>Credit packs are awaiting merchant configuration.</p>
+          <p>Checkout is being set up. Email sass@stakeoutsearch.com and we will sort it out.</p>
         )}
         {error && <p role="alert">{error}</p>}
       </section>

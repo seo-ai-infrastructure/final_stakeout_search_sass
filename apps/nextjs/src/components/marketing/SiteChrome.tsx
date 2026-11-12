@@ -33,6 +33,7 @@ export function SiteHeader() {
         <nav className="flex items-center gap-1 text-sm sm:gap-2" aria-label="Main">
           <Link href="/truth" className="hidden rounded-lg px-3 py-2 text-[#9aa7b8] hover:text-white lg:block">The truth about grids</Link>
           <Link href="/demo" className="hidden rounded-lg px-3 py-2 text-[#9aa7b8] hover:text-white sm:block">Live demo</Link>
+          <Link href="/pricing" className="rounded-lg px-3 py-2 text-[#9aa7b8] hover:text-white">Pricing</Link>
           <Link href="/agency" className="hidden rounded-lg px-3 py-2 text-[#9aa7b8] hover:text-white md:block">Done for you</Link>
           <Link href="/login" className="rounded-lg px-3 py-2 text-[#eef2f7] hover:bg-[#111823]">Sign in</Link>
           {SIGNUPS_OPEN && <Link href="/login?mode=register" className="mk-btn-primary rounded-lg px-4 py-2 font-semibold">Get started</Link>}
@@ -50,6 +51,7 @@ export function SiteFooter({ note }: { note?: string }) {
         <nav className="flex flex-wrap gap-5" aria-label="Footer">
           <Link href="/truth" className="hover:text-white">The truth about grids</Link>
           <Link href="/demo" className="hover:text-white">Live demo</Link>
+          <Link href="/pricing" className="hover:text-white">Pricing</Link>
           <Link href="/agency" className="hover:text-white">Done for you</Link>
           <Link href="/login" className="hover:text-white">Sign in</Link>
           <a href="mailto:sass@stakeoutsearch.com" className="hover:text-white">sass@stakeoutsearch.com</a>

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ONBOARDING, PLANS, usd } from '@/lib/pricing';
 import { SiteHeader, SiteFooter, JoinLink } from './SiteChrome';
 import { WALL, AI_NAMED, rankStyle } from './demoData';
 import ReceiptPrinter from './ReceiptPrinter';
@@ -476,7 +477,6 @@ function WhereTheMoneyIs() {
 /* ------------------------------------------------------------------ pricing and FAQ */
 
 const PRICE_ROWS: [string, string][] = [
-  ['Your first 3×3 scan, AI tracking included', '$1'],
   ['Every grid point, Chrome or Google Maps app', '1 credit'],
   ['With AI Overview tracking (Chrome)', '+1 credit'],
   ['A point that fails', 'credited back automatically'],
@@ -509,7 +509,8 @@ function Pricing() {
             ))}
           </dl>
           <p className="mt-4 text-sm leading-relaxed text-[#9aa7b8]">
-            Start with a full 3×3 scan for $1, once per account. After that, a 3×3 grid is 9 credits and a 7×7 is 49 (98 with AI tracking), from credit packs of 500, 750, 3,000 and 7,500 credits.
+            Founding onboarding is {usd(ONBOARDING.cents)} once, with {ONBOARDING.credits.toLocaleString('en-US')} credits. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 7×7 is 49 (98 with AI tracking).{' '}
+            <Link href="/pricing" className="font-semibold text-[#7aa7ff] hover:underline">See pricing</Link>
           </p>
         </div>
         <div>

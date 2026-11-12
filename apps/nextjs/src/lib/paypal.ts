@@ -1,16 +1,25 @@
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
-export const packs = [500, 750, 3000, 7500];
-export function catalog() {
-  return packs
-    .map((credits) => ({
-      credits,
-      cents: Number(process.env['PAYPAL_PACK_' + credits + '_USD_CENTS']),
-    }))
-    .filter(
-      (p) =>
-        Number.isSafeInteger(p.cents) && p.cents > 0 && p.cents <= 10000000,
+import { ONBOARDING, itemsFor, type PriceItem } from './pricing';
+
+/** Accounts created before this pricing took effect, and admins, go straight to the plans. */
+const PRICING_START = new Date('2026-11-12T00:00:00Z');
+
+/**
+ * What this account can buy now: the one-time onboarding until it has been paid for, then the
+ * monthly plans and extra credits. Prices live in lib/pricing.ts.
+ */
+export async function catalogFor(user: { id: string; role: string; createdAt: Date }): Promise<PriceItem[]> {
+  const exempt = user.role === 'ADMIN' || user.createdAt < PRICING_START;
+  const onboarded =
+    exempt ||
+    Boolean(
+      await db.paymentOrder.findFirst({
+        where: { userId: user.id, credits: ONBOARDING.credits, captureId: { not: null } },
+        select: { id: true },
+      }),
     );
+  return itemsFor({ onboarded });
 }
 export async function paypal(
   path: string,
