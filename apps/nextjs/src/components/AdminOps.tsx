@@ -30,6 +30,9 @@ export function AdminOps() {
   const [users, setUsers] = useState<Account[]>([]);
   const [busy, setBusy] = useState('');
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  // A new account's one-time password. It is kept on screen, beside the button that made it, until
+  // dismissed: the status note above is out of view from here and is cleared by the next action.
+  const [created, setCreated] = useState<{ email: string; password: string; copied?: boolean } | null>(null);
   const [credit, setCredit] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
@@ -235,7 +238,10 @@ export function AdminOps() {
             disabled={busy !== '' || !invite}
             className={btn + ' border border-emerald-500/60 text-emerald-300 hover:bg-emerald-500/10'}
             onClick={async () => {
-              const ok = await run('invite', { action: 'create_account', email: invite }, (d) => `Account created for ${d.email}. One-time password (shown only now): ${d.password}`);
+              const ok = await run('invite', { action: 'create_account', email: invite }, (d) => {
+                setCreated({ email: String(d.email), password: String(d.password) });
+                return `Account created for ${d.email}. Its one-time password is shown beside the Create account button.`;
+              });
               if (ok) setInvite('');
             }}
           >
@@ -243,6 +249,33 @@ export function AdminOps() {
           </button>
           <span className="text-xs text-slate-500">Works while sign-ups are closed. The account starts with 0 credits.</span>
         </div>
+        {created && (
+          <div role="alert" className="mt-3 rounded-lg border border-amber-400/60 bg-amber-400/10 p-4">
+            <p className="text-sm font-bold text-amber-200">Save this password now. It cannot be shown again.</p>
+            <dl className="mt-3 grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 text-sm">
+              <dt className="text-slate-400">Account</dt>
+              <dd className="font-mono text-white">{created.email}</dd>
+              <dt className="text-slate-400">Password</dt>
+              <dd className="flex flex-wrap items-center gap-2">
+                <code className="select-all rounded bg-slate-950 px-2 py-1 font-mono text-base text-white">{created.password}</code>
+                <button
+                  type="button"
+                  className={btn + ' border border-slate-600 text-slate-200 hover:bg-slate-800'}
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(`Sign in at https://www.stakeoutsearch.com/login\nEmail: ${created.email}\nPassword: ${created.password}`);
+                    setCreated({ ...created, copied: true });
+                  }}
+                >
+                  {created.copied ? 'Copied' : 'Copy sign-in details'}
+                </button>
+              </dd>
+            </dl>
+            <p className="mt-3 text-xs text-slate-400">Nothing is emailed to them: send these details yourself. Adding credits or any other action will not remove this box.</p>
+            <button type="button" className={btn + ' mt-3 border border-amber-400/60 text-amber-200 hover:bg-amber-400/10'} onClick={() => setCreated(null)}>
+              I have saved it
+            </button>
+          </div>
+        )}
       </section>
       {ops && form && (
         <section className={card}>
