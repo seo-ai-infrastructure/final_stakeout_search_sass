@@ -110,10 +110,10 @@ export type GridPinData = {
   metaJsonUrl?: string | null;
   dumpsTarUrl?: string | null;
   proxyMeta: {
-    city: string;
-    region: string;
-    rungUsed: string;
-    country: string;
+    /** The internet provider the point ran on, as a display name. */
+    isp: string | null;
+    finderShown: boolean | null;
+    rankFrom: string | null;
   } | null;
   census?: PinCensus | null;
   insights?: PinInsights | null;
@@ -843,14 +843,14 @@ export function GeoGridDashboard({
                 Target rank ·{' '}
                 {pin.status !== 'COMPLETED'
                   ? pin.status
-                  : (pin.proxyMeta as { finderShown?: boolean } | null)?.finderShown === false
-                    ? (pin.proxyMeta as { rankFrom?: string } | null)?.rankFrom === 'map_pack'
+                  : pin.proxyMeta?.finderShown === false
+                    ? pin.proxyMeta.rankFrom === 'map_pack'
                       ? pin.rankFound != null
                         ? `#${pin.rankFound} in the map pack (the Local Finder was not opened)`
                         : 'Not in the map pack (the Local Finder was not opened)'
                       : pin.rankFound != null
                       ? `#${pin.rankFound} in the AI Overview’s list (no Local Finder on this page)`
-                      : (pin.proxyMeta as { rankFrom?: string } | null)?.rankFrom === 'none'
+                      : pin.proxyMeta.rankFrom === 'none'
                         ? 'No local results on this page'
                         : 'Not in the AI Overview’s list (no Local Finder on this page)'
                     : (pin.rankFound ?? 'Not in the top 10')}
@@ -866,19 +866,7 @@ export function GeoGridDashboard({
                   {scan.creditsCharged && scan.totalPins ? ` (${scan.creditsCharged / scan.totalPins} credits)` : ''}
                 </button>
               )}
-              {pin.proxyMeta && (
-                <p className="text-xs text-emerald-300">
-                  Proxy exit ·{' '}
-                  {[
-                    pin.proxyMeta.city,
-                    pin.proxyMeta.region,
-                    pin.proxyMeta.country,
-                  ]
-                    .filter(Boolean)
-                    .join(', ')}{' '}
-                  · {pin.proxyMeta.rungUsed}
-                </p>
-              )}
+              {pin.proxyMeta?.isp && <p className="text-xs text-emerald-300">Connection · {pin.proxyMeta.isp}</p>}
               {pin.videoUrl && (
                 <video
                   controls

@@ -357,7 +357,7 @@ export function EvidencePanel({
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
             <dt className="text-slate-400">GPS</dt><dd>{pin.lat.toFixed(5)}, {pin.lng.toFixed(5)}</dd>
             <dt className="text-slate-400">Area</dt><dd>{[pin.city, pin.stateCode, pin.census?.zcta?.id ?? pin.zip].filter(Boolean).join(' ')}</dd>
-            {pin.proxyMeta && (<><dt className="text-slate-400">Exit</dt><dd>{[pin.proxyMeta.city, pin.proxyMeta.region].filter(Boolean).join(', ')} · residential</dd></>)}
+            {pin.proxyMeta?.isp && (<><dt className="text-slate-400">Exit</dt><dd>{pin.proxyMeta.isp}</dd></>)}
             {ev?.resultsPage?.googleLocation && (<><dt className="text-slate-400">Google’s location</dt><dd className="text-emerald-300">{ev.resultsPage.googleLocation}</dd></>)}
             <dt className="text-slate-400">Status</dt><dd>{pin.status.toLowerCase()}</dd>
             {ev?.capture && (

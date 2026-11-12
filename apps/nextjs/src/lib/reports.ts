@@ -1,4 +1,5 @@
 import { db, Prisma } from '@stakeout/db';
+import { ispLabel } from './ispLabel';
 import { InputError } from '@stakeout/core/grid';
 import { lookupCensus, type PinCensus } from '@stakeout/core/censusLookup';
 
@@ -99,12 +100,13 @@ export async function report(where: Prisma.GridScanWhereInput) {
         insights: p.insights ? { ...(p.insights as Record<string, unknown>), finder: undefined } : null,
         metaJsonUrl: !token && p.metaJsonUrl ? route + 'meta' : null,
         dumpsTarUrl: !token && p.dumpsTarUrl ? route + 'bundle' : null,
+        // Only what a report shows: the provider's name, and where a rank came from when no Local
+        // Finder opened. The exit's city is not sent: a point is located by its GPS, not its IP.
         proxyMeta: m
           ? {
-              city: m.city,
-              region: m.region,
-              rungUsed: m.rungUsed,
-              country: m.country,
+              isp: ispLabel(m),
+              finderShown: typeof m.finderShown === 'boolean' ? m.finderShown : null,
+              rankFrom: typeof m.rankFrom === 'string' ? m.rankFrom : null,
             }
           : null,
       };
