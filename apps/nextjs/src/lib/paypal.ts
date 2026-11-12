@@ -1,4 +1,5 @@
 import { db } from '@stakeout/db';
+import { paypalBase } from './paypalBase';
 import { InputError } from '@stakeout/core/grid';
 import { ONBOARDING, itemsFor, type PriceItem } from './pricing';
 
@@ -27,14 +28,13 @@ export async function paypal(
   body?: unknown,
   requestId?: string,
 ) {
-  const base =
-    process.env.PAYPAL_API_BASE ?? 'https://api-m.sandbox.paypal.com';
-  if (
-    !['https://api-m.sandbox.paypal.com', 'https://api-m.paypal.com'].includes(
-      base,
-    )
-  )
-    throw new Error('Invalid PayPal base');
+  let base: string;
+  try {
+    base = paypalBase(process.env.PAYPAL_API_BASE);
+  } catch (e) {
+    // Shown to whoever is checking out, so a mistyped setting is obvious instead of a silent failure.
+    throw new InputError((e as Error).message, 503);
+  }
   const key = process.env.PAYPAL_CLIENT_ID,
     secret = process.env.PAYPAL_CLIENT_SECRET;
   if (!key || !secret)

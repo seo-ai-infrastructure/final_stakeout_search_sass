@@ -16,3 +16,11 @@ test('pricing: onboarding first and once, then plans and extra credits', () => {
   assert.deepEqual([usd(49700), usd(7000), usd(35), usd(99700)], ['$497', '$70', '$0.35', '$997']);
   assert.deepEqual(scans5x5(700), { plain: 28, withAi: 14 });
 });
+
+test('PayPal address: the two real addresses and their obvious variations, nothing else', async () => {
+  const { paypalBase } = await import('../apps/nextjs/src/lib/paypalBase');
+  const S = 'https://api-m.sandbox.paypal.com', L = 'https://api-m.paypal.com';
+  for (const v of [undefined, '', ' ', S, S + '/', ' ' + S + ' ', 'api-m.sandbox.paypal.com', 'HTTPS://API-M.SANDBOX.PAYPAL.COM', 'https://api.sandbox.paypal.com', 'sandbox']) assert.equal(paypalBase(v), S, String(v));
+  for (const v of [L, L + '/', 'api-m.paypal.com', 'https://api.paypal.com', 'live', 'production']) assert.equal(paypalBase(v), L, v);
+  for (const v of ['https://evil.example.com', 'https://api-m.paypal.com.evil.com', 'https://api-m.sandbox.paypal.com/v2', 'paypal']) assert.throws(() => paypalBase(v), /PAYPAL_API_BASE must be/, v);
+});

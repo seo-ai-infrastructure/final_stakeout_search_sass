@@ -71,9 +71,16 @@ export function CreditTopUpModal(p: Props) {
             >
               <PayPalButtons
                 forceReRender={[credits]}
-                createOrder={async () =>
-                  (await post('order', { credits })).orderID
-                }
+                createOrder={async () => {
+                  setError('');
+                  try {
+                    return (await post('order', { credits })).orderID;
+                  } catch (e) {
+                    // The server's own reason (a setting, an unavailable item), not a generic failure.
+                    setError((e as Error).message || 'Checkout could not start.');
+                    throw e;
+                  }
+                }}
                 onApprove={async ({ orderID }) => {
                   const d = await post('capture', { orderID });
                   p.onBalanceUpdated(d.creditBalance);
@@ -81,9 +88,7 @@ export function CreditTopUpModal(p: Props) {
                   p.onClose();
                 }}
                 onError={() =>
-                  setError(
-                    'Checkout could not finish. Check your balance before trying again.',
-                  )
+                  setError((cur) => cur || 'Checkout could not finish. Check your balance before trying again.')
                 }
               />
             </PayPalScriptProvider>
