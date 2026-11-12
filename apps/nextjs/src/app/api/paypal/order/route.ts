@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { catalogFor, paypal } from '@/lib/paypal';
+import { catalogFor, merchantId, paypal } from '@/lib/paypal';
 import { db } from '@stakeout/db';
 import { errorResponse } from '@/lib/api';
 import { InputError } from '@stakeout/core/grid';
@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     const u = await getAuthenticatedUser(),
       { credits } = await req.json(),
       pack = (await catalogFor(u)).find((p) => p.credits === credits);
-    if (!pack || !process.env.PAYPAL_MERCHANT_ID)
+    if (!pack || !merchantId())
       throw new InputError('That is not available for this account.');
     const o = await paypal(
       '/v2/checkout/orders',
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
           {
             custom_id: u.id + ':PACK_' + credits,
             description: ('Stakeout ' + pack.name + ': ' + credits + ' credits').slice(0, 120),
-            payee: { merchant_id: process.env.PAYPAL_MERCHANT_ID },
+            payee: { merchant_id: merchantId() },
             amount: {
               currency_code: 'USD',
               value: (pack.cents / 100).toFixed(2),

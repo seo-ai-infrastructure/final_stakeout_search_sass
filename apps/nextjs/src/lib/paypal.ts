@@ -22,6 +22,9 @@ export async function catalogFor(user: { id: string; role: string; createdAt: Da
     );
   return itemsFor({ onboarded });
 }
+/** The merchant account orders must pay (PAYPAL_MERCHANT_ID), without stray spaces. */
+export const merchantId = (): string => (process.env.PAYPAL_MERCHANT_ID ?? '').trim();
+
 export async function paypal(
   path: string,
   method = 'GET',
@@ -35,8 +38,10 @@ export async function paypal(
     // Shown to whoever is checking out, so a mistyped setting is obvious instead of a silent failure.
     throw new InputError((e as Error).message, 503);
   }
-  const key = process.env.PAYPAL_CLIENT_ID,
-    secret = process.env.PAYPAL_CLIENT_SECRET;
+  // The client ID is public (the checkout buttons carry it), so the server uses the same one the
+  // browser does: two copies of it could disagree. PAYPAL_CLIENT_ID is only a fallback.
+  const key = (process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || process.env.PAYPAL_CLIENT_ID || '').trim(),
+    secret = (process.env.PAYPAL_CLIENT_SECRET ?? '').trim();
   if (!key || !secret)
     throw new InputError('PayPal checkout is awaiting configuration.', 503);
   const auth = await fetch(base + '/v1/oauth2/token', {
@@ -51,7 +56,7 @@ export async function paypal(
   });
   if (!auth.ok) {
     console.error('[paypal] sign-in refused:', auth.status, 'at', base);
-    throw new InputError('PayPal did not accept the client ID and secret. PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET must come from the same app, in the same environment (sandbox or live) as PAYPAL_API_BASE.', 503);
+    throw new InputError('PayPal did not accept the client ID and secret. NEXT_PUBLIC_PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET must come from the same PayPal app, in the same environment (sandbox or live) as PAYPAL_API_BASE.', 503);
   }
   const token = (await auth.json()).access_token;
   const response = await fetch(base + path, {
@@ -94,8 +99,8 @@ export async function fulfill(orderId: string) {
     unit.custom_id !== purchase.userId + ':PACK_' + purchase.credits ||
     c.amount?.currency_code !== 'USD' ||
     c.amount.value !== (purchase.cents / 100).toFixed(2) ||
-    !process.env.PAYPAL_MERCHANT_ID ||
-    unit.payee?.merchant_id !== process.env.PAYPAL_MERCHANT_ID
+    !merchantId() ||
+    unit.payee?.merchant_id !== merchantId()
   )
     throw new InputError(
       'Payment is pending or could not be matched to this credit pack.',
