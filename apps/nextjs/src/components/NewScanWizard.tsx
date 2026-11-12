@@ -57,6 +57,8 @@ export function NewScanWizard() {
   const [ispSelected, setIspSelected] = useState<string[]>([]);
   const [ispOptions, setIspOptions] = useState<IspOption[]>([]);
   const [ispLoading, setIspLoading] = useState(false);
+  // Where this area's connections come from: its own city, the nearest covered city, or anywhere in the state.
+  const [proxySource, setProxySource] = useState<{ city: string; level: string } | null>(null);
   // Session & UI State
   const [userId, setUserId] = useState<string>('');
   const [creditBalance, setCreditBalance] = useState<number>(0);
@@ -202,6 +204,7 @@ export function NewScanWizard() {
           // A new market may not have the ISPs chosen for the old one.
           setIspSelected((prev) => prev.filter((n) => names.has(n)));
         }
+        setProxySource(data?.proxyMarket ? { city: String(data.proxyMarket.city ?? ''), level: String(data.proxyMarket.level ?? '') } : null);
         if (data?.detectedMarket) {
           setDetectedZip(data.detectedMarket.zip);
           setDetectedCity(data.detectedMarket.city);
@@ -671,6 +674,7 @@ export function NewScanWizard() {
             selected={ispSelected}
             options={ispOptions}
             loading={ispLoading}
+            source={proxySource}
             onChange={(mode, selected) => {
               setIspMode(mode);
               setIspSelected(selected);

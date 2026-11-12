@@ -17,6 +17,8 @@ const MODES: { value: IspMode; title: string; help: string }[] = [
 export function IspSelectorDropdown(p: {
   stateCode: string;
   city: string;
+  /** Where the connections come from, when it is not this city itself. */
+  source?: { city: string; level: string } | null;
   zip: string;
   mode: IspMode;
   selected: string[];
@@ -35,6 +37,16 @@ export function IspSelectorDropdown(p: {
       <legend className="px-1 text-xs font-semibold text-slate-300">
         Residential ISP · {p.city}, {p.stateCode} {p.zip}
       </legend>
+      {p.source?.level === 'nearby' && p.source.city && (
+        <p className="text-xs leading-relaxed text-slate-400">
+          No residential connections are offered in {p.city} itself, so this scan uses the nearest city that has them: <span className="font-semibold text-slate-200">{p.source.city}</span>. The ISPs below are {p.source.city}’s. Each search is still made from the grid point’s own GPS position.
+        </p>
+      )}
+      {p.source?.level === 'region' && (
+        <p className="text-xs leading-relaxed text-slate-400">
+          No city near {p.city} could be matched, so this scan uses residential connections from anywhere in {p.stateCode}. Each search is still made from the grid point’s own GPS position.
+        </p>
+      )}
       <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="ISP mode">
         {MODES.map((m) => (
           <button

@@ -124,3 +124,44 @@ test("location line: when the Local Finder snapshot lacks it, the same search's 
   assert.equal(locationVerified(line, 'TN', '37121', 'Mount Juliet'), true);
   assert.equal(searchLocationLine('Hermitage, TN - From your device', serp), 'Hermitage, TN - From your device', 'the final snapshot wins when it has one');
 });
+
+test('a town with no coverage borrows the NEAREST covered city, not the whole state', async () => {
+  const { matchMarket } = await import('../packages/core/proxyGeo');
+  const rows = [
+    { country: 'US', region: 'Georgia', city: 'Atlanta', isp: 'Comcast Cable' },
+    { country: 'US', region: 'Georgia', city: 'Atlanta', isp: 'AT&T' },
+    { country: 'US', region: 'Georgia', city: 'Savannah', isp: 'Comcast Cable' },
+    { country: 'US', region: 'Georgia', city: 'Augusta', isp: 'WOW' },
+    { country: 'US', region: 'Georgia', city: 'Nowhere Listed', isp: 'Mystery Net' },
+  ];
+  const at: Record<string, { lat: number; lng: number }> = {
+    atlanta: { lat: 33.75, lng: -84.39 }, savannah: { lat: 32.08, lng: -81.09 }, augusta: { lat: 33.47, lng: -81.97 },
+    pooler: { lat: 32.12, lng: -81.25 }, thomson: { lat: 33.47, lng: -82.5 }, marietta: { lat: 33.95, lng: -84.55 },
+  };
+  const coords = (c: string) => at[c.toLowerCase()] ?? null;
+  // Pooler is beside Savannah; Thomson is nearest Augusta; Marietta is nearest Atlanta.
+  const pooler = matchMarket(rows, 'Pooler', 'GA', coords)!;
+  assert.deepEqual([pooler.level, pooler.city, pooler.isps], ['nearby', 'Savannah', ['Comcast Cable']]);
+  assert.ok(pooler.km! < 25, 'about ' + pooler.km + ' km');
+  assert.equal(matchMarket(rows, 'Thomson', 'GA', coords)!.city, 'Augusta');
+  const marietta = matchMarket(rows, 'Marietta', 'GA', coords)!;
+  assert.deepEqual([marietta.city, marietta.isps], ['Atlanta', ['AT&T', 'Comcast Cable']], 'only that city\'s ISPs are offered');
+  // A covered city is unchanged; a city that cannot be placed is never chosen.
+  assert.deepEqual([matchMarket(rows, 'Atlanta', 'GA', coords)!.level, matchMarket(rows, 'Atlanta', 'GA', coords)!.city], ['city', 'Atlanta']);
+  // Last resort: the town itself cannot be placed, or no coordinates are available at all.
+  const lost = matchMarket(rows, 'Unmapped Town', 'GA', coords)!;
+  assert.deepEqual([lost.level, lost.city], ['region', '']);
+  assert.equal(matchMarket(rows, 'Pooler', 'GA')!.level, 'region');
+  assert.equal(matchMarket(rows, 'Pooler', 'GA', () => null)!.level, 'region');
+});
+
+test('city coordinates come from the bundled ZIP database, with names matched loosely', async () => {
+  const { cityCoords } = await import('../packages/core/grid');
+  const atl = cityCoords('Atlanta', 'GA')!;
+  assert.ok(Math.abs(atl.lat - 33.8) < 0.3 && Math.abs(atl.lng + 84.4) < 0.3, JSON.stringify(atl));
+  assert.deepEqual(cityCoords('St. Petersburg', 'FL'), cityCoords('Saint Petersburg', 'fl'), 'St. and Saint are the same place');
+  assert.ok(cityCoords('St. Petersburg', 'FL'));
+  assert.ok(cityCoords('Mt. Juliet', 'TN') && cityCoords('Mount Juliet', 'TN'));
+  assert.equal(cityCoords('Not A Real Place', 'GA'), null);
+  assert.equal(cityCoords('Atlanta', 'ZZ'), null);
+});

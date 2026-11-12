@@ -25,7 +25,7 @@ export async function GET(req: Request) {
       const m = await resolveMarket(detectedMarket.city, detectedMarket.stateCode);
       return Response.json({
         detectedMarket,
-        proxyMarket: { region: m.region, city: m.city, level: m.level },
+        proxyMarket: { region: m.region, city: m.city, level: m.level, km: m.km ?? null },
         isps: m.isps.filter((name) => ispAllowed(name, settings)).map((name) => ({ name })),
       });
     }

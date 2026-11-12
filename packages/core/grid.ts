@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import zipcodes from 'zipcodes';
 import { ANY_PHONE } from './hardware';
+import { normPlace } from './proxyGeo';
 
 export class InputError extends Error {
   constructor(
@@ -99,6 +100,28 @@ export function parseSpec(input: Record<string, unknown>) {
   };
 }
 export type ScanSpec = ReturnType<typeof parseSpec>;
+const cityIndex = new Map<string, Map<string, { lat: number; lng: number }>>();
+/**
+ * The centre of a US city, from the bundled ZIP code database (the mean of its ZIP centroids), or
+ * null when the name is not in it. Names are matched the way proxy cities are ("St. Petersburg"
+ * and "Saint Petersburg" are the same place). Offline and free: nothing to look up or go stale.
+ */
+export function cityCoords(city: string, stateCode: string): { lat: number; lng: number } | null {
+  const st = stateCode.toUpperCase();
+  let cities = cityIndex.get(st);
+  if (!cities) {
+    const sums = new Map<string, { lat: number; lng: number; n: number }>();
+    for (const z of zipcodes.lookupByState(st) ?? []) {
+      if (!Number.isFinite(z.latitude) || !Number.isFinite(z.longitude)) continue;
+      const k = normPlace(z.city), c = sums.get(k) ?? { lat: 0, lng: 0, n: 0 };
+      sums.set(k, { lat: c.lat + z.latitude, lng: c.lng + z.longitude, n: c.n + 1 });
+    }
+    cities = new Map([...sums].map(([k, c]) => [k, { lat: c.lat / c.n, lng: c.lng / c.n }]));
+    cityIndex.set(st, cities);
+  }
+  return cities.get(normPlace(city)) ?? null;
+}
+
 export function market(lat: number, lng: number) {
   const z = zipcodes.lookupByCoords(lat, lng);
   if (!z || z.country !== 'US')

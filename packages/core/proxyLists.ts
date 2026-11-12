@@ -7,6 +7,7 @@
  *
  * Proxy-Seller puts the API key in the URL path, so URLs are never logged here.
  */
+import { cityCoords } from './grid';
 import { db } from '@stakeout/db';
 import { InputError } from './grid';
 import {
@@ -84,9 +85,10 @@ export async function residentPackage() {
 export async function resolveMarket(city: string, stateCode: string): Promise<Market> {
   const key = marketKey(city, stateCode);
   const cached = await db.proxyMarket.findUnique({ where: { key } });
-  if (cached && Date.now() - +cached.refreshedAt < 7 * 86400000)
+  // A place saved as state-wide is looked at again: it may now resolve to its nearest covered city.
+  if (cached && cached.level !== 'region' && Date.now() - +cached.refreshedAt < 7 * 86400000)
     return { country: 'US', region: cached.region, city: cached.city, level: cached.level as Market['level'], isps: cached.isps as string[] };
-  const m = matchMarket(await geoRows(), city, stateCode);
+  const m = matchMarket(await geoRows(), city, stateCode, cityCoords);
   if (!m) throw new InputError('Residential proxies are not available in ' + stateCode + ' yet.', 422);
   await db.proxyMarket.upsert({
     where: { key },
@@ -149,6 +151,8 @@ export async function prepareScanProxies(city: string, stateCode: string, isps: 
     throw new InputError('Not available in this market: ' + unknown.join(', ') + '. Choose from the ISP list.', 422);
   for (const isp of isps) await ensureList(m, isp);
   await ensureList(m, '');
+  // Borrowing a nearby city's addresses: keep any address in the state ready as the last resort.
+  if (m.level === 'nearby') await ensureList({ region: m.region, city: '' }, '');
   return m;
 }
 
@@ -201,6 +205,12 @@ export async function listsForPin(
   for (const t of listTries(center, local, pin.isp ?? '')) {
     const found = await db.proxyList.findUnique({ where: { region_city_isp_rotation: { ...t, rotation } } });
     if (found) lists.push(found);
+  }
+  // Last resort, when it was prepared (the scan's city is not covered, so it borrows the nearest
+  // one): any address in the state, tried only after every city list has failed.
+  if (center.city) {
+    const wide = await db.proxyList.findUnique({ where: { region_city_isp_rotation: { region: center.region, city: '', isp: '', rotation } } });
+    if (wide && !lists.some((l) => l.id === wide.id)) lists.push(wide);
   }
   if (!lists.length) {
     // Lists are deleted while no scan runs (see releaseIdleProxyLists); a scan that started around

@@ -80,10 +80,23 @@ export const normPlace = (s: string) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
-export type Market = { country: string; region: string; city: string; level: 'city' | 'region'; isps: string[] };
+/**
+ * Where a place's proxies come from. 'city': Proxy-Seller covers the place itself. 'nearby': it
+ * does not, so `city` is the nearest covered city in the state (km away). 'region': no city could
+ * be placed on the map, so any address in the state (city is '').
+ */
+export type Market = { country: string; region: string; city: string; level: 'city' | 'nearby' | 'region'; isps: string[]; km?: number };
+/** A city's position, or null when it cannot be placed. Injected, so the matching stays testable. */
+export type CityCoords = (city: string, stateCode: string) => { lat: number; lng: number } | null;
+
+const kmBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const rad = Math.PI / 180,
+    h = Math.sin(((b.lat - a.lat) * rad) / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(((b.lng - a.lng) * rad) / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+};
 
 /** Matches our city/state to Proxy-Seller's exact (case-sensitive) names and lists its ISPs. */
-export function matchMarket(rows: GeoRow[], city: string, stateCode: string): Market | null {
+export function matchMarket(rows: GeoRow[], city: string, stateCode: string, coords?: CityCoords): Market | null {
   const stateName = US_STATE_NAMES[stateCode.toUpperCase()] ?? stateCode;
   const inState = rows.filter(
     (r) => /^(us|usa|united states)$/i.test(r.country || 'US') && [normPlace(stateName), normPlace(stateCode)].includes(normPlace(r.region)),
@@ -91,8 +104,26 @@ export function matchMarket(rows: GeoRow[], city: string, stateCode: string): Ma
   if (!inState.length) return null;
   const want = normPlace(city);
   const inCity = inState.filter((r) => normPlace(r.city) === want);
+  const ispsOf = (rs: GeoRow[]) => [...new Set(rs.map((r) => r.isp).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  // Not covered itself: the nearest covered city in the state, measured from this place's own centre.
+  // Any address in the state is the last resort, for a place or state that cannot be put on the map.
+  if (!inCity.length && coords) {
+    const from = coords(city, stateCode);
+    let best: { city: string; km: number } | null = null;
+    if (from)
+      for (const name of new Set(inState.map((r) => r.city).filter(Boolean))) {
+        const at = coords(name, stateCode);
+        if (!at) continue;
+        const km = kmBetween(from, at);
+        if (!best || km < best.km) best = { city: name, km };
+      }
+    if (best) {
+      const near = best.city;
+      return { country: 'US', region: inState[0].region, city: near, level: 'nearby', km: Math.round(best.km), isps: ispsOf(inState.filter((r) => r.city === near)) };
+    }
+  }
   const pickRows = inCity.length ? inCity : inState;
-  const isps = [...new Set(pickRows.map((r) => r.isp).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const isps = ispsOf(pickRows);
   return {
     country: 'US',
     region: inState[0].region,
