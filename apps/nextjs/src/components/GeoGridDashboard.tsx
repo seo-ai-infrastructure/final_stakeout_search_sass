@@ -844,7 +844,11 @@ export function GeoGridDashboard({
                 {pin.status !== 'COMPLETED'
                   ? pin.status
                   : (pin.proxyMeta as { finderShown?: boolean } | null)?.finderShown === false
-                    ? pin.rankFound != null
+                    ? (pin.proxyMeta as { rankFrom?: string } | null)?.rankFrom === 'map_pack'
+                      ? pin.rankFound != null
+                        ? `#${pin.rankFound} in the map pack (the Local Finder was not opened)`
+                        : 'Not in the map pack (the Local Finder was not opened)'
+                      : pin.rankFound != null
                       ? `#${pin.rankFound} in the AI Overview’s list (no Local Finder on this page)`
                       : (pin.proxyMeta as { rankFrom?: string } | null)?.rankFrom === 'none'
                         ? 'No local results on this page'

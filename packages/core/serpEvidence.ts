@@ -423,3 +423,22 @@ export function readAiOverviewLayout(xml: string | null | undefined): AiLayout |
   if (cur) answer.push({ kind: 'p', text: cur });
   return { answer, sources };
 }
+
+/**
+ * The ranking when no Local Finder was opened. First the results page's own map pack (the
+ * "Businesses" block: three listings, or four in Google's newer layout, whose link reads "See
+ * more on Google" instead of "More businesses"); failing that, the businesses an AI Overview
+ * listed. Ads are never counted. A business outside the pack is "not in the pack", not "#5".
+ */
+export function rankWithoutFinder(
+  pages: (string | null | undefined)[],
+  aiSnapshots: (string | null | undefined)[],
+  target: string,
+): { rank: number | null; list: string[]; from: 'map_pack' | 'ai_overview_list' | 'none' } {
+  const names = (ls: Listing[] | undefined) => (ls ?? []).filter((y) => !y.ad).map((y) => y.name);
+  const pack = pages.filter((x): x is string => !!x).map((x) => names(readResultsPage(x)?.pack)).find((l) => l.length) ?? [];
+  const ai = pack.length ? [] : (aiSnapshots.filter((x): x is string => !!x).map((x) => names(readAiOverview(x)?.businesses)).find((l) => l.length) ?? []);
+  const list = pack.length ? pack : ai;
+  const i = list.findIndex((n) => sameBusiness(n, target));
+  return { rank: i >= 0 ? i + 1 : null, list, from: pack.length ? 'map_pack' : ai.length ? 'ai_overview_list' : 'none' };
+}

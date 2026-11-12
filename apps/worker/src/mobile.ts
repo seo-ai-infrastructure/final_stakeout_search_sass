@@ -1,6 +1,6 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, type PinInsights } from '@stakeout/core/pinInsights';
-import { searchLocationLine, isLocalFinder, readAiOverview, readLocalFinder, sameBusiness } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readAiOverview, readLocalFinder, sameBusiness, rankWithoutFinder } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -844,14 +844,11 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     // than recording "0 listings, no rank".
     let aiList: { rank: number | null; list: string[] } | null = null;
     if ((surface === 'chrome' || surface === 'google') && b.final && !isLocalFinder(b.final)) {
-      const list =
-        [...[...b.ai].reverse(), b.serp, b.final]
-          .filter((x): x is string => !!x)
-          .map((x) => readAiOverview(x)?.businesses.filter((y) => !y.ad).map((y) => y.name) ?? [])
-          .find((l) => l.length) ?? [];
-      const i = list.findIndex((n) => sameBusiness(n, scan.targetBusiness));
-      aiList = { rank: i >= 0 ? i + 1 : null, list };
-      Object.assign(proof, { finderShown: false, rankFrom: list.length ? 'ai_overview_list' : 'none' });
+      // The page's own map pack first (three listings, or four in Google's newer layout with
+      // "See more on Google"), then an AI Overview's business list.
+      const r = rankWithoutFinder([b.serp, b.final], [...[...b.ai].reverse(), b.serp, b.final], scan.targetBusiness);
+      aiList = { rank: r.rank, list: r.list };
+      Object.assign(proof, { finderShown: false, rankFrom: r.from });
     }
     const videoUrl = prefix + '/video.mp4',
       metaJsonUrl = prefix + '/meta.json';

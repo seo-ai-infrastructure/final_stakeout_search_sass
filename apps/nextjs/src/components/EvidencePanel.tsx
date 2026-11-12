@@ -209,10 +209,17 @@ export function EvidencePanel({
               <PageView ev={{ ...ev, resultsPage: ev.firstScreen }} isTarget={isTarget} keyword={scan.keyword} />
             ) : view === 'finder' ? (
               ev.finderShown === false ? (
-                <div className="p-5 text-sm leading-relaxed text-gray-700">
+                ev.resultsPage?.pack.length ? (
+                  <div className="p-5 text-sm leading-relaxed text-gray-700">
+                    <p className="font-bold text-gray-900">The Local Finder was not opened</p>
+                    <p className="mt-1">This page showed a map pack without a “More businesses” button, so the rank comes from the map pack itself. See it under Results page.</p>
+                  </div>
+                ) : (
+                                <div className="p-5 text-sm leading-relaxed text-gray-700">
                   <p className="font-bold text-gray-900">No Local Finder on this page</p>
                   <p className="mt-1">Google listed the businesses inside its AI Overview instead of showing a map pack, so there was no “More businesses” to open. This point is ranked in that list: see the AI Overview tab.</p>
                 </div>
+                )
               ) : (
                 <FinderView list={ev.localFinder} isTarget={isTarget} googleLocation={ev.resultsPage?.googleLocation ?? null} />
               )

@@ -91,3 +91,15 @@ test('AI Overview layout from a real page: the answer as one sentence, then nine
   assert.equal(readAiOverviewLayout(read('real-uidump-mappack-noaio.xml')), null, 'no AI Overview');
   assert.equal(readAiOverviewLayout(read('real-aio-list-no-finder.xml')), null, 'a business-list overview has no source cards');
 });
+
+test('no Local Finder: the results page map pack gives the rank (real page, 12 Nov, four-business pack with "See more on Google")', async () => {
+  const { rankWithoutFinder, isLocalFinder } = await import('../packages/core/serpEvidence');
+  const page = read('real-pack4-see-more-2026-11-12.xml');
+  assert.equal(isLocalFinder(page), false);
+  const r = rankWithoutFinder([page, page], [page], "Stuart's Plumbing");
+  assert.deepEqual(r, { rank: 4, list: ['1-Tom-Plumber Lakeland', '1 Time Plumbing', 'Nest Plumbing LLC', "Stuart's Plumbing"], from: 'map_pack' });
+  assert.equal(rankWithoutFinder([page], [page], 'Roto-Rooter Plumbing & Drain Services').rank, null, 'a business only under "Related websites" is not in the pack');
+  const ai = read('real-aio-list-no-finder.xml');
+  assert.equal(rankWithoutFinder([ai], [ai], 'x').from, 'ai_overview_list', 'a page with no pack still falls back to the AI Overview list');
+  assert.deepEqual(rankWithoutFinder([null], [null], 'x'), { rank: null, list: [], from: 'none' });
+});

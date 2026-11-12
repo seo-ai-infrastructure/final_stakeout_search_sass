@@ -1,5 +1,5 @@
 import { failureCode } from '@stakeout/core/fleetHealth';
-import { backfillInsights } from './insightsBackfill';
+import { backfillInsights, backfillPackRanks } from './insightsBackfill';
 import 'dotenv/config';
 import { Queue, Worker, DelayedError, UnrecoverableError, type Job } from 'bullmq';
 import { db } from '@stakeout/db';
@@ -392,6 +392,7 @@ async function tick() {
     if (Date.now() - lastInsightsBackfill > 30 * 60000) {
       lastInsightsBackfill = Date.now();
       void backfillInsights().catch((e) => console.warn('[insights] backfill skipped:', (e as Error).message));
+      void backfillPackRanks().catch((e) => console.warn('[rank] re-read skipped:', (e as Error).message));
     }
     // Once a minute: with no scan queued or running, proxy lists are deleted (idle phones still use bandwidth).
     if (Date.now() - lastProxyRelease > 60000) {
@@ -440,6 +441,7 @@ console.info(
 // Points finished before per-point insights existed get them once, from their stored bundles.
 setTimeout(() => {
   backfillInsights().catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));
+  backfillPackRanks().catch((e) => console.error('[rank] re-read skipped:', (e as Error).message));
 }, 60_000);
 if ((process.env.SEARCH_MODE ?? '').toLowerCase() === 'rpa') {
   console.info('[rpa] SEARCH_MODE=rpa: the search step runs your DuoPlus RPA template');
