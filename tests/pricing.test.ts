@@ -33,3 +33,20 @@ test('PayPal refusals are explained, with PayPal\'s own code kept', async () => 
   assert.match(paypalProblem('INSTRUMENT_DECLINED'), /declined that payment method/);
   assert.equal(paypalProblem('UNPROCESSABLE_ENTITY'), 'PayPal could not complete this operation (UNPROCESSABLE_ENTITY).');
 });
+
+test('the $1 payment test is for admins only; the payment alert says who paid and what to do', async () => {
+  const { ADMIN_TEST, paymentNotice } = await import('../apps/nextjs/src/lib/pricing');
+  assert.deepEqual([ADMIN_TEST.cents, ADMIN_TEST.credits], [100, 5]);
+  assert.ok(!itemsFor({ onboarded: true }).some((i) => i.key === 'admin-test'), 'customers never see it');
+  assert.ok(!itemsFor({ onboarded: false }).some((i) => i.key === 'admin-test'));
+  assert.deepEqual(itemsFor({ onboarded: true, admin: true }).map((i) => i.key), ['starter', 'growth', 'agency', 'extra', 'admin-test']);
+  const base = { buyer: 'a@b.com', balance: 1000, orderId: 'O1', captureId: 'C1' };
+  const on = paymentNotice({ ...base, credits: 1000, cents: 49700, sandbox: false });
+  assert.equal(on.subject, 'Payment: Founding onboarding, $497, a@b.com');
+  assert.match(on.lines[0], /a@b\.com paid \$497 for Founding onboarding \(1,000 credits\)\. Their balance is now 1,000\./);
+  assert.ok(on.lines.some((l) => /book their onboarding call/.test(l)));
+  assert.ok(!on.lines.some((l) => /SANDBOX/.test(l)));
+  const sb = paymentNotice({ ...base, credits: 700, cents: 19700, sandbox: true });
+  assert.equal(sb.subject, '[Sandbox] Payment: Starter, $197, a@b.com');
+  assert.ok(sb.lines.some((l) => /no real money moved/.test(l)) && !sb.lines.some((l) => /onboarding call/.test(l)));
+});

@@ -26,11 +26,34 @@ export const PLANS: (PriceItem & { fits: string; featured?: boolean })[] = [
 /** Credits on top of a plan, at a higher rate than any plan. */
 export const EXTRA: PriceItem = { key: 'extra', name: 'Extra credits', credits: 200, cents: 7000, blurb: '200 more credits, at $0.35 each.' };
 
-export const ALL_ITEMS: PriceItem[] = [ONBOARDING, ...PLANS, EXTRA];
+/**
+ * Only an admin sees or can buy this: a real $1 purchase that proves the live payment settings
+ * work (after first setup, or after changing any of them) without spending $70 or more.
+ */
+export const ADMIN_TEST: PriceItem = { key: 'admin-test', name: 'Live payment test (admin only)', credits: 5, cents: 100, blurb: 'A real $1 charge to check that payments work. Adds 5 credits.' };
 
-/** What an account can buy: onboarding first, and only once; after it, the plans and extra credits. */
-export function itemsFor(state: { onboarded: boolean }): PriceItem[] {
-  return state.onboarded ? [...PLANS, EXTRA] : [ONBOARDING];
+export const ALL_ITEMS: PriceItem[] = [ONBOARDING, ...PLANS, EXTRA, ADMIN_TEST];
+
+/**
+ * What an account can buy: onboarding first, and only once; after it, the plans and extra
+ * credits. An admin also gets the $1 payment test.
+ */
+export function itemsFor(state: { onboarded: boolean; admin?: boolean }): PriceItem[] {
+  const items = state.onboarded ? [...PLANS, EXTRA] : [ONBOARDING];
+  return state.admin ? [...items, ADMIN_TEST] : items;
+}
+
+/** The email an admin gets when a payment is recorded: who paid, for what, and what to do next. */
+export function paymentNotice(p: { buyer: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; sandbox: boolean }) {
+  const item = ALL_ITEMS.find((i) => i.credits === p.credits);
+  const name = item?.name ?? p.credits + ' credits';
+  const lines = [
+    `${p.buyer} paid ${usd(p.cents)} for ${name} (${p.credits.toLocaleString('en-US')} credits). Their balance is now ${p.balance.toLocaleString('en-US')}.`,
+    ...(item?.key === 'onboarding' ? ['This is an onboarding purchase: book their onboarding call and set up their businesses.'] : []),
+    ...(p.sandbox ? ['This was a PayPal SANDBOX payment: no real money moved.'] : []),
+    `PayPal order ${p.orderId}, capture ${p.captureId}.`,
+  ];
+  return { subject: `${p.sandbox ? '[Sandbox] ' : ''}Payment: ${name}, ${usd(p.cents)}, ${p.buyer}`, lines };
 }
 
 export const perCredit = (i: Pick<PriceItem, 'credits' | 'cents'>) => i.cents / 100 / i.credits;

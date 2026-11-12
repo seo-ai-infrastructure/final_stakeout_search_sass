@@ -1,7 +1,8 @@
 import { db } from '@stakeout/db';
 import { paypalBase, paypalProblem } from './paypalBase';
 import { InputError } from '@stakeout/core/grid';
-import { ONBOARDING, itemsFor, type PriceItem } from './pricing';
+import { ONBOARDING, itemsFor, paymentNotice, type PriceItem } from './pricing';
+import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
 
 /** Accounts created before this pricing took effect, and admins, go straight to the plans. */
 const PRICING_START = new Date('2026-11-12T00:00:00Z');
@@ -20,7 +21,27 @@ export async function catalogFor(user: { id: string; role: string; createdAt: Da
         select: { id: true },
       }),
     );
-  return itemsFor({ onboarded });
+  return itemsFor({ onboarded, admin: user.role === 'ADMIN' });
+}
+
+/**
+ * Tells the admins a payment was recorded (to PAYMENT_ALERT_EMAIL if set, otherwise every admin
+ * account). Never throws: a failed email must not undo or block a payment that went through.
+ */
+async function alertPayment(p: { userId: string; credits: number; cents: number; balance: number; orderId: string; captureId: string }) {
+  try {
+    if (!mailerConfigured()) return;
+    const buyer = await db.user.findUnique({ where: { id: p.userId }, select: { email: true } });
+    const to = (process.env.PAYMENT_ALERT_EMAIL ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+    const recipients = to.length ? to : (await db.user.findMany({ where: { role: 'ADMIN' }, select: { email: true } })).map((u) => u.email);
+    const n = paymentNotice({ ...p, buyer: buyer?.email ?? 'An account', sandbox: paypalBase(process.env.PAYPAL_API_BASE).includes('sandbox') });
+    for (const email of recipients)
+      await sendNoticeEmail(email, n.subject, n.lines, { label: 'Open accounts', url: appUrl('/admin/devices') }).catch((e) =>
+        console.error('[paypal] payment alert not sent to', email, (e as Error).message),
+      );
+  } catch (e) {
+    console.error('[paypal] payment alert failed:', (e as Error).message);
+  }
 }
 /** The merchant account orders must pay (PAYPAL_MERCHANT_ID), without stray spaces. */
 export const merchantId = (): string => (process.env.PAYPAL_MERCHANT_ID ?? '').trim();
@@ -106,12 +127,14 @@ export async function fulfill(orderId: string) {
       'Payment is pending or could not be matched to this credit pack.',
       409,
     );
-  return db.$transaction(async (tx) => {
+  let fresh = false;
+  const result = await db.$transaction(async (tx) => {
     const claimed = await tx.paymentOrder.updateMany({
       where: { id: orderId, captureId: null },
       data: { captureId: c.id },
     });
     if (claimed.count) {
+      fresh = true;
       await tx.creditLedger.create({
         data: {
           userId: purchase.userId,
@@ -130,4 +153,7 @@ export async function fulfill(orderId: string) {
       select: { creditBalance: true },
     });
   });
+  // Only the first time this payment is recorded: the browser and PayPal's webhook both report it.
+  if (fresh) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: purchase.cents, balance: result.creditBalance, orderId, captureId: c.id });
+  return result;
 }

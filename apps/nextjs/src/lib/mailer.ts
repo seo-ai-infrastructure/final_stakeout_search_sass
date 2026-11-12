@@ -30,3 +30,21 @@ export async function sendLinkEmail(to: string, subject: string, intro: string, 
   });
   if (!r.ok) throw new Error('MAIL_SEND_FAILED_' + r.status);
 }
+
+/** A plain notice: a few lines of text and, optionally, one link. Nothing about expiring links. */
+export async function sendNoticeEmail(to: string, subject: string, lines: string[], link?: { label: string; url: string }) {
+  if (!mailerConfigured()) throw new Error('MAILER_NOT_CONFIGURED');
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      from: process.env.EMAIL_FROM,
+      to: [to],
+      subject,
+      text: lines.join('\n\n') + (link ? '\n\n' + link.label + ': ' + link.url : ''),
+      html: lines.map((l) => '<p>' + escape(l) + '</p>').join('') + (link ? '<p><a href="' + escape(link.url) + '">' + escape(link.label) + '</a></p>' : ''),
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!r.ok) throw new Error('MAIL_SEND_FAILED_' + r.status);
+}
