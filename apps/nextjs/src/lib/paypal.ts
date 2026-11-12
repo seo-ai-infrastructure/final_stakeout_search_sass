@@ -1,5 +1,5 @@
 import { db } from '@stakeout/db';
-import { paypalBase } from './paypalBase';
+import { paypalBase, paypalProblem } from './paypalBase';
 import { InputError } from '@stakeout/core/grid';
 import { ONBOARDING, itemsFor, type PriceItem } from './pricing';
 
@@ -49,7 +49,10 @@ export async function paypal(
     body: 'grant_type=client_credentials',
     cache: 'no-store',
   });
-  if (!auth.ok) throw new Error('PayPal authentication failed');
+  if (!auth.ok) {
+    console.error('[paypal] sign-in refused:', auth.status, 'at', base);
+    throw new InputError('PayPal did not accept the client ID and secret. PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET must come from the same app, in the same environment (sandbox or live) as PAYPAL_API_BASE.', 503);
+  }
   const token = (await auth.json()).access_token;
   const response = await fetch(base + path, {
     method,
@@ -63,8 +66,14 @@ export async function paypal(
     cache: 'no-store',
     signal: AbortSignal.timeout(20000),
   });
-  if (!response.ok)
-    throw new InputError('PayPal could not complete this operation.', 502);
+  if (!response.ok) {
+    // PayPal says exactly what it refused: keep it in the log, and tell the person in plain words.
+    const detail = await response.json().catch(() => null);
+    const first = detail?.details?.[0];
+    const issue = String(first?.issue ?? detail?.name ?? 'HTTP ' + response.status);
+    console.error('[paypal]', method, path.split('?')[0], response.status, issue, first?.field ?? '', first?.description ?? detail?.message ?? '', 'debug_id=' + (detail?.debug_id ?? ''));
+    throw new InputError(paypalProblem(issue, String(first?.field ?? '')), 502);
+  }
   return response.json();
 }
 export async function fulfill(orderId: string) {

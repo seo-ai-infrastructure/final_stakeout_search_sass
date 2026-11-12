@@ -24,3 +24,12 @@ test('PayPal address: the two real addresses and their obvious variations, nothi
   for (const v of [L, L + '/', 'api-m.paypal.com', 'https://api.paypal.com', 'live', 'production']) assert.equal(paypalBase(v), L, v);
   for (const v of ['https://evil.example.com', 'https://api-m.paypal.com.evil.com', 'https://api-m.sandbox.paypal.com/v2', 'paypal']) assert.throws(() => paypalBase(v), /PAYPAL_API_BASE must be/, v);
 });
+
+test('PayPal refusals are explained, with PayPal\'s own code kept', async () => {
+  const { paypalProblem } = await import('../apps/nextjs/src/lib/paypalBase');
+  assert.match(paypalProblem('PAYEE_ACCOUNT_INVALID'), /merchant ID \(PAYEE_ACCOUNT_INVALID\).*PAYPAL_MERCHANT_ID/);
+  assert.match(paypalProblem('INVALID_PARAMETER_VALUE', '/purchase_units/0/payee/merchant_id'), /PAYPAL_MERCHANT_ID/);
+  assert.match(paypalProblem('PERMISSION_DENIED'), /not allowed/);
+  assert.match(paypalProblem('INSTRUMENT_DECLINED'), /declined that payment method/);
+  assert.equal(paypalProblem('UNPROCESSABLE_ENTITY'), 'PayPal could not complete this operation (UNPROCESSABLE_ENTITY).');
+});
