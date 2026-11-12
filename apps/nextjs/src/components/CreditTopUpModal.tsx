@@ -35,7 +35,9 @@ export function CreditTopUpModal(p: Props) {
   }
   const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 p-4">
+    // The overlay scrolls: PayPal's card form is taller than most screens once it opens.
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75">
+      <div className="flex min-h-full items-center justify-center p-4">
       <section
         role="dialog"
         aria-modal="true"
@@ -44,7 +46,7 @@ export function CreditTopUpModal(p: Props) {
       >
         <div className="flex justify-between">
           <h2 className="text-lg font-bold">{packs.length === 1 && packs[0].key === 'onboarding' ? 'Start with onboarding' : 'Buy scan credits'}</h2>
-          <button onClick={p.onClose}>Close</button>
+          <button type="button" onClick={p.onClose} className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Close</button>
         </div>
         <p>Current balance · {p.currentBalance}</p>
         {clientId && packs.length > 0 ? (
@@ -98,6 +100,7 @@ export function CreditTopUpModal(p: Props) {
         )}
         {error && <p role="alert">{error}</p>}
       </section>
+      </div>
     </div>
   );
 }
