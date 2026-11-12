@@ -338,6 +338,11 @@ async function reportHealth() {
     traffic,
     templates: { chrome: await template('chrome'), maps: await template('maps') },
     proxyLists: await db.proxyList.count(),
+    // How long the longest-idle list has gone unused. Idle lists are deleted after two minutes
+    // with no scan open, so only a list idle for much longer than that is a problem.
+    proxyListIdleSeconds: await db.proxyList
+      .aggregate({ _min: { lastUsedAt: true } })
+      .then((r) => (r._min.lastUsedAt ? Math.round((Date.now() - r._min.lastUsedAt.getTime()) / 1000) : 0)),
     openScans: await db.gridScan.count({ where: { status: { in: ['QUEUED', 'RUNNING'] } } }),
     pointsWithoutInsights: Number(
       (await db.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM "GridPin" WHERE status = 'COMPLETED' AND insights IS NULL AND "dumpsTarUrl" IS NOT NULL`)[0]?.n ?? 0,

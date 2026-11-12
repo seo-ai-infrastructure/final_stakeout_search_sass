@@ -56,6 +56,8 @@ type SystemHealth = {
   searchGapSeconds: number;
   templates: { chrome: TemplateInfo; maps: TemplateInfo };
   proxyLists: number;
+  /** Seconds the longest-idle list has gone unused (absent from an older worker). */
+  proxyListIdleSeconds?: number;
   openScans: number;
   pointsWithoutInsights: number;
 };
@@ -70,7 +72,18 @@ function SystemHealthCard({ system }: { system: SystemHealth | null }) {
         ['Proxy-Seller key on the worker', system.proxySellerKey, system.proxySellerKey ? 'set: idle proxy lists are deleted' : 'missing: idle proxy lists cannot be deleted and keep using bandwidth'],
         ['Chrome template', Boolean(system.templates.chrome), tpl(system.templates.chrome)],
         ['Maps template', Boolean(system.templates.maps), tpl(system.templates.maps)],
-        ['Proxy lists', system.openScans > 0 || system.proxyLists === 0, `${system.proxyLists} list(s) · ${system.openScans} scan(s) open${system.openScans === 0 && system.proxyLists > 0 ? ': should be deleted within a few minutes' : ''}`],
+        // A list left over right after a scan is normal: it is deleted after two idle minutes. Only one
+        // that has sat unused for ten minutes with no scan open means the clean-up is not working.
+        [
+          'Proxy lists',
+          system.openScans > 0 || system.proxyLists === 0 || (system.proxyListIdleSeconds ?? 0) < 600,
+          `${system.proxyLists} list(s) · ${system.openScans} scan(s) open` +
+            (system.openScans === 0 && system.proxyLists > 0
+              ? (system.proxyListIdleSeconds ?? 0) >= 600
+                ? `: idle for ${Math.round((system.proxyListIdleSeconds ?? 0) / 60)} minutes and not deleted`
+                : ': just finished, deleted after 2 idle minutes'
+              : ''),
+        ],
         ['Insights', system.pointsWithoutInsights < 25, `${system.pointsWithoutInsights} point(s) waiting for insights`],
       ]
     : [['Worker', false, 'no status report: the worker is not running, or has not reported yet']];
