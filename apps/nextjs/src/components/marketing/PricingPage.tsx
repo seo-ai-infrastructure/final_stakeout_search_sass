@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { SiteHeader, SiteFooter } from './SiteChrome';
+import { SiteHeader, SiteFooter, SIGNUPS_OPEN } from './SiteChrome';
 import { EXTRA, ONBOARDING, PLANS, perCredit, scans5x5, usd } from '@/lib/pricing';
 import './marketing.css';
 
@@ -26,8 +26,22 @@ const FAQ: [string, string][] = [
   ['Is there a contract?', 'No. Plans are bought a month at a time from your account, and you can change plan or stop whenever you like.'],
   ['What if I need more than my plan?', `Add ${EXTRA.credits} credits for ${usd(EXTRA.cents)} at any time, or move up a plan, which costs less per credit.`],
   ['What does a credit buy?', 'One grid point: a real phone moved to that spot, the search run and recorded, and a receipt with the results, the location Google used and a fingerprint of the evidence.'],
-  ['How do I get an account?', 'New accounts are by invitation for now. Email us and we will set yours up and book your onboarding call.'],
+  [
+    'How do I get an account?',
+    SIGNUPS_OPEN
+      ? 'Create an account, confirm your email, and pay for onboarding from your account. Then email sass@stakeoutsearch.com to book your onboarding call.'
+      : 'New accounts are by invitation for now. Email us and we will set yours up and book your onboarding call.',
+  ],
 ];
+
+/** The way in: create an account while sign-ups are open, otherwise ask for an invitation by email. */
+function AccessButton({ className }: { className: string }) {
+  return SIGNUPS_OPEN ? (
+    <Link href="/login?mode=register" className={className}>Create your account</Link>
+  ) : (
+    <a href={ACCESS} className={className}>Request founding access</a>
+  );
+}
 
 export default function PricingPage() {
   return (
@@ -70,11 +84,9 @@ export default function PricingPage() {
             <p className="mt-5 text-sm leading-relaxed text-[#c9d3df]">
               Founding rate for our first {ONBOARDING.foundingPlaces} customers. The regular price is {usd(ONBOARDING.regularCents)}.
             </p>
-            <a href={ACCESS} className="mk-btn-primary mt-7 inline-block rounded-xl px-7 py-3.5 font-semibold">
-              Request founding access
-            </a>
+            <AccessButton className="mk-btn-primary mt-7 inline-block rounded-xl px-7 py-3.5 font-semibold" />
             <p className="mt-4 text-sm text-[#9aa7b8]">
-              Already invited? <Link href="/login" className="text-[#7aa7ff] hover:underline">Sign in</Link>
+              {SIGNUPS_OPEN ? 'Already have an account?' : 'Already invited?'} <Link href="/login" className="text-[#7aa7ff] hover:underline">Sign in</Link>
             </p>
           </div>
         </div>
@@ -166,7 +178,7 @@ export default function PricingPage() {
           ))}
         </div>
         <div className="mt-12 text-center">
-          <a href={ACCESS} className="mk-btn-primary inline-block rounded-xl px-7 py-3.5 font-semibold">Request founding access</a>
+          <AccessButton className="mk-btn-primary inline-block rounded-xl px-7 py-3.5 font-semibold" />
           <p className="mt-4 text-sm text-[#9aa7b8]">
             Or <Link href="/demo" className="text-[#7aa7ff] hover:underline">explore the live demo map</Link> first.
           </p>
