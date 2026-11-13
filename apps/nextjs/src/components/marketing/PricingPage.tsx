@@ -3,7 +3,7 @@ import { SiteHeader, SiteFooter, SIGNUPS_OPEN } from './SiteChrome';
 import { EXTRA, ONBOARDING, PLANS, perCredit, scans5x5, usd } from '@/lib/pricing';
 import './marketing.css';
 
-const ACCESS = 'mailto:sass@stakeoutsearch.com?subject=Founding%20access%20to%20Stakeout%20Search';
+const ACCESS = 'mailto:sass@stakeoutsearch.com?subject=Access%20to%20Stakeout%20Search';
 
 const INCLUDED = [
   `${ONBOARDING.credits.toLocaleString('en-US')} credits to start scanning`,
@@ -39,7 +39,7 @@ function AccessButton({ className }: { className: string }) {
   return SIGNUPS_OPEN ? (
     <Link href="/login?mode=register" className={className}>Create your account</Link>
   ) : (
-    <a href={ACCESS} className={className}>Request founding access</a>
+    <a href={ACCESS} className={className}>Request access</a>
   );
 }
 
@@ -65,7 +65,7 @@ export default function PricingPage() {
         <div className="grid items-center gap-10 rounded-3xl border border-[#f5c451]/40 bg-[#0c1118] p-8 sm:p-12 lg:grid-cols-[1.1fr_1fr]">
           <div>
             <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Step 1 · once</p>
-            <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">Founding onboarding</h2>
+            <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">Onboarding</h2>
             <p className="mt-4 leading-relaxed text-[#9aa7b8]">
               We set you up, run your first audit with you, and hand you a report you can put in front of a client the same week.
             </p>
@@ -81,9 +81,6 @@ export default function PricingPage() {
           <div className="rounded-2xl border border-[#1b2431] bg-[#080b10] p-8 text-center">
             <p className="mk-display text-7xl font-bold text-[#eef2f7]">{usd(ONBOARDING.cents)}</p>
             <p className="mt-2 text-[#9aa7b8]">one time</p>
-            <p className="mt-5 text-sm leading-relaxed text-[#c9d3df]">
-              Founding rate for our first {ONBOARDING.foundingPlaces} customers. The regular price is {usd(ONBOARDING.regularCents)}.
-            </p>
             <AccessButton className="mk-btn-primary mt-7 inline-block rounded-xl px-7 py-3.5 font-semibold" />
             <p className="mt-4 text-sm text-[#9aa7b8]">
               {SIGNUPS_OPEN ? 'Already have an account?' : 'Already invited?'} <Link href="/login" className="text-[#7aa7ff] hover:underline">Sign in</Link>

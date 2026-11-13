@@ -6,13 +6,11 @@
 export type PriceItem = { key: string; name: string; credits: number; cents: number; blurb: string };
 
 /** Paid once, before anything else: setup, a first audit, and the first credits. */
-export const ONBOARDING: PriceItem & { regularCents: number; foundingPlaces: number } = {
+export const ONBOARDING: PriceItem = {
   key: 'onboarding',
-  name: 'Founding onboarding',
+  name: 'Onboarding',
   credits: 1000,
-  cents: 49700,
-  regularCents: 99700,
-  foundingPlaces: 10,
+  cents: 99700,
   blurb: 'One-time setup: an onboarding call, your businesses set up, a first audit, and 1,000 credits.',
 };
 
@@ -57,7 +55,7 @@ export function paymentNotice(p: { buyer: string; credits: number; cents: number
 }
 
 export const perCredit = (i: Pick<PriceItem, 'credits' | 'cents'>) => i.cents / 100 / i.credits;
-/** "$497" or "$0.35". */
+/** "$997" or "$0.35". */
 export const usd = (cents: number) => '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 });
 /** How many 5×5 scans a number of credits covers, with and without AI Overview tracking. */
 export const scans5x5 = (credits: number) => ({ plain: Math.floor(credits / 25), withAi: Math.floor(credits / 50) });

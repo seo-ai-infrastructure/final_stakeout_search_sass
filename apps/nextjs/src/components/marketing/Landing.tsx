@@ -509,7 +509,7 @@ function Pricing() {
             ))}
           </dl>
           <p className="mt-4 text-sm leading-relaxed text-[#9aa7b8]">
-            Founding onboarding is {usd(ONBOARDING.cents)} once, with {ONBOARDING.credits.toLocaleString('en-US')} credits. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 7×7 is 49 (98 with AI tracking).{' '}
+            Onboarding is {usd(ONBOARDING.cents)} once, with {ONBOARDING.credits.toLocaleString('en-US')} credits. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 7×7 is 49 (98 with AI tracking).{' '}
             <Link href="/pricing" className="font-semibold text-[#7aa7ff] hover:underline">See pricing</Link>
           </p>
         </div>

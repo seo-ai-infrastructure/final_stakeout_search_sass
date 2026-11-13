@@ -33,6 +33,23 @@ export function AdminOps() {
   // A new account's one-time password. It is kept on screen, beside the button that made it, until
   // dismissed: the status note above is out of view from here and is cleared by the next action.
   const [created, setCreated] = useState<{ email: string; password?: string; url?: string; emailed?: boolean; copied?: boolean } | null>(null);
+  // The Accounts panel can be folded away; the choice is remembered on this browser.
+  const [accountsOpen, setAccountsOpen] = useState(true);
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem('stakeout.admin.accounts') === 'closed') setAccountsOpen(false);
+    } catch {
+      /* storage unavailable: stay open */
+    }
+  }, []);
+  const toggleAccounts = (open: boolean) => {
+    setAccountsOpen(open);
+    try {
+      window.localStorage.setItem('stakeout.admin.accounts', open ? 'open' : 'closed');
+    } catch {
+      /* storage unavailable: the choice lasts until the page reloads */
+    }
+  };
   const [credit, setCredit] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
@@ -75,6 +92,10 @@ export function AdminOps() {
     }
   }
   const points = (n: number) => (n === 1 ? '1 point' : `${n} points`);
+
+  // A new account's sign-in details are never hidden: while they are on screen the panel stays open.
+  const accountsShown = accountsOpen || created !== null;
+  const awaiting = users.filter((u) => u.role === 'AGENCY' && u.onboarding === 'no').length;
 
   return (
     <div className="mb-6 space-y-6">
@@ -189,7 +210,28 @@ export function AdminOps() {
       </section>
 
       <section className={card}>
-        <h2 className="text-sm font-bold text-white">Accounts ({users.length})</h2>
+        <h2 className="text-sm font-bold text-white">
+          <button
+            type="button"
+            aria-expanded={accountsShown}
+            aria-controls="admin-accounts"
+            onClick={() => toggleAccounts(!accountsOpen)}
+            className="-m-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg p-2 text-left hover:bg-slate-800/60"
+          >
+            <span>
+              Accounts ({users.length})
+              {awaiting > 0 && <span className="ml-2 font-normal text-amber-300">{awaiting} not yet onboarded</span>}
+            </span>
+            <span className="flex items-center gap-2 text-xs font-normal text-slate-400">
+              {accountsShown ? 'Hide' : 'Show'}
+              <svg aria-hidden="true" viewBox="0 0 20 20" className={'h-4 w-4 transition-transform ' + (accountsShown ? 'rotate-180' : '')} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 8l5 5 5-5" />
+              </svg>
+            </span>
+          </button>
+        </h2>
+        {accountsShown && (
+          <div id="admin-accounts">
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="text-xs text-slate-400">
@@ -336,6 +378,8 @@ export function AdminOps() {
                 Done
               </button>
             </div>
+          </div>
+        )}
           </div>
         )}
       </section>

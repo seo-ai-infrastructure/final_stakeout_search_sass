@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ALL_ITEMS, EXTRA, ONBOARDING, PLANS, itemsFor, perCredit, scans5x5, usd } from '../apps/nextjs/src/lib/pricing';
 
 test('pricing: the agreed prices, and every item identifiable by its credit count', () => {
-  assert.deepEqual([ONBOARDING.cents, ONBOARDING.credits, ONBOARDING.regularCents], [49700, 1000, 99700]);
+  assert.deepEqual([ONBOARDING.cents, ONBOARDING.credits, ONBOARDING.name], [99700, 1000, 'Onboarding']);
   assert.deepEqual(PLANS.map((p) => [p.name, p.cents, p.credits]), [['Starter', 19700, 700], ['Growth', 39700, 1600], ['Agency', 69700, 3500]]);
   assert.equal(new Set(ALL_ITEMS.map((i) => i.credits)).size, ALL_ITEMS.length, 'checkout tells items apart by credits');
   assert.deepEqual(PLANS.map((p) => perCredit(p).toFixed(2)), ['0.28', '0.25', '0.20'], 'the rate falls as the plan grows');
@@ -13,7 +13,7 @@ test('pricing: the agreed prices, and every item identifiable by its credit coun
 test('pricing: onboarding first and once, then plans and extra credits', () => {
   assert.deepEqual(itemsFor({ onboarded: false }).map((i) => i.key), ['onboarding']);
   assert.deepEqual(itemsFor({ onboarded: true }).map((i) => i.key), ['starter', 'growth', 'agency', 'extra']);
-  assert.deepEqual([usd(49700), usd(7000), usd(35), usd(99700)], ['$497', '$70', '$0.35', '$997']);
+  assert.deepEqual([usd(ONBOARDING.cents), usd(7000), usd(35), usd(19700)], ['$997', '$70', '$0.35', '$197']);
   assert.deepEqual(scans5x5(700), { plain: 28, withAi: 14 });
 });
 
@@ -41,9 +41,9 @@ test('the $1 payment test is for admins only; the payment alert says who paid an
   assert.ok(!itemsFor({ onboarded: false }).some((i) => i.key === 'admin-test'));
   assert.deepEqual(itemsFor({ onboarded: true, admin: true }).map((i) => i.key), ['starter', 'growth', 'agency', 'extra', 'admin-test']);
   const base = { buyer: 'a@b.com', balance: 1000, orderId: 'O1', captureId: 'C1' };
-  const on = paymentNotice({ ...base, credits: 1000, cents: 49700, sandbox: false });
-  assert.equal(on.subject, 'Payment: Founding onboarding, $497, a@b.com');
-  assert.match(on.lines[0], /a@b\.com paid \$497 for Founding onboarding \(1,000 credits\)\. Their balance is now 1,000\./);
+  const on = paymentNotice({ ...base, credits: 1000, cents: 99700, sandbox: false });
+  assert.equal(on.subject, 'Payment: Onboarding, $997, a@b.com');
+  assert.match(on.lines[0], /a@b\.com paid \$997 for Onboarding \(1,000 credits\)\. Their balance is now 1,000\./);
   assert.ok(on.lines.some((l) => /book their onboarding call/.test(l)));
   assert.ok(!on.lines.some((l) => /SANDBOX/.test(l)));
   const sb = paymentNotice({ ...base, credits: 700, cents: 19700, sandbox: true });
