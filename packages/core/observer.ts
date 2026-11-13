@@ -78,6 +78,26 @@ if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
   [ -s "$T/$RUN"_aio.png ] && cp "$T/$RUN"_aio.png "$D/shot_ai.png"
   [ -s "$T/$RUN"_pack_target.png ] && cp "$T/$RUN"_pack_target.png "$D/shot_pack.png"
   [ -s "$T/$RUN"_finder_target.png ] && cp "$T/$RUN"_finder_target.png "$D/shot_finder.png"
+  # Google states where it placed the search ("... - From your device") in the page footer, and
+  # since Nov 2026 it only adds that footer once the page is scrolled to its end. When neither of
+  # the template's web snapshots holds the line, go to the end of the page on screen and snapshot
+  # it: that becomes the last snapshot. Web pages only (a Maps run saves no results page).
+  if [ -s "$T/$RUN"_serp.xml ] && ! grep -qE "From your|Based on your" "$T/$RUN"_finder.xml "$T/$RUN"_serp.xml 2>/dev/null; then
+    input keyevent 123
+    k=0
+    while [ $k -lt 4 ]; do
+      sleep 1.2
+      rm -f "$D/foot.xml"; uiautomator dump "$D/foot.xml" >/dev/null 2>&1
+      if grep -qE "From your|Based on your" "$D/foot.xml" 2>/dev/null; then
+        mv "$D/foot.xml" "$D/dump_$n.xml" && n=$((n+1)) && echo "footer_pass=1" >> "$D/meta.txt"
+        break
+      fi
+      j=0
+      while [ $j -lt 5 ]; do input swipe $X $((H*78/100)) $X $((H*26/100)) 250; sleep 0.35; j=$((j+1)); done
+      k=$((k+1))
+    done
+    rm -f "$D/foot.xml"
+  fi
   echo "evidence=template" >> "$D/meta.txt"
 elif [ -n "$RUN" ] && { [ -e "$T/$RUN".blocked ] || [ -e "$T/$RUN".surface_error ]; }; then
   # The template stopped itself (wrong page or blocked): keep its log, no scrolling.

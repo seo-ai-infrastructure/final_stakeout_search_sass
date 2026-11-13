@@ -160,3 +160,15 @@ test('the recorder keeps the location flag and the results page whichever eviden
   assert.ok(OBSERVE_SH.includes('serp_page.xml') && /mv "?\\?"?\$D\/serp_page\.xml/.test(OBSERVE_SH.replace(/\\"/g, '"')), 'the fallback keeps the template\'s results page');
   assert.ok(!/input swipe \$X \$\(\(H\*30\/100\)\) \$X \$\(\(H\*80\/100\)\)/.test(OBSERVE_SH), 'no drag down at the top of the page: that is pull-to-refresh');
 });
+
+test('the recorder fetches Google\'s location footer when the template\'s snapshots lack it (web runs only)', async () => {
+  const { OBSERVE_SH } = await import('../packages/core/observer');
+  const { searchLocationLine } = await import('../packages/core/serpEvidence');
+  // Only when a results page was saved (a Maps run saves none) and neither snapshot holds the line.
+  assert.ok(/if \[ -s "\$T\/\$RUN"_serp\.xml \] && ! grep -qE "From your\|Based on your" "\$T\/\$RUN"_finder\.xml "\$T\/\$RUN"_serp\.xml/.test(OBSERVE_SH));
+  assert.ok(OBSERVE_SH.includes('input keyevent 123'), 'jumps to the end of the page');
+  assert.ok(OBSERVE_SH.includes('footer_pass=1'));
+  assert.ok(OBSERVE_SH.indexOf('footer_pass=1') < OBSERVE_SH.indexOf('evidence=template'), 'part of the template-evidence branch');
+  // A snapshot taken at the foot of the page carries the line the worker needs.
+  assert.match(String(searchLocationLine(null, read('real-places-page-2026-11-13.xml'))), /Lakeland, FL - From your device$/);
+});

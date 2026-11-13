@@ -804,7 +804,9 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     };
     // The Local Finder snapshot can lack Google's location line; the results page of the same search has it.
     if ((surface === 'chrome' || surface === 'google') && !result.locationSource) {
-      const line = searchLocationLine(null, b.serp);
+      // Then any other snapshot of the run: Google only adds the footer that holds the line once
+      // the page is scrolled to its end, so it can be in a later snapshot than these two.
+      const line = [b.serp, ...[...b.scroll].reverse()].map((x) => searchLocationLine(null, x)).find(Boolean);
       if (line) Object.assign(result, { locationSource: line, locationFromIp: /IP address/i.test(line) });
     }
     if (result.locationFromIp) {
