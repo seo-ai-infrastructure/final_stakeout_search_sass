@@ -158,7 +158,7 @@ const ANATOMY = [
 ];
 
 const STEPS = [
-  { n: '1', title: 'Drop your grid', text: 'Keyword, business and location. A 3×3 to 11×11 grid of points, spaced from half a mile to five miles.' },
+  { n: '1', title: 'Drop your grid', text: 'Keyword, business and location. A 3×3, 5×5 or 9×9 grid of points, spaced from half a mile to five miles.' },
   { n: '2', title: 'Phones search every point', text: 'Each point gets its own Android phone session: GPS moved to the point, residential network, search run and recorded.' },
   { n: '3', title: 'Open the receipts', text: 'Click any point to watch what the phone saw, inspect the results and AI answers, and share it with your client.' },
 ];
@@ -324,7 +324,7 @@ const ITEMS: [string, string][] = [
   ['GPS-set locations, one per grid point', '49'],
   ['Residential connections, ISP named', '49'],
   ['Ranked listings captured (up to 10 per point)', '490'],
-  ['AI Overviews checked (with AI tracking on)', '49'],
+  ['AI Overviews checked', '49'],
   ['SHA-256 evidence fingerprints', '49'],
   ['Client share link, no login needed', '1'],
 ];
@@ -478,7 +478,7 @@ function WhereTheMoneyIs() {
 
 const PRICE_ROWS: [string, string][] = [
   ['Every grid point, Chrome or Google Maps app', '1 credit'],
-  ['With AI Overview tracking (Chrome)', '+1 credit'],
+  ['AI Overview tracking (Chrome)', 'included'],
   ['A point that fails', 'credited back automatically'],
   ['Re-running a failed point', '1 click, same price'],
 ];
@@ -509,7 +509,7 @@ function Pricing() {
             ))}
           </dl>
           <p className="mt-4 text-sm leading-relaxed text-[#9aa7b8]">
-            Onboarding is {usd(ONBOARDING.cents)} once, with {ONBOARDING.credits.toLocaleString('en-US')} credits. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 7×7 is 49 (98 with AI tracking).{' '}
+            Onboarding is {usd(ONBOARDING.cents)} once, with {ONBOARDING.credits.toLocaleString('en-US')} credits. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 5×5 is 25, with AI Overview tracking included.{' '}
             <Link href="/pricing" className="font-semibold text-[#7aa7ff] hover:underline">See pricing</Link>
           </p>
         </div>

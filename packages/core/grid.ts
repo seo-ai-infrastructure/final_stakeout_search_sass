@@ -13,6 +13,8 @@ export class InputError extends Error {
 }
 
 export { phoneModels } from './hardware';
+export { OFFERED_GRID_SIZES } from './gridSizes';
+
 export function parseSpec(input: Record<string, unknown>) {
   const { keyword, targetBusiness, centerLat, centerLng } = input;
   if (
@@ -37,7 +39,7 @@ export function parseSpec(input: Record<string, unknown>) {
   ) {
     throw new InputError('Enter valid US coordinates.');
   }
-  const { gridSize = 7, spacingKm = 1.60934, trackAiOverviews = false } = input;
+  const { gridSize = 5, spacingKm = 1.60934, trackAiOverviews = false } = input;
   if (
     typeof gridSize !== 'number' ||
     ![3, 5, 7, 9, 11].includes(gridSize) ||
@@ -85,9 +87,9 @@ export function parseSpec(input: Record<string, unknown>) {
     centerLng,
     gridSize,
     spacingKm,
-    // The Maps app's AI answers ("Ask Maps") are not captured yet, so Maps scans never carry
-    // (or pay for) the AI add-on.
-    trackAiOverviews: targetType === 'desktop_aimode' || (targetType !== 'mobile_maps' && trackAiOverviews),
+    // AI Overviews are captured on every scan that can show one, at no extra credit; what the
+    // caller sends is ignored. The Maps app's AI answers ("Ask Maps") are not captured yet.
+    trackAiOverviews: targetType !== 'mobile_maps',
     targetType,
     scheduleType,
     phoneBrand,

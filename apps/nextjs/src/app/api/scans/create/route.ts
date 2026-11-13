@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createScan } from '@stakeout/core/scans';
-import { parseSpec, market, buildGrid, InputError } from '@stakeout/core/grid';
+import { parseSpec, market, buildGrid, InputError, OFFERED_GRID_SIZES } from '@stakeout/core/grid';
 import { getSettings, ispAllowed } from '@stakeout/core/settings';
 import { targetableIspCodes } from '@stakeout/core/proxySeller';
 import { listsEnabled, prepareGridProxies } from '@stakeout/core/proxyLists';
@@ -15,6 +15,9 @@ export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser(),
       s = parseSpec(await req.json());
+      // Checked here as well as on the page, so a size that is switched off cannot be requested directly.
+      if (!OFFERED_GRID_SIZES.includes(s.gridSize))
+        throw new InputError(`A ${s.gridSize}×${s.gridSize} grid is not available right now. Choose ${OFFERED_GRID_SIZES.map((n) => n + '×' + n).join(', ')}.`);
       const settings = await getSettings();
       if (s.isps.some((v: string) => !ispAllowed(v, settings))) throw new InputError('That ISP is not available here. Choose another.');
     const key = req.headers.get('Idempotency-Key') ?? randomUUID();

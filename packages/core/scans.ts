@@ -31,7 +31,8 @@ export async function createScan(
   }
   const pins = templatePins ?? buildGrid(s),
     middle = pins[(pins.length - 1) / 2];
-  const cost = lead || opts?.free ? 0 : pins.length * (s.trackAiOverviews ? 2 : 1);
+  // One credit per grid point. AI Overview tracking is part of every Chrome scan, not an add-on.
+  const cost = lead || opts?.free ? 0 : pins.length;
   try {
     return await db.$transaction(
       async (tx) => {

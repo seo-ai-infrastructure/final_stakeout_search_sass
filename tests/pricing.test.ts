@@ -14,7 +14,7 @@ test('pricing: onboarding first and once, then plans and extra credits', () => {
   assert.deepEqual(itemsFor({ onboarded: false }).map((i) => i.key), ['onboarding']);
   assert.deepEqual(itemsFor({ onboarded: true }).map((i) => i.key), ['starter', 'growth', 'agency', 'extra']);
   assert.deepEqual([usd(ONBOARDING.cents), usd(7000), usd(35), usd(19700)], ['$997', '$70', '$0.35', '$197']);
-  assert.deepEqual(scans5x5(700), { plain: 28, withAi: 14 });
+  assert.equal(scans5x5(700), 28);
 });
 
 test('PayPal address: the two real addresses and their obvious variations, nothing else', async () => {
@@ -62,4 +62,22 @@ test('onboarding status: only "no" keeps the plans out of reach; an admin can wa
   // What each can buy: onboarding only for 'no', the plans for everyone else.
   for (const [st, first] of [['no', 'onboarding'], ['waived', 'starter'], ['paid', 'starter'], ['exempt', 'starter']] as const)
     assert.equal(itemsFor({ onboarded: st !== 'no' })[0].key, first, st);
+});
+
+test('AI Overview tracking is part of every Chrome scan, whatever is sent; Maps scans have none', async () => {
+  const { parseSpec } = await import('../packages/core/grid');
+  const base = { targetBusiness: 'Acme Plumbing', keyword: 'plumber', centerLat: 28.04, centerLng: -81.95, gridSize: 3, spacingKm: 1.60934, scheduleType: 'once' };
+  for (const sent of [true, false, undefined])
+    assert.equal(parseSpec({ ...base, targetType: 'mobile_chrome', ...(sent === undefined ? {} : { trackAiOverviews: sent }) }).trackAiOverviews, true, 'chrome, sent ' + sent);
+  for (const sent of [true, false])
+    assert.equal(parseSpec({ ...base, targetType: 'mobile_maps', trackAiOverviews: sent }).trackAiOverviews, false, 'maps, sent ' + sent);
+});
+
+test('grid sizes on offer: 3×3, 5×5 and 9×9 for now; the default is one of them', async () => {
+  const { OFFERED_GRID_SIZES, parseSpec } = await import('../packages/core/grid');
+  assert.deepEqual([...OFFERED_GRID_SIZES], [3, 5, 9]);
+  const base = { targetBusiness: 'Acme Plumbing', keyword: 'plumber', centerLat: 28.04, centerLng: -81.95 };
+  assert.ok(OFFERED_GRID_SIZES.includes(parseSpec(base).gridSize), 'a scan with no size given gets an offered one');
+  // Older scans of any size still parse (they re-run and repeat on schedule); the create route limits new ones.
+  assert.equal(parseSpec({ ...base, gridSize: 7 }).gridSize, 7);
 });

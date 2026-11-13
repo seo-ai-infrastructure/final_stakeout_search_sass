@@ -57,8 +57,8 @@ export function paymentNotice(p: { buyer: string; credits: number; cents: number
 export const perCredit = (i: Pick<PriceItem, 'credits' | 'cents'>) => i.cents / 100 / i.credits;
 /** "$997" or "$0.35". */
 export const usd = (cents: number) => '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 });
-/** How many 5×5 scans a number of credits covers, with and without AI Overview tracking. */
-export const scans5x5 = (credits: number) => ({ plain: Math.floor(credits / 25), withAi: Math.floor(credits / 50) });
+/** How many 5×5 scans a number of credits covers (25 points each, AI Overview tracking included). */
+export const scans5x5 = (credits: number) => Math.floor(credits / 25);
 
 export type Onboarding = 'exempt' | 'paid' | 'waived' | 'no';
 /**

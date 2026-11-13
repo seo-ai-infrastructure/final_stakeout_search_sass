@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { OFFERED_GRID_SIZES } from '@stakeout/core/gridSizes';
 import { SiteHeader, SiteFooter, SIGNUPS_OPEN } from './SiteChrome';
 import { EXTRA, ONBOARDING, PLANS, perCredit, scans5x5, usd } from '@/lib/pricing';
 import './marketing.css';
@@ -14,12 +15,13 @@ const INCLUDED = [
 
 const CREDIT_RULES: [string, string][] = [
   ['One grid point, in Chrome or the Google Maps app', '1 credit'],
-  ['With AI Overview tracking (Chrome)', '2 credits'],
+  ['AI Overview tracking (Chrome)', 'included'],
   ['A point that fails', 'credited back automatically'],
   ['Re-running a failed point', 'one click, same price'],
 ];
 
-const GRIDS: [string, number][] = [['3 × 3', 9], ['5 × 5', 25], ['7 × 7', 49]];
+// The sizes on offer right now.
+const GRIDS: [string, number][] = OFFERED_GRID_SIZES.map((n) => [`${n} × ${n}`, n * n]);
 
 const FAQ: [string, string][] = [
   ['Why is there an onboarding fee?', `Every search runs on a real phone, and we only have so many, so we take a small number of customers and set each one up properly. The fee covers that setup and a first audit, and comes with ${ONBOARDING.credits.toLocaleString('en-US')} credits.`],
@@ -56,7 +58,7 @@ export default function PricingPage() {
             Pay for proof, <span className="mk-gold-text">by the point.</span>
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-[#9aa7b8]">
-            One credit is one grid point searched on a real phone, with its recording and receipt. Start with onboarding, then choose a monthly plan.
+One credit is one grid point searched on a real phone, with its recording, receipt and AI Overview tracking. Start with onboarding, then choose a monthly plan.
           </p>
         </div>
       </section>
@@ -109,8 +111,8 @@ export default function PricingPage() {
                 <p className="mt-2 text-lg font-semibold text-[#eef2f7]">{p.credits.toLocaleString('en-US')} credits</p>
                 <p className="mk-mono mt-1 text-sm text-[#9aa7b8]">{usd(Math.round(perCredit(p) * 100))} per credit</p>
                 <ul className="mt-6 space-y-2 text-sm text-[#c9d3df]">
-                  <li>{s.plain} scans at 5 × 5</li>
-                  <li>or {s.withAi} with AI Overview tracking</li>
+                  <li>{s} scans at 5 × 5</li>
+                  <li>AI Overview tracking included</li>
                   <li className="text-[#9aa7b8]">{p.fits}</li>
                 </ul>
               </div>
@@ -144,7 +146,6 @@ export default function PricingPage() {
                 <tr>
                   <th className="px-5 py-4 font-medium">Grid</th>
                   <th className="px-5 py-4 font-medium">Credits</th>
-                  <th className="px-5 py-4 font-medium">With AI tracking</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1b2431]">
@@ -152,7 +153,6 @@ export default function PricingPage() {
                   <tr key={name}>
                     <td className="px-5 py-4 font-semibold text-[#eef2f7]">{name}</td>
                     <td className="mk-mono px-5 py-4 text-[#c9d3df]">{n}</td>
-                    <td className="mk-mono px-5 py-4 text-[#c9d3df]">{n * 2}</td>
                   </tr>
                 ))}
               </tbody>

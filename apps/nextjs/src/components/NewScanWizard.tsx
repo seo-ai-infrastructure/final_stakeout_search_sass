@@ -1,5 +1,6 @@
 // apps/nextjs/src/components/NewScanWizard.tsx
 'use client';
+import { OFFERED_GRID_SIZES } from '@stakeout/core/gridSizes';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
@@ -22,13 +23,10 @@ import { IspSelectorDropdown, type IspMode, type IspOption } from '@/components/
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';
-const GRID_SIZES = [
-  { size: 3, label: '3×3 (9 Pins)' },
-  { size: 5, label: '5×5 (25 Pins)' },
-  { size: 7, label: '7×7 (49 Pins)' },
-  { size: 9, label: '9×9 (81 Pins)' },
-  { size: 11, label: '11×11 (121 Pins)' },
-];
+// Only the sizes on offer right now (see OFFERED_GRID_SIZES).
+const GRID_SIZES = OFFERED_GRID_SIZES.map((size) => ({ size, label: `${size}×${size} (${size * size} Pins)` }));
+/** A size carried over from an older scan or a saved business that is no longer offered falls back to 5×5. */
+const offeredSize = (n: number) => (OFFERED_GRID_SIZES.includes(n) ? n : 5);
 const SPACING_OPTIONS = [
   { label: '0.5 Miles', km: 0.80467 },
   { label: '1.0 Mile', km: 1.60934 },
@@ -43,7 +41,7 @@ export function NewScanWizard() {
   const [targetBusiness, setTargetBusiness] = useState('');
   const [centerLat, setCenterLat] = useState<number>(28.039465);
   const [centerLng, setCenterLng] = useState<number>(-81.949804);
-  const [gridSize, setGridSize] = useState<number>(7);
+  const [gridSize, setGridSize] = useState<number>(5);
   const [spacingKm, setSpacingKm] = useState<number>(1.60934);
   const [trackAiOverviews, setTrackAiOverviews] = useState<boolean>(true);
   const [scheduleType, setScheduleType] = useState<'once' | 'daily' | 'weekly'>(
@@ -85,7 +83,7 @@ export function NewScanWizard() {
     setCenterLng(b.centerLng);
     setAddressQuery(b.centerLabel);
     setTargetType(b.targetType);
-    setGridSize(b.gridSize);
+    setGridSize(offeredSize(b.gridSize));
     setSpacingKm(b.spacingKm);
     setIspMode(b.ispMode);
     setIspSelected(b.isps ?? []);
@@ -124,7 +122,7 @@ export function NewScanWizard() {
         setCenterLat(sc.centerLat);
         setCenterLng(sc.centerLng);
         if (sc.targetType) setTargetType(sc.targetType);
-        if (sc.gridSize) setGridSize(sc.gridSize);
+        if (sc.gridSize) setGridSize(offeredSize(sc.gridSize));
         if (sc.spacingKm) setSpacingKm(sc.spacingKm);
         setTrackAiOverviews(Boolean(sc.trackAiOverviews));
         const match = list.find((x) => x.name === sc.targetBusiness);
@@ -232,13 +230,11 @@ export function NewScanWizard() {
     }
     return pts;
   }, [centerLat, centerLng, gridSize, spacingKm]);
-  // 4. Credit Cost Calculation (Base + AI Overview Add-on)
+  // 4. Credit cost: one credit per grid point. AI Overview tracking is included.
   const creditSummary = useMemo(() => {
     const totalPins = gridSize * gridSize;
     const isDesktop = targetType.startsWith('desktop_');
-    const baseCost = isDesktop ? 2 : 1;
-    const aiAddon = !isDesktop && targetType !== 'mobile_maps' && trackAiOverviews ? 1 : 0;
-    const costPerPin = baseCost + aiAddon;
+    const costPerPin = isDesktop ? 2 : 1;
     const totalCost = totalPins * costPerPin;
     const spanMiles = ((gridSize - 1) * spacingKm * 0.621371).toFixed(1);
     return {
@@ -248,7 +244,7 @@ export function NewScanWizard() {
       spanMiles,
       hasEnoughCredits: creditBalance >= totalCost,
     };
-  }, [gridSize, spacingKm, targetType, trackAiOverviews, creditBalance]);
+  }, [gridSize, spacingKm, targetType, creditBalance]);
   // 5. MapLibre Initialization
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -468,7 +464,7 @@ export function NewScanWizard() {
   const askMapsSoon = targetType === 'mobile_maps';
   const aiAddonLabel = askMapsSoon
     ? 'Track "Ask Maps" AI answers (coming soon)'
-    : 'Track Google AI Overviews & Citations (+1 Cr/Pin)';
+    : 'Google AI Overviews & citations';
   return (
     <div className="flex min-h-[calc(100vh-4rem)] w-full flex-col lg:h-[calc(100vh-4rem)] lg:overflow-hidden bg-slate-950 text-slate-100 lg:flex-row">
       {/* LEFT PANEL: ALL 8 CONFIGURATION INPUTS */}
@@ -680,28 +676,24 @@ export function NewScanWizard() {
               setIspSelected(selected);
             }}
           />
-          {/* 7. Add-On: Track AI Overviews / Ask Maps */}
+          {/* 7. AI Overviews: part of every Chrome scan */}
           <div className="rounded-xl border border-purple-500/30 bg-purple-950/15 p-3.5">
-            <label className="flex cursor-pointer items-center justify-between">
-              <div className="space-y-0.5 pr-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-purple-200">
                   <Sparkles className="h-4 w-4 text-purple-400" />
                   5. {aiAddonLabel}
                 </div>
                 <div className="text-[11px] text-slate-400">
                   {askMapsSoon
-                    ? 'Maps scans track the Maps results list. Ask Maps answers are coming soon, and are not charged.'
-                    : 'Capture the AI panel, its text, and visible sources at each grid point.'}
+                    ? 'Maps scans track the Maps results list. Ask Maps answers are coming soon.'
+                    : 'Every point captures the AI panel, its text and the sources it cites. No extra credit.'}
                 </div>
               </div>
-              <input
-                type="checkbox"
-                checked={askMapsSoon ? false : trackAiOverviews}
-                disabled={askMapsSoon}
-                onChange={(e) => setTrackAiOverviews(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-purple-500 disabled:opacity-40"
-              />
-            </label>
+              <span className={'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ' + (askMapsSoon ? 'bg-slate-800 text-slate-300' : 'bg-purple-500/25 text-purple-100')}>
+                {askMapsSoon ? 'Soon' : 'Included'}
+              </span>
+            </div>
           </div>
           {/* 8. Automation Schedule */}
           <div className="space-y-1.5">
