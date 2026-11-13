@@ -8,6 +8,8 @@ import { isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder,
 export type InsightListing = { name: string; pos: number | null; ad: boolean; miles: number | null; rating: number | null; reviews: number | null };
 export type PinInsights = {
   v: 1;
+  /** Set on a Maps point read with the list merge that keeps an advertiser's own listing (2). */
+  m?: number;
   /** Local Finder cards in page order (ads included). */
   finder: InsightListing[];
   /** The tracked business in the Local Finder here: organic position and distance from the phone. */
@@ -128,5 +130,5 @@ export function buildPinInsights(input: {
   const shown = Boolean(
     input.aiCopy?.trim() || (input.aiExpanded && readAiOverview(input.aiExpanded)) || page?.aiPreview || (input.serp && readAiOverview(input.serp)),
   );
-  return { v: 1, finder, you, ads, adsAboveYou, ai: { shown, sources, named } };
+  return { v: 1, ...(maps ? { m: 2 } : {}), finder, you, ads, adsAboveYou, ai: { shown, sources, named } };
 }

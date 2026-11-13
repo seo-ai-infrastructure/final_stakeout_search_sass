@@ -113,3 +113,23 @@ test('the map pack ends at "See more on Google": nothing after it is read as a p
     .replace(/(text="(?:Roto-Rooter|Before You Dig|Vanguard Plumbing)[^"]*"[^>]*)class="android\.view\.View"/g, '$1class="android.widget.Button"');
   assert.equal(readResultsPage(asCards)!.pack.length, 4);
 });
+
+test('Maps list: an advertiser\'s own listing is a separate card and counts in the ranking (real scan, 13 Nov)', async () => {
+  const { untarGz, readMapsList, sameBusiness } = await import('../packages/core/serpEvidence');
+  const { readFileSync: rf } = await import('node:fs');
+  const files = untarGz(rf('tests/fixtures/real-maps-ad-and-listing-2026-11-13.tar.gz'));
+  const num = (p: string) => (/dump_(\d+)/.exec(p) ? Number(/dump_(\d+)/.exec(p)![1]) : 999);
+  const screens = [...files].filter(([p]) => p.endsWith('.xml')).sort((a, b) => num(a[0]) - num(b[0])).map(([, d]) => d.toString('utf8'));
+  assert.equal(screens.length, 14);
+  const cards = readMapsList(screens);
+  // Benjamin Franklin Plumbing has a sponsored card near the top AND its own listing at #3.
+  const bf = cards.filter((c) => sameBusiness(c.name, 'Benjamin Franklin Plumbing'));
+  assert.deepEqual(bf.map((c) => [c.ad, c.pos]), [[true, null], [false, 3]]);
+  const organic = cards.filter((c) => !c.ad);
+  assert.equal(organic.length, 12);
+  assert.equal(organic.find((c) => sameBusiness(c.name, "Stuart's Plumbing"))!.pos, 8, 'the rank the worker saved');
+  assert.deepEqual(cards.filter((c) => c.ad).map((c) => c.name), ['Frank Gay Services', 'Benjamin Franklin Plumbing', 'Expedited Home Services', 'Vanguard Plumbing']);
+  // The stored insights agree, and are marked as read with this merge.
+  const ins = buildPinInsights({ mapsScreens: screens, target: "Stuart's Plumbing" } as never);
+  assert.deepEqual([ins.you.pos, ins.m, ins.adsAboveYou], [8, 2, 4]);
+});

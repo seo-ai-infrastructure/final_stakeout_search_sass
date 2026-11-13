@@ -10,6 +10,11 @@ import { buildPinInsights } from '@stakeout/core/pinInsights';
  * Runs in the background after the worker starts; a point that fails is retried at the next start.
  */
 export async function backfillInsights(limit = 500) {
+  // Maps points read before the list merge kept an advertiser's own listing apart from its ad
+  // (their stored position could be one too low) are cleared once, so they are rebuilt below.
+  await db.$executeRaw`
+    UPDATE "GridPin" p SET insights = NULL FROM "GridScan" s
+    WHERE s.id = p."scanId" AND s."targetType" = 'mobile_maps' AND p.insights IS NOT NULL AND p.insights->>'m' IS NULL`;
   const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string; target: string }[]>`
     SELECT p.id, p."scanId", p."dumpsTarUrl", s."targetBusiness" AS target
     FROM "GridPin" p JOIN "GridScan" s ON s.id = p."scanId"

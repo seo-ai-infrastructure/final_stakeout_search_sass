@@ -33,9 +33,39 @@ export function rankColor(status: string, rank: number | null | undefined) {
   return rank <= 3 ? RANK_COLORS.top : rank === 4 ? RANK_COLORS.four : rank <= 7 ? RANK_COLORS.mid : rank <= 10 ? RANK_COLORS.late : RANK_COLORS.low;
 }
 
-/** The text colour that stays readable on a rank colour: dark on the three light ones, white on the rest. */
+/**
+ * The same scale for the 3D columns, in brighter shades. The 2D pins are dark enough to carry
+ * white numbers; a lit 3D column in those shades goes muddy, so wins read as grey-green. Same
+ * hues, same bands, same meaning.
+ */
+export const COLUMN_COLORS: typeof RANK_COLORS = {
+  top: '#1fc98a',
+  four: '#a8efc6',
+  mid: '#fcd34d',
+  late: '#fb923c',
+  low: '#b45309',
+  none: '#ef4444',
+  pending: '#64748b',
+};
+const BANDS = ['top', 'four', 'mid', 'late', 'low', 'none'] as const;
+export const COLUMN_SCALE: [string, string][] = RANK_SCALE.map(([label], i) => [label, COLUMN_COLORS[BANDS[i]]]);
+
+/** A rank's colour as a 3D column. */
+export function columnColor(status: string, rank: number | null | undefined) {
+  const flat = rankColor(status, rank);
+  const band = (Object.keys(RANK_COLORS) as (keyof typeof RANK_COLORS)[]).find((k) => RANK_COLORS[k] === flat)!;
+  return COLUMN_COLORS[band];
+}
+
+/** The text colour that stays readable on a colour: dark on a light one, white on a dark one. */
 export function rankTextColor(background: string) {
-  return background === RANK_COLORS.four || background === RANK_COLORS.mid || background === RANK_COLORS.late ? '#0f172a' : '#ffffff';
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(background);
+  if (!m) return '#ffffff';
+  const [r, g, b] = m.slice(1).map((h) => {
+    const v = parseInt(h, 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.3 ? '#0f172a' : '#ffffff';
 }
 
 type Pin = { id: string; lat: number; lng: number; status: string; rankFound: number | null };
@@ -72,7 +102,7 @@ export function gridColumns(
         properties: {
           id: p.id,
           h: Math.round(h),
-          color: faded(p) ? '#1e293b' : rankColor(p.status, rankOf(p)),
+          color: faded(p) ? '#1e293b' : columnColor(p.status, rankOf(p)),
           share: share ?? null,
         },
         geometry: { type: 'Polygon' as const, coordinates: [ring] },

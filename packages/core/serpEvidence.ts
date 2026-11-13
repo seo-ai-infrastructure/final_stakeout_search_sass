@@ -344,11 +344,26 @@ function mapsScreen(xml: string) {
  */
 export function readMapsList(screens: (string | null | undefined)[]): MapsCard[] {
   const out: MapsCard[] = [];
+  // The last screen each card was seen on, to tell a card continuing from the previous screen
+  // from a second card with the same name.
+  const lastSeen = new Map<MapsCard, number>();
+  let screenNo = -1;
   for (const xml of screens) {
     if (!isMapsList(xml)) continue;
+    screenNo++;
+    let nth = -1;
     for (const c of mapsScreen(xml!)) {
       if (!c.name) continue;
-      let card = out.find((x) => sameBusiness(x.name, c.name!));
+      nth++;
+      // A business can be on the list twice: its sponsored card, and its own listing lower down.
+      // Those are two cards, and the listing counts in the ranking. A card is joined to an earlier
+      // one of the same kind; a card with no "Sponsored" label is joined to an AD of that name only
+      // when it is that ad scrolling off the top (first on this screen, the ad on the screen before).
+      const sponsored = c.texts.some((t) => /^sponsored$/i.test(t));
+      const same = out.filter((x) => sameBusiness(x.name, c.name!));
+      const ad = same.find((x) => x.ad),
+        listing = same.find((x) => !x.ad);
+      let card: MapsCard | undefined = sponsored ? ad : (listing ?? (ad && nth === 0 && screenNo - (lastSeen.get(ad) ?? -9) <= 1 ? ad : undefined));
       if (!card) {
         card = { name: c.name, ad: false, adKind: null, pos: null, listPos: out.length + 1, rating: null, reviews: null, lines: [], quote: null, distance: null };
         out.push(card);
@@ -365,6 +380,7 @@ export function readMapsList(screens: (string | null | undefined)[]): MapsCard[]
         else if (/^\s*·/.test(t) && lines.length) lines[lines.length - 1] += ' ' + t.trim();
         else lines.push(t.trim());
       }
+      lastSeen.set(card, screenNo);
       for (const l of lines) if (!card.lines.includes(l)) card.lines.push(l);
       const d = /(?:^|·)\s*(\d+(?:\.\d+)?) ?(mi|ft|km)\b/.exec(card.lines.join(' · '));
       if (d) card.distance ??= `${d[1]} ${d[2]}`;

@@ -1,4 +1,5 @@
 'use client';
+import { rankColor, rankTextColor, RANK_SCALE } from '../lib/gridColumns';
 import { useEffect, useMemo, useState } from 'react';
 import type { GridPinData, GridScanData } from './GeoGridDashboard';
 import { describeArea, LEVEL_LABEL } from '../lib/censusLayer';
@@ -42,13 +43,6 @@ const norm = (s: string) =>
   s.toLowerCase().replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|ltd)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
 const cache = new Map<string, Evidence>();
 
-/** Rank colour: green 1–3, amber 4–10, rose 11+, grey when absent. */
-function tone(rank: number | null | undefined) {
-  if (rank == null) return 'bg-slate-700 text-slate-200';
-  if (rank <= 3) return 'bg-emerald-400 text-slate-950';
-  if (rank <= 10) return 'bg-amber-400 text-slate-950';
-  return 'bg-rose-400 text-slate-950';
-}
 
 export function EvidencePanel({
   scan,
@@ -151,8 +145,12 @@ export function EvidencePanel({
                 aria-label={`Row ${p.rowIdx + 1}, column ${p.colIdx + 1}: ${p.status === 'COMPLETED' ? (rank ? 'rank ' + rank : 'not in the list') : p.status.toLowerCase()}`}
                 className={`flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border-2 transition-colors ${on ? 'border-emerald-400 bg-slate-800' : 'border-slate-800 bg-slate-950 hover:border-slate-600'}`}
               >
-                <span className={`min-w-[36px] rounded-full px-2 py-0.5 text-center text-xs font-extrabold ${p.status === 'COMPLETED' ? tone(rank) : 'bg-slate-800 text-slate-400'}`}>
-                  {p.status !== 'COMPLETED' ? (p.status === 'FAILED' ? '×' : '…') : rank ? '#' + rank : '–'}
+                {/* The same colour scale as the map pins. */}
+                <span
+                  className="min-w-[36px] rounded-full px-2 py-0.5 text-center text-xs font-extrabold"
+                  style={{ backgroundColor: rankColor(p.status, rank), color: rankTextColor(rankColor(p.status, rank)) }}
+                >
+                  {p.status !== 'COMPLETED' ? (p.status === 'FAILED' ? '×' : '…') : rank ? '#' + rank : '20+'}
                 </span>
                 {scan.gridSize <= 7 && <span className="text-[10px] text-slate-500">R{p.rowIdx + 1}·C{p.colIdx + 1}</span>}
               </button>
@@ -160,9 +158,12 @@ export function EvidencePanel({
           })}
         </div>
         <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-400">
-          <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-emerald-400" />#1–3</span>
-          <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-amber-400" />#4–10</span>
-          <span className="flex items-center gap-1.5"><i className="h-2.5 w-2.5 rounded-sm bg-rose-400" />11+</span>
+          {RANK_SCALE.map(([label, color]) => (
+            <span key={label} className="flex items-center gap-1.5">
+              <i className="h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
+              {label}
+            </span>
+          ))}
         </div>
       </section>
 

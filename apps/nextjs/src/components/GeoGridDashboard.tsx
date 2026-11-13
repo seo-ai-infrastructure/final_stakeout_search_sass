@@ -16,7 +16,7 @@ import { bandOf, type RankBucket } from '../lib/reportSummary';
 import { groundOwners } from '../lib/marketInsights';
 import { MarketInsights } from './MarketInsights';
 import { buyingPower, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
-import { gridColumns, RANK_COLORS, rankColor, rankTextColor, RANK_SCALE } from '../lib/gridColumns';
+import { gridColumns, RANK_COLORS, rankColor, rankTextColor, RANK_SCALE, columnColor, COLUMN_SCALE } from '../lib/gridColumns';
 import {
   CENSUS_LAYERS,
   CENSUS_SOURCE_LABEL,
@@ -78,11 +78,14 @@ function addGridColumns(m: maplibregl.Map, onPick: (id: string) => void) {
       'fill-extrusion-color': ['get', 'color'],
       'fill-extrusion-height': ['get', 'h'],
       'fill-extrusion-base': 0,
-      'fill-extrusion-opacity': 0.93,
+      // Solid: any transparency greys the colours against the map underneath.
+      'fill-extrusion-opacity': 1,
       'fill-extrusion-vertical-gradient': true,
     },
   });
-  m.setLight({ anchor: 'viewport', color: '#ffffff', intensity: 0.45, position: [1.4, 210, 35] });
+  // Gentle shading, enough for each column to read as a solid shape. Stronger light turns the
+  // sides nearly black, and a tall column's colour is then unreadable from the side.
+  m.setLight({ anchor: 'viewport', color: '#ffffff', intensity: 0.55, position: [1.4, 200, 40] });
   m.on('click', 'grid-columns', (e) => {
     const id = e.features?.[0]?.properties?.id;
     if (id) onPick(String(id));
@@ -288,7 +291,8 @@ export function GeoGridDashboard({
       if (range && censusMetric !== 'off') {
         const color = fillColor(censusMetric, breaks) as never;
         m.setPaintProperty(`census-${layer}`, 'fill-color', color);
-        m.setPaintProperty(`census-${layer}`, 'fill-opacity', fillOpacity(censusMetric) as never);
+        // Behind the 3D columns the neighbourhood shading steps back, so the columns stand clear of it.
+        m.setPaintProperty(`census-${layer}`, 'fill-opacity', fillOpacity(censusMetric, view3d && style3d === 'columns' ? 0.3 : 0.55) as never);
         m.setPaintProperty(`census-${layer}-3d`, 'fill-extrusion-color', color);
       }
     }
@@ -376,7 +380,8 @@ export function GeoGridDashboard({
       el.type = 'button';
       el.className = 'rounded-full border-2 border-white text-xs font-bold';
       el.style.width = el.style.height = '34px';
-      const fill = rankColor(p.status, rank);
+      // On a 3D column the label takes the column's own (brighter) shade.
+      const fill = view3d && style3d === 'columns' ? columnColor(p.status, rank) : rankColor(p.status, rank);
       el.style.backgroundColor = fill;
       el.style.color = rankTextColor(fill);
       el.textContent =
@@ -399,7 +404,7 @@ export function GeoGridDashboard({
     return () => {
       markers.forEach((v) => v.remove());
     };
-  }, [scan, projected, bpFilters, rankBand]);
+  }, [scan, projected, bpFilters, rankBand, view3d, style3d]);
   async function changeShare(action: string) {
     try {
       const r = await fetch('/api/scans/' + identifier, {
@@ -627,7 +632,7 @@ export function GeoGridDashboard({
                   <>
                     <p className="font-bold">Height = the point&apos;s share of this grid&apos;s buying power</p>
                     <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-                      {RANK_SCALE.map(([label, color]) => (
+                      {COLUMN_SCALE.map(([label, color]) => (
                         <span key={label} className="inline-flex items-center gap-1">
                           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
                           {label}
