@@ -3,12 +3,39 @@
  * (tallest = most valuable point); colour = the rank shown there. Tall red columns are valuable
  * places the business is losing; tall green ones are valuable places it is winning.
  */
-export const RANK_COLORS = { top: '#10b981', mid: '#f59e0b', low: '#ef4444', none: '#64748b', pending: '#334155' };
+/**
+ * One colour scale for a rank, used by the 2D pins, the 3D columns, the legends and the charts.
+ * Red belongs to "20+ / not found" alone, so the worst result is unmistakable.
+ */
+export const RANK_COLORS = {
+  top: '#047857', // #1–3
+  four: '#86efac', // #4: just outside the top 3
+  mid: '#facc15', // #5–7
+  late: '#f97316', // #8–10
+  low: '#9a3412', // #11–20
+  none: '#dc2626', // 20+ / not found
+  pending: '#475569', // not finished, or failed
+};
+
+/** The scale in order, for a legend. */
+export const RANK_SCALE: [string, string][] = [
+  ['#1–3', RANK_COLORS.top],
+  ['#4', RANK_COLORS.four],
+  ['#5–7', RANK_COLORS.mid],
+  ['#8–10', RANK_COLORS.late],
+  ['#11–20', RANK_COLORS.low],
+  ['20+ / not found', RANK_COLORS.none],
+];
 
 export function rankColor(status: string, rank: number | null | undefined) {
   if (status !== 'COMPLETED') return RANK_COLORS.pending;
-  if (!rank) return RANK_COLORS.none;
-  return rank <= 3 ? RANK_COLORS.top : rank <= 10 ? RANK_COLORS.mid : RANK_COLORS.low;
+  if (!rank || rank > 20) return RANK_COLORS.none;
+  return rank <= 3 ? RANK_COLORS.top : rank === 4 ? RANK_COLORS.four : rank <= 7 ? RANK_COLORS.mid : rank <= 10 ? RANK_COLORS.late : RANK_COLORS.low;
+}
+
+/** The text colour that stays readable on a rank colour: dark on the three light ones, white on the rest. */
+export function rankTextColor(background: string) {
+  return background === RANK_COLORS.four || background === RANK_COLORS.mid || background === RANK_COLORS.late ? '#0f172a' : '#ffffff';
 }
 
 type Pin = { id: string; lat: number; lng: number; status: string; rankFound: number | null };

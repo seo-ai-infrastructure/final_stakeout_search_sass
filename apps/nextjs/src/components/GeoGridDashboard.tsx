@@ -16,7 +16,7 @@ import { bandOf, type RankBucket } from '../lib/reportSummary';
 import { groundOwners } from '../lib/marketInsights';
 import { MarketInsights } from './MarketInsights';
 import { buyingPower, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
-import { gridColumns, RANK_COLORS } from '../lib/gridColumns';
+import { gridColumns, RANK_COLORS, rankColor, rankTextColor, RANK_SCALE } from '../lib/gridColumns';
 import {
   CENSUS_LAYERS,
   CENSUS_SOURCE_LABEL,
@@ -376,16 +376,9 @@ export function GeoGridDashboard({
       el.type = 'button';
       el.className = 'rounded-full border-2 border-white text-xs font-bold';
       el.style.width = el.style.height = '34px';
-      el.style.backgroundColor =
-        p.status !== 'COMPLETED'
-          ? '#475569'
-          : !rank
-            ? '#334155'
-            : rank <= 3
-              ? '#047857'
-              : rank <= 10
-                ? '#92400e'
-                : '#b91c1c';
+      const fill = rankColor(p.status, rank);
+      el.style.backgroundColor = fill;
+      el.style.color = rankTextColor(fill);
       el.textContent =
         p.status === 'FAILED'
           ? '×'
@@ -618,13 +611,23 @@ export function GeoGridDashboard({
                 </div>
               )}
             </div>
+            {!view3d && (
+              <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[75%] flex-wrap gap-x-3 gap-y-1 rounded-lg border border-slate-700 bg-slate-950/85 px-2.5 py-2 text-[11px] text-slate-200 shadow-lg backdrop-blur">
+                {RANK_SCALE.map(([label, color]) => (
+                  <span key={label} className="inline-flex items-center gap-1">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
             {view3d && (
               <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-[75%] rounded-lg border border-slate-700 bg-slate-950/85 p-2.5 text-[11px] text-slate-200 shadow-lg backdrop-blur">
                 {style3d === 'columns' ? (
                   <>
                     <p className="font-bold">Height = the point&apos;s share of this grid&apos;s buying power</p>
                     <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-                      {([['Top 3', RANK_COLORS.top], ['#4–10', RANK_COLORS.mid], ['#11+', RANK_COLORS.low], ['Not found', RANK_COLORS.none]] as const).map(([label, color]) => (
+                      {RANK_SCALE.map(([label, color]) => (
                         <span key={label} className="inline-flex items-center gap-1">
                           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
                           {label}
