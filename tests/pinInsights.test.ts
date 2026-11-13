@@ -133,3 +133,30 @@ test('Maps list: an advertiser\'s own listing is a separate card and counts in t
   const ins = buildPinInsights({ mapsScreens: screens, target: "Stuart's Plumbing" } as never);
   assert.deepEqual([ins.you.pos, ins.m, ins.adsAboveYou], [8, 2, 4]);
 });
+
+test('the full business list from a fallback pass reads the same as any other (real page, 13 Nov)', async () => {
+  const { isLocalFinder, readLocalFinder, sameBusiness } = await import('../packages/core/serpEvidence');
+  const { parseWebResults } = await import('../apps/worker/src/xmlParser');
+  // Taken by the recorder's own pass (the template's last snapshot was missing), at the foot of the page.
+  const page = read('real-places-page-2026-11-13.xml');
+  assert.equal(isLocalFinder(page), true);
+  const organic = readLocalFinder(page).filter((x) => !x.ad);
+  assert.deepEqual(organic.map((x) => x.pos), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(organic.slice(0, 3).map((x) => x.name), ['Nest Plumbing LLC', 'All Pro Plumbing & Air', "Stuart's Plumbing"]);
+  // Stuart's Plumbing is there twice: a sponsored card, and its own listing at #3. Only the listing ranks.
+  assert.deepEqual(readLocalFinder(page).filter((x) => sameBusiness(x.name, "Stuart's Plumbing")).map((x) => [x.ad, x.pos]), [[true, null], [false, 3]]);
+  // The worker's ranking and the evidence view read the same list from it.
+  const w = parseWebResults(page, [], [], "Stuart's Plumbing");
+  assert.equal(w.targetRank, 3);
+  assert.deepEqual(w.orderedBusinesses, organic.map((x) => x.name));
+  assert.equal(buildPinInsights({ serp: null, finder: page, target: "Stuart's Plumbing" }).you.pos, 3);
+});
+
+test('the recorder keeps the location flag and the results page whichever evidence it ends up using', async () => {
+  const { OBSERVE_SH } = await import('../packages/core/observer');
+  assert.equal((OBSERVE_SH.match(/location_refreshed=1/g) || []).length, 1);
+  assert.ok(OBSERVE_SH.indexOf('location_refreshed=1') < OBSERVE_SH.indexOf('evidence=template'), 'recorded before the evidence is chosen');
+  assert.ok(OBSERVE_SH.indexOf('location_refreshed=1') < OBSERVE_SH.indexOf('evidence=observer_pass'));
+  assert.ok(OBSERVE_SH.includes('serp_page.xml') && /mv "?\\?"?\$D\/serp_page\.xml/.test(OBSERVE_SH.replace(/\\"/g, '"')), 'the fallback keeps the template\'s results page');
+  assert.ok(!/input swipe \$X \$\(\(H\*30\/100\)\) \$X \$\(\(H\*80\/100\)\)/.test(OBSERVE_SH), 'no drag down at the top of the page: that is pull-to-refresh');
+});

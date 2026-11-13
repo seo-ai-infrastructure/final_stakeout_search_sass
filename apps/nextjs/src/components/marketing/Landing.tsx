@@ -114,20 +114,20 @@ function PhoneWall() {
   return (
     <figure className="rounded-3xl border border-[#1b2431] bg-[#0b0f15] p-4 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-[12px]">
-        <span className="mk-mono text-[#c9d3df]">“plumber near me” · 7×7 · 1 mi apart</span>
+        <span className="mk-mono text-[#c9d3df]">“plumber near me” · 5×5 · 1 mi apart</span>
         <span className="flex items-center gap-3 text-[#9aa7b8]">
           {[['#3ddc97', 'Top 3'], ['#f5c451', '4–10'], ['#ff8a4c', '11–20'], ['#2a3442', '20+']].map(([c, l]) => (
             <span key={l} className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: c }} />{l}</span>
           ))}
         </span>
       </div>
-      <div className="grid grid-cols-7 gap-1.5 sm:gap-2" role="img" aria-label="A 7 by 7 grid of phone sessions, strongest in the centre; each square is one recorded search">
+      <div className="grid grid-cols-5 gap-1.5 sm:gap-2" role="img" aria-label="A 5 by 5 grid of phone sessions, strongest in the centre; each square is one recorded search">
         {WALL.map((r, i) => {
           const { bg, ink } = rankStyle(r);
           return (
-            <div key={i} className={'relative flex aspect-[3/4] flex-col items-center justify-center rounded-lg border border-[#1b2431] bg-[#0f141c] ' + (i === 24 ? 'mk-ping ring-2 ring-[#f5c451]' : '')}>
-              <span className="mk-display rounded-md px-1.5 text-[13px] font-bold sm:text-base" style={{ background: bg, color: ink }}>{r > 20 ? '20+' : r}</span>
-              <span className="mt-1 text-[9px] text-[#6b7686] sm:text-[10px]" aria-hidden="true">▶</span>
+            <div key={i} className={'relative flex aspect-[4/5] flex-col items-center justify-center rounded-xl border border-[#1b2431] bg-[#0f141c] ' + (i === 12 ? 'mk-ping ring-2 ring-[#f5c451]' : '')}>
+              <span className="mk-display rounded-md px-2 text-lg font-bold sm:px-2.5 sm:text-2xl" style={{ background: bg, color: ink }}>{r > 20 ? '20+' : r}</span>
+              <span className="mt-1.5 text-[10px] text-[#6b7686] sm:text-xs" aria-hidden="true">▶</span>
             </div>
           );
         })}
@@ -197,7 +197,7 @@ function AiAnswers() {
             <div className="space-y-3">
               <div className="rounded-2xl border border-[#d6e4ff]/20 bg-[#0f1624] p-4">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps preview · point 2,6</span>
+                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps preview · point 2,5</span>
                   <span className="rounded-full bg-[#ff6b6b]/15 px-2 py-0.5 font-semibold text-[#ff9b9b]">Not named</span>
                 </div>
                 <p className="mt-2 text-[13px] leading-relaxed text-[#c9d3df]">
@@ -215,7 +215,7 @@ function AiAnswers() {
               </div>
               <div className="rounded-2xl border border-[#2a3442] bg-[#0c1118] p-4">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-[#9dbcff]">✦ AI Overview · point 6,3</span>
+                  <span className="font-semibold text-[#9dbcff]">✦ AI Overview · point 5,3</span>
                   <span className="text-[#9aa7b8]">3 sources cited</span>
                 </div>
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -226,13 +226,13 @@ function AiAnswers() {
               </div>
             </div>
             <figure className="rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-4">
-              <div className="grid grid-cols-7 gap-1" role="img" aria-label={`Named in the AI answer at ${named} of 49 points`}>
+              <div className="grid grid-cols-5 gap-1.5" role="img" aria-label={`Named in the AI answer at ${named} of 25 points`}>
                 {AI_NAMED.map((v, i) => (
                   <span key={i} className={'aspect-square rounded-full ' + (v ? 'bg-[#f5c451] shadow-[0_0_10px_rgba(245,196,81,0.6)]' : 'bg-[#1b2431]')} />
                 ))}
               </div>
               <figcaption className="mt-4">
-                <span className="mk-display block text-4xl font-bold text-[#f5c451]">{named}<span className="text-xl text-[#9aa7b8]"> / 49</span></span>
+                <span className="mk-display block text-4xl font-bold text-[#f5c451]">{named}<span className="text-xl text-[#9aa7b8]"> / 25</span></span>
                 <span className="text-[12px] leading-snug text-[#9aa7b8]">points where the AI answer named you</span>
               </figcaption>
             </figure>
@@ -252,8 +252,8 @@ const RIVALS: Record<string, { name: string; color: string }> = {
   N: { name: 'Northside Drain & Sewer', color: '#b48cff' },
   A: { name: 'Ace Rooter Service', color: '#3fc7c7' },
 };
-// Who holds #1 at each point of the 7×7 grid.
-const TERRITORY = ['HHHNNNN', 'HHYYNYN', 'HYYYYNN', 'AYYNYYN', 'AAYHYHN', 'AAAYHHH', 'YAAHHHH'].join('').split('');
+// Who holds #1 at each point of the 5×5 grid.
+const TERRITORY = ['HHNNN', 'HYYNN', 'AYYYN', 'AAYYH', 'YAAHH'].join('').split('');
 
 function Territory() {
   const count = (k: string) => TERRITORY.filter((t) => t === k).length;
@@ -265,7 +265,7 @@ function Territory() {
       <div className="grid gap-4 sm:grid-cols-[1fr_1fr]">
         <figure className="rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-4">
           <p className="mk-mono mb-3 text-[11px] uppercase tracking-widest text-[#9aa7b8]">Who holds #1, point by point</p>
-          <div className="grid grid-cols-7 gap-1" role="img" aria-label="A territory map showing which business ranks first at each of 49 grid points">
+          <div className="grid grid-cols-5 gap-1.5" role="img" aria-label="A territory map showing which business ranks first at each of 25 grid points">
             {TERRITORY.map((t, i) => (
               <span key={i} className="aspect-square rounded-[5px]" style={{ background: RIVALS[t].color, opacity: t === 'Y' ? 1 : 0.85 }} />
             ))}
@@ -284,7 +284,7 @@ function Territory() {
                   <span className="mk-mono font-semibold text-white">{r.wins}</span>
                 </div>
                 <div className="mt-2 h-1.5 rounded-full bg-[#1b2431]">
-                  <div className="h-1.5 rounded-full" style={{ width: `${(r.wins / 49) * 100}%`, background: r.color }} />
+                  <div className="h-1.5 rounded-full" style={{ width: `${(r.wins / 25) * 100}%`, background: r.color }} />
                 </div>
               </li>
             ))}
@@ -292,7 +292,7 @@ function Territory() {
         </div>
       </div>
       <div>
-        <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Up to 490 competitor positions per 7×7 scan</p>
+        <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Up to 250 competitor positions per 5×5 scan</p>
         <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
           Know Who&apos;s Beating You, <span className="mk-gold-text">Street by Street.</span>
         </h2>
@@ -319,13 +319,13 @@ function Territory() {
 /* ------------------------------------------------------------------ value section 3: the itemized receipt */
 
 const ITEMS: [string, string][] = [
-  ['Real Android phone sessions', '49'],
-  ['Screen recordings, about 2 hours in total', '49'],
-  ['GPS-set locations, one per grid point', '49'],
-  ['Residential connections, ISP named', '49'],
-  ['Ranked listings captured (up to 10 per point)', '490'],
-  ['AI Overviews checked', '49'],
-  ['SHA-256 evidence fingerprints', '49'],
+  ['Real Android phone sessions', '25'],
+  ['Screen recordings, about 1 hour in total', '25'],
+  ['GPS-set locations, one per grid point', '25'],
+  ['Residential connections, ISP named', '25'],
+  ['Ranked listings captured (up to 10 per point)', '250'],
+  ['AI Overviews checked', '25'],
+  ['SHA-256 evidence fingerprints', '25'],
   ['Client share link, no login needed', '1'],
 ];
 
@@ -334,9 +334,9 @@ function ValueStack() {
     <section className="border-y border-[#1b2431] bg-[#080b10]">
       <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">What one 7×7 scan puts in your hands</p>
+          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">What one 5×5 scan puts in your hands</p>
           <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">Your Scan, <span className="mk-gold-text">Itemized.</span></h2>
-          <p className="mt-5 text-lg text-[#9aa7b8]">A rank tracker sells you 49 colored dots. Here&apos;s what&apos;s behind ours.</p>
+          <p className="mt-5 text-lg text-[#9aa7b8]">A rank tracker sells you 25 colored dots. Here&apos;s what&apos;s behind ours.</p>
         </div>
 
         <div className="mt-14 grid items-start gap-8 lg:grid-cols-[1.15fr_1fr]">
@@ -344,7 +344,7 @@ function ValueStack() {
             <div className="mk-perf" aria-hidden="true" />
             <div className="px-6 pb-7 pt-3 sm:px-9">
               <div className="flex items-baseline justify-between border-b border-dashed border-[#2a3442] pb-3">
-                <span className="mk-display text-lg font-semibold tracking-[0.2em] text-[#f5c451]">STAKEOUT · 7×7 SCAN</span>
+                <span className="mk-display text-lg font-semibold tracking-[0.2em] text-[#f5c451]">STAKEOUT · 5×5 SCAN</span>
                 <span className="mk-mono text-[11px] text-[#9aa7b8]">“plumber near me”</span>
               </div>
               <ul className="mk-mono mt-4 space-y-3 text-[13px] sm:text-[14px]">
@@ -357,7 +357,7 @@ function ValueStack() {
                 ))}
               </ul>
               <div className="mt-6 border-t border-dashed border-[#2a3442] pt-4">
-                <div className="mk-mono flex justify-between text-[13px] text-[#9aa7b8]"><span>Time to run</span><span className="text-white">minutes, not days</span></div>
+                <div className="mk-mono flex justify-between text-[13px] text-[#9aa7b8]"><span>Time to run</span><span className="text-white">minutes, not hours</span></div>
                 <div className="mk-mono mt-2 flex justify-between text-[13px] text-[#9aa7b8]"><span>Your driving</span><span className="text-white">0 miles</span></div>
                 <div className="mk-mono mt-2 flex justify-between text-[13px] text-[#9aa7b8]"><span>Failed points</span><span className="text-[#3ddc97]">credited back automatically</span></div>
               </div>
@@ -368,12 +368,12 @@ function ValueStack() {
           <div className="space-y-4">
             <div className="rounded-2xl border border-[#2a3442] bg-[#0c1118] p-7">
               <p className="mk-mono text-[12px] uppercase tracking-widest text-[#ff8a4c]">The manual way</p>
-              <h3 className="mk-display mt-2 text-3xl font-semibold">One person. One phone. One very long day.</h3>
+              <h3 className="mk-display mt-2 text-3xl font-semibold">One person. One phone. Half a working day.</h3>
               <dl className="mt-6 grid grid-cols-2 gap-3">
                 {[
-                  ['~50 mi', 'of driving between 49 points a mile apart'],
-                  ['~7 hrs', 'driving, parking, searching, recording'],
-                  ['490', 'listings to write down by hand, at most'],
+                  ['~24 mi', 'of driving between 25 points a mile apart'],
+                  ['~4 hrs', 'driving, parking, searching, recording'],
+                  ['250', 'listings to write down by hand, at most'],
                   ['0', 'fingerprints proving nothing was edited'],
                 ].map(([n, l]) => (
                   <div key={l} className="rounded-xl border border-[#1b2431] bg-[#0f141c] px-4 py-3.5">
@@ -586,13 +586,13 @@ export default function Landing() {
       <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-[1fr_1.15fr]">
           <div>
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">One grid. 49 phones. 49 recordings.</p>
+            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">One grid. 25 phone sessions. 25 recordings.</p>
             <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">See Through Your <span className="mk-gold-text">Customers&apos; Eyes.</span></h2>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-[#9aa7b8]">
               Other trackers color a dot. Stakeout runs a separate phone session at each point of your grid and keeps the recording. In a live report, click any square to watch exactly what a searcher there would have seen.
             </p>
             <dl className="mt-8 grid max-w-xl grid-cols-3 gap-4">
-              {[['49', 'phone sessions'], ['49', 'screen recordings'], ['49', 'fingerprinted receipts']].map(([n, l]) => (
+              {[['25', 'phone sessions'], ['25', 'screen recordings'], ['25', 'fingerprinted receipts']].map(([n, l]) => (
                 <div key={l} className="rounded-xl border border-[#1b2431] bg-[#0c1118] px-4 py-4">
                   <dt className="sr-only">{l}</dt>
                   <dd className="mk-display text-3xl font-bold text-[#f5c451]">{n}</dd>

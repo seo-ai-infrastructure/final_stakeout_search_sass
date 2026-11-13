@@ -44,6 +44,9 @@ echo "rpa_end_t=$(( $(date +%s) - T0 ))" >> "$D/meta.txt"
 if [ -n "$RUN" ]; then
   for x in blocked surface_error; do [ -s "$T/$RUN.$x" ] && echo "$x=$(head -c 160 "$T/$RUN.$x" | tr '\n' ' ')" >> "$D/meta.txt"; done
   [ -s "$T/$RUN.done" ] && echo "done_status=$(head -c 20 "$T/$RUN.done" | tr -d '\n ')" >> "$D/meta.txt"
+  # The template refreshes Google's location and leaves this marker (v3.7+). Recorded here, before
+  # the evidence is chosen: it is a fact about the run, whichever snapshots end up being used.
+  [ -e "$T/$RUN".location_refreshed ] && echo "location_refreshed=1" >> "$D/meta.txt"
 fi
 sleep 1
 n=0
@@ -71,8 +74,6 @@ if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
   for x in capture.json events.tsv captures.tsv; do [ -s "$T/$RUN.$x" ] && cp "$T/$RUN.$x" "$D/$x"; done
   # v4.0 diagnostics: location snapshot, failure snapshot, status receipt, event log.
   for x in location.xml error.xml rpa_status.json rpa_events.tsv; do [ -s "$T/$RUN"_$x ] && cp "$T/$RUN"_$x "$D/$x"; done
-  # The template taps "Update location" and leaves this marker (v3.7+); kept in meta.txt.
-  [ -e "$T/$RUN".location_refreshed ] && echo "location_refreshed=1" >> "$D/meta.txt"
   # Screenshots: the full AI Overview, and the tracked business visible on the results page / in the Local Finder.
   [ -s "$T/$RUN"_aio.png ] && cp "$T/$RUN"_aio.png "$D/shot_ai.png"
   [ -s "$T/$RUN"_pack_target.png ] && cp "$T/$RUN"_pack_target.png "$D/shot_pack.png"
@@ -85,9 +86,13 @@ elif [ -n "$RUN" ] && { [ -e "$T/$RUN".blocked ] || [ -e "$T/$RUN".surface_error
   for x in events.tsv captures.tsv; do [ -s "$T/$RUN.$x" ] && cp "$T/$RUN.$x" "$D/$x"; done
 else
 echo "evidence=observer_pass" >> "$D/meta.txt"
-# Fallback read-only pass: to the top of the list, then down to the footer.
-i=0
-while [ $i -lt 6 ]; do input swipe $X $((H*30/100)) $X $((H*80/100)) 250; sleep 0.4; i=$((i+1)); done
+# The template's own snapshot of the results page (AI Overview, map pack, Google's location line)
+# is kept even when its final snapshot is missing: a page with playing videos (Google's Places
+# page, Nov 2026) can make that last snapshot fail.
+[ -n "$RUN" ] && [ -s "$T/$RUN"_serp.xml ] && cp "$T/$RUN"_serp.xml "$D/serp_page.xml" && cp "$T/$RUN"_serp.xml "$D/aio_initial.xml"
+# Fallback read-only pass: to the top of the list, then down to the footer. The Home key, not a
+# drag: dragging down at the top of a page is Chrome's pull-to-refresh, which reloads it.
+input keyevent 122
 sleep 1.2
 n=0
 uiautomator dump "$D/dump_$n.xml" >/dev/null 2>&1 && n=$((n+1))
@@ -104,6 +109,7 @@ kill -INT $REC 2>/dev/null; wait $REC 2>/dev/null
 L=$((n-1))
 [ $L -ge 0 ] && cp "$D/dump_$L.xml" "$D/final.xml"
 [ -f "$D/dump_0.xml" ] && cp "$D/dump_0.xml" "$D/serp.xml"
+[ -s "$D/serp_page.xml" ] && mv "$D/serp_page.xml" "$D/serp.xml"
 echo "dumps=$n" >> "$D/meta.txt"; echo "t_end=$(date +%s)" >> "$D/meta.txt"
 [ -s "$D/video.mp4" ] || exit 1
 # Pack the evidence exactly as run_pin.sh does: the worker pulls $RT/<scan>_<pin>.tar.gz.

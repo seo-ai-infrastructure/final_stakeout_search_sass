@@ -1,19 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { WALL, AI_NAMED, GRID_LATS, GRID_LNGS, GRID_ZIPS, rankStyle } from './demoData';
+import { WALL, AI_NAMED, GRID_N, GRID_LATS, GRID_LNGS, GRID_ZIPS, rankStyle } from './demoData';
 
 const DEVICES = ['Galaxy S23 Ultra', 'Pixel 8 Pro', 'Galaxy S24', 'Pixel 7a'];
-const START = 8 * 3600 + 2 * 60 + 8; // 08:02:08 CST, so point 3,3 lands on 08:07:12
+const START = 8 * 3600 + 3 * 60 + 24; // 08:03:24 CST, so point 3,3 lands on 08:07:12
 
 function pad(n: number) {
   return String(n).padStart(2, '0');
 }
 
-/** Deterministic, realistic-looking values for each of the 49 points. */
+/** Deterministic, realistic-looking values for each of the 25 points. */
 function receiptFor(i: number) {
-  const row = Math.floor(i / 7);
-  const col = i % 7;
+  const row = Math.floor(i / GRID_N);
+  const col = i % GRID_N;
   const rank = WALL[i];
   const named = AI_NAMED[i] === 1;
   const t = START + i * 19;
@@ -38,13 +38,13 @@ function receiptFor(i: number) {
     id: `#R-${hex.slice(0, 4).toUpperCase()}-${hex.slice(4, 8).toUpperCase()}`,
     sha: hex,
   };
-  // Point 3,3 is the receipt from the hero: keep it identical, including Google's real location line from our capture test.
-  if (i === 16) Object.assign(r, { located: '37122, Tennessee – From your device', video: '2:47', id: '#R-7F3K-2Q9M', sha: '9f2c41d0e6b8a37c55e1f0a9d2c4b7e8a41e' });
+  // Point 3,3, the centre: Google's real location line from our capture test.
+  if (i === 12) Object.assign(r, { located: '37122, Tennessee – From your device', video: '2:47', id: '#R-7F3K-2Q9M', sha: '9f2c41d0e6b8a37c55e1f0a9d2c4b7e8a41e' });
   return r;
 }
 
 export default function ReceiptPrinter() {
-  const [sel, setSel] = useState(16);
+  const [sel, setSel] = useState(12);
   const [prints, setPrints] = useState(0);
   const r = receiptFor(sel);
 
@@ -68,7 +68,7 @@ export default function ReceiptPrinter() {
     <div className="grid items-start gap-10 lg:grid-cols-[1fr_1.05fr]">
       <div className="mx-auto w-full max-w-[520px]">
         <p className="mk-mono mb-4 text-[12px] uppercase tracking-widest text-[#9aa7b8]">Tap any point · pull its receipt</p>
-        <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+        <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
           {WALL.map((rank, i) => {
             const { bg, ink } = rankStyle(rank);
             const on = i === sel;
@@ -78,16 +78,16 @@ export default function ReceiptPrinter() {
                 type="button"
                 onClick={() => pick(i)}
                 aria-pressed={on}
-                aria-label={`Point ${Math.floor(i / 7) + 1},${(i % 7) + 1}: ${rank > 20 ? 'not in the top 20' : 'rank ' + rank}${AI_NAMED[i] ? ', named in the AI answer' : ''}`}
+                aria-label={`Point ${Math.floor(i / GRID_N) + 1},${(i % GRID_N) + 1}: ${rank > 20 ? 'not in the top 20' : 'rank ' + rank}${AI_NAMED[i] ? ', named in the AI answer' : ''}`}
                 className={
                   'relative flex aspect-square items-center justify-center rounded-lg border transition ' +
                   (on ? 'scale-[1.08] border-[#f5c451] bg-[#1a1608] shadow-[0_0_0_3px_rgba(245,196,81,0.25)]' : 'border-[#1b2431] bg-[#0f141c] hover:border-[#3a4658]')
                 }
               >
-                <span className="mk-display rounded-md px-1.5 text-[13px] font-bold sm:text-base" style={{ background: bg, color: ink }}>
+                <span className="mk-display rounded-md px-2 text-lg font-bold sm:px-2.5 sm:text-2xl" style={{ background: bg, color: ink }}>
                   {rank > 20 ? '20+' : rank}
                 </span>
-                {AI_NAMED[i] === 1 && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[#7aa7ff]" aria-hidden="true" />}
+                {AI_NAMED[i] === 1 && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[#7aa7ff]" aria-hidden="true" />}
               </button>
             );
           })}
