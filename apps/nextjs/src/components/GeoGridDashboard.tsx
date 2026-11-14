@@ -32,6 +32,7 @@ import {
   levelZoomRange,
   declutterBasemap,
   quietBasemap,
+  liftAboveShading,
   shadeStrength,
   quantileBreaks,
   extrusionHeight,
@@ -60,13 +61,15 @@ function addCensusLayers(m: maplibregl.Map) {
       beforeLabels,
     );
     m.addLayer(
-      { id: `census-${layer}-line`, type: 'line', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'line-color': '#ffffff', 'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.9, 0.2], 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 2, 1] } },
+      { id: `census-${layer}-line`, type: 'line', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'line-color': ['case', ['boolean', ['feature-state', 'hover'], false], '#7dd3fc', '#94a3b8'], 'line-opacity': ['case', ['boolean', ['feature-state', 'hover'], false], 0.95, 0.18], 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 1.5, 0.75] } },
       beforeLabels,
     );
     m.addLayer(
       { id: `census-${layer}-3d`, type: 'fill-extrusion', source: 'census', 'source-layer': layer, layout: { visibility: 'none' }, paint: { 'fill-extrusion-color': '#74a9cf', 'fill-extrusion-height': 0, 'fill-extrusion-opacity': 0.88 } },
     );
   }
+  // Lakes and roads sit above the shading, below the labels.
+  liftAboveShading(m, beforeLabels);
 }
 
 /** The 3D grid: one column per point (height = buying power, colour = rank), lit for depth. */

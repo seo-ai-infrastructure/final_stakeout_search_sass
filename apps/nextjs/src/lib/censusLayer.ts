@@ -36,7 +36,9 @@ export const METRICS: Record<Exclude<CensusMetric, 'off'>, MetricDef> = {
  * obvious at a glance, and none is green, amber or red, the colours of the rank pins.
  */
 export const PALETTES: Record<Exclude<CensusMetric, 'off'>, string[]> = {
-  income: ['#16222f', '#1e3a5f', '#2563eb', '#0284c7', '#06b6d4', '#67e8f9'],
+  // One hue, the same blue as the buying-power figures, in even steps of lightness. The steps stay
+  // far enough apart to tell the six bands apart when the layer is faded under the pins.
+  income: ['#14233a', '#16385c', '#17507f', '#1a6ba3', '#2a8cc4', '#67c7ee'],
   owners: ['#1f192e', '#31254d', '#4c3575', '#7c3aed', '#a855f7', '#e9d5ff'],
   value: ['#24141d', '#4a1d35', '#831843', '#be185d', '#ec4899', '#fbcfe8'],
   built: ['#1c1f24', '#33383f', '#565d66', '#8a919a', '#c0c6cd', '#f1f5f9'],
@@ -181,16 +183,22 @@ export function quietBasemap(m: {
     else if (type === 'line' && src === 'transportation') {
       if (/casing|path|track|service|rail|pier|ferry/i.test(id)) attempt(() => m.setLayoutProperty(id, 'visibility', 'none'));
       else {
-        const minor = /minor|street|tertiary|residential/i.test(id);
-        attempt(() => m.setPaintProperty(id, 'line-color', '#334155'));
-        attempt(() => m.setPaintProperty(id, 'line-opacity', minor ? 0.28 : 0.6));
-        attempt(() => m.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 8, minor ? 0.3 : 0.6, 12, minor ? 0.8 : 1.5, 16, minor ? 2 : 3.2]));
+        // Three weights: motorways read as the main arteries, minor streets as a faint mesh.
+        const minor = /minor|street|tertiary|residential/i.test(id), motorway = /motorway|trunk/i.test(id);
+        attempt(() => m.setPaintProperty(id, 'line-color', motorway ? '#3b4a61' : '#334155'));
+        attempt(() => m.setPaintProperty(id, 'line-opacity', minor ? 0.28 : motorway ? 0.8 : 0.55));
+        attempt(() => m.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 8, minor ? 0.3 : motorway ? 1 : 0.6, 12, minor ? 0.8 : motorway ? 2.4 : 1.5, 16, minor ? 2 : motorway ? 4 : 3.2]));
       }
     } else if (type === 'line') attempt(() => m.setPaintProperty(id, 'line-opacity', 0.3));
-    else if (type === 'fill' && src === 'water') attempt(() => m.setPaintProperty(id, 'fill-color', '#081424'));
+    else if (type === 'fill' && src === 'water') {
+      // Darker than the ground, with a faint shoreline, so a lake never reads as a low-income area.
+      attempt(() => m.setPaintProperty(id, 'fill-color', '#050811'));
+      attempt(() => m.setPaintProperty(id, 'fill-outline-color', '#1b2a44'));
+    }
     else if (type === 'fill' && src !== undefined && /^(landuse|landcover|park|building|aeroway)$/.test(src)) attempt(() => m.setPaintProperty(id, 'fill-opacity', 0.2));
     else if (type === 'symbol') {
-      attempt(() => m.setPaintProperty(id, 'text-color', '#cbd5e1'));
+      // Road names and numbers are quieter than place names.
+      attempt(() => m.setPaintProperty(id, 'text-color', src === 'transportation_name' ? '#94a3b8' : '#cbd5e1'));
       attempt(() => m.setPaintProperty(id, 'text-opacity', 0.85));
       attempt(() => m.setPaintProperty(id, 'text-halo-color', BASE_GROUND));
       attempt(() => m.setPaintProperty(id, 'text-halo-width', 1.6));
@@ -207,5 +215,26 @@ export const BASE_GROUND = '#0b1220';
  */
 export function shadeStrength(mode: 'rank' | 'ai' | 'ads', behindColumns: boolean) {
   return behindColumns ? 0.3 : mode === 'rank' ? 0.4 : 0.2;
+}
+
+/**
+ * After the neighborhood layers are added: lakes and roads are lifted above the shading (and stay
+ * below the labels). Nobody lives in a lake, so a tract's colour should not be painted across it;
+ * and roads drawn over the shading keep one even weight instead of darkening where it is strong.
+ */
+export function liftAboveShading(
+  m: { getStyle: () => { layers?: { id: string; [k: string]: unknown }[] }; moveLayer: (id: string, beforeId?: string) => void },
+  beforeLabels: string | undefined,
+) {
+  for (const l of m.getStyle().layers ?? []) {
+    const src = l['source-layer'];
+    if ((l.type === 'fill' && src === 'water') || (l.type === 'line' && (src === 'transportation' || src === 'waterway'))) {
+      try {
+        m.moveLayer(l.id, beforeLabels);
+      } catch {
+        /* a layer that cannot move stays where it is */
+      }
+    }
+  }
 }
 

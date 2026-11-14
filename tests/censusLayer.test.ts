@@ -57,7 +57,7 @@ test('Census colours on the dark map: one family per metric, dark for low values
   for (const [metric, ramp] of Object.entries(PALETTES)) {
     for (let i = 1; i < ramp.length; i++) assert.ok(lum(ramp[i]) > lum(ramp[i - 1]), `${metric} step ${i} is brighter`);
   }
-  assert.equal(legend('income')[5].color, '#67e8f9');
+  assert.equal(legend('income')[5].color, '#67c7ee');
   assert.equal(legend('owners')[5].color, '#e9d5ff');
   assert.notEqual(legend('income')[3].color, legend('owners')[3].color);
   // no ramp uses the rank pins' green, amber or red
