@@ -35,6 +35,10 @@ async function describeGroup() {
 const powerOnAllowed = () =>
   process.env.DUOPLUS_AUTO_POWER_ON !== 'false' && (Boolean(fleetGroup()) || Boolean((process.env.DUOPLUS_PHONE_IDS ?? '').trim()));
 const lastPowerOn = new Map<string, number>();
+// Phones on and ready at the last complete fleet check (null until there has been one). The
+// worker runs one point at a time per ready phone.
+let readyPhones: number | null = null;
+export const readyPhoneCount = () => readyPhones;
 
 export async function syncDuoPlusDevicePool() {
   if (!process.env.DUOPLUS_API_KEY) return;
@@ -114,6 +118,8 @@ export async function syncDuoPlusDevicePool() {
     const knownIds = new Set(known.map((d) => d.imageId));
     const usedProxies = new Set(known.map((d) => d.proxyId));
     const onlineIds = online.map((i) => String(i.id));
+    // Only a complete listing counts: a partial one would look like phones had gone.
+    if (complete) readyPhones = online.length;
 
     if (complete)
       await db.devicePool.updateMany({

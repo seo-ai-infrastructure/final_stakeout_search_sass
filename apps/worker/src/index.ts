@@ -13,7 +13,8 @@ import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/
 import { listsForPin, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
-import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist } from './duoplus';
+import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount } from './duoplus';
+import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 
@@ -160,7 +161,8 @@ async function repeat(job: Job) {
 
 const deviceWorker = new Worker('stakeout-pins', execute, {
     connection: deviceWorkerConnection,
-    concurrency: Number(process.env.MOBILE_CONCURRENCY ?? 3),
+    // One point at a time per ready phone: set properly after each fleet check (followFleet).
+    concurrency: targetConcurrency(null, process.env.MOBILE_CONCURRENCY).n,
     lockDuration: 300000,
     stalledInterval: 120000,
     drainDelay: 30,
@@ -337,6 +339,10 @@ async function reportHealth() {
     templatesReadAt: new Date(templatesReadAt).toISOString(),
     traffic,
     templates: { chrome: await template('chrome'), maps: await template('maps') },
+    // Throughput: phones ready at the last fleet check, and how many points run at once.
+    phonesReady: readyPhoneCount(),
+    concurrency: deviceWorker.concurrency,
+    concurrencyCeiling: targetConcurrency(readyPhoneCount(), process.env.MOBILE_CONCURRENCY).capped ? Number(process.env.MOBILE_CONCURRENCY) : null,
     proxyLists: await db.proxyList.count(),
     // How long the longest-idle list has gone unused. Idle lists are deleted after two minutes
     // with no scan open, so only a list idle for much longer than that is a problem.
@@ -349,6 +355,19 @@ async function reportHealth() {
     ),
   };
   await redis().set('stakeout:health', JSON.stringify(health), 'EX', 900);
+}
+
+/**
+ * Runs one point at a time per ready phone, so a phone added to (or lost from) the fleet changes
+ * the throughput by itself. Points already running are not interrupted when the number drops.
+ */
+function followFleet() {
+  const ready = readyPhoneCount();
+  const { n, capped } = targetConcurrency(ready, process.env.MOBILE_CONCURRENCY);
+  if (n === deviceWorker.concurrency) return;
+  const was = deviceWorker.concurrency;
+  deviceWorker.concurrency = n;
+  console.log(`[fleet] running up to ${n} point(s) at once (was ${was}) · ${ready ?? '?'} phone(s) ready` + (capped ? ` · held down by MOBILE_CONCURRENCY=${process.env.MOBILE_CONCURRENCY}` : ''));
 }
 
 let lastWhitelistFix = 0;
@@ -414,7 +433,10 @@ async function tick() {
     if (!fleetSyncRunning && Date.now() - lastFleetSync > Number(process.env.FLEET_SYNC_MINUTES ?? 5) * 60000) {
       lastFleetSync = Date.now();
       fleetSyncRunning = true;
-      void syncDuoPlusDevicePool().finally(() => (fleetSyncRunning = false));
+      void syncDuoPlusDevicePool().finally(() => {
+        fleetSyncRunning = false;
+        followFleet();
+      });
     }
   } catch (e) {
     console.error('Dispatch will retry', formatErr(e));

@@ -55,6 +55,10 @@ type SystemHealth = {
   proxySellerKey: boolean;
   searchGapSeconds: number;
   templates: { chrome: TemplateInfo; maps: TemplateInfo };
+  /** Phones on and ready at the worker's last fleet check, and how many points it runs at once. */
+  phonesReady?: number | null;
+  concurrency?: number;
+  concurrencyCeiling?: number | null;
   proxyLists: number;
   /** Seconds the longest-idle list has gone unused (absent from an older worker). */
   proxyListIdleSeconds?: number;
@@ -72,6 +76,17 @@ function SystemHealthCard({ system }: { system: SystemHealth | null }) {
         ['Proxy-Seller key on the worker', system.proxySellerKey, system.proxySellerKey ? 'set: idle proxy lists are deleted' : 'missing: idle proxy lists cannot be deleted and keep using bandwidth'],
         ['Chrome template', Boolean(system.templates.chrome), tpl(system.templates.chrome)],
         ['Maps template', Boolean(system.templates.maps), tpl(system.templates.maps)],
+        // One point runs at a time per ready phone. No phone ready, or a ceiling holding ready phones idle, needs a look.
+        ...(system.concurrency === undefined
+          ? []
+          : ([
+              [
+                'Phones',
+                (system.phonesReady ?? 1) > 0 && !system.concurrencyCeiling,
+                `${system.phonesReady ?? '?'} ready · up to ${system.concurrency} point(s) at once` +
+                  (system.concurrencyCeiling ? `: held down by MOBILE_CONCURRENCY=${system.concurrencyCeiling} (remove it to use every phone)` : system.phonesReady === 0 ? ': no phone is on and ready' : ''),
+              ],
+            ] as [string, boolean, string][])),
         // A list left over right after a scan is normal: it is deleted after two idle minutes. Only one
         // that has sat unused for ten minutes with no scan open means the clean-up is not working.
         [

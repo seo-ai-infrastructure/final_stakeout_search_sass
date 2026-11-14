@@ -151,7 +151,7 @@ const COMPARE: { row: string; typical: string; stakeout: string }[] = [
 const ANATOMY = [
   { n: '01', title: 'The recording', text: 'The whole search on video, from opening the app to the last result. Play it on a sales call.' },
   { n: '02', title: 'The exact spot', text: "Grid point and the GPS the phone used, to six decimal places. Google's own location line confirms it." },
-  { n: '03', title: 'The real network', text: 'Residential connection, the internet provider it came from, and the exit city.' },
+  { n: '03', title: 'The real network', text: 'A residential connection, and the internet provider it came from, named on the receipt.' },
   { n: '04', title: 'The full results', text: 'Every business that ranked, in order, with ads set aside, read from the screen itself.' },
   { n: '05', title: 'The AI answer', text: 'Whether the AI Overview named the business, and which sources it cited. Ask Maps answers are coming soon.' },
   { n: '06', title: 'The fingerprint', text: 'A SHA-256 hash of the evidence as captured, so anyone can check it has not changed.' },
