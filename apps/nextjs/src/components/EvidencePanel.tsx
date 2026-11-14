@@ -47,6 +47,37 @@ const norm = (s: string) =>
   s.toLowerCase().replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|ltd)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
 const cache = new Map<string, Evidence>();
 
+/**
+ * One point's evidence, loaded when `enabled` and shared with the Evidence tab's own cache, so
+ * opening the same point in both places fetches it once.
+ */
+export function usePinEvidence(pinId: string | undefined, enabled: boolean, shareToken?: string) {
+  const [state, setState] = useState<{ id: string; ev: Evidence | null; loading: boolean } | null>(null);
+  useEffect(() => {
+    if (!pinId || !enabled) return;
+    const hit = cache.get(pinId);
+    if (hit) {
+      setState({ id: pinId, ev: hit, loading: false });
+      return;
+    }
+    let live = true;
+    setState({ id: pinId, ev: null, loading: true });
+    fetch('/api/evidence/' + pinId + (shareToken ? '?share=' + encodeURIComponent(shareToken) : ''), { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unavailable'))))
+      .then((d: Evidence) => {
+        cache.set(pinId, d);
+        if (live) setState({ id: pinId, ev: d, loading: false });
+      })
+      .catch(() => {
+        if (live) setState({ id: pinId, ev: null, loading: false });
+      });
+    return () => {
+      live = false;
+    };
+  }, [pinId, enabled, shareToken]);
+  return state && state.id === pinId ? state : { id: pinId ?? '', ev: null, loading: false };
+}
+
 
 export function EvidencePanel({
   scan,

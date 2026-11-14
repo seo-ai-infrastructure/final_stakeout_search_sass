@@ -1047,6 +1047,7 @@ export function GeoGridDashboard({
         onRerun={(id) => rerun([id])}
         rerunBusy={rerunBusy}
         onOpenEvidence={() => setTab('evidence')}
+        shareToken={shared ? identifier : undefined}
       />
       {/* Full width: its seven columns need the room. */}
       <div id="competitor-leaderboard" className="scroll-mt-4">

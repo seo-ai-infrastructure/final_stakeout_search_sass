@@ -3,6 +3,8 @@ import { useState } from 'react';
 import type { GridPinData, GridScanData } from './GeoGridDashboard';
 import { rankColor } from '@/lib/gridColumns';
 import { aiPosition } from '@/lib/marketInsights';
+import { tidyAiText } from '@/lib/aiText';
+import { AiView, usePinEvidence } from './EvidencePanel';
 
 const key = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
 const btn = 'rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40';
@@ -41,6 +43,7 @@ export function PinEvidenceCard({
   onRerun,
   rerunBusy,
   onOpenEvidence,
+  shareToken,
 }: {
   scan: GridScanData;
   pin: GridPinData | null;
@@ -49,8 +52,14 @@ export function PinEvidenceCard({
   onRerun?: (id: string) => void;
   rerunBusy?: boolean;
   onOpenEvidence?: () => void;
+  /** On a shared report: the link's token, needed to load a point's evidence. */
+  shareToken?: string;
 }) {
   const [tab, setTab] = useState<'results' | 'ai'>('results');
+  // The AI Overview as rebuilt from the point's evidence (the same as the Evidence tab shows),
+  // loaded only when the AI tab is opened on a point that had one.
+  const evidence = usePinEvidence(pin?.id, tab === 'ai' && pin?.status === 'COMPLETED' && Boolean(pin?.hasAiOverview), shareToken);
+  const rebuilt = evidence.ev && (evidence.ev.aiCopy?.businesses.length || evidence.ev.aiLayout || evidence.ev.aiOverview) ? evidence.ev : null;
   const size = scan.gridSize;
   const ordered = [...scan.pins].sort((a, b) => a.rowIdx - b.rowIdx || a.colIdx - b.colIdx);
   const at = pin ? ordered.findIndex((p) => p.id === pin.id) : -1;
@@ -206,9 +215,32 @@ export function PinEvidenceCard({
             )}
             {tab === 'ai' && (
               <div className="mt-3 space-y-3">
-                {pin.aiOverviewText ? (
+                {rebuilt ? (
+                  // The answer as Google laid it out, on a light panel like the page it came from.
+                  <div className="max-h-[640px] overflow-y-auto rounded-xl bg-white">
+                    <AiView ev={rebuilt} isTarget={isYou} target={scan.targetBusiness} />
+                  </div>
+                ) : pin.aiOverviewText ? (
                   <>
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-200">{pin.aiOverviewText}</p>
+                    {evidence.loading && <p className="text-xs text-slate-400">Loading the full answer…</p>}
+                    {/* Until the rebuilt answer loads (or when it cannot): the saved text, tidied. */}
+                    <div className="space-y-1.5">
+                      {tidyAiText(pin.aiOverviewText).map((b, i) =>
+                        b.kind === 'heading' ? (
+                          <p key={i} className="pt-2 text-sm font-bold text-white">{b.text}</p>
+                        ) : b.kind === 'business' ? (
+                          <div key={i} className={'rounded-lg border px-3 py-2 ' + (isYou(b.text) ? 'border-emerald-500/50 bg-emerald-950/30' : 'border-slate-800')}>
+                            <p className="text-sm font-bold text-white">
+                              {b.text}
+                              {isYou(b.text) ? ' (you)' : ''}
+                            </p>
+                            {b.meta && <p className="mt-0.5 text-xs text-slate-400">{b.meta}</p>}
+                          </div>
+                        ) : (
+                          <p key={i} className="text-sm leading-relaxed text-slate-200">{b.text}</p>
+                        ),
+                      )}
+                    </div>
                     {ins && ins.ai.sources.length > 0 && (
                       <div>
                         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Sources cited</p>
