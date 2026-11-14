@@ -155,3 +155,57 @@ export function declutterBasemap(m: { getStyle: () => { layers?: { id: string; [
   for (const l of m.getStyle().layers ?? [])
     if (l['source-layer'] === 'poi') m.setLayoutProperty(l.id, 'visibility', 'none');
 }
+
+/**
+ * The report's base map, turned down so the pins are the only strong colour on it: a near-black
+ * ground, thin translucent roads (no casings, paths or rail), faint land shading and light labels
+ * with a dark outline. Only the report uses this: on the New scan page clear roads help place a
+ * grid. Works by the map schema's layer names, so each change is tried on its own and skipped if
+ * a style lacks that layer or property.
+ */
+export function quietBasemap(m: {
+  getStyle: () => { layers?: { id: string; [k: string]: unknown }[] };
+  setLayoutProperty: (id: string, p: string, v: unknown) => void;
+  setPaintProperty: (id: string, p: string, v: unknown) => void;
+}) {
+  const attempt = (fn: () => void) => {
+    try {
+      fn();
+    } catch {
+      /* this style has no such layer or property */
+    }
+  };
+  for (const l of m.getStyle().layers ?? []) {
+    const id = l.id, type = l.type as string | undefined, src = l['source-layer'] as string | undefined;
+    if (type === 'background') attempt(() => m.setPaintProperty(id, 'background-color', BASE_GROUND));
+    else if (type === 'line' && src === 'transportation') {
+      if (/casing|path|track|service|rail|pier|ferry/i.test(id)) attempt(() => m.setLayoutProperty(id, 'visibility', 'none'));
+      else {
+        const minor = /minor|street|tertiary|residential/i.test(id);
+        attempt(() => m.setPaintProperty(id, 'line-color', '#334155'));
+        attempt(() => m.setPaintProperty(id, 'line-opacity', minor ? 0.28 : 0.6));
+        attempt(() => m.setPaintProperty(id, 'line-width', ['interpolate', ['linear'], ['zoom'], 8, minor ? 0.3 : 0.6, 12, minor ? 0.8 : 1.5, 16, minor ? 2 : 3.2]));
+      }
+    } else if (type === 'line') attempt(() => m.setPaintProperty(id, 'line-opacity', 0.3));
+    else if (type === 'fill' && src === 'water') attempt(() => m.setPaintProperty(id, 'fill-color', '#081424'));
+    else if (type === 'fill' && src !== undefined && /^(landuse|landcover|park|building|aeroway)$/.test(src)) attempt(() => m.setPaintProperty(id, 'fill-opacity', 0.2));
+    else if (type === 'symbol') {
+      attempt(() => m.setPaintProperty(id, 'text-color', '#cbd5e1'));
+      attempt(() => m.setPaintProperty(id, 'text-opacity', 0.85));
+      attempt(() => m.setPaintProperty(id, 'text-halo-color', BASE_GROUND));
+      attempt(() => m.setPaintProperty(id, 'text-halo-width', 1.6));
+    }
+  }
+}
+/** The report map's ground colour: the page's own near-black navy. */
+export const BASE_GROUND = '#0b1220';
+
+/**
+ * How strongly the neighborhood shading shows under the pins. In Pack rank it is part of the
+ * story (rank against wealth), so it stays readable; in AI place and Ads above it is only
+ * context and fades back. Behind 3D columns it is dimmer still.
+ */
+export function shadeStrength(mode: 'rank' | 'ai' | 'ads', behindColumns: boolean) {
+  return behindColumns ? 0.3 : mode === 'rank' ? 0.4 : 0.2;
+}
+

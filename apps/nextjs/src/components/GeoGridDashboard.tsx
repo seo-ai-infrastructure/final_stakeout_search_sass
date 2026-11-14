@@ -31,6 +31,8 @@ import {
   legend,
   levelZoomRange,
   declutterBasemap,
+  quietBasemap,
+  shadeStrength,
   quantileBreaks,
   extrusionHeight,
   type CensusArea,
@@ -268,6 +270,8 @@ export function GeoGridDashboard({
       map.current = m;
       m.on('load', () => {
         declutterBasemap(m);
+        // The report's base steps back so the pins are the only strong colour on the map.
+        quietBasemap(m);
         if (CENSUS_VINTAGE) {
           try {
             addCensusLayers(m);
@@ -350,12 +354,12 @@ export function GeoGridDashboard({
         const color = fillColor(censusMetric, breaks) as never;
         m.setPaintProperty(`census-${layer}`, 'fill-color', color);
         // Behind the 3D columns the neighbourhood shading steps back, so the columns stand clear of it.
-        m.setPaintProperty(`census-${layer}`, 'fill-opacity', fillOpacity(censusMetric, view3d && style3d === 'columns' ? 0.3 : 0.55) as never);
+        m.setPaintProperty(`census-${layer}`, 'fill-opacity', fillOpacity(censusMetric, shadeStrength(mapMode, view3d && style3d === 'columns')) as never);
         m.setPaintProperty(`census-${layer}-3d`, 'fill-extrusion-color', color);
       }
     }
     if (censusMetric === 'off') setCensusArea(null);
-  }, [censusMetric, censusLevel, mapReady, colorScale, marketBreaks, view3d, style3d]);
+  }, [censusMetric, censusLevel, mapReady, colorScale, marketBreaks, view3d, style3d, mapMode]);
   // "Compare within this market": colour steps from the areas loaded around the grid.
   useEffect(() => {
     const m = map.current;
@@ -441,22 +445,32 @@ export function GeoGridDashboard({
       // On a 3D column the label takes the column's own (brighter) shade.
       let fill = view3d && style3d === 'columns' ? columnColor(p.status, rank) : rankColor(p.status, rank);
       let text = p.status === 'FAILED' ? '×' : p.status === 'PENDING' ? '…' : rank ? String(rank) : '20+';
+      // In AI place: a point with no AI Overview is a small muted dot; one that names the business stands out.
+      let quiet = false, standout = false;
       const ins = p.insights?.v === 1 ? p.insights : null;
       if (p.status === 'COMPLETED' && mapMode === 'ai') {
         // The business's place in this point's AI Overview: its place in the AI's list, "yes" when it
         // is named without an order, "no" when an answer appeared without it, a dash when none did.
         const place = !projected && ins ? aiPosition(ins.ai.named, scan.targetBusiness) : null;
-        fill = p.hasAiOverview ? (cited ? '#7c3aed' : '#4c1d95') : '#1e293b';
+        // A pinker violet than the ring's, to stand clear of the blue neighborhood shading.
+        fill = p.hasAiOverview ? (cited ? '#a855f7' : '#4c1d95') : '#0f172a';
         text = !p.hasAiOverview ? '–' : place ? '#' + place.pos : cited ? 'yes' : 'no';
+        if (!p.hasAiOverview) quiet = true;
+        else if (cited) standout = true;
       } else if (p.status === 'COMPLETED' && mapMode === 'ads') {
         const ads = ins?.adsAboveYou ?? null;
         fill = adsColor(ads);
         text = ads == null ? '?' : String(ads);
       }
       el.style.backgroundColor = fill;
-      el.style.color = rankTextColor(fill);
+      el.style.color = quiet ? '#64748b' : rankTextColor(fill);
       el.textContent = text;
-      el.style.boxShadow = cited && aiRing && mapMode !== 'ai' ? '0 0 0 4px #c084fc' : '';
+      if (quiet) {
+        el.style.width = el.style.height = '22px';
+        el.style.border = '1px solid #475569';
+        el.style.fontSize = '11px';
+      } else if (standout) el.style.width = el.style.height = '38px';
+      el.style.boxShadow = standout ? '0 0 0 4px rgba(168,85,247,0.28)' : cited && aiRing && mapMode !== 'ai' ? '0 0 0 4px #c084fc' : '';
       el.style.opacity = pinPasses(p, rank, { bpFilters, rankBand, legendBand, focusIds, id: p.id }) ? '1' : '0.25';
       el.title =
         'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + p.status;
