@@ -1,5 +1,5 @@
 import { buyingPower } from './buyingPower';
-import { aiSources, groundOwners, paidPressure, winningRadius, type InsightPin } from './marketInsights';
+import { aiBusinesses, aiSources, groundOwners, paidPressure, winningRadius, type InsightPin } from './marketInsights';
 
 export type RankBucket = { key: 'first' | 'top3' | 'top10' | 'beyond' | 'absent'; label: string; count: number; pct: number };
 
@@ -46,6 +46,7 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
   const radius = winningRadius(scan.pins, { lat: scan.centerLat, lng: scan.centerLng });
   const paid = paidPressure(scan.pins);
   const ai = aiSources(scan.pins, scan.targetBusiness);
+  const aiNamed = aiBusinesses(scan.pins, scan.targetBusiness);
   const you = owners.rows.find((r) => r.isYou);
   const rival = owners.rows.filter((r) => !r.isYou).sort((a, b) => b.top3Points - a.top3Points)[0];
 
@@ -92,7 +93,10 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
         (paid.avgAdsAboveYou ? `, with about ${paid.avgAdsAboveYou.toFixed(1)} above ${scan.targetBusiness} on average.` : '.'),
     );
   if (ai.points && ai.shown)
-    findings.push(`An AI Overview appeared at ${ai.shown} of ${points(ai.points)}; ${scan.targetBusiness} was named at ${ai.youNamed}.`);
+    findings.push(
+      `An AI Overview appeared at ${ai.shown} of ${points(ai.points)}; ${scan.targetBusiness} was named at ${ai.youNamed}.` +
+        (aiNamed.you ? ` Where the AI listed businesses, it was named first at ${aiNamed.you.first} of ${aiNamed.lists} and placed #${aiNamed.you.avgPos} on average.` : ''),
+    );
 
   return {
     completed: dist.total,
@@ -107,6 +111,7 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
     radiusMiles: radius?.radius ?? null,
     adsAboveYou: paid.avgAdsAboveYou,
     ai,
+    aiNamed,
     findings,
   };
 }

@@ -115,3 +115,42 @@ export function aiSources(pins: InsightPin[], target: string) {
       .sort((a, b) => b.points - a.points || a.domain.localeCompare(b.domain)),
   };
 }
+
+/**
+ * A business's place in one AI Overview's list of businesses (1 = named first), or null when it
+ * is not in the list. Only list-style answers have an order: a paragraph that mentions a business
+ * in passing stores no list, and so gives no position.
+ */
+export function aiPosition(named: string[], target: string): { pos: number; of: number } | null {
+  const i = named.findIndex((n) => norm(n) === norm(target));
+  return i >= 0 ? { pos: i + 1, of: named.length } : null;
+}
+
+/**
+ * 6. Who the AI recommends: every business the AI Overviews listed across the grid, with how
+ * many answers named it, how often it was named first, and its average place in the list.
+ * Counted over the points whose answer was a list of businesses (`lists`). Kept apart from the
+ * local rank: a place in the AI's list is not a place in the map results.
+ */
+export function aiBusinesses(pins: InsightPin[], target: string) {
+  const lists = done(pins).filter((p) => p.insights?.v === 1 && p.insights.ai.shown && p.insights.ai.named.length > 0);
+  const rows = new Map<string, { name: string; points: number; first: number; sum: number; best: number }>();
+  for (const p of lists) {
+    const seen = new Set<string>();
+    p.insights!.ai.named.forEach((name, i) => {
+      const k = norm(name);
+      if (!k || seen.has(k)) return;
+      seen.add(k);
+      const r = rows.get(k) ?? { name, points: 0, first: 0, sum: 0, best: Infinity };
+      r.points++;
+      if (i === 0) r.first++;
+      r.sum += i + 1;
+      r.best = Math.min(r.best, i + 1);
+      rows.set(k, r);
+    });
+  }
+  const out = [...rows.values()]
+    .map((r) => ({ name: r.name, isYou: norm(r.name) === norm(target), points: r.points, first: r.first, avgPos: Math.round((r.sum / r.points) * 10) / 10, best: r.best }))
+    .sort((a, b) => b.points - a.points || b.first - a.first || a.avgPos - b.avgPos || a.name.localeCompare(b.name));
+  return { lists: lists.length, rows: out, you: out.find((r) => r.isYou) ?? null };
+}

@@ -624,6 +624,15 @@ function AiView({ ev, isTarget, target }: { ev: Evidence; isTarget: (n: string) 
             {copy.verified ? 'Copied from Google · verified' : 'Copy not verified'}
           </span>
         </div>
+        {(() => {
+          // Where the tracked business sits in the AI's own list (1 = named first).
+          const at = copy.businesses.findIndex((b) => isTarget(b.name));
+          return (
+            <p className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${at >= 0 ? 'bg-emerald-100 text-emerald-900' : 'bg-gray-100 text-gray-700'}`}>
+              {at >= 0 ? `${target} is #${at + 1} of ${copy.businesses.length} businesses the AI named` : `${target} is not among the ${copy.businesses.length} businesses the AI named`}
+            </p>
+          );
+        })()}
         {copy.intro.map((t, i) => <p key={'i' + i} className="text-[13px] font-semibold text-gray-800">{t}</p>)}
         <ol className="space-y-2">
           {copy.businesses.map((b) => {

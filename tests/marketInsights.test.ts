@@ -72,3 +72,33 @@ test('points whose evidence bundle is gone are left out of the market insights, 
   assert.equal(p.points, 3, 'the point without a bundle is not an observation');
   assert.equal(aiSources([...pins, gone], 'You Painting').points, 3);
 });
+
+test('who the AI recommends: named businesses in the AI\'s own order, counted over list-style answers only', async () => {
+  const { aiBusinesses, aiPosition } = await import('../apps/nextjs/src/lib/marketInsights');
+  const pin = (id: string, named: string[], shown = true, status = 'COMPLETED') =>
+    ({ id, status, rankFound: null, insights: { v: 1, finder: [], you: { pos: null, miles: null }, ads: [], adsAboveYou: null, ai: { shown, sources: [], named } } }) as never;
+  const pins = [
+    pin('a', ['Payne Air', 'Lakeland Air', "Roth's Air"]),
+    pin('b', ['Lakeland Air', 'Payne Air']),
+    pin('c', ['Lakeland Air', 'Watts AC', 'Payne Air', 'Lakeland Air']), // a repeat in one answer counts once
+    pin('d', []), // an AI Overview that was a paragraph: no list, so no position
+    pin('e', ['Ghost Co'], false), // no AI Overview shown
+    pin('f', ['Ghost Co'], true, 'FAILED'),
+  ];
+  const r = aiBusinesses(pins, 'payne air');
+  assert.equal(r.lists, 3, 'only the three answers that listed businesses');
+  assert.deepEqual(r.rows.map((x) => [x.name, x.points, x.first, x.avgPos, x.isYou]), [
+    ['Lakeland Air', 3, 2, 1.3, false],
+    ['Payne Air', 3, 1, 2, true],
+    ['Watts AC', 1, 0, 2, false], // tied with Roth's on times named: the better average place comes first
+    ["Roth's Air", 1, 0, 3, false],
+  ]);
+  assert.deepEqual([r.you?.points, r.you?.first, r.you?.avgPos, r.you?.best], [3, 1, 2, 1]);
+  assert.equal(aiBusinesses(pins, 'Nobody Plumbing').you, null);
+  assert.deepEqual(aiBusinesses([pin('d', [])], 'x'), { lists: 0, rows: [], you: null });
+  // One point: place in the list, or null when not listed.
+  assert.deepEqual(aiPosition(['Payne Air', 'Lakeland Air', "Roth's Air"], 'PAYNE AIR'), { pos: 1, of: 3 });
+  assert.deepEqual(aiPosition(['Lakeland Air', 'Payne Air'], 'Payne Air'), { pos: 2, of: 2 });
+  assert.equal(aiPosition(['Lakeland Air'], 'Payne Air'), null);
+  assert.equal(aiPosition([], 'Payne Air'), null);
+});

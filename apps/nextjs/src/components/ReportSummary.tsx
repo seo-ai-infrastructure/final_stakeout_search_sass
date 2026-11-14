@@ -160,6 +160,11 @@ export function AiCoverageCard({ scan }: { scan: GridScanData }) {
         <div>
           <p className="text-2xl font-extrabold text-white">{s.ai.youNamed} of {s.ai.shown}</p>
           <p className="text-xs text-slate-400">of those named {scan.targetBusiness}</p>
+          {s.aiNamed.you && (
+            <p className="mt-1 text-xs text-violet-300">
+              named first at {s.aiNamed.you.first} of {s.aiNamed.lists} · average place #{s.aiNamed.you.avgPos}
+            </p>
+          )}
         </div>
         <div>
           <p className="text-2xl font-extrabold text-white">{s.ai.sources.length}</p>
@@ -167,7 +172,10 @@ export function AiCoverageCard({ scan }: { scan: GridScanData }) {
         </div>
       </div>
       {s.ai.sources.length > 0 && (
-        <ul className="mt-4 grid gap-x-6 gap-y-2 sm:grid-cols-2">
+        <h3 className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">Websites the AI cited</h3>
+      )}
+      {s.ai.sources.length > 0 && (
+        <ul className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
           {s.ai.sources.slice(0, 8).map((x) => (
             <li key={x.domain} className="text-xs">
               <div className="flex items-baseline justify-between gap-2">
@@ -180,6 +188,37 @@ export function AiCoverageCard({ scan }: { scan: GridScanData }) {
             </li>
           ))}
         </ul>
+      )}
+      {s.aiNamed.rows.length > 0 && (
+        <div className="mt-5 border-t border-slate-800 pt-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Businesses the AI named</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            In the order the AI listed them, across the {s.aiNamed.lists} {s.aiNamed.lists === 1 ? 'answer' : 'answers'} that listed businesses. This is separate from the local rank.
+          </p>
+          <ol className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+            {s.aiNamed.rows.slice(0, 10).map((b, i) => (
+              <li key={b.name} className="text-xs">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className={'truncate ' + (b.isYou ? 'font-bold text-emerald-300' : 'text-slate-200')}>
+                    <span className="mr-1.5 text-slate-500">{i + 1}.</span>
+                    {b.name}
+                    {b.isYou ? ' (you)' : ''}
+                  </span>
+                  <span className="shrink-0 text-slate-400">
+                    named at {b.points} of {s.aiNamed.lists}
+                  </span>
+                </div>
+                <div className="mt-1 h-1.5 rounded bg-slate-800">
+                  <div className={'h-1.5 rounded ' + (b.isYou ? 'bg-emerald-400' : 'bg-violet-400')} style={{ width: (100 * b.points) / Math.max(1, s.aiNamed.lists) + '%' }} />
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  {b.first ? `named first at ${b.first}` : 'never named first'} · average place #{b.avgPos}
+                </p>
+              </li>
+            ))}
+          </ol>
+          {!s.aiNamed.you && <p className="mt-3 text-xs text-amber-300">{scan.targetBusiness} is not in any of these lists.</p>}
+        </div>
       )}
     </div>
   );
