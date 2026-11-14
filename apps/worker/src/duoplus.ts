@@ -32,8 +32,13 @@ async function describeGroup() {
   console.log('[duoplus] fleet = DuoPlus group', id, g ? '"' + String(g.name ?? '') + '"' : '(not in groupList: check DUOPLUS_GROUP_ID)');
 }
 /** Auto power-on only for a chosen set (a group or DUOPLUS_PHONE_IDS), never account-wide. */
+// With power saving on, power.ts alone decides when phones start: the fleet check must not switch
+// a phone back on that was switched off on purpose.
+let powerManaged = false;
+export const setPowerManaged = (on: boolean) => void (powerManaged = on);
+export const fleetGroupId = () => fleetGroup();
 const powerOnAllowed = () =>
-  process.env.DUOPLUS_AUTO_POWER_ON !== 'false' && (Boolean(fleetGroup()) || Boolean((process.env.DUOPLUS_PHONE_IDS ?? '').trim()));
+  !powerManaged && process.env.DUOPLUS_AUTO_POWER_ON !== 'false' && (Boolean(fleetGroup()) || Boolean((process.env.DUOPLUS_PHONE_IDS ?? '').trim()));
 const lastPowerOn = new Map<string, number>();
 // Phones on and ready at the last complete fleet check (null until there has been one). The
 // worker runs one point at a time per ready phone.

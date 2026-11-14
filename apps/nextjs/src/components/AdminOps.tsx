@@ -9,7 +9,7 @@ type Account = { id: string; email: string; role: string; credits: number; confi
 type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
   at: string;
-  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number };
+  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number };
   system: { templates?: { chrome: Tpl; maps: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null } | null;
   capacity: {
     completed24h: number; completedLastHour: number; started24h: number; timedPoints: number; medianSeconds: number | null; perPhoneHour: number | null;
@@ -58,7 +58,7 @@ export function AdminOps() {
   const [credit, setCredit] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
-  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean } | null>(null);
+  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string } | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch('/api/admin/ops', { cache: 'no-store' }).catch(() => null);
@@ -70,7 +70,7 @@ export function AdminOps() {
     if (d.settings && d.capacity) {
       setOps(d);
       // The form is filled once, so a refresh never overwrites what is being typed.
-      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen });
+      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10) });
     }
   }, []);
   useEffect(() => {
@@ -516,12 +516,24 @@ export function AdminOps() {
               <input type="checkbox" className="h-4 w-4" checked={form.signups} onChange={(e) => setForm({ ...form, signups: e.target.checked })} />
               New accounts can sign up
             </label>
+            <label className="flex items-center gap-2 text-sm text-slate-200">
+              <input type="checkbox" className="h-4 w-4" checked={form.powerSave} onChange={(e) => setForm({ ...form, powerSave: e.target.checked })} />
+              Switch phones off between scans
+            </label>
+            <label className="text-xs text-slate-400">
+              Switch off after this many minutes with nothing waiting
+              <input className={input + ' mt-1 block w-full'} type="number" min={2} max={240} disabled={!form.powerSave} value={form.idleOff} onChange={(e) => setForm({ ...form, idleOff: e.target.value })} />
+            </label>
+            <p className="text-xs text-slate-500 sm:col-span-2">
+              With this on, phones start when a scan arrives (about two minutes before its first point) and stop once the queue has been empty this long, so an idle phone uses no proxy data. Turn it off
+              while you work on a phone by hand in DuoPlus.
+            </p>
           </div>
           <button
             type="button"
             disabled={busy !== ''}
             className={btn + ' mt-4 bg-emerald-500 text-slate-950 hover:bg-emerald-400'}
-            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups } }, () => 'Settings saved.')}
+            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups, powerSave: form.powerSave, idleOffMinutes: Number(form.idleOff) } }, () => 'Settings saved.')}
           >
             {busy === 'settings' ? 'Saving…' : 'Save settings'}
           </button>

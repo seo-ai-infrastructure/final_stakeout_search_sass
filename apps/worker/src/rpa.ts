@@ -195,3 +195,49 @@ export async function runRpaSearch(opts: {
   if (task) await cancelRpaTask(task.id);
   throw new Error('RPA_TASK_TIMEOUT ' + (task ? 'status=' + task.status : 'task not found'));
 }
+
+/**
+ * Runs the warm-up template (DUOPLUS_RPA_TEMPLATE_WARMUP) once on a phone that has just been
+ * switched on, with the template's own default variables. Resolves false when no warm-up template
+ * is set; throws when the run fails or does not finish in time (the task is cancelled).
+ */
+let warmupVars: { id: string; vars: TemplateVar[] } | null = null;
+export async function runWarmup(imageId: string, timeoutMs = 180000) {
+  const id = process.env.DUOPLUS_RPA_TEMPLATE_WARMUP?.trim();
+  if (!id) return false;
+  if (warmupVars?.id !== id) warmupVars = { id, vars: await templateVars(id) };
+  const name = 'stakeout-warmup-' + imageId + '-' + Date.now().toString(36);
+  const config = Object.fromEntries(warmupVars.vars.map((v) => [v.key, { key: v.key, value: v.value ?? '', type: v.type || 'string', required: v.required }]));
+  await duoplusPost('/api/v1/automation/addTask', {
+    template_id: id,
+    template_type: 2,
+    name,
+    remark: 'stakeout warm-up',
+    images: [{ image_id: imageId, issue_at: formatServerTime(Date.now(), serverOffsetMin), config }],
+  });
+  const deadline = Date.now() + timeoutMs;
+  let task: TaskRow | null = null;
+  let rescheduled = false;
+  while (Date.now() < deadline) {
+    task = await findTask(name).catch(() => null);
+    if (task) {
+      // Same clock correction as a search: a task scheduled on the wrong clock would never start.
+      if (!offsetLearned && task.created_at && !rescheduled) {
+        const learned = learnServerOffset(task.created_at, Date.now());
+        if (learned !== null) {
+          offsetLearned = true;
+          if (learned !== serverOffsetMin) {
+            serverOffsetMin = learned;
+            rescheduled = true;
+            if (task.status === 0) await duoplusPost('/api/v1/automation/updateTaskTime', { id: task.id, issue_at: formatServerTime(Date.now(), serverOffsetMin) }).catch(() => {});
+          }
+        }
+      }
+      if (task.status === 3) return true;
+      if (task.status === 4 || task.status === 5) throw new Error('WARMUP_FAILED ' + ((await failureDetail(task.id)) || 'status ' + task.status).slice(0, 160));
+    }
+    await sleep(4000);
+  }
+  if (task) await cancelRpaTask(task.id);
+  throw new Error('WARMUP_TIMEOUT');
+}

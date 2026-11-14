@@ -17,6 +17,7 @@ import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePo
 import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
+import { powerTick, powerReport } from './power';
 
 function formatErr(e: unknown) {
   if (e instanceof Error) {
@@ -342,6 +343,8 @@ async function reportHealth() {
     // Throughput: phones ready at the last fleet check, and how many points run at once.
     phonesReady: readyPhoneCount(),
     concurrency: deviceWorker.concurrency,
+    // Power saving: phones on, points waiting, and when the phones will be switched off.
+    power: powerReport(),
     concurrencyCeiling: targetConcurrency(readyPhoneCount(), process.env.MOBILE_CONCURRENCY).capped ? Number(process.env.MOBILE_CONCURRENCY) : null,
     proxyLists: await db.proxyList.count(),
     // How long the longest-idle list has gone unused. Idle lists are deleted after two minutes
@@ -376,6 +379,7 @@ let busy = false,
   lastProxyRelease = 0,
   lastInsightsBackfill = Date.now(),
   lastFleetSync = 0,
+  lastPowerLook = 0,
   fleetSyncRunning = false;
 
 /** Bring the next fleet sync forward to ~30 s from now (at most once a minute). */
@@ -427,6 +431,13 @@ async function tick() {
     if (Date.now() - lastRepair > 300000) {
       lastRepair = Date.now();
       await reconcile();
+    }
+    // Power saving (admin setting): phones start when points are waiting and stop when the queue
+    // has been empty for a while. A change in what is on brings the fleet check forward.
+    if (Date.now() - lastPowerLook > 30000) {
+      lastPowerLook = Date.now();
+      const changed = await powerTick().catch((e) => (console.warn('[power] skipped:', (e as Error).message), false));
+      if (changed) lastFleetSync = 0;
     }
     // Picks up newly rented phones (and bootstraps them) without an admin click.
     // Runs in the background so bootstrapping new phones never delays dispatch.

@@ -14,6 +14,10 @@ export type Settings = {
   signupsOpen: boolean;
   /** What one point costs to run, for the cost estimate (COST_PER_POINT_USD). */
   costPerPointUsd: number;
+  /** Phones are switched off while no scan is waiting, and on when one arrives (DUOPLUS_POWER_SAVE). */
+  powerSave: boolean;
+  /** Minutes the queue stays empty before the phones are switched off (POWER_IDLE_OFF_MINUTES). */
+  idleOffMinutes: number;
 };
 
 const KEY = 'stakeout:settings';
@@ -25,6 +29,8 @@ export const defaultSettings = (env: Record<string, string | undefined> = proces
   ispExclude: names(env.ISP_EXCLUDE ?? 'Tillman Fiberco'),
   signupsOpen: env.SIGNUPS_OPEN === 'true',
   costPerPointUsd: num(env.COST_PER_POINT_USD, 0.033),
+  powerSave: env.DUOPLUS_POWER_SAVE === 'true',
+  idleOffMinutes: num(env.POWER_IDLE_OFF_MINUTES, 10),
 });
 
 /** Checks values an admin typed; throws a message they can read. Only the given keys are returned. */
@@ -49,6 +55,15 @@ export function cleanSettings(input: Record<string, unknown>): Partial<Settings>
     const n = Number(input.costPerPointUsd);
     if (!Number.isFinite(n) || n < 0 || n > 5) throw new Error('The cost per point must be between 0 and 5 dollars.');
     out.costPerPointUsd = n;
+  }
+  if ('powerSave' in input) {
+    if (typeof input.powerSave !== 'boolean') throw new Error('Power saving must be on or off.');
+    out.powerSave = input.powerSave;
+  }
+  if ('idleOffMinutes' in input) {
+    const n = Number(input.idleOffMinutes);
+    if (!Number.isInteger(n) || n < 2 || n > 240) throw new Error('Phones can be switched off after 2 to 240 idle minutes (a whole number).');
+    out.idleOffMinutes = n;
   }
   return out;
 }

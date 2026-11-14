@@ -11,7 +11,8 @@ import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMat
 import { redis } from '@stakeout/core/redis';
 import { OBSERVE_SH } from '@stakeout/core/observer';
 import type { RpaSurface } from '@stakeout/core/rpaRules';
-import { runRpaSearch } from './rpa';
+import { runRpaSearch, runWarmup } from './rpa';
+import { warmKey } from './power';
 import { put, uploadURL, uploaded } from '@stakeout/core/r2';
 import { captureEnded, captureStarted, duoplusPost, updatePhone, phonePowerStatus, type LeasedDevice } from './duoplus';
 import { pull, push, shell, transportFor } from './deviceShell';
@@ -583,6 +584,17 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
   await ensureRunnerInstalled(d);
   const proof = await provision(d, p);
   await d.assertOwned();
+  // A phone just switched on (power saving): once its proxy is set, run the warm-up template one
+  // time before its first search. A failed warm-up is logged; the point still runs.
+  if (searchMode() === 'rpa' && process.env.DUOPLUS_RPA_TEMPLATE_WARMUP?.trim() && !(await redis().get(warmKey(d.imageId)).catch(() => '1'))) {
+    const t0 = Date.now();
+    await runWarmup(d.imageId).then(
+      () => console.log('[power] warm-up finished on', d.imageId, 'in', Math.round((Date.now() - t0) / 1000) + 's'),
+      (e) => console.warn('[power] warm-up did not finish on', d.imageId, '-', e instanceof Error ? e.message : e),
+    );
+    await redis().set(warmKey(d.imageId), '1', 'EX', 7 * 86400).catch(() => {});
+    await d.assertOwned();
+  }
   // Over ADB the exit check already bound the proxy and set GPS; over the API it
   // checked the proxy record only, so bind and move the phone now.
   if (transportFor(d) === 'api') {

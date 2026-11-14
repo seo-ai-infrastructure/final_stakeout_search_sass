@@ -59,6 +59,8 @@ type SystemHealth = {
   phonesReady?: number | null;
   concurrency?: number;
   concurrencyCeiling?: number | null;
+  /** Power saving (absent from an older worker): phones on, points waiting, seconds until switch-off. */
+  power?: { managed: boolean; on: number; total: number; pending: number; offInSeconds: number | null; note: string };
   proxyLists: number;
   /** Seconds the longest-idle list has gone unused (absent from an older worker). */
   proxyListIdleSeconds?: number;
@@ -82,8 +84,17 @@ function SystemHealthCard({ system }: { system: SystemHealth | null }) {
           : ([
               [
                 'Phones',
-                (system.phonesReady ?? 1) > 0 && !system.concurrencyCeiling,
-                `${system.phonesReady ?? '?'} ready · up to ${system.concurrency} point(s) at once` +
+                ((system.phonesReady ?? 1) > 0 || Boolean(system.power?.managed && !system.power.pending)) && !system.concurrencyCeiling,
+                system.power?.managed && system.phonesReady === 0 && !system.power.pending
+                  ? 'switched off to save proxy data: they start when the next scan arrives'
+                  : `${system.phonesReady ?? '?'} ready · up to ${system.concurrency} point(s) at once` +
+                    (system.power?.managed
+                      ? system.power.pending
+                        ? ` · power saving: ${system.power.on} of ${system.power.total} on for ${system.power.pending} waiting point(s)${system.power.note ? ', ' + system.power.note : ''}`
+                        : system.power.offInSeconds != null
+                          ? ` · power saving: switching off in ${Math.max(1, Math.round(system.power.offInSeconds / 60))} min`
+                          : ' · power saving on'
+                      : '') +
                   (system.concurrencyCeiling ? `: held down by MOBILE_CONCURRENCY=${system.concurrencyCeiling} (remove it to use every phone)` : system.phonesReady === 0 ? ': no phone is on and ready' : ''),
               ],
             ] as [string, boolean, string][])),
