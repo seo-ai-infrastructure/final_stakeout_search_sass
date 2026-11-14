@@ -158,7 +158,7 @@ const ANATOMY = [
 ];
 
 const STEPS = [
-  { n: '1', title: 'Drop your grid', text: 'Keyword, business and location. A 3×3, 5×5 or 9×9 grid of points, spaced from half a mile to five miles.' },
+  { n: '1', title: 'Drop your grid', text: 'Keyword, business and location. A 3×3, 5×5, 7×7 or 9×9 grid of points, spaced from half a mile to five miles.' },
   { n: '2', title: 'Phones search every point', text: 'Each point gets its own Android phone session: GPS moved to the point, residential network, search run and recorded.' },
   { n: '3', title: 'Open the receipts', text: 'Click any point to watch what the phone saw, inspect the results and AI answers, and share it with your client.' },
 ];

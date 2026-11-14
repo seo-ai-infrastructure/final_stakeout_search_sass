@@ -73,9 +73,9 @@ test('AI Overview tracking is part of every Chrome scan, whatever is sent; Maps 
     assert.equal(parseSpec({ ...base, targetType: 'mobile_maps', trackAiOverviews: sent }).trackAiOverviews, false, 'maps, sent ' + sent);
 });
 
-test('grid sizes on offer: 3×3, 5×5 and 9×9 for now; the default is one of them', async () => {
+test('grid sizes on offer: 3×3, 5×5, 7×7 and 9×9 for now; the default is one of them', async () => {
   const { OFFERED_GRID_SIZES, parseSpec } = await import('../packages/core/grid');
-  assert.deepEqual([...OFFERED_GRID_SIZES], [3, 5, 9]);
+  assert.deepEqual([...OFFERED_GRID_SIZES], [3, 5, 7, 9]);
   const base = { targetBusiness: 'Acme Plumbing', keyword: 'plumber', centerLat: 28.04, centerLng: -81.95 };
   assert.ok(OFFERED_GRID_SIZES.includes(parseSpec(base).gridSize), 'a scan with no size given gets an offered one');
   // Older scans of any size still parse (they re-run and repeat on schedule); the create route limits new ones.
