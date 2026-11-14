@@ -101,3 +101,13 @@ export const leasableDeviceWhere = {
   offlineAt: null,
   autoPausedAt: null,
 } as const;
+
+/**
+ * Phones a new scan can count on. With power saving on, phones are switched off while nothing is
+ * waiting and start when a scan arrives, so a phone that is merely off still counts.
+ */
+export function fleetWhere(powerSave: boolean) {
+  if (!powerSave) return leasableDeviceWhere;
+  const { offlineAt: _off, ...rest } = leasableDeviceWhere;
+  return rest;
+}

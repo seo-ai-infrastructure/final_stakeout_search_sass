@@ -36,3 +36,11 @@ test('power saving: phones go off only after the queue has stayed empty, never w
   assert.deepEqual(planPower({ phones, pending: 0, idleMs: 10 * MIN, idleOffMs: 10 * MIN }), { on: [], off: ['a', 'b'], active: 3, want: 0 });
   assert.deepEqual(planPower({ phones, pending: 1, idleMs: 99 * MIN, idleOffMs: 10 * MIN }).off, []);
 });
+
+test('power saving: a scan can be ordered while the phones are switched off', async () => {
+  const { fleetWhere } = await import('../packages/core/hardware');
+  // Normally a phone must be online; with power saving, an off phone still counts (it will be started).
+  assert.equal('offlineAt' in fleetWhere(false), true);
+  assert.equal('offlineAt' in fleetWhere(true), false);
+  assert.equal((fleetWhere(true) as any).isEnabled, true);
+});

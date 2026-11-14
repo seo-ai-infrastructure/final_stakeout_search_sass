@@ -1,11 +1,13 @@
 import { db } from '@stakeout/db';
 import { InputError } from './grid';
-import { leasableDeviceWhere, profilesForDevice, deviceMatchesProfile } from './hardware';
+import { fleetWhere, profilesForDevice, deviceMatchesProfile } from './hardware';
+import { getSettings } from './settings';
+
 
 /** Profiles served by at least one leasable phone (busy or idle). */
 export async function availableProfiles() {
   const devices = await db.devicePool.findMany({
-    where: leasableDeviceWhere,
+    where: fleetWhere((await getSettings()).powerSave),
     select: { hardwareModel: true },
   });
   const seen = new Map<string, { brand: string; model: string; phones: number }>();
@@ -22,7 +24,7 @@ export async function availableProfiles() {
 export async function assertFleetSupports(targetType: string, phoneModel: string) {
   if (targetType === 'desktop_aimode') return;
   const devices = await db.devicePool.findMany({
-    where: leasableDeviceWhere,
+    where: fleetWhere((await getSettings()).powerSave),
     select: { hardwareModel: true },
   });
   if (!devices.some((d) => deviceMatchesProfile(d, phoneModel)))
