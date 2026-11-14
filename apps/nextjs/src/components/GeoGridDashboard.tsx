@@ -469,8 +469,9 @@ export function GeoGridDashboard({
     const home = document.createElement('div');
     home.title = scan.targetBusiness;
     home.setAttribute('aria-label', scan.targetBusiness + ': the centre of the grid');
-    home.style.cssText = 'width:18px;height:18px;border-radius:5px;background:#f8fafc;border:2px solid #020617;box-shadow:0 0 0 2px #f8fafc;pointer-events:none';
-    markers.push(new maplibregl.Marker({ element: home }).setLngLat([scan.centerLng, scan.centerLat]).addTo(m));
+    home.style.cssText = 'width:14px;height:14px;border-radius:4px;background:#f8fafc;border:2px solid #020617;box-shadow:0 0 0 1.5px #f8fafc;pointer-events:none';
+    // Offset up and to the right: the business usually sits on the grid's centre point, whose pin must stay readable.
+    markers.push(new maplibregl.Marker({ element: home, offset: [19, -19] }).setLngLat([scan.centerLng, scan.centerLat]).addTo(m));
     return () => {
       markers.forEach((v) => v.remove());
     };
@@ -665,8 +666,12 @@ export function GeoGridDashboard({
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <div>
           <p className="mb-2 text-sm text-slate-300">
-            Showing {projected?.businessName ?? scan.targetBusiness} · purple
-            ring = AI appearance
+            Showing {projected?.businessName ?? scan.targetBusiness} ·{' '}
+            {mapMode === 'ai'
+              ? 'its place in each point’s AI Overview'
+              : mapMode === 'ads'
+                ? 'sponsored results above it at each point'
+                : 'purple ring = named in that point’s AI Overview'}
           </p>
           <div className="relative">
             <div ref={container} className="h-[520px] rounded-lg bg-slate-900" />

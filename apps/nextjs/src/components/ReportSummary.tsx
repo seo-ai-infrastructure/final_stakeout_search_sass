@@ -334,7 +334,7 @@ export function ProofStrip({ scan, onOpen }: { scan: GridScanData; onOpen: (pinI
       <div className="mt-4 grid gap-4 sm:grid-cols-3">
         {picks.map((p, i) => (
           <figure key={p.id} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
-            <video src={p.videoUrl ?? undefined} muted playsInline preload="metadata" className="block h-56 w-full bg-black object-cover object-top" aria-label={`Recording of point ${p.rowIdx + 1},${p.colIdx + 1}`} />
+            <video src={p.videoUrl ? p.videoUrl + '#t=6' : undefined} muted playsInline preload="metadata" className="block h-56 w-full bg-black object-cover object-top" aria-label={`Recording of point ${p.rowIdx + 1},${p.colIdx + 1}`} />
             <figcaption className="flex items-center justify-between gap-2 p-3 text-xs">
               <span className="text-slate-300">
                 <span className="font-bold text-white">{picks.length === 3 ? label[i] : 'Point'}</span> · {p.rowIdx + 1},{p.colIdx + 1} · {p.rankFound == null ? 'not found' : 'rank #' + p.rankFound}

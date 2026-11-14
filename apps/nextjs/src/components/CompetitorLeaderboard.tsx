@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { Search, ArrowUpDown, Download, Sparkles } from 'lucide-react';
 import type { GridPinData } from './GeoGridDashboard';
+import { aiBusinesses } from '@/lib/marketInsights';
 export interface CompetitorMarketStat {
   businessName: string;
   normalizedKey: string;
@@ -19,6 +20,8 @@ export interface CompetitorMarketStat {
   bestRank: number;
   // AI Overview / Ask Maps Citation Metrics
   aiCitedCount: number; // Number of pins where business/domain was cited in AI Overview / Ask Maps
+  /** AI answers that name the business in their list of businesses: the AI panel's measure. */
+  aiNamedCount: number;
   aiCitationSharePct: number; // % of all completed pins where business was cited in AI
   aiShareWhenTriggeredPct: number; // % of AI-triggered pins where business was cited
   pinRanks: Record<string, number>; // Map of pinId -> rank (1..20) for map re-projection
@@ -180,6 +183,13 @@ export function CompetitorLeaderboard({
         }
       }
     }
+    // How many AI answers name each business in their list (what the AI panel counts). Matched
+    // loosely, since the AI writes a name slightly differently ("Co." for "Co").
+    const loose = (v: string) => v.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '');
+    const namedIn = new Map<string, number>();
+    for (const row of aiBusinesses(completedPins, targetBusiness).rows) namedIn.set(loose(row.name), row.points);
+    // The target also counts an answer that plainly names it but was captured without its list.
+    const targetNamed = completedPins.filter((p) => p.hasAiOverview && p.targetCitedInAi).length;
     // Pass 3: Compute Final Ratios
     const stats: CompetitorMarketStat[] = [];
     for (const [normKey, item] of map.entries()) {
@@ -210,6 +220,7 @@ export function CompetitorLeaderboard({
         unrankedCount,
         bestRank: item.bestRank,
         aiCitedCount: item.aiCitedCount,
+        aiNamedCount: Math.min(totalAiTriggeredPins, Math.max(namedIn.get(loose(item.displayName)) ?? 0, item.isTarget ? targetNamed : 0)),
         aiCitationSharePct: Number(aiCitationSharePct.toFixed(1)),
         aiShareWhenTriggeredPct: Number(aiShareWhenTriggeredPct.toFixed(1)),
         pinRanks: item.pinRanks,
@@ -233,7 +244,8 @@ export function CompetitorLeaderboard({
       let diff = 0;
       if (sortBy === 'solv') diff = a.solv - b.solv;
       else if (sortBy === 'aiCitationSharePct')
-        diff = a.aiCitationSharePct - b.aiCitationSharePct;
+        // The AI column sorts by what it shows first: answers that name the business, then any mention.
+        diff = a.aiNamedCount - b.aiNamedCount || a.aiCitedCount - b.aiCitedCount;
       else if (sortBy === 'atrp')
         diff = b.atrp - a.atrp; // Lower ATRP is better
       else if (sortBy === 'arp')
@@ -392,7 +404,7 @@ export function CompetitorLeaderboard({
               {showAi && (
                 <th className="px-3 py-3">
                   <button type="button" onClick={() => handleSort('aiCitationSharePct')} className="inline-flex items-center gap-1 text-violet-300 hover:text-violet-200">
-                    <Sparkles className="h-3 w-3" /> AI share, when shown <ArrowUpDown className="h-3 w-3" />
+                    <Sparkles className="h-3 w-3" /> Named by the AI <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
               )}
@@ -475,14 +487,20 @@ export function CompetitorLeaderboard({
                   </td>
                   {showAi && (
                     <td className="px-3 py-3">
-                      {comp.aiCitedCount > 0 ? (
+                      {comp.aiCitedCount > 0 || comp.aiNamedCount > 0 ? (
                         <>
-                          {/* Of the points where an AI Overview appeared, not of the whole grid. */}
-                          <div className="font-bold text-violet-300">{comp.aiShareWhenTriggeredPct.toFixed(0)}%</div>
-                          <div className="text-[11px] text-slate-400">
-                            {comp.aiCitedCount} of {totalAiTriggeredPins} AI answers
+                          {/* Of the points where an AI Overview appeared, not of the whole grid: the answers that
+                              name the business in their list. A business can also appear only as a source (its
+                              Google profile or website cited), which is a mention, not a recommendation. */}
+                          <div className={'font-bold ' + (comp.aiNamedCount > 0 ? 'text-violet-300' : 'text-slate-400')}>
+                            {((100 * comp.aiNamedCount) / Math.max(1, totalAiTriggeredPins)).toFixed(0)}%
                           </div>
-                          <div className="text-[10px] text-slate-500">{comp.aiCitationSharePct.toFixed(0)}% of the full grid</div>
+                          <div className="text-[11px] text-slate-400">
+                            named in {comp.aiNamedCount} of {totalAiTriggeredPins} AI answers
+                          </div>
+                          {comp.aiCitedCount > comp.aiNamedCount && (
+                            <div className="text-[10px] text-slate-500">named or cited as a source in {comp.aiCitedCount}</div>
+                          )}
                         </>
                       ) : (
                         <span className="text-slate-500">—</span>
