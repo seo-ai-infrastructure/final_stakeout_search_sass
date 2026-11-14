@@ -230,6 +230,7 @@ export type AiCopyBusiness = {
   pos: number;
   name: string;
   /** Google's own business id (Knowledge Graph MID), e.g. "/g/11z8421vy4". */
+  /** Google's id for the business, or '' when the answer names it without linking a Google listing. */
   kgmid: string;
   url: string;
   rating: string | null;
@@ -237,7 +238,18 @@ export type AiCopyBusiness = {
   category: string | null;
   lines: string[];
 };
-export type AiCopy = { intro: string[]; businesses: AiCopyBusiness[]; citations: { n: number; url: string }[]; verified: boolean };
+/** One piece of the copied answer, in the order Google wrote it. `business` is an index into `businesses`. */
+export type AiCopyBlock = { kind: 'heading' | 'text' | 'bullet'; text: string } | { kind: 'business'; business: number };
+export type AiCopy = {
+  intro: string[];
+  businesses: AiCopyBusiness[];
+  citations: { n: number; url: string }[];
+  verified: boolean;
+  /** Text after the business list: closing sections such as "How to verify a licence". */
+  outro: string[];
+  /** The whole answer in order (headings, paragraphs, bullets and businesses), to rebuild it as shown. */
+  blocks: AiCopyBlock[];
+};
 
 const BIZ_LINE = /^(.+?) \((https:\/\/www\.google\.com\/search\?kgmid=([^&)\s]+)[^)\s]*)\)$/;
 const RATING_LINE = /^([0-5](?:\.\d)?)\((\d[\d.,]*K?)\)\s*·\s*(.+)$/;
@@ -249,29 +261,64 @@ const RATING_LINE = /^([0-5](?:\.\d)?)\((\d[\d.,]*K?)\)\s*·\s*(.+)$/;
  * verified if its businesses (or intro) appear there too, so a stale clipboard never counts.
  */
 export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
-  const intro: string[] = [], businesses: AiCopyBusiness[] = [], citations: { n: number; url: string }[] = [];
+  const intro: string[] = [], outro: string[] = [], businesses: AiCopyBusiness[] = [], citations: { n: number; url: string }[] = [];
+  const blocks: AiCopyBlock[] = [];
   let cur: AiCopyBusiness | null = null;
+  // The copy separates sections with a blank line, and lists a business's details directly under
+  // its name. So a blank line ends the business above it: what follows is a new section, not
+  // more of that business's details.
+  let blank = true;
+  // A business block is its name, a few plain lines (rating, hours, offers), then bulleted
+  // details. A plain line after the bullets have begun is therefore the next business: one the
+  // answer names without linking a Google listing (so it has no kgmid).
+  let bulleted = false;
   for (const raw of text.replace(/\r/g, '').split('\n')) {
     const line = raw.trim();
-    if (!line) continue;
+    if (!line) {
+      blank = true;
+      continue;
+    }
+    const afterBlank = blank;
+    blank = false;
     // A business starts its own line; a bullet (detail) that links a kgmid is not a new business.
     const b = line.startsWith('•') ? null : BIZ_LINE.exec(line);
     if (b && !businesses.some((x) => x.kgmid === decodeURIComponent(b[3]))) {
       cur = { pos: businesses.length + 1, name: b[1].trim(), kgmid: decodeURIComponent(b[3]), url: b[2], rating: null, reviews: null, category: null, lines: [] };
       businesses.push(cur);
+      blocks.push({ kind: 'business', business: businesses.length - 1 });
+      bulleted = false;
       continue;
     }
     for (const m of line.matchAll(/\[(\d+)\] \(([^)\s]+)\)/g)) citations.push({ n: Number(m[1]), url: m[2] });
+    if (cur && afterBlank) cur = null;
+    const isBullet = line.startsWith('•');
+    const plainName = line.replace(/,?\s*\[\d+\]\s*\([^)]*\)/g, '').trim();
+    if (cur && bulleted && !isBullet && plainName.length <= 80 && !/[.:?!]$/.test(plainName) && !businesses.some((x) => norm(x.name) === norm(plainName))) {
+      cur = { pos: businesses.length + 1, name: plainName, kgmid: '', url: '', rating: null, reviews: null, category: null, lines: [] };
+      businesses.push(cur);
+      blocks.push({ kind: 'business', business: businesses.length - 1 });
+      bulleted = false;
+      continue;
+    }
+    if (cur && isBullet) bulleted = true;
     const r = cur && !cur.rating ? RATING_LINE.exec(line) : null;
     if (cur && r) Object.assign(cur, { rating: r[1], reviews: r[2], category: r[3].trim() });
+    // An unlinked business has no rating line: its first plain line is what it is ("HVAC contractor").
+    else if (cur && !cur.kgmid && !cur.category && !isBullet && !cur.lines.length) cur.category = line;
     else if (cur) cur.lines.push(line.replace(/^•\s*/, ''));
-    else intro.push(line);
+    else {
+      (businesses.length ? outro : intro).push(line);
+      const bullet = line.startsWith('•');
+      // A heading: a short line on its own, with no sentence ending and no citation.
+      const heading = !bullet && afterBlank && line.length <= 90 && !/[.:?!]$/.test(line) && !/\[\d+\] \(/.test(line);
+      blocks.push({ kind: bullet ? 'bullet' : heading ? 'heading' : 'text', text: line.replace(/^•\s*/, '') });
+    }
   }
   const hay = norm(checkAgainst.join(' \n '));
   const verified =
     checkAgainst.length > 0 &&
     (businesses.some((x) => hay.includes(norm(x.name))) || intro.some((l) => l.length > 12 && hay.includes(norm(l))));
-  return { intro, businesses, citations, verified };
+  return { intro, businesses, citations, verified, outro, blocks };
 }
 
 /**

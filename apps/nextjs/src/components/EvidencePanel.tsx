@@ -30,7 +30,11 @@ type Evidence = {
     businesses: { pos: number; name: string; kgmid: string; url: string; rating: string | null; reviews: string | null; category: string | null; lines: string[] }[];
     citations: { n: number; url: string }[];
     verified: boolean;
+    /** The whole answer in Google's order: headings, paragraphs, bullets and businesses (an index into `businesses`). */
+    blocks?: ({ kind: 'heading' | 'text' | 'bullet'; text: string } | { kind: 'business'; business: number })[];
   } | null;
+  /** The AI Overview was captured before it was expanded: only its first part is in the evidence. */
+  aiCollapsed?: boolean;
   maps?: MapsCard[] | null;
   mapsAdsAbove?: number | null;
   ranks: {
@@ -148,7 +152,12 @@ export function EvidencePanel({
                 {/* The same colour scale as the map pins. */}
                 <span
                   className="min-w-[36px] rounded-full px-2 py-0.5 text-center text-xs font-extrabold"
-                  style={{ backgroundColor: rankColor(p.status, rank), color: rankTextColor(rankColor(p.status, rank)) }}
+                  style={{
+                    backgroundColor: rankColor(p.status, rank),
+                    color: rankTextColor(rankColor(p.status, rank)),
+                    // The same ring as on the map: the business is named in this point's AI Overview.
+                    boxShadow: p.status === 'COMPLETED' && p.targetCitedInAi ? '0 0 0 3px #c084fc' : undefined,
+                  }}
                 >
                   {p.status !== 'COMPLETED' ? (p.status === 'FAILED' ? '×' : '…') : rank ? '#' + rank : '20+'}
                 </span>
@@ -164,6 +173,10 @@ export function EvidencePanel({
               {label}
             </span>
           ))}
+          <span className="flex items-center gap-1.5">
+            <i className="h-2.5 w-2.5 rounded-full bg-slate-700" style={{ boxShadow: '0 0 0 2px #c084fc' }} />
+            named in the AI Overview
+          </span>
         </div>
       </section>
 
@@ -565,7 +578,25 @@ function FinderView({ list, isTarget, googleLocation }: { list: Listing[]; isTar
   );
 }
 
-function AiView({ ev, isTarget, target }: { ev: Evidence; isTarget: (n: string) => boolean; target: string }) {
+/** Display text of a copied AI Overview line: its link markers ("[1] (https://…)") are shown as sources instead. */
+const cleanAi = (t: string) => t.replace(/,?\s*\[\d+\]\s*\([^)]*\)/g, '').replace(/\s*\(https?:[^)]*\)/g, '').replace(/\s+([.,])/g, '$1').trim();
+const siteOf = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+};
+/** Shown when the evidence holds only the first part of an AI Overview, so a short answer is not taken for the whole. */
+function AiCollapsedNote() {
+  return (
+    <p className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[12px] leading-relaxed text-amber-900">
+      <span className="font-bold">Only the first part was captured.</span> Google showed this answer collapsed and it was not expanded on this run. Re-run the point to capture the full answer and its sources.
+    </p>
+  );
+}
+
+export function AiView({ ev, isTarget, target }: { ev: Evidence; isTarget: (n: string) => boolean; target: string }) {
   const ai = ev.aiOverview;
   const copy = ev.aiCopy;
   const layout = ev.aiLayout;
@@ -633,31 +664,62 @@ function AiView({ ev, isTarget, target }: { ev: Evidence; isTarget: (n: string) 
             </p>
           );
         })()}
-        {copy.intro.map((t, i) => <p key={'i' + i} className="text-[13px] font-semibold text-gray-800">{t}</p>)}
-        <ol className="space-y-2">
-          {copy.businesses.map((b) => {
-            const me = isTarget(b.name);
-            return (
-              <li key={b.kgmid} className={`rounded-xl p-3 ${me ? 'border-2 border-emerald-600 bg-emerald-50' : 'border border-gray-200'}`}>
+        {ev.aiCollapsed && <AiCollapsedNote />}
+        {(copy.blocks?.length ? copy.blocks : [...copy.intro.map((text) => ({ kind: 'text' as const, text })), ...copy.businesses.map((_, business) => ({ kind: 'business' as const, business }))]).map((blk, i) => {
+          // The answer in the order Google wrote it: headings, paragraphs and bullets around the businesses.
+          if (blk.kind !== 'business') {
+            const text = cleanAi(blk.text);
+            if (!text) return null;
+            if (blk.kind === 'heading') return <p key={i} className="pt-1 text-[14px] font-extrabold text-gray-900">{text}</p>;
+            if (blk.kind === 'bullet') return <p key={i} className="pl-3 text-[12.5px] leading-relaxed text-gray-700">• {text}</p>;
+            return <p key={i} className="text-[13px] leading-relaxed text-gray-800">{text}</p>;
+          }
+          const b = copy.businesses[blk.business];
+          if (!b) return null;
+          const me = isTarget(b.name);
+          return (
+              <div key={b.kgmid || 'unlinked-' + blk.business} className={`rounded-xl p-3 ${me ? 'border-2 border-emerald-600 bg-emerald-50' : 'border border-gray-200'}`}>
                 <div className="flex items-center gap-2">
                   <span className={`inline-flex h-6 min-w-[24px] items-center justify-center rounded-full text-[11px] font-extrabold ${me ? 'bg-emerald-600 text-white' : 'bg-violet-100 text-violet-800'}`}>{b.pos}</span>
-                  <a href={b.url} target="_blank" rel="noopener noreferrer" className="text-[13.5px] font-bold text-[#1a0dab] underline-offset-2 hover:underline">{b.name}</a>
+                  {b.url ? (
+                    <a href={b.url} target="_blank" rel="noopener noreferrer" className="text-[13.5px] font-bold text-[#1a0dab] underline-offset-2 hover:underline">{b.name}</a>
+                  ) : (
+                    // Named in the answer without a link to a Google listing.
+                    <span className="text-[13.5px] font-bold text-gray-900">{b.name}</span>
+                  )}
                 </div>
                 <div className="mt-1 text-xs text-gray-700">
-                  {b.rating ? b.rating + ' ★' : ''}{b.reviews ? ' (' + b.reviews + ')' : ''}{b.category ? ' · ' + b.category : ''}
+                  {[b.rating ? b.rating + ' ★' + (b.reviews ? ' (' + b.reviews + ')' : '') : '', b.category ?? ''].filter(Boolean).join(' · ')}
                 </div>
-                {b.lines.map((l, i) => <div key={i} className="mt-1 text-[11.5px] text-gray-600">{l.replace(/\s*\[\d+\] \([^)]*\)/g, '').replace(/ \(https?:[^)]*\)/g, '')}</div>)}
-                <div className="mt-1 font-mono text-[10px] text-gray-400">Google ID {b.kgmid}</div>
-              </li>
-            );
-          })}
-        </ol>
-        {copy.citations.length > 0 && <p className="text-[11px] text-gray-500">{copy.citations.length} cited source{copy.citations.length === 1 ? '' : 's'} in this AI Overview</p>}
+                {b.lines.map((l, i) => <div key={i} className="mt-1 text-[11.5px] leading-relaxed text-gray-600">{cleanAi(l)}</div>)}
+                <div className="mt-1 font-mono text-[10px] text-gray-400">{b.kgmid ? 'Google ID ' + b.kgmid : 'Named without a linked Google listing'}</div>
+              </div>
+          );
+        })}
+        {(() => {
+          // The sites the answer cites, each once, in the order they first appear.
+          const sites = [...new Map(copy.citations.map((c) => [siteOf(c.url), c.url])).entries()].filter(([site]) => site);
+          return sites.length ? (
+            <div className="border-t border-gray-200 pt-2">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Sources cited</p>
+              <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                {sites.map(([site, url]) => (
+                  <li key={site}>
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block rounded-full border border-gray-300 px-2.5 py-1 text-[11px] font-medium text-[#1a0dab] hover:bg-gray-50">
+                      {site}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null;
+        })()}
       </div>
     );
   return (
     <div className="space-y-3 p-3">
       <p className="text-sm font-extrabold text-violet-800">AI Overview</p>
+      {ev.aiCollapsed && <AiCollapsedNote />}
       {ai ? (
         <>
           {ai.paragraphs.map((t, i) => <p key={i} className="text-[13px] leading-relaxed text-gray-800">{t}</p>)}

@@ -15,6 +15,12 @@ export async function backfillInsights(limit = 500) {
   await db.$executeRaw`
     UPDATE "GridPin" p SET insights = NULL FROM "GridScan" s
     WHERE s.id = p."scanId" AND s."targetType" = 'mobile_maps' AND p.insights IS NOT NULL AND p.insights->>'m' IS NULL`;
+  // Points with an AI Overview read before the copy reader found businesses named without a
+  // Google link (the AI's list could be missing names, which shifts everyone's place in it) are
+  // cleared once too.
+  await db.$executeRaw`
+    UPDATE "GridPin" p SET insights = NULL
+    WHERE p.insights IS NOT NULL AND p.insights->'ai'->>'shown' = 'true' AND p.insights->>'c' IS NULL AND p."dumpsTarUrl" IS NOT NULL`;
   const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string; target: string }[]>`
     SELECT p.id, p."scanId", p."dumpsTarUrl", s."targetBusiness" AS target
     FROM "GridPin" p JOIN "GridScan" s ON s.id = p."scanId"

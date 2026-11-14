@@ -10,6 +10,8 @@ export type PinInsights = {
   v: 1;
   /** Set on a Maps point read with the list merge that keeps an advertiser's own listing (2). */
   m?: number;
+  /** Set on a point with an AI Overview read with the copy reader that also finds businesses named without a Google link (2). */
+  c?: number;
   /** Local Finder cards in page order (ads included). */
   finder: InsightListing[];
   /** The tracked business in the Local Finder here: organic position and distance from the phone. */
@@ -130,5 +132,5 @@ export function buildPinInsights(input: {
   const shown = Boolean(
     input.aiCopy?.trim() || (input.aiExpanded && readAiOverview(input.aiExpanded)) || page?.aiPreview || (input.serp && readAiOverview(input.serp)),
   );
-  return { v: 1, ...(maps ? { m: 2 } : {}), finder, you, ads, adsAboveYou, ai: { shown, sources, named } };
+  return { v: 1, ...(maps ? { m: 2 } : {}), ...(shown ? { c: 2 } : {}), finder, you, ads, adsAboveYou, ai: { shown, sources, named } };
 }

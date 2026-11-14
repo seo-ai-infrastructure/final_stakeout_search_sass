@@ -172,3 +172,43 @@ test('the recorder fetches Google\'s location footer when the template\'s snapsh
   // A snapshot taken at the foot of the page carries the line the worker needs.
   assert.match(String(searchLocationLine(null, read('real-places-page-2026-11-13.xml'))), /Lakeland, FL - From your device$/);
 });
+
+test('a copied AI Overview is kept in Google\'s order: text after the business list is its own section', async () => {
+  const { readAiCopy } = await import('../packages/core/serpEvidence');
+  const c = readAiCopy(read('real-aio-copy-hvac-2026-11-13.txt'));
+  // Five businesses: two of them (CAMS, Gibson) are named without a link to a Google listing.
+  assert.deepEqual(c.businesses.map((b) => [b.pos, b.name, Boolean(b.kgmid)]), [
+    [1, 'Payne Air Conditioning & Heating', true],
+    [2, 'CAMS A/c -N- Plumbing', false],
+    [3, 'Lakeland Air Conditioning', true],
+    [4, "Roth's Air Conditioning Heating & Air Conditioning/HVAC", true],
+    [5, 'Gibson Air Conditioning & Refrigeration LLC', false],
+  ]);
+  assert.deepEqual([c.businesses[1].category, c.businesses[1].rating], ['HVAC contractor', null]);
+  assert.ok(!c.businesses[0].lines.some((l) => /CAMS|Lakeland, FL, United States/.test(l)), 'the next business is not filed under the one above');
+  // The order of the whole answer: opening text, a heading, the five businesses, then the closing section.
+  assert.deepEqual(c.blocks.map((b) => (b.kind === 'business' ? 'business ' + (b.business + 1) : b.kind)), ['text', 'heading', 'business 1', 'business 2', 'business 3', 'business 4', 'business 5', 'heading', 'text']);
+  const last = c.blocks.slice(-2) as { kind: string; text: string }[];
+  assert.equal(last[0].text, 'Verifying a Florida HVAC License');
+  assert.match(last[1].text, /^You can look up active state contractor credentials/);
+  // The closing section is no longer filed under the last business as if it were its details.
+  assert.deepEqual(c.outro.length, 2);
+  assert.ok(!c.businesses[4].lines.some((l) => /Verifying a Florida HVAC License|You can look up active/.test(l)));
+  assert.ok(c.businesses[4].lines.length >= 2, 'the business keeps its own details');
+  // Copies whose businesses are all linked read exactly as before.
+  assert.deepEqual(readAiCopy(read('real-aio-copy-2026-11-09.txt')).businesses.map((b) => Boolean(b.kgmid)), Array(6).fill(true));
+  assert.equal(c.citations.length, 8);
+  // A copy with no business list is all text, in order.
+  const plain = readAiCopy('First point. [1] (https://a.example/x)\n\nA Heading\n\nSecond point.\n• one\n• two');
+  assert.deepEqual(plain.blocks.map((b) => b.kind), ['text', 'heading', 'text', 'bullet', 'bullet']);
+  assert.deepEqual([plain.businesses.length, plain.intro.length, plain.outro.length], [0, 5, 0]);
+});
+
+test('insights: the AI\'s list includes businesses named without a Google link, and is marked as read that way', () => {
+  const copy = read('real-aio-copy-hvac-2026-11-13.txt');
+  const ins = buildPinInsights({ serp: null, finder: null, aiCopy: copy, target: 'Lakeland Air Conditioning' });
+  assert.deepEqual(ins.ai.named, ['Payne Air Conditioning & Heating', 'CAMS A/c -N- Plumbing', 'Lakeland Air Conditioning', "Roth's Air Conditioning Heating & Air Conditioning/HVAC", 'Gibson Air Conditioning & Refrigeration LLC']);
+  assert.equal(ins.ai.named.indexOf('Lakeland Air Conditioning') + 1, 3, 'third in the AI\'s list, not second');
+  assert.equal(ins.c, 2);
+  assert.equal(buildPinInsights({ serp: null, finder: null, target: 'x' }).c, undefined, 'no AI Overview, no marker');
+});

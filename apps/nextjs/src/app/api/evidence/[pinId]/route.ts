@@ -90,6 +90,9 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
       // The answer and its source cards, as Google lays them out (null for business-list overviews).
       aiLayout: aio ? readAiOverviewLayout(aio) : null,
       aiCopy,
+      // The snapshot still shows the button that expands the answer: it was captured collapsed,
+      // so only its first part is in it.
+      aiCollapsed: Boolean(aio && uiLabels(aio).some((x) => x.label === 'Show more AI Overview')),
       ranks: {
         maps: maps ? (mapsYou?.pos ?? null) : null,
         pack: resultsPage ? rankIn(resultsPage.pack, target) : null,
