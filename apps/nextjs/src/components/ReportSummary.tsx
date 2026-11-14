@@ -1,6 +1,7 @@
 'use client';
 import type { GridScanData } from './GeoGridDashboard';
-import { bandOf, reportSummary, verdictFor, type RankBucket } from '@/lib/reportSummary';
+import type { SiteKind } from '@/lib/marketInsights';
+import { bandOf, reportSummary, verdictFor, type RankBucket, type FindingKind } from '@/lib/reportSummary';
 
 /** One colour language across the report: green is the business, gold is buying power, grey is competitors. */
 const TONE: Record<RankBucket['key'], string> = { first: 'bg-emerald-300', top3: 'bg-emerald-500', top10: 'bg-amber-400', beyond: 'bg-orange-500', absent: 'bg-rose-500' };
@@ -14,7 +15,35 @@ const VERDICT = {
 } as const;
 
 /** The headline: one large score with a one-word verdict, four supporting numbers, then what it means. */
-export function ReportVerdict({ scan }: { scan: GridScanData }) {
+/** A tag before each cited site, so the list reads as who controls the sources (plain sites get none). */
+const SITE_TAG: Partial<Record<SiteKind, { label: string; cls: string }>> = {
+  gbp: { label: 'GBP', cls: 'bg-emerald-500/15 text-emerald-300' },
+  you: { label: 'Your site', cls: 'bg-sky-500/15 text-sky-300' },
+  competitor: { label: 'Competitor', cls: 'bg-rose-500/15 text-rose-300' },
+  directory: { label: 'Directory', cls: 'bg-orange-500/15 text-orange-300' },
+  forum: { label: 'Forum', cls: 'bg-violet-500/15 text-violet-300' },
+};
+
+/** How each kind of finding is labelled. Colour follows meaning: blue is buying power, never a rank. */
+const FINDING: Record<FindingKind, { label: string; mark: string; tint: string; ink: string }> = {
+  rank: { label: 'Visibility', mark: '#', tint: 'bg-emerald-500/15', ink: 'text-emerald-300' },
+  bp: { label: 'Buying power', mark: '$', tint: 'bg-sky-500/15', ink: 'text-sky-300' },
+  radius: { label: 'Reach', mark: 'mi', tint: 'bg-slate-500/20', ink: 'text-slate-200' },
+  rival: { label: 'Competitor', mark: 'vs', tint: 'bg-rose-500/15', ink: 'text-rose-300' },
+  ads: { label: 'Ad pressure', mark: 'Ad', tint: 'bg-orange-500/15', ink: 'text-orange-300' },
+  ai: { label: 'AI Overview', mark: 'AI', tint: 'bg-violet-500/15', ink: 'text-violet-300' },
+};
+
+export function ReportVerdict({
+  scan,
+  activeFinding = null,
+  onFinding,
+}: {
+  scan: GridScanData;
+  /** The finding whose view is on the map now, and what to do when one is chosen. */
+  activeFinding?: FindingKind | null;
+  onFinding?: (kind: FindingKind) => void;
+}) {
   const s = reportSummary(scan);
   const v = verdictFor(s.completed ? scan.solv : null);
   const tone = VERDICT[v.tone];
@@ -46,22 +75,48 @@ export function ReportVerdict({ scan }: { scan: GridScanData }) {
           {tiles.map(([label, value, hint]) => (
             <div key={label} className="rounded-xl border border-slate-800 p-3">
               <p className="text-xs text-slate-400">{label}</p>
-              <p className={'mt-1 text-2xl font-bold ' + (label === 'Buying-Power SoLV' ? 'text-amber-300' : 'text-white')}>{value}</p>
-              <p className="text-[11px] text-slate-500">{hint}</p>
+              <p className={'mt-1 text-2xl font-bold ' + (label === 'Buying-Power SoLV' ? 'text-sky-300' : 'text-white')}>{value}</p>
+              <p className={'text-[11px] ' + (label === 'Buying-Power SoLV' && delta !== null && Math.round(delta) < 0 ? 'font-semibold text-rose-300' : label === 'Buying-Power SoLV' && delta !== null && Math.round(delta) > 0 ? 'font-semibold text-emerald-300' : 'text-slate-500')}>{hint}</p>
             </div>
           ))}
         </div>
       </div>
       {s.findings.length > 0 && (
         <div className={box}>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">What this scan shows</h2>
-          <ul className="mt-3 space-y-2 text-sm leading-relaxed text-slate-200">
-            {s.findings.map((f) => (
-              <li key={f} className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
-                <span>{f}</span>
-              </li>
-            ))}
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            What this scan shows{onFinding ? ' · select one to see it on the map' : ''}
+          </h2>
+          <ul className="mt-3 space-y-2">
+            {s.findings.map((f, i) => {
+              const kind = s.findingKinds[i] ?? 'rank';
+              const k = FINDING[kind];
+              const active = activeFinding === kind;
+              const body = (
+                <>
+                  <span className={'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[11px] font-extrabold ' + k.tint + ' ' + k.ink}>{k.mark}</span>
+                  <span className="min-w-0">
+                    <span className={'block text-[11px] font-bold ' + k.ink}>{k.label}</span>
+                    <span className="block text-sm leading-relaxed text-slate-200">{f}</span>
+                  </span>
+                </>
+              );
+              return (
+                <li key={f}>
+                  {onFinding ? (
+                    <button
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => onFinding(kind)}
+                      className={'flex w-full items-start gap-3 rounded-xl border p-2.5 text-left transition ' + (active ? 'border-slate-400 bg-slate-800/70' : 'border-slate-800 hover:border-slate-600 hover:bg-slate-800/40')}
+                    >
+                      {body}
+                    </button>
+                  ) : (
+                    <div className="flex items-start gap-3 rounded-xl border border-slate-800 p-2.5">{body}</div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -176,19 +231,36 @@ export function AiCoverageCard({ scan }: { scan: GridScanData }) {
           <p className="text-xs text-slate-400">different sources cited across the grid</p>
         </div>
       </div>
-      {s.ai.sources.length > 0 && (
+      {s.aiGap && (
+        <div role="note" className="mt-5 rounded-xl border border-amber-500/50 bg-amber-950/30 p-4">
+          <p className="text-sm font-bold text-amber-200">Your Google Business Profile is carrying your AI visibility.</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-100/90">
+            {s.aiGap.own > 0
+              ? `Your own website is cited in ${s.aiGap.own} of ${s.aiGap.answers} answers`
+              : `Your own website is not cited in any of the ${s.aiGap.answers} answers`}
+            , against {s.aiGap.gbp} for your Google profile.
+            {s.aiGap.top && ` ${s.aiGap.top.label} is cited in ${s.aiGap.top.points}`}
+            {s.aiGap.competitor && s.aiGap.competitor.domain !== s.aiGap.top?.domain && `, and a competitor's website (${s.aiGap.competitor.domain}) in ${s.aiGap.competitor.points}`}
+            {s.aiGap.top && '.'}
+          </p>
+        </div>
+      )}
+      {s.aiSites.length > 0 && (
         <h3 className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">Websites the AI cited</h3>
       )}
-      {s.ai.sources.length > 0 && (
+      {s.aiSites.length > 0 && (
         <ul className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2">
-          {s.ai.sources.slice(0, 8).map((x) => (
+          {s.aiSites.slice(0, 10).map((x) => (
             <li key={x.domain} className="text-xs">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="truncate text-slate-200">{x.label}</span>
-                <span className="shrink-0 text-slate-400">{x.points} of {s.ai.shown} points</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {SITE_TAG[x.kind] && <span className={'shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ' + SITE_TAG[x.kind]!.cls}>{SITE_TAG[x.kind]!.label}</span>}
+                  <span className={'truncate ' + (x.kind === 'you' ? 'font-bold text-sky-300' : 'text-slate-200')}>{x.label}</span>
+                </span>
+                <span className="shrink-0 text-slate-400">{x.points} of {s.ai.shown}</span>
               </div>
               <div className="mt-1 h-1.5 rounded bg-slate-800">
-                <div className="h-1.5 rounded bg-violet-400" style={{ width: (100 * x.points) / Math.max(1, s.ai.shown) + '%' }} />
+                <div className={'h-1.5 rounded ' + (x.kind === 'you' ? 'bg-sky-400' : 'bg-violet-400')} style={{ width: (100 * x.points) / Math.max(1, s.ai.shown) + '%' }} />
               </div>
             </li>
           ))}
@@ -209,7 +281,18 @@ export function AiCoverageCard({ scan }: { scan: GridScanData }) {
                     {b.name}
                     {b.isYou ? ' (you)' : ''}
                   </span>
-                  <span className="shrink-0 text-slate-400">
+                  <span className="flex shrink-0 items-center gap-1.5 text-slate-400">
+                    {(() => {
+                      // Its place here against its place on the local leaderboard.
+                      const d = s.aiVs[i]?.delta ?? null;
+                      if (d === null) return <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">not in local top 10</span>;
+                      if (d === 0) return <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300">same as local</span>;
+                      return (
+                        <span className={'rounded px-1.5 py-0.5 text-[10px] font-bold ' + (d > 0 ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300')}>
+                          {d > 0 ? '▲' : '▼'} {Math.abs(d)} in AI
+                        </span>
+                      );
+                    })()}
                     named at {b.points} of {s.aiNamed.lists}
                   </span>
                 </div>

@@ -12,11 +12,12 @@ import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
 import type { PinInsights } from '@stakeout/core/pinInsights';
 import { ReportVerdict, RankDistributionCard, AiCoverageCard, ProofStrip } from './ReportSummary';
-import { bandOf, type RankBucket } from '../lib/reportSummary';
-import { groundOwners } from '../lib/marketInsights';
+import { bandOf, reportSummary, type RankBucket, type FindingKind } from '../lib/reportSummary';
+import { groundOwners, aiPosition, winningRadius } from '../lib/marketInsights';
+import { PinEvidenceCard } from './PinEvidenceCard';
 import { MarketInsights } from './MarketInsights';
-import { buyingPower, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
-import { gridColumns, RANK_COLORS, rankColor, rankTextColor, RANK_SCALE, columnColor, COLUMN_SCALE } from '../lib/gridColumns';
+import { buyingPower, nearWins, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
+import { gridColumns, RANK_COLORS, rankColor, rankTextColor, RANK_SCALE, columnColor, COLUMN_SCALE, RANK_KEYS, rankKey, ADS_SCALE, adsColor, type RankKey } from '../lib/gridColumns';
 import {
   CENSUS_LAYERS,
   CENSUS_SOURCE_LABEL,
@@ -67,6 +68,38 @@ function addCensusLayers(m: maplibregl.Map) {
 }
 
 /** The 3D grid: one column per point (height = buying power, colour = rank), lit for depth. */
+/** Whether a pin stays lit: it passes the neighborhood filters, the rank-distribution band and the legend band. */
+function pinPasses(
+  p: { status: string; census?: GridPinData['census'] },
+  rank: number | null | undefined,
+  f: { bpFilters: BuyingPowerFilters; rankBand: RankBucket['key'] | null; legendBand: RankKey | null; focusIds?: Set<string> | null; id?: string },
+) {
+  // A focus set (the opportunity card's points) lights exactly those points, whatever the bands say.
+  if (f.focusIds) return Boolean(f.id && f.focusIds.has(f.id));
+  return passesFilters(p.census, f.bpFilters) && (!f.rankBand || bandOf(rank) === f.rankBand) && (!f.legendBand || rankKey(p.status, rank) === f.legendBand);
+}
+
+/** A competitor's rank at every point, in the shape the map uses to show a business other than the target. */
+function statFor(name: string, pins: GridPinData[]): CompetitorMarketStat {
+  const key = (v: string) => v.trim().toLowerCase().replace(/\s+/g, ' ');
+  const pinRanks: Record<string, number | null> = {};
+  for (const p of pins) {
+    const i = (p.topCompetitors ?? []).findIndex((n) => key(n) === key(name));
+    pinRanks[p.id] = i >= 0 ? i + 1 : null;
+  }
+  return { businessName: name, normalizedKey: key(name), isTarget: false, pinRanks, aiCitedPinIds: {} } as unknown as CompetitorMarketStat;
+}
+
+/** A circle of `miles` around a point, as a line the map can draw. */
+function ringAround(lat: number, lng: number, miles: number) {
+  const pts: [number, number][] = [];
+  for (let i = 0; i <= 72; i++) {
+    const a = (i / 72) * 2 * Math.PI;
+    pts.push([lng + (miles * Math.sin(a)) / (69.172 * Math.cos((lat * Math.PI) / 180)), lat + (miles * Math.cos(a)) / 69.0]);
+  }
+  return { type: 'FeatureCollection' as const, features: [{ type: 'Feature' as const, properties: {}, geometry: { type: 'LineString' as const, coordinates: pts } }] };
+}
+
 function addGridColumns(m: maplibregl.Map, onPick: (id: string) => void) {
   m.addSource('grid-columns', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   m.addLayer({
@@ -167,6 +200,16 @@ export function GeoGridDashboard({
     [mapReady, setMapReady] = useState(false),
     [bpFilters, setBpFilters] = useState<BuyingPowerFilters>(NO_FILTERS),
     [view3d, setView3d] = useState(false),
+    // What the pins show: the local rank, the business's place in the AI Overview's list, or the
+    // number of sponsored results above it.
+    [mapMode, setMapMode] = useState<'rank' | 'ai' | 'ads'>('rank'),
+    // A band picked in the map's legend: pins outside it are dimmed. And whether the purple ring
+    // (the business is named in that point's AI Overview) is drawn.
+    [legendBand, setLegendBand] = useState<RankKey | null>(null),
+    // The opportunity card's points, when it is showing them: only these stay lit.
+    [focusIds, setFocusIds] = useState<Set<string> | null>(null),
+    [aiRing, setAiRing] = useState(true),
+    [finding, setFinding] = useState<FindingKind | null>(null),
     [style3d, setStyle3d] = useState<'columns' | 'areas'>('columns'),
     [colorScale, setColorScale] = useState<'market' | 'national'>('market'),
     [marketBreaks, setMarketBreaks] = useState<number[] | null>(null),
@@ -256,6 +299,19 @@ export function GeoGridDashboard({
           addGridColumns(m, select);
         } catch (e) {
           console.error('[3D grid]', e);
+        }
+        try {
+          // Place names stay readable over the neighbourhood shading: a dark halo behind each label.
+          for (const layer of m.getStyle().layers ?? [])
+            if (layer.type === 'symbol') {
+              m.setPaintProperty(layer.id, 'text-halo-color', '#020617');
+              m.setPaintProperty(layer.id, 'text-halo-width', 1.6);
+            }
+          // The winning radius: a dashed ring around the business, filled in when the scan is known.
+          m.addSource('win-radius', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+          m.addLayer({ id: 'win-radius', type: 'line', source: 'win-radius', paint: { 'line-color': '#e2e8f0', 'line-width': 2, 'line-dasharray': [3, 2.5], 'line-opacity': 0.85 } });
+        } catch (e) {
+          console.error('[map extras]', e);
         }
         setMapZoom(m.getZoom());
         setMapReady(true);
@@ -383,19 +439,25 @@ export function GeoGridDashboard({
       el.className = 'rounded-full border-2 border-white text-xs font-bold';
       el.style.width = el.style.height = '34px';
       // On a 3D column the label takes the column's own (brighter) shade.
-      const fill = view3d && style3d === 'columns' ? columnColor(p.status, rank) : rankColor(p.status, rank);
+      let fill = view3d && style3d === 'columns' ? columnColor(p.status, rank) : rankColor(p.status, rank);
+      let text = p.status === 'FAILED' ? '×' : p.status === 'PENDING' ? '…' : rank ? String(rank) : '20+';
+      const ins = p.insights?.v === 1 ? p.insights : null;
+      if (p.status === 'COMPLETED' && mapMode === 'ai') {
+        // The business's place in this point's AI Overview: its place in the AI's list, "yes" when it
+        // is named without an order, "no" when an answer appeared without it, a dash when none did.
+        const place = !projected && ins ? aiPosition(ins.ai.named, scan.targetBusiness) : null;
+        fill = p.hasAiOverview ? (cited ? '#7c3aed' : '#4c1d95') : '#1e293b';
+        text = !p.hasAiOverview ? '–' : place ? '#' + place.pos : cited ? 'yes' : 'no';
+      } else if (p.status === 'COMPLETED' && mapMode === 'ads') {
+        const ads = ins?.adsAboveYou ?? null;
+        fill = adsColor(ads);
+        text = ads == null ? '?' : String(ads);
+      }
       el.style.backgroundColor = fill;
       el.style.color = rankTextColor(fill);
-      el.textContent =
-        p.status === 'FAILED'
-          ? '×'
-          : p.status === 'PENDING'
-            ? '…'
-            : rank
-              ? String(rank)
-              : '20+';
-      el.style.boxShadow = cited ? '0 0 0 4px #c084fc' : '';
-      el.style.opacity = passesFilters(p.census, bpFilters) && (!rankBand || bandOf(rank) === rankBand) ? '1' : '0.25';
+      el.textContent = text;
+      el.style.boxShadow = cited && aiRing && mapMode !== 'ai' ? '0 0 0 4px #c084fc' : '';
+      el.style.opacity = pinPasses(p, rank, { bpFilters, rankBand, legendBand, focusIds, id: p.id }) ? '1' : '0.25';
       el.title =
         'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + p.status;
       el.onclick = () => select(p.id);
@@ -403,10 +465,25 @@ export function GeoGridDashboard({
         .setLngLat([p.lng, p.lat])
         .addTo(m);
     });
+    // The business itself, at the centre of the grid.
+    const home = document.createElement('div');
+    home.title = scan.targetBusiness;
+    home.setAttribute('aria-label', scan.targetBusiness + ': the centre of the grid');
+    home.style.cssText = 'width:18px;height:18px;border-radius:5px;background:#f8fafc;border:2px solid #020617;box-shadow:0 0 0 2px #f8fafc;pointer-events:none';
+    markers.push(new maplibregl.Marker({ element: home }).setLngLat([scan.centerLng, scan.centerLat]).addTo(m));
     return () => {
       markers.forEach((v) => v.remove());
     };
-  }, [scan, projected, bpFilters, rankBand, view3d, style3d]);
+  }, [scan, projected, bpFilters, rankBand, view3d, style3d, mapMode, legendBand, aiRing, focusIds]);
+  // The winning radius, drawn around the business: how far out it holds the top 3.
+  const radiusMiles = scan ? (winningRadius(scan.pins, { lat: scan.centerLat, lng: scan.centerLng })?.radius ?? null) : null;
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapReady || !scan) return;
+    const src = m.getSource('win-radius') as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    src.setData(radiusMiles ? ringAround(scan.centerLat, scan.centerLng, radiusMiles) : { type: 'FeatureCollection', features: [] });
+  }, [scan, mapReady, radiusMiles]);
   async function changeShare(action: string) {
     try {
       const r = await fetch('/api/scans/' + identifier, {
@@ -469,6 +546,8 @@ export function GeoGridDashboard({
   const rankOf = (p: { id: string; rankFound: number | null }) =>
     projected ? ((projected.pinRanks as Record<string, number | null | undefined>)[p.id] ?? null) : p.rankFound;
   const bp = buyingPower(scan.pins, bpFilters, rankOf);
+  // The cheapest wins: the target's points ranked #4 to #6 in $100k+ neighborhoods, and what winning them would add.
+  const near = nearWins(scan.pins);
   const hasCensus = scan.pins.some((p) => p.census?.tract?.inc != null);
   const filtering = bpFilters.minOwnerPct > 0 || bpFilters.minIncome > 0;
   const pct = (v: number | null) => (v === null ? 'n/a' : `${v.toFixed(1)}%`);
@@ -605,6 +684,28 @@ export function GeoGridDashboard({
                   </button>
                 ))}
               </div>
+              <div className="inline-flex overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 text-xs font-semibold shadow-lg backdrop-blur" role="group" aria-label="What the pins show">
+                {(
+                  [
+                    ['rank', 'Pack rank'],
+                    ['ai', 'AI place'],
+                    ['ads', 'Ads above'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={mapMode === key}
+                    onClick={() => {
+                      setMapMode(key);
+                      if (key !== 'rank') setLegendBand(null);
+                    }}
+                    className={'px-3 py-1.5 transition ' + (mapMode === key ? 'bg-slate-200 text-slate-950' : 'text-slate-200 hover:bg-slate-800')}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               {view3d && (
                 <div className="inline-flex overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 text-xs font-semibold shadow-lg backdrop-blur">
                   <button
@@ -632,13 +733,59 @@ export function GeoGridDashboard({
               )}
             </div>
             {!view3d && (
-              <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex max-w-[75%] flex-wrap gap-x-3 gap-y-1 rounded-lg border border-slate-700 bg-slate-950/85 px-2.5 py-2 text-[11px] text-slate-200 shadow-lg backdrop-blur">
-                {RANK_SCALE.map(([label, color]) => (
-                  <span key={label} className="inline-flex items-center gap-1">
-                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
-                    {label}
+              <div className="absolute bottom-3 left-3 z-10 flex max-w-[80%] flex-wrap items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950/90 p-1.5 text-[11px] text-slate-200 shadow-lg backdrop-blur">
+                {mapMode === 'rank' &&
+                  RANK_SCALE.map(([label, color], i) => (
+                    <button
+                      key={label}
+                      type="button"
+                      aria-pressed={legendBand === RANK_KEYS[i]}
+                      onClick={() => setLegendBand(legendBand === RANK_KEYS[i] ? null : RANK_KEYS[i])}
+                      title="Show only these points"
+                      className={'inline-flex items-center gap-1 rounded-md px-1.5 py-1 ' + (legendBand === RANK_KEYS[i] ? 'bg-slate-200 text-slate-950' : 'hover:bg-slate-800')}
+                    >
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+                      {label}
+                    </button>
+                  ))}
+                {mapMode === 'ads' &&
+                  ADS_SCALE.map(([label, color]) => (
+                    <span key={label} className="inline-flex items-center gap-1 px-1.5 py-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+                      {label}
+                    </span>
+                  ))}
+                {mapMode === 'ai' && (
+                  <span className="px-1.5 py-1">
+                    <span className="font-bold text-violet-300">#1</span> your place in the AI&apos;s list · <span className="font-bold text-violet-300">yes</span> named · <span className="font-bold text-violet-300">no</span> not named · <span className="font-bold">–</span> no AI Overview
                   </span>
-                ))}
+                )}
+                {mapMode !== 'ai' && (
+                  <button
+                    type="button"
+                    aria-pressed={aiRing}
+                    onClick={() => setAiRing(!aiRing)}
+                    title="The business is named in that point's AI Overview"
+                    className={'inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 ' + (aiRing ? '' : 'opacity-50') + ' hover:bg-slate-800'}
+                  >
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-700" style={{ boxShadow: '0 0 0 2px #c084fc' }} />
+                    AI Overview named you
+                  </button>
+                )}
+                {radiusMiles !== null && (
+                  <span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-slate-400">
+                    <span className="inline-block w-4 border-t-2 border-dashed border-slate-200" />
+                    {radiusMiles.toFixed(1)} mi winning radius
+                  </span>
+                )}
+                {(() => {
+                  const lit = scan.pins.filter((p) => pinPasses(p, projected ? projected.pinRanks[p.id] : p.rankFound, { bpFilters, rankBand, legendBand, focusIds, id: p.id })).length;
+                  return lit < scan.pins.length ? (
+                    <span className="rounded-md bg-amber-400/15 px-1.5 py-1 font-semibold text-amber-200">
+                      Showing {lit} of {scan.pins.length} points
+                    </span>
+                  ) : null;
+                })()}
               </div>
             )}
             {view3d && (
@@ -748,32 +895,38 @@ export function GeoGridDashboard({
               )}
               {hasCensus && (
                 <div className="space-y-2 border-t border-slate-800 pt-2">
-                  <p className="font-bold">Visibility where the buying power is</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <div className="rounded border border-slate-800 p-2">
-                      <p className="text-xs text-slate-400">Standard SoLV (top 3)</p>
-                      <p className="text-xl font-bold">{pct(bp.standard)}</p>
-                      <p className="text-xs text-slate-400">
-                        {bp.top3} of {bp.eligible} points; every point counts the same
+                  {/* One statement of where the money is, in place of repeating SoLV and Buying-Power SoLV (both are in the verdict card). */}
+                  {near.count > 0 && near.now !== null && near.projected !== null ? (
+                    <div className="rounded-xl border border-sky-500/40 bg-sky-950/30 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-sky-300">Where the money is, and you are close</p>
+                      <p className="mt-1 text-base font-bold leading-snug text-white">
+                        {near.count} {near.count === 1 ? 'point sits' : 'points sit'} in ${Math.round(near.minIncome / 1000)}k+ income neighborhoods where {scan.targetBusiness} ranks #{near.from} to #{near.to}.
                       </p>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-300">
+                        One to three places from the top 3, on the most valuable ground. If {near.count === 1 ? 'it' : 'all of them'} reached the top 3, Buying-Power SoLV would go from{' '}
+                        <span className="font-bold text-sky-300">{near.now.toFixed(0)}%</span> to <span className="font-bold text-sky-300">{near.projected.toFixed(0)}%</span>
+                        {near.lift !== null && <span className="font-semibold text-emerald-300"> (+{near.lift.toFixed(0)} pts)</span>}.
+                      </p>
+                      <button
+                        type="button"
+                        aria-pressed={focusIds !== null}
+                        onClick={() => {
+                          setFinding(null);
+                          setRankBand(null);
+                          setLegendBand(null);
+                          setMapMode('rank');
+                          setFocusIds(focusIds ? null : new Set(near.ids));
+                        }}
+                        className={'mt-2 rounded-lg border px-3 py-1.5 text-xs font-semibold ' + (focusIds ? 'border-sky-300 bg-sky-400 text-slate-950' : 'border-sky-400/60 text-sky-200 hover:bg-sky-400/10')}
+                      >
+                        {focusIds ? 'Show every point again' : `Show these ${near.count} points on the map`}
+                      </button>
                     </div>
-                    <div className="rounded border border-slate-800 p-2">
-                      <p className="text-xs text-slate-400">Buying-Power SoLV</p>
-                      <p className="text-xl font-bold">
-                        {pct(bp.buyingPower)}{' '}
-                        {bp.delta !== null && (
-                          <span className={'text-sm ' + (bp.delta >= 0 ? 'text-emerald-400' : 'text-rose-400')}>
-                            {bp.delta >= 0 ? '+' : ''}
-                            {bp.delta.toFixed(1)} pts
-                          </span>
-                        )}
-                      </p>
-                      <p className="text-xs text-slate-400">
-                        Each point weighted by its tract&apos;s owner-occupied homes × median income ({bp.weightedPins}{' '}
-                        points in {bp.tracts} tracts)
-                      </p>
-                    </div>
-                  </div>
+                  ) : (
+                    <p className="text-xs text-slate-400">
+                      Buying-Power SoLV {pct(bp.buyingPower)} against {pct(bp.standard)} of points: each point is weighted by its tract&apos;s owner-occupied homes × median income ({bp.weightedPins} points in {bp.tracts} tracts).
+                    </p>
+                  )}
                   <div className="flex flex-wrap items-center gap-3 text-xs">
                     <label className="inline-flex items-center gap-1">
                       Homeowners at least
@@ -844,97 +997,37 @@ export function GeoGridDashboard({
           </div>
         </div>
         <div className="space-y-4">
-        <ReportVerdict scan={scan} />
-        <aside className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4">
-          <label className="block font-bold">
-            Pin evidence
-            <select
-              value={selected ?? ''}
-              onChange={(e) => select(e.target.value)}
-              className="mt-2 block w-full rounded bg-slate-800 p-2 text-sm"
-            >
-              <option value="">Choose a coordinate</option>
-              {scan.pins.map((p) => (
-                <option value={p.id} key={p.id}>
-                  Row {p.rowIdx + 1} · Col {p.colIdx + 1} · {p.status}
-                </option>
-              ))}
-            </select>
-          </label>
-          {pin && (
-            <>
-              <p className="text-sm">
-                {pin.lat}, {pin.lng} · {pin.city} {pin.stateCode} {pin.zip}
-              </p>
-              <p>
-                Target rank ·{' '}
-                {pin.status !== 'COMPLETED'
-                  ? pin.status
-                  : pin.proxyMeta?.finderShown === false
-                    ? pin.proxyMeta.rankFrom === 'map_pack'
-                      ? pin.rankFound != null
-                        ? `#${pin.rankFound} in the map pack (the Local Finder was not opened)`
-                        : 'Not in the map pack (the Local Finder was not opened)'
-                      : pin.rankFound != null
-                      ? `#${pin.rankFound} in the AI Overview’s list (no Local Finder on this page)`
-                      : pin.proxyMeta.rankFrom === 'none'
-                        ? 'No local results on this page'
-                        : 'Not in the AI Overview’s list (no Local Finder on this page)'
-                    : (pin.rankFound ?? 'Not in the top 10')}
-              </p>
-              {!shared && pin.status === 'FAILED' && (
-                <button
-                  type="button"
-                  disabled={rerunBusy}
-                  onClick={() => rerun([pin.id])}
-                  className="mt-1 rounded-lg bg-emerald-400 px-3 py-1.5 text-sm font-bold text-slate-950 hover:bg-emerald-300 disabled:opacity-50"
-                >
-                  {rerunBusy ? 'Starting…' : 'Re-run this point'}
-                  {scan.creditsCharged && scan.totalPins ? ` (${scan.creditsCharged / scan.totalPins} credits)` : ''}
-                </button>
-              )}
-              {pin.proxyMeta?.isp && <p className="text-xs text-emerald-300">Connection · {pin.proxyMeta.isp}</p>}
-              {pin.videoUrl && (
-                <video
-                  controls
-                  preload="metadata"
-                  src={pin.videoUrl}
-                  className="max-h-72 w-full"
-                />
-              )}
-              {pin.aiOverviewText && (
-                <details>
-                  <summary>AI text and visible sources</summary>
-                  <p className="whitespace-pre-wrap text-sm">
-                    {pin.aiOverviewText}
-                  </p>
-                  <p>{pin.aiCitations?.join(' · ')}</p>
-                </details>
-              )}
-              {pin.topCompetitors?.length ? (
-                <details>
-                  <summary>Observed result order</summary>
-                  <ol className="list-decimal pl-5">
-                    {pin.topCompetitors.map((n, i) => (
-                      <li key={i}>{n}</li>
-                    ))}
-                  </ol>
-                </details>
-              ) : null}
-              {!shared && (
-                <div className="flex gap-3 text-emerald-300">
-                  {pin.metaJsonUrl && (
-                    <a href={pin.metaJsonUrl}>Receipt JSON</a>
-                  )}
-                  {pin.dumpsTarUrl && <a href={pin.dumpsTarUrl}>Raw bundle</a>}
-                </div>
-              )}
-            </>
-          )}
-        </aside>
+        <ReportVerdict
+          scan={scan}
+          activeFinding={finding}
+          onFinding={(kind) => {
+            // Choosing a finding puts its view on the map; choosing it again returns to the plain rank map.
+            const off = finding === kind;
+            setFinding(off ? null : kind);
+            setRankBand(null);
+            setLegendBand(off ? null : kind === 'rank' ? 'top' : null);
+            setMapMode(off ? 'rank' : kind === 'ads' ? 'ads' : kind === 'ai' ? 'ai' : 'rank');
+            // Buying power: light exactly the points the opportunity card counts.
+            setFocusIds(!off && kind === 'bp' && near.count ? new Set(near.ids) : null);
+            // Competitor: put that business's ranks on the map, as selecting it in the leaderboard does.
+            const rival = reportSummary(scan).rivalName;
+            project(!off && kind === 'rival' && rival ? statFor(rival, scan.pins) : null);
+          }}
+        />
         </div>
       </div>
+      {/* One point's evidence, full width: the recording in a phone frame, the results and AI text open beside it. */}
+      <PinEvidenceCard
+        scan={scan}
+        pin={pin ?? null}
+        onSelect={select}
+        shared={shared}
+        onRerun={(id) => rerun([id])}
+        rerunBusy={rerunBusy}
+        onOpenEvidence={() => setTab('evidence')}
+      />
       {/* Full width: its seven columns need the room. */}
+      <div id="competitor-leaderboard" className="scroll-mt-4">
       <CompetitorLeaderboard
         pins={scan.pins}
         targetBusiness={scan.targetBusiness}
@@ -944,6 +1037,7 @@ export function GeoGridDashboard({
           groundOwners(scan.pins, scan.targetBusiness, 999).rows.map((r) => [r.name.trim().toLowerCase().replace(/\s+/g, ' '), r.buyingPower]),
         )}
       />
+      </div>
       <AiCoverageCard scan={scan} />
       <ProofStrip
         scan={scan}

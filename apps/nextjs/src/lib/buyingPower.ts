@@ -100,3 +100,26 @@ export function opportunityOrder(
     .sort((a, b) => shares.get(b.id)! - shares.get(a.id)!)
     .map((p) => p.id);
 }
+
+/**
+ * The cheapest wins on the grid: completed points just outside the top 3 (rank `from` to `to`)
+ * that sit in neighborhoods at or above `minIncome`. `now` is today's Buying-Power SoLV and
+ * `projected` what it would be if every one of those points reached the top 3, computed the same
+ * way, so the two are directly comparable. Null percentages mean there is no neighborhood data.
+ */
+export function nearWins(
+  pins: BuyingPowerPin[],
+  opts: { minIncome?: number; from?: number; to?: number } = {},
+  rankOf: (p: BuyingPowerPin) => number | null | undefined = (p) => p.rankFound,
+) {
+  const { minIncome = 100000, from = 4, to = 6 } = opts;
+  const near = pins.filter((p) => {
+    const r = rankOf(p), inc = weightArea(p.census)?.inc;
+    return p.status === 'COMPLETED' && typeof r === 'number' && r >= from && r <= to && typeof inc === 'number' && inc >= minIncome;
+  });
+  const ids = new Set(near.map((p) => p.id));
+  const now = buyingPower(pins, NO_FILTERS, rankOf).buyingPower;
+  const projected = buyingPower(pins, NO_FILTERS, (p) => (ids.has(p.id) ? 3 : rankOf(p))).buyingPower;
+  return { ids: [...ids], count: near.length, minIncome, from, to, now, projected, lift: now !== null && projected !== null ? projected - now : null };
+}
+

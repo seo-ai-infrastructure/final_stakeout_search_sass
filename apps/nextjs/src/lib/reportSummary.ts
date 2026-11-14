@@ -1,5 +1,8 @@
 import { buyingPower } from './buyingPower';
-import { aiBusinesses, aiSources, groundOwners, paidPressure, winningRadius, type InsightPin } from './marketInsights';
+import { aiBusinesses, aiSources, aiVersusPack, groundOwners, packOrder, paidPressure, siteKind, winningRadius, type InsightPin } from './marketInsights';
+
+/** What a finding is about. */
+export type FindingKind = 'rank' | 'bp' | 'radius' | 'rival' | 'ads' | 'ai';
 
 export type RankBucket = { key: 'first' | 'top3' | 'top10' | 'beyond' | 'absent'; label: string; count: number; pct: number };
 
@@ -47,6 +50,17 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
   const paid = paidPressure(scan.pins);
   const ai = aiSources(scan.pins, scan.targetBusiness);
   const aiNamed = aiBusinesses(scan.pins, scan.targetBusiness);
+  // Each AI-named business against its place on the local leaderboard, and each cited site's kind.
+  const pack = packOrder(scan.pins);
+  const aiVs = aiVersusPack(aiNamed.rows.map((r) => r.name), pack);
+  const known = [...new Set([...pack, ...aiNamed.rows.map((r) => r.name)])];
+  const aiSites = ai.sources.map((x) => ({ ...x, kind: siteKind(x.domain, scan.targetBusiness, known) }));
+  // The citation gap: the Google Business Profile is cited more often than the business's own
+  // website. Only stated when enough answers appeared to mean something.
+  const ownSite = aiSites.filter((x) => x.kind === 'you').reduce((m, x) => Math.max(m, x.points), 0);
+  const gbp = aiSites.find((x) => x.kind === 'gbp')?.points ?? 0;
+  const otherSites = aiSites.filter((x) => x.kind !== 'gbp' && x.kind !== 'you');
+  const aiGap = ai.shown >= 3 && gbp > ownSite ? { gbp, own: ownSite, answers: ai.shown, top: otherSites[0] ?? null, competitor: otherSites.find((x) => x.kind === 'competitor') ?? null } : null;
   const you = owners.rows.find((r) => r.isYou);
   const rival = owners.rows.filter((r) => !r.isYou).sort((a, b) => b.top3Points - a.top3Points)[0];
 
@@ -63,37 +77,44 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
   const leaders = [...firsts.values()].sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
 
   const findings: string[] = [];
+  // What each finding is about, in step with `findings`: the report shows them as chips that
+  // switch the map to the matching view.
+  const findingKinds: FindingKind[] = [];
+  const note = (kind: FindingKind, text: string) => {
+    findings.push(text);
+    findingKinds.push(kind);
+  };
   if (dist.total) {
-    findings.push(
+    note('rank', 
       top3 === 0
         ? `${scan.targetBusiness} is not in the top 3 at any of the ${points(dist.total)}.`
         : top3 === dist.total
           ? `${scan.targetBusiness} is in the top 3 at every point (${dist.total} of ${dist.total}), and #1 at ${dist.buckets[0].count}.`
           : `${scan.targetBusiness} is in the top 3 at ${top3} of ${points(dist.total)} (${pct((100 * top3) / dist.total)}), and #1 at ${dist.buckets[0].count}.`,
     );
-    if (dist.buckets[4].count) findings.push(`It does not appear in the results at ${points(dist.buckets[4].count)}.`);
+    if (dist.buckets[4].count) note('rank', `It does not appear in the results at ${points(dist.buckets[4].count)}.`);
   }
   if (bp.standard !== null && bp.buyingPower !== null && Math.abs(bp.buyingPower - bp.standard) >= 5)
-    findings.push(
+    note('bp', 
       bp.buyingPower > bp.standard
         ? `Its top-3 points cover more buying power than their number suggests: ${pct(bp.standard)} of points but ${pct(bp.buyingPower)} of the grid's buying power.`
         : `Its top-3 points cover less buying power than their number suggests: ${pct(bp.standard)} of points but only ${pct(bp.buyingPower)} of the grid's buying power.`,
     );
   if (radius?.radius != null && radius.beyond.total)
-    findings.push(`It holds the top 3 out to about ${radius.radius.toFixed(1)} miles; beyond that it is top 3 at ${radius.beyond.top3} of ${points(radius.beyond.total)}.`);
+    note('radius', `It holds the top 3 out to about ${radius.radius.toFixed(1)} miles; beyond that it is top 3 at ${radius.beyond.top3} of ${points(radius.beyond.total)}.`);
   if (rival && rival.top3Points > 0)
-    findings.push(
+    note('rival', 
       rival.top3Points > (you?.top3Points ?? 0)
         ? `${rival.name} is in the top 3 at more points (${rival.top3Points}) than ${scan.targetBusiness} (${you?.top3Points ?? 0}).`
         : `The closest competitor, ${rival.name}, is in the top 3 at ${points(rival.top3Points)}.`,
     );
   if (paid.points && paid.withAds)
-    findings.push(
+    note('ads', 
       `Ads appear at ${paid.withAds} of ${points(paid.points)}` +
         (paid.avgAdsAboveYou ? `, with about ${paid.avgAdsAboveYou.toFixed(1)} above ${scan.targetBusiness} on average.` : '.'),
     );
   if (ai.points && ai.shown)
-    findings.push(
+    note('ai', 
       `An AI Overview appeared at ${ai.shown} of ${points(ai.points)}; ${scan.targetBusiness} was named at ${ai.youNamed}.` +
         (aiNamed.you ? ` Where the AI listed businesses, it was named first at ${aiNamed.you.first} of ${aiNamed.lists} and placed #${aiNamed.you.avgPos} on average.` : ''),
     );
@@ -112,6 +133,11 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
     adsAboveYou: paid.avgAdsAboveYou,
     ai,
     aiNamed,
+    findingKinds,
+    aiVs,
+    aiSites,
+    aiGap,
+    rivalName: rival?.name ?? null,
     findings,
   };
 }

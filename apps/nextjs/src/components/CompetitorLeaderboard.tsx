@@ -217,11 +217,11 @@ export function CompetitorLeaderboard({
       });
     }
     return stats.sort((a, b) => {
+      // Top-3 share, then average rank across every point, then name: the same rule the AI panel
+      // uses to compare a business's local place with its place in the AI's list.
       if (b.solv !== a.solv) return b.solv - a.solv;
-      if (b.aiCitationSharePct !== a.aiCitationSharePct) {
-        return b.aiCitationSharePct - a.aiCitationSharePct;
-      }
-      return a.atrp - b.atrp;
+      if (a.atrp !== b.atrp) return a.atrp - b.atrp;
+      return a.businessName.localeCompare(b.businessName);
     });
   }, [completedPins, totalAiTriggeredPins, targetBusiness]);
   const filteredAndSorted = useMemo(() => {
@@ -392,7 +392,7 @@ export function CompetitorLeaderboard({
               {showAi && (
                 <th className="px-3 py-3">
                   <button type="button" onClick={() => handleSort('aiCitationSharePct')} className="inline-flex items-center gap-1 text-violet-300 hover:text-violet-200">
-                    <Sparkles className="h-3 w-3" /> AI citations <ArrowUpDown className="h-3 w-3" />
+                    <Sparkles className="h-3 w-3" /> AI share, when shown <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
               )}
@@ -450,7 +450,7 @@ export function CompetitorLeaderboard({
                       <>
                         <div className="text-slate-200">{Math.round(bp)}%</div>
                         <div className="mt-1 h-1.5 rounded bg-slate-800">
-                          <div className="h-1.5 rounded bg-amber-400" style={{ width: `${Math.min(100, bp)}%` }} />
+                          <div className="h-1.5 rounded bg-sky-400" style={{ width: `${Math.min(100, bp)}%` }} />
                         </div>
                       </>
                     )}
@@ -477,10 +477,12 @@ export function CompetitorLeaderboard({
                     <td className="px-3 py-3">
                       {comp.aiCitedCount > 0 ? (
                         <>
-                          <div className="font-bold text-violet-300">{comp.aiCitationSharePct.toFixed(0)}%</div>
-                          <div className="text-[11px] text-slate-500">
-                            {comp.aiCitedCount} of {total} points
+                          {/* Of the points where an AI Overview appeared, not of the whole grid. */}
+                          <div className="font-bold text-violet-300">{comp.aiShareWhenTriggeredPct.toFixed(0)}%</div>
+                          <div className="text-[11px] text-slate-400">
+                            {comp.aiCitedCount} of {totalAiTriggeredPins} AI answers
                           </div>
+                          <div className="text-[10px] text-slate-500">{comp.aiCitationSharePct.toFixed(0)}% of the full grid</div>
                         </>
                       ) : (
                         <span className="text-slate-500">—</span>

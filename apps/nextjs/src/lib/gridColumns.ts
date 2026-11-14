@@ -47,7 +47,30 @@ export const COLUMN_COLORS: typeof RANK_COLORS = {
   none: '#ef4444',
   pending: '#64748b',
 };
-const BANDS = ['top', 'four', 'mid', 'late', 'low', 'none'] as const;
+/** The six bands of the rank scale, in the order of RANK_SCALE: the keys a legend filters by. */
+export const RANK_KEYS = ['top', 'four', 'mid', 'late', 'low', 'none'] as const;
+export type RankKey = (typeof RANK_KEYS)[number];
+const BANDS = RANK_KEYS;
+
+/** The band a completed point's rank falls in (null while the point is unfinished or failed). */
+export function rankKey(status: string, rank: number | null | undefined): RankKey | null {
+  if (status !== 'COMPLETED') return null;
+  if (!rank || rank > 20) return 'none';
+  return rank <= 3 ? 'top' : rank === 4 ? 'four' : rank <= 7 ? 'mid' : rank <= 10 ? 'late' : 'low';
+}
+
+/**
+ * Sponsored results above the business at a point: none, one or two, three or more. Its own
+ * colours (teal, orange, crimson), so ad pressure is never read as a rank.
+ */
+export const ADS_SCALE: [string, string][] = [
+  ['no ads above', '#0e7490'],
+  ['1–2 ads', '#fb923c'],
+  ['3 or more', '#e11d48'],
+];
+export function adsColor(ads: number | null | undefined) {
+  return ads == null ? RANK_COLORS.pending : ads === 0 ? ADS_SCALE[0][1] : ads <= 2 ? ADS_SCALE[1][1] : ADS_SCALE[2][1];
+}
 export const COLUMN_SCALE: [string, string][] = RANK_SCALE.map(([label], i) => [label, COLUMN_COLORS[BANDS[i]]]);
 
 /** A rank's colour as a 3D column. */

@@ -50,3 +50,25 @@ test('point worth: shares of the grid add up to 100%, and opportunities put the 
   // a competitor view where a is outside the top 3 makes a the biggest opportunity
   assert.equal(opportunityOrder(pins, (p) => (p.id === 'a' ? 9 : p.rankFound))[0], 'a');
 });
+
+test('near wins: points just outside the top 3 in well-off neighborhoods, and what winning them would add', async () => {
+  const { nearWins, buyingPower } = await import('../apps/nextjs/src/lib/buyingPower');
+  const census = (id: string, own: number, inc: number) => ({ tract: { id, nm: id, own, inc, occ: own * 2, own_pct: 50, rel: 1 } });
+  const P = [
+    { id: 'won', status: 'COMPLETED', rankFound: 2, census: census('t1', 1000, 120000) },
+    { id: 'near', status: 'COMPLETED', rankFound: 5, census: census('t2', 1000, 120000) },
+    { id: 'nearPoor', status: 'COMPLETED', rankFound: 4, census: census('t3', 1000, 60000) },
+    { id: 'far', status: 'COMPLETED', rankFound: 9, census: census('t4', 1000, 150000) },
+    { id: 'failed', status: 'FAILED', rankFound: null, census: census('t5', 1000, 150000) },
+  ] as never[];
+  const w = nearWins(P);
+  assert.deepEqual(w.ids, ['near'], 'rank 4-6 and income of at least $100k only');
+  assert.equal(w.count, 1);
+  assert.equal(w.now, buyingPower(P).buyingPower);
+  assert.ok(w.projected! > w.now!, 'winning it raises Buying-Power SoLV');
+  // weights: 120, 120, 60, 150 (thousands x homes); now 120/450, projected 240/450
+  assert.ok(Math.abs(w.now! - (120 / 450) * 100) < 0.01 && Math.abs(w.projected! - (240 / 450) * 100) < 0.01);
+  assert.ok(Math.abs(w.lift! - (120 / 450) * 100) < 0.01);
+  assert.deepEqual(nearWins(P, { minIncome: 50000 }).ids.sort(), ['near', 'nearPoor']);
+  assert.equal(nearWins([]).count, 0);
+});

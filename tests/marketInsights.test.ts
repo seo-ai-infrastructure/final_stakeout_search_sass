@@ -102,3 +102,35 @@ test('who the AI recommends: named businesses in the AI\'s own order, counted ov
   assert.equal(aiPosition(['Lakeland Air'], 'Payne Air'), null);
   assert.equal(aiPosition([], 'Payne Air'), null);
 });
+
+test('cited sites are sorted into kinds, and a business\'s own site is recognised from its name', async () => {
+  const { siteKind } = await import('../apps/nextjs/src/lib/marketInsights');
+  const rivals = ['Those Guys Painting Co', 'Nash Painting', 'Mt. Juliet Painting Co.', 'Sharpton Painting', 'CertaPro Painters of Nashville'];
+  const k = (d: string) => siteKind(d, 'McIntyre Painting', rivals);
+  assert.deepEqual(['google.com', 'm.yelp.com', 'www.houzz.com', 'reddit.com', 'quora.com'].map(k), ['gbp', 'directory', 'directory', 'forum', 'forum']);
+  assert.equal(k('mcintyrepaintingtn.com'), 'you');
+  assert.deepEqual(['thoseguyspaintingco.com', 'nashpainting.com', 'mtjulietpainting.com', 'sharptonpainting.com'].map(k), Array(4).fill('competitor'));
+  assert.equal(k('nashvillepaintingcompany.com'), 'site', 'a site no named business owns is left unlabelled, not guessed');
+  assert.equal(k('ipaintnashville.com'), 'site');
+  assert.equal(siteKind('yelp.com.evil.example', 'x'), 'site');
+});
+
+test('AI place against local place: gains, losses and businesses the local results do not rank', async () => {
+  const { packOrder, aiVersusPack } = await import('../apps/nextjs/src/lib/marketInsights');
+  const pin = (id: string, top: string[], status = 'COMPLETED') => ({ id, status, rankFound: null, topCompetitors: top }) as never;
+  const pack = packOrder([pin('a', ['Five Star', 'Pointer', 'McIntyre']), pin('b', ['Five Star', 'McIntyre', 'Pointer']), pin('c', ['Pointer', 'Five Star', 'Those Guys']), pin('d', ['Ghost'], 'FAILED')]);
+  assert.deepEqual(pack, ['Five Star', 'Pointer', 'McIntyre', 'Those Guys']);
+  // A tie on top-3 points goes to the better average rank across every point, as on the leaderboard:
+  // both are top 3 at two points, but B is absent from the third (counted as 21) and A is 4th there.
+  const tie = packOrder([pin('a', ['A', 'B', 'X']), pin('b', ['B', 'A', 'X']), pin('c', ['X', 'Y', 'Z', 'A'])]);
+  assert.deepEqual(tie.slice(0, 3), ['X', 'A', 'B']);
+  const v = aiVersusPack(['McIntyre', 'Those Guys', 'AllBright', 'Five Star'], pack);
+  assert.deepEqual(v.map((x) => [x.name, x.aiPos, x.packPos, x.delta]), [['McIntyre', 1, 3, 2], ['Those Guys', 2, 4, 2], ['AllBright', 3, null, null], ['Five Star', 4, 1, -3]]);
+});
+
+test('the AI "named" count includes an answer that names the business but was captured without its list', async () => {
+  const { aiSources } = await import('../apps/nextjs/src/lib/marketInsights');
+  const pin = (id: string, named: string[], cited: boolean) => ({ id, status: 'COMPLETED', rankFound: 2, targetCitedInAi: cited, insights: { v: 1, finder: [], you: { pos: null, miles: null }, ads: [], adsAboveYou: null, ai: { shown: true, sources: [], named } } }) as never;
+  const r = aiSources([pin('full', ['McIntyre Painting', 'Other Co'], true), pin('collapsed', [], true), pin('absent', ['Other Co'], false)], 'McIntyre Painting');
+  assert.deepEqual([r.shown, r.youNamed], [3, 2]);
+});

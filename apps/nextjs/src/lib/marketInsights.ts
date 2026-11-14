@@ -3,6 +3,8 @@ import { pointShares, type BuyingPowerPin } from './buyingPower';
 
 /** Grid-wide insights for the report, from what each point stored (ranks, Census weights, insights). */
 export type InsightPin = BuyingPowerPin & {
+  /** The worker's own reading: the business is named in this point's AI Overview. */
+  targetCitedInAi?: boolean | null;
   lat: number;
   lng: number;
   topCompetitors?: string[] | null;
@@ -109,7 +111,9 @@ export function aiSources(pins: InsightPin[], target: string) {
   return {
     points: seen.length,
     shown: shown.length,
-    youNamed: shown.filter((p) => p.insights!.ai.named.some((n) => norm(n) === norm(target))).length,
+    // Named in the saved list, or by the worker's reading of the answer: an answer captured
+    // collapsed has no list, yet can plainly name the business.
+    youNamed: shown.filter((p) => p.targetCitedInAi === true || p.insights!.ai.named.some((n) => norm(n) === norm(target))).length,
     sources: [...counts]
       .map(([domain, points]) => ({ domain, points, label: domain === 'google.com' ? 'Google Business Profiles' : domain }))
       .sort((a, b) => b.points - a.points || a.domain.localeCompare(b.domain)),
@@ -154,3 +158,66 @@ export function aiBusinesses(pins: InsightPin[], target: string) {
     .sort((a, b) => b.points - a.points || b.first - a.first || a.avgPos - b.avgPos || a.name.localeCompare(b.name));
   return { lists: lists.length, rows: out, you: out.find((r) => r.isYou) ?? null };
 }
+
+/** What kind of website an AI Overview cited, so a list of sources reads as a story. */
+export type SiteKind = 'gbp' | 'you' | 'competitor' | 'directory' | 'forum' | 'site';
+const DIRECTORIES = /(^|\.)(yelp|angi|angieslist|houzz|thumbtack|homeadvisor|bbb|yellowpages|nextdoor|porch|expertise|bark|homeguide|trustpilot|mapquest|manta|superpages|birdeye|threebestrated|buildzoom|facebook|instagram|linkedin)\.(com|org|net|co\.uk|ca)$/;
+const FORUMS = /(^|\.)(reddit|quora|stackexchange|city-data)\.(com|org|net)$/;
+/** Letters and digits of a business name, without the words every business name has. */
+const nameKey = (name: string) => norm(name).replace(/\b(the|and|of|llc|inc|co|company|services?)\b/g, '').replace(/[^a-z0-9]/g, '');
+
+/**
+ * A cited site's kind. A business's own site is recognised when its domain holds most of the
+ * business's name ("mcintyrepaintingtn.com" for "McIntyre Painting"): a judgement from the name,
+ * since the report does not store each business's web address.
+ */
+export function siteKind(domain: string, target: string, businesses: string[] = []): SiteKind {
+  const d = domain.toLowerCase().replace(/^www\./, '').replace(/^m\./, '');
+  if (d === 'google.com' || d.endsWith('.google.com')) return 'gbp';
+  if (FORUMS.test(d)) return 'forum';
+  if (DIRECTORIES.test(d)) return 'directory';
+  const host = d.split('.')[0].replace(/[^a-z0-9]/g, '');
+  const owns = (name: string) => {
+    const k = nameKey(name);
+    return k.length >= 6 && (host.includes(k) || (host.length >= 8 && k.includes(host)));
+  };
+  if (owns(target)) return 'you';
+  return businesses.some(owns) ? 'competitor' : 'site';
+}
+
+/**
+ * 7. The local leaderboard's order: businesses by how many points they hold in the top 3, then by
+ * average rank (the same rule the leaderboard uses, so the two never disagree). A business's
+ * place here is what its place in the AI's list is compared against.
+ */
+export function packOrder(pins: (InsightPin & { topCompetitors?: string[] | null })[]): string[] {
+  const all = done(pins);
+  const rows = new Map<string, { name: string; top3: number; sum: number; found: number }>();
+  for (const p of all)
+    (p.topCompetitors ?? []).forEach((name, i) => {
+      const k = norm(name);
+      const r = rows.get(k) ?? { name, top3: 0, sum: 0, found: 0 };
+      if (i < 3) r.top3++;
+      r.sum += i + 1;
+      r.found++;
+      rows.set(k, r);
+    });
+  // The leaderboard's own order: top-3 share, then average rank across every point (a point
+  // where the business is absent counts as 21), then name.
+  const avg = (r: { sum: number; found: number }) => (r.sum + (all.length - r.found) * 21) / Math.max(1, all.length);
+  return [...rows.values()].sort((a, b) => b.top3 - a.top3 || avg(a) - avg(b) || a.name.localeCompare(b.name)).map((r) => r.name);
+}
+
+/**
+ * Each AI-named business's place in the AI's list against its place on the local leaderboard:
+ * `delta` is places gained in AI (positive) or lost (negative), null when the business is not
+ * among the leaderboard's top `depth`.
+ */
+export function aiVersusPack(aiNames: string[], pack: string[], depth = 10): { name: string; aiPos: number; packPos: number | null; delta: number | null }[] {
+  const place = new Map(pack.slice(0, depth).map((n, i) => [norm(n), i + 1]));
+  return aiNames.map((name, i) => {
+    const packPos = place.get(norm(name)) ?? null;
+    return { name, aiPos: i + 1, packPos, delta: packPos === null ? null : packPos - (i + 1) };
+  });
+}
+
