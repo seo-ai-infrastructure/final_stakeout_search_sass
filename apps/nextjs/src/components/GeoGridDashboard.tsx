@@ -122,6 +122,8 @@ export type GridPinData = {
   insights?: PinInsights | null;
 };
 export type GridScanData = {
+  /** On a shared report: the white-label name and logo it is shown under, when the owner has one. */
+  brand?: { name: string; accent: string | null; logo: string | null } | null;
   id: string;
   targetBusiness: string;
   keyword: string;
@@ -413,7 +415,7 @@ export function GeoGridDashboard({
         }),
         v = await r.json();
       if (!r.ok) throw Error(v.error);
-      setShare(v.path ? window.location.origin + v.path : '');
+      setShare(v.url ?? (v.path ? window.location.origin + v.path : ''));
       setError('');
     } catch (e) {
       setError((e as Error).message);
@@ -478,6 +480,19 @@ export function GeoGridDashboard({
   const pinZip = pin?.census?.zcta ? describeArea('zcta', pin.census.zcta) : null;
   return (
     <div className="mx-auto max-w-screen-2xl space-y-5 p-5">
+      {shared && scan.brand && (
+        <div className="flex items-center gap-4 border-b border-slate-800 pb-4">
+          {scan.brand.logo && (
+            // The logo sits on white: most logos are drawn for a light background.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={scan.brand.logo} alt={scan.brand.name} className="h-16 w-auto max-w-[220px] rounded-lg bg-white object-contain p-1.5" />
+          )}
+          <div>
+            <p className="text-base font-bold text-white">{scan.brand.name}</p>
+            <p className="text-xs text-slate-400">Local visibility report</p>
+          </div>
+        </div>
+      )}
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">{scan.targetBusiness}</h1>
@@ -488,7 +503,7 @@ export function GeoGridDashboard({
         </div>
         {shared ? (
           // New accounts are closed unless NEXT_PUBLIC_SIGNUPS_OPEN=true: no sign-up button on shared reports.
-          process.env.NEXT_PUBLIC_SIGNUPS_OPEN === 'true' ? (
+          process.env.NEXT_PUBLIC_SIGNUPS_OPEN === 'true' && !scan.brand ? (
             <Link
               className="rounded border border-emerald-500 p-2 text-emerald-300"
               href="/login?mode=register"

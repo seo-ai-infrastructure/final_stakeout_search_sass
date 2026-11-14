@@ -1,3 +1,4 @@
+import { brandForUser } from '@stakeout/core/brands';
 import { randomBytes } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { report } from '@/lib/reports';
@@ -49,7 +50,10 @@ export async function POST(req: Request, c: C) {
         where: { id },
         select: { shareToken: true },
       });
-      return Response.json({ path: '/share/' + record.shareToken });
+      // An account with a white-label domain shares on that domain.
+      const brand = await brandForUser(userId).catch(() => null);
+      const path = '/share/' + record.shareToken;
+      return Response.json({ path, url: brand ? 'https://' + brand.domain + path : null });
     }
     if (action === 'revoke') {
       await db.gridScan.update({ where: { id }, data: { shareToken: null } });

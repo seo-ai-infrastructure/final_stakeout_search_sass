@@ -295,7 +295,7 @@ export function CompetitorLeaderboard({
       new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }),
     );
     link.href = url;
-    link.setAttribute('download', `stakeout_competitor_solv_ai_matrix.csv`);
+    link.setAttribute('download', 'competitor_share_of_local_voice.csv');
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

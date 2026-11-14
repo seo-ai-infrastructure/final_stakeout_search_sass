@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 
 type OpenScan = { id: string; keyword: string; targetBusiness: string; targetType: string; gridSize: number; status: string; totalPins: number; completedPins: number; failedPins: number; createdAt: string; owner: string };
+type Brand = { domain: string; userId: string; name: string; hasLogo: boolean };
 type Account = { id: string; email: string; role: string; credits: number; confirmed: boolean; createdAt: string; scans: number; onboarding: 'exempt' | 'paid' | 'waived' | 'no' };
 
 type Tpl = { id: string; name: string; version: string | null } | null;
@@ -50,6 +51,10 @@ export function AdminOps() {
       /* storage unavailable: the choice lasts until the page reloads */
     }
   };
+  // White label: each account can have one domain that serves its shared reports under its own name and logo.
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [brandForm, setBrandForm] = useState<{ userId: string; email: string; domain: string; name: string; logo: string; logoName: string; existing: boolean } | null>(null);
+  const [brandNote, setBrandNote] = useState<{ domain: string; hosting: string } | null>(null);
   const [credit, setCredit] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
@@ -61,6 +66,7 @@ export function AdminOps() {
     const d = await r.json();
     setScans(d.scans ?? []);
     setUsers(d.users ?? []);
+    setBrands(d.brands ?? []);
     if (d.settings && d.capacity) {
       setOps(d);
       // The form is filled once, so a refresh never overwrites what is being typed.
@@ -94,7 +100,7 @@ export function AdminOps() {
   const points = (n: number) => (n === 1 ? '1 point' : `${n} points`);
 
   // A new account's sign-in details are never hidden: while they are on screen the panel stays open.
-  const accountsShown = accountsOpen || created !== null;
+  const accountsShown = accountsOpen || created !== null || brandForm !== null || brandNote !== null;
   const awaiting = users.filter((u) => u.role === 'AGENCY' && u.onboarding === 'no').length;
 
   return (
@@ -214,7 +220,7 @@ export function AdminOps() {
           <button
             type="button"
             aria-expanded={accountsShown}
-            aria-controls="admin-accounts"
+            aria-controls="admin-accounts-panel"
             onClick={() => toggleAccounts(!accountsOpen)}
             className="-m-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg p-2 text-left hover:bg-slate-800/60"
           >
@@ -231,7 +237,7 @@ export function AdminOps() {
           </button>
         </h2>
         {accountsShown && (
-          <div id="admin-accounts">
+          <div id="admin-accounts-panel">
         <div className="mt-3 overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="text-xs text-slate-400">
@@ -248,7 +254,12 @@ export function AdminOps() {
             <tbody className="divide-y divide-slate-800">
               {users.map((u) => (
                 <tr key={u.id}>
-                  <td className="py-2 pr-4 text-white">{u.email}</td>
+                  <td className="py-2 pr-4 text-white">
+                    {u.email}
+                    {brands.filter((b) => b.userId === u.id).map((b) => (
+                      <span key={b.domain} className="mt-0.5 block text-xs font-normal text-sky-300">{b.domain}</span>
+                    ))}
+                  </td>
                   <td className="py-2 pr-4">
                     <span className={u.role === 'BLOCKED' ? 'text-rose-300' : u.role === 'ADMIN' ? 'text-emerald-300' : 'text-slate-300'}>
                       {u.role === 'BLOCKED' ? 'Blocked' : u.role === 'ADMIN' ? 'Admin' : u.role === 'SYSTEM' ? 'System' : u.confirmed ? 'Active' : 'Email not confirmed'}
@@ -288,6 +299,20 @@ export function AdminOps() {
                         type="button"
                         disabled={busy !== ''}
                         className={btn + ' mr-2 border border-slate-600 py-1 text-slate-200 hover:bg-slate-800'}
+                        onClick={() => {
+                          const b = brands.find((x) => x.userId === u.id);
+                          setBrandNote(null);
+                          setBrandForm({ userId: u.id, email: u.email, domain: b?.domain ?? '', name: b?.name ?? '', logo: '', logoName: '', existing: Boolean(b) });
+                        }}
+                      >
+                        White label
+                      </button>
+                    )}
+                    {(u.role === 'AGENCY' || u.role === 'ADMIN') && (
+                      <button
+                        type="button"
+                        disabled={busy !== ''}
+                        className={btn + ' mr-2 border border-slate-600 py-1 text-slate-200 hover:bg-slate-800'}
                         onClick={() =>
                           run('pw:' + u.id, { action: 'password_link', userId: u.id }, (d) => {
                             setCreated({ email: String(d.email), url: String(d.url), emailed: Boolean(d.emailed) });
@@ -314,6 +339,93 @@ export function AdminOps() {
             </tbody>
           </table>
         </div>
+        {brandForm && (
+          <div className="mt-4 rounded-lg border border-sky-500/40 bg-sky-950/20 p-4">
+            <p className="text-sm font-bold text-white">White label for {brandForm.email}</p>
+            <p className="mt-1 text-xs text-slate-400">Their shared reports open on this domain, under this name and logo, with nothing of Stakeout on the page.</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs text-slate-300">
+                Domain
+                <input className={input + ' mt-1 w-full'} placeholder="reports.theiragency.com" value={brandForm.domain} onChange={(e) => setBrandForm({ ...brandForm, domain: e.target.value })} />
+              </label>
+              <label className="text-xs text-slate-300">
+                Name shown on reports
+                <input className={input + ' mt-1 w-full'} placeholder="Their Agency" maxLength={60} value={brandForm.name} onChange={(e) => setBrandForm({ ...brandForm, name: e.target.value })} />
+              </label>
+              <label className="text-xs text-slate-300 sm:col-span-2">
+                Logo (PNG, JPEG or WebP, under 300 KB){brandForm.existing ? ': leave empty to keep the current one' : ''}
+                <input
+                  className="mt-1 block w-full text-xs text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return setBrandForm({ ...brandForm, logo: '', logoName: '' });
+                    if (f.size > 300 * 1024) {
+                      setNote({ ok: false, text: `That logo is ${Math.round(f.size / 1024)} KB. It must be under 300 KB.` });
+                      e.target.value = '';
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => setBrandForm((cur) => (cur ? { ...cur, logo: String(reader.result), logoName: f.name } : cur));
+                    reader.readAsDataURL(f);
+                  }}
+                />
+              </label>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={busy !== '' || !brandForm.domain.trim() || !brandForm.name.trim()}
+                className={btn + ' border border-sky-500/60 text-sky-200 hover:bg-sky-500/10'}
+                onClick={async () => {
+                  const ok = await run('brand', { action: 'set_brand', userId: brandForm.userId, domain: brandForm.domain, name: brandForm.name, logo: brandForm.logo || undefined }, (d) => {
+                    const brand = d.brand as { domain: string };
+                    setBrandNote({ domain: brand.domain, hosting: String((d.hosting as { note?: string } | undefined)?.note ?? '') });
+                    return `White label saved for ${d.email}: ${brand.domain}.`;
+                  });
+                  if (ok) setBrandForm(null);
+                }}
+              >
+                Save
+              </button>
+              {brandForm.existing && (
+                <button
+                  type="button"
+                  disabled={busy !== ''}
+                  className={btn + ' border border-rose-500/60 text-rose-300 hover:bg-rose-500/10'}
+                  onClick={async () => {
+                    const ok = await run('brand', { action: 'remove_brand', domain: brandForm.domain }, (d) => `White label removed: ${d.domain}. Their share links go back to this site's address.`);
+                    if (ok) setBrandForm(null);
+                  }}
+                >
+                  Remove white label
+                </button>
+              )}
+              <button type="button" className={btn + ' border border-slate-600 text-slate-200 hover:bg-slate-800'} onClick={() => setBrandForm(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {brandNote && (
+          <div role="status" className="mt-4 rounded-lg border border-sky-500/40 bg-sky-950/20 p-4 text-sm text-slate-200">
+            <p className="font-bold text-white">Two steps to finish {brandNote.domain}</p>
+            <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-slate-300">
+              <li>
+                The customer adds this DNS record at their domain provider:
+                <code className="mt-1 block select-all break-all rounded bg-slate-950 px-2 py-1 font-mono text-xs text-white">
+                  {brandNote.domain.split('.')[0]}  CNAME  cname.vercel-dns.com
+                </code>
+              </li>
+              <li>{brandNote.hosting}</li>
+            </ol>
+            <p className="mt-2 text-xs text-slate-400">Once both are done, their Share button gives links on {brandNote.domain}. It can take a few minutes for the certificate to be issued.</p>
+            <button type="button" className={btn + ' mt-3 border border-slate-600 text-slate-200 hover:bg-slate-800'} onClick={() => setBrandNote(null)}>
+              Done
+            </button>
+          </div>
+        )}
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-4">
           <input className={input + ' w-72'} type="email" placeholder="invite: new account email" value={invite} onChange={(e) => setInvite(e.target.value)} />
           <button
