@@ -838,6 +838,10 @@ export function GeoGridDashboard({
               )}
             </div>
           )}
+          {/* Under the map: the right-hand column is the taller one, and this fills the space beside it. */}
+          <div className="mt-4">
+            <RankDistributionCard scan={scan} band={rankBand} onBand={setRankBand} />
+          </div>
         </div>
         <div className="space-y-4">
         <ReportVerdict scan={scan} />
@@ -930,18 +934,16 @@ export function GeoGridDashboard({
         </aside>
         </div>
       </div>
-      <div className="grid items-start gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-        <RankDistributionCard scan={scan} band={rankBand} onBand={setRankBand} />
-        <CompetitorLeaderboard
-          pins={scan.pins}
-          targetBusiness={scan.targetBusiness}
-          activeProjectedBusiness={projected?.normalizedKey}
-          onSelectCompetitorForMap={project}
-          buyingPower={Object.fromEntries(
-            groundOwners(scan.pins, scan.targetBusiness, 999).rows.map((r) => [r.name.trim().toLowerCase().replace(/\s+/g, ' '), r.buyingPower]),
-          )}
-        />
-      </div>
+      {/* Full width: its seven columns need the room. */}
+      <CompetitorLeaderboard
+        pins={scan.pins}
+        targetBusiness={scan.targetBusiness}
+        activeProjectedBusiness={projected?.normalizedKey}
+        onSelectCompetitorForMap={project}
+        buyingPower={Object.fromEntries(
+          groundOwners(scan.pins, scan.targetBusiness, 999).rows.map((r) => [r.name.trim().toLowerCase().replace(/\s+/g, ' '), r.buyingPower]),
+        )}
+      />
       <AiCoverageCard scan={scan} />
       <ProofStrip
         scan={scan}

@@ -81,8 +81,11 @@ export function RankDistributionCard({
 }) {
   const s = reportSummary(scan);
   if (!s.completed) return null;
+  // Sits under the map, in a wide column: the distribution on the left, who holds #1 on the right.
+  // On a narrow screen the two halves stack.
   return (
-    <div className={box}>
+    <div className={box + (s.leaders.length > 0 ? ' grid gap-6 md:grid-cols-2' : '')}>
+      <div>
       <h2 className="text-sm font-bold text-white">Rank distribution</h2>
       <p className="mt-1 text-xs text-slate-400">Select a band to show its points on the map.</p>
       <div className="mt-4 flex h-12 w-full gap-0.5">
@@ -116,10 +119,12 @@ export function RankDistributionCard({
           Showing {s.distribution.buckets.find((b) => b.key === band)?.label} points · clear
         </button>
       )}
+      </div>
       {s.leaders.length > 0 && (
-        <div className="mt-5 border-t border-slate-800 pt-4">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Who holds #1</h3>
-          <ul className="mt-2 space-y-2">
+        <div className="border-t border-slate-800 pt-4 md:border-l md:border-t-0 md:pl-6 md:pt-0">
+          <h3 className="text-sm font-bold text-white">Who holds #1</h3>
+          <p className="mt-1 text-xs text-slate-400">The business ranked first, point by point.</p>
+          <ul className="mt-4 space-y-2">
             {s.leaders.slice(0, 6).map((l) => (
               <li key={l.name} className="text-xs">
                 <div className="flex items-baseline justify-between gap-2">

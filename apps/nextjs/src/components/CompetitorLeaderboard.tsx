@@ -426,7 +426,7 @@ export function CompetitorLeaderboard({
                           e.stopPropagation();
                           toggle();
                         }}
-                        className={'max-w-[240px] truncate text-left text-[13px] ' + (comp.isTarget ? 'font-bold text-emerald-300' : 'font-medium text-white hover:underline')}
+                        className={'max-w-[240px] truncate text-left text-[13px] xl:max-w-[440px] ' + (comp.isTarget ? 'font-bold text-emerald-300' : 'font-medium text-white hover:underline')}
                       >
                         {comp.businessName}
                       </button>
