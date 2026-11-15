@@ -26,3 +26,26 @@ export function skippedPoints(input: unknown, gridSize: number): Set<string> {
   }
   return out;
 }
+
+export type GridShape = 'square' | 'custom' | 'round';
+
+/**
+ * A grid shape is the square grid with some points left out, as "row_col" keys:
+ *  - custom: only the middle `rows` × `cols` points stay (a wide or tall rectangle);
+ *  - round: the corners are trimmed off, leaving a rough circle.
+ * Rows and columns are odd and no larger than the grid, so the business stays at the centre.
+ */
+export function shapeSkips(shape: GridShape, gridSize: number, rows = gridSize, cols = gridSize): string[] {
+  if (shape === 'square') return [];
+  const mid = (gridSize - 1) / 2;
+  const odd = (v: number) => { const n = Math.max(1, Math.min(gridSize, Math.floor(v))); return n % 2 ? n : n - 1; };
+  const halfR = (odd(rows) - 1) / 2, halfC = (odd(cols) - 1) / 2;
+  const out: string[] = [];
+  for (let r = 0; r < gridSize; r++)
+    for (let c = 0; c < gridSize; c++) {
+      const dy = r - mid, dx = c - mid;
+      const gone = shape === 'custom' ? Math.abs(dy) > halfR || Math.abs(dx) > halfC : (dx * dx + dy * dy) / (mid * mid) > 1.3;
+      if (gone && !(dy === 0 && dx === 0)) out.push(r + '_' + c);
+    }
+  return out;
+}

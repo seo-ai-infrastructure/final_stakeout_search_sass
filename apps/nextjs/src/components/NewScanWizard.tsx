@@ -1,6 +1,6 @@
 // apps/nextjs/src/components/NewScanWizard.tsx
 'use client';
-import { OFFERED_GRID_SIZES } from '@stakeout/core/gridSizes';
+import { OFFERED_GRID_SIZES, shapeSkips, type GridShape } from '@stakeout/core/gridSizes';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
@@ -79,6 +79,10 @@ export function NewScanWizard() {
   const [saveMsg, setSaveMsg] = useState('');
   // Points left out on the map ("row_col"): not created, not charged.
   const [skipped, setSkipped] = useState<string[]>([]);
+  // The grid's shape: the full square, a wide or tall rectangle inside it, or a rough circle.
+  const [shape, setShape] = useState<GridShape>('square');
+  const [rows, setRows] = useState(5);
+  const [cols, setCols] = useState(5);
   const [showWealth, setShowWealth] = useState(false);
   // The phones a scan will run on, by model.
   const [phones, setPhones] = useState<{ brand: string; model: string }[]>([]);
@@ -206,7 +210,15 @@ export function NewScanWizard() {
       .catch(() => {});
   }, []);
   // A different grid size is a different set of points: skips start over.
-  useEffect(() => setSkipped([]), [gridSize]);
+  useEffect(() => {
+    setSkipped([]);
+    setRows(gridSize);
+    setCols(gridSize);
+  }, [gridSize]);
+  useEffect(() => setSkipped([]), [shape, rows, cols]);
+  // Points the shape leaves out, and every point left out for any reason.
+  const outOfShape = useMemo(() => shapeSkips(shape, gridSize, rows, cols), [shape, gridSize, rows, cols]);
+  const allSkipped = useMemo(() => [...new Set([...outOfShape, ...skipped])], [outOfShape, skipped]);
   // 2. Auto-detect local ZIP/City/State when coordinates move
   useEffect(() => {
     const controller = new AbortController();
@@ -247,14 +259,15 @@ export function NewScanWizard() {
           isCenter: r === 0 && c === 0,
           key: r + half + '_' + (c + half),
           skipped: !(r === 0 && c === 0) && skipped.includes(r + half + '_' + (c + half)),
+          out: outOfShape.includes(r + half + '_' + (c + half)),
         });
       }
     }
     return pts;
-  }, [centerLat, centerLng, gridSize, spacingKm, skipped]);
+  }, [centerLat, centerLng, gridSize, spacingKm, skipped, outOfShape]);
   // 4. Credit cost: one credit per grid point. AI Overview tracking is included.
   const creditSummary = useMemo(() => {
-    const totalPins = gridSize * gridSize - skipped.length;
+    const totalPins = gridSize * gridSize - allSkipped.length;
     const isDesktop = targetType.startsWith('desktop_');
     const costPerPin = isDesktop ? 2 : 1;
     const totalCost = totalPins * costPerPin;
@@ -266,7 +279,7 @@ export function NewScanWizard() {
       spanMiles,
       hasEnoughCredits: creditBalance >= totalCost,
     };
-  }, [gridSize, spacingKm, targetType, creditBalance, skipped]);
+  }, [gridSize, spacingKm, targetType, creditBalance, allSkipped]);
   // 5. MapLibre Initialization
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -351,7 +364,8 @@ export function NewScanWizard() {
       el.textContent = text;
       return el;
     };
-    previewPoints.forEach((pt) => {
+    const inShape = previewPoints.filter((pt) => !pt.out);
+    inShape.forEach((pt) => {
       bounds.extend([pt.lng, pt.lat]);
       if (pt.isCenter) {
         const el = document.createElement('div');
@@ -383,31 +397,39 @@ export function NewScanWizard() {
       });
       add(el, pt.lng, pt.lat);
     });
-    // Labels: the step between two neighbouring points, and the whole width.
-    const n = gridSize;
-    const first = previewPoints[0], second = previewPoints[1], last = previewPoints[previewPoints.length - 1];
+    // Labels: the step between two neighbouring points, and the size of the shape.
     const mi = Number((spacingKm / 1.60934).toFixed(1));
-    add(tag(mi + ' mi'), (first.lng + second.lng) / 2, first.lat, false, [0, -dot - 8]);
-    add(tag(Number(((n - 1) * mi).toFixed(1)) + ' mi across'), (first.lng + last.lng) / 2, last.lat, false, [0, dot + 14]);
-    // Outline and grid lines.
+    const lats = inShape.map((p) => p.lat), lngs = inShape.map((p) => p.lng);
+    const top = Math.max(...lats), bottom = Math.min(...lats), west = Math.min(...lngs), east = Math.max(...lngs);
+    const stepLat = Math.abs(previewPoints[0].lat - previewPoints[gridSize].lat), stepLng = Math.abs(previewPoints[1].lng - previewPoints[0].lng);
+    const topRow = inShape.filter((p) => p.lat === top).sort((x, y) => x.lng - y.lng);
+    const wide = Number(((east - west) / stepLng * mi).toFixed(1)), tall = Number(((top - bottom) / stepLat * mi).toFixed(1));
+    if (topRow.length > 1) add(tag(mi + ' mi'), (topRow[0].lng + topRow[1].lng) / 2, top, false, [0, -dot - 8]);
+    add(tag(wide === tall ? wide + ' mi across' : wide + ' × ' + tall + ' mi'), (west + east) / 2, bottom, false, [0, dot + 14]);
+    // Outline (a box, or a ring for a round grid) and the lines between points.
     const src = map.getSource('grid-frame') as maplibregl.GeoJSONSource | undefined;
     if (src) {
-      const padLat = (first.lat - last.lat) / (n - 1) / 3, padLng = (last.lng - first.lng) / (n - 1) / 3;
-      const N = first.lat + padLat, S = last.lat - padLat, W = first.lng - padLng, E = last.lng + padLng;
+      const N = top + stepLat / 3, S = bottom - stepLat / 3, W = west - stepLng / 3, E = east + stepLng / 3;
+      const ring: number[][] =
+        shape === 'round'
+          ? Array.from({ length: 49 }, (_, i) => {
+              const t = (i / 48) * 2 * Math.PI;
+              return [centerLng + Math.cos(t) * ((E - W) / 2) * 1.04, centerLat + Math.sin(t) * ((N - S) / 2) * 1.04];
+            })
+          : [[W, N], [E, N], [E, S], [W, S], [W, N]];
       const lines = [];
-      for (let i = 0; i < n; i++) {
-        const row = previewPoints[i * n], col = previewPoints[i];
-        lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[first.lng, row.lat], [last.lng, row.lat]] } });
-        lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[col.lng, first.lat], [col.lng, last.lat]] } });
+      if (shape !== 'round') {
+        for (const lat of [...new Set(lats)]) lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[west, lat], [east, lat]] } });
+        for (const lng of [...new Set(lngs)]) lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[lng, top], [lng, bottom]] } });
       }
       src.setData({
         type: 'FeatureCollection',
-        features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [[[W, N], [E, N], [E, S], [W, S], [W, N]]] } }, ...lines],
+        features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [ring] } }, ...lines],
       });
     }
     // Refit only when the grid itself moved or changed size, not when a point is skipped.
-    const fitKey = [centerLat, centerLng, gridSize, spacingKm].join('|');
-    if (previewPoints.length > 1 && fitKey !== lastFit.current) {
+    const fitKey = [centerLat, centerLng, gridSize, spacingKm, shape, rows, cols].join('|');
+    if (inShape.length > 1 && fitKey !== lastFit.current) {
       lastFit.current = fitKey;
       map.fitBounds(bounds, { padding: { top: 110, bottom: 130, left: 70, right: 70 }, maxZoom: 14, duration: 400 });
     }
@@ -537,7 +559,7 @@ export function NewScanWizard() {
           targetType,
           trackAiOverviews,
           scheduleType,
-          skip: skipped,
+          skip: allSkipped,
         }),
       });
       const data = await res.json();
@@ -568,6 +590,9 @@ export function NewScanWizard() {
   const creditsLeft = creditBalance - totalCost;
   const spacingMi = Number((spacingKm / 1.60934).toFixed(1));
   const spanMi = Number(((gridSize - 1) * spacingMi).toFixed(1));
+  const shapeRows = shape === 'custom' ? rows : gridSize, shapeCols = shape === 'custom' ? cols : gridSize;
+  const spanW = Number(((shapeCols - 1) * spacingMi).toFixed(1)), spanH = Number(((shapeRows - 1) * spacingMi).toFixed(1));
+  const oddStep = (v: number, d: number) => Math.max(1, Math.min(gridSize, v + d * 2));
   const phoneCount = phones.length;
   // About four minutes a point plus the two-minute rest, one point at a time per phone.
   const minutes = phoneCount ? Math.ceil((points * Math.max(1, runKeywords.length)) / phoneCount) * 6 : 0;
@@ -680,7 +705,7 @@ export function NewScanWizard() {
           <section className="space-y-2">
             <div className="flex items-baseline justify-between">
               <span className={label}>Grid &amp; network</span>
-              <span className="text-xs font-semibold text-emerald-300">{spanMi} × {spanMi} mi area · {points} points</span>
+              <span className="text-xs font-semibold text-emerald-300">{spanW} × {spanH} mi area · {points} points</span>
             </div>
             <div className="grid grid-cols-4 gap-2">
               {OFFERED_GRID_SIZES.map((n) => (
@@ -702,6 +727,29 @@ export function NewScanWizard() {
                 ))}
               </div>
             </div>
+            <div className="flex items-center gap-2">
+              <span className="whitespace-nowrap text-xs text-slate-300">Shape</span>
+              <div className="grid flex-1 grid-cols-3 gap-1.5" role="radiogroup" aria-label="Grid shape">
+                {([['square', 'Square'], ['custom', 'Rectangle'], ['round', 'Round']] as const).map(([id, text]) => (
+                  <button key={id} type="button" role="radio" aria-checked={shape === id} onClick={() => setShape(id)} className={pill(shape === id)}>
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {shape === 'custom' && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-300">
+                {([['Rows', rows, setRows], ['Columns', cols, setCols]] as const).map(([name, val, set]) => (
+                  <span key={name} className="flex items-center gap-1.5">
+                    {name}
+                    <button type="button" aria-label={`Fewer ${name.toLowerCase()}`} disabled={val <= 1} onClick={() => set(oddStep(val, -1))} className="h-10 w-9 rounded-lg border border-slate-700 text-base text-white disabled:opacity-40">−</button>
+                    <span className="w-4 text-center text-sm font-bold text-white">{val}</span>
+                    <button type="button" aria-label={`More ${name.toLowerCase()}`} disabled={val >= gridSize} onClick={() => set(oddStep(val, 1))} className="h-10 w-9 rounded-lg border border-slate-700 text-base text-white disabled:opacity-40">+</button>
+                  </span>
+                ))}
+                <span className="text-slate-400">inside the {gridSize}×{gridSize}</span>
+              </div>
+            )}
             {spanMi > 20 && <p className="text-xs text-amber-300">That is a very wide area for a local search. Most scans stay under 20 miles across.</p>}
             {skipped.length > 0 && (
               <p className="text-xs text-amber-200">
@@ -864,7 +912,7 @@ export function NewScanWizard() {
         )}
         <div className="pointer-events-none absolute bottom-5 left-5 z-20 max-w-sm rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 shadow-2xl backdrop-blur">
           <p className="text-sm font-bold text-white">
-            {gridSize}×{gridSize} grid · points {spacingMi} mi apart
+            {shape === 'round' ? `Round grid, ${points} points` : `${shapeRows}×${shapeCols} grid`} · points {spacingMi} mi apart
           </p>
           <p className="mt-0.5 text-xs text-slate-300">
             Centre {centerLat.toFixed(5)}, {centerLng.toFixed(5)}

@@ -88,3 +88,17 @@ test('skipped points: only real grid points count, and the centre is never skipp
   assert.equal(skippedPoints('0_0', 5).size, 0);
   assert.equal(skippedPoints(undefined, 3).size, 0);
 });
+
+test('grid shapes are the square grid with points left out', async () => {
+  const { shapeSkips } = await import('../packages/core/gridSizes');
+  assert.deepEqual(shapeSkips('square', 7), []);
+  // A 7-wide grid kept to its middle 3 rows: 7 x 3 = 21 points stay, 28 go.
+  assert.equal(shapeSkips('custom', 7, 3, 7).length, 28);
+  assert.equal(shapeSkips('custom', 7, 3, 7).includes('3_0'), false);
+  // Even or oversized numbers are brought back to an odd size inside the grid.
+  assert.equal(shapeSkips('custom', 5, 4, 99).length, 10);
+  // Round: a 7x7 keeps 37 points, a 5x5 keeps 21; the centre always stays.
+  assert.equal(49 - shapeSkips('round', 7).length, 37);
+  assert.equal(25 - shapeSkips('round', 5).length, 21);
+  assert.equal(shapeSkips('round', 9).includes('4_4'), false);
+});
