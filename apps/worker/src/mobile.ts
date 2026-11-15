@@ -865,7 +865,10 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       // scrolled, so the map pack was never looked for. That is a failed run to retry, not a
       // "not found" result.
       const shots = Object.entries(b.fingerprints ?? {}).filter(([name]) => /^(serp|final|dump_\d+)\.xml$/.test(name)).map(([, hash]) => hash);
-      if (r.from === 'none' && shots.length >= 3 && new Set(shots).size === 1)
+      // (Identical snapshots alone prove nothing: a page without a map pack is saved once and copied.
+      // The stuck runs are the ones that also left an AI Overview on the page uncopied.)
+      const aiLeft = !('aio_copy.txt' in (b.fingerprints ?? {})) && /"AI Overview"/.test(b.serp ?? b.final ?? '');
+      if (r.from === 'none' && aiLeft && shots.length >= 3 && new Set(shots).size === 1)
         throw new Error('RPA_SURFACE_ERROR no_scroll: the template finished without scrolling the results page');
       aiList = { rank: r.rank, list: r.list };
       Object.assign(proof, { finderShown: false, rankFrom: r.from });

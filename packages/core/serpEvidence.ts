@@ -494,13 +494,40 @@ export function readAiOverviewLayout(xml: string | null | undefined): AiLayout |
  * more on Google" instead of "More businesses"); failing that, the businesses an AI Overview
  * listed. Ads are never counted. A business outside the pack is "not in the pack", not "#5".
  */
+export type SoloPanel = { name: string; rating: string | null; reviews: string | null; category: string | null };
+
+/**
+ * A results page where Google answers a local search with ONE business: a panel with the
+ * business's name, rating and its own tabs (Overview, Services, Reviews, About), and no map
+ * pack. The tab strip is what marks it: its last tab reads "About . <business name>". Cards in
+ * a map pack, the Local Finder or an AI Overview have no such tabs.
+ */
+export function readSoloPanel(xml: string | null | undefined): SoloPanel | null {
+  if (!xml) return null;
+  const L = uiLabels(xml);
+  const at = L.findIndex((x, i) => /^About \. .+/.test(x.label) && L.slice(Math.max(0, i - 14), i).some((y) => y.label === 'Overview') && L.slice(Math.max(0, i - 14), i).some((y) => y.label === 'Reviews'));
+  if (at < 0) return null;
+  const name = L[at].label.replace(/^About \. /, '').trim();
+  // The header sits just above the tabs: "Rated 5.0 out of 5," · "19 reviews" · "(" "19" ")" "‧" category "‧" Open.
+  const head = L.slice(Math.max(0, at - 45), at).map((x) => x.label);
+  const r = [...head].reverse().find((l) => /^Rated [0-5](?:[.,]\d)? out of 5/.test(l));
+  const rv = [...head].reverse().find((l) => /^[\d.,]+[KM]? reviews?$/i.test(l));
+  // The category is the first real word after the review count ("(", "19", ")" and the dots are skipped).
+  const after = rv ? head.slice(head.lastIndexOf(rv) + 1).filter((l) => l.length > 2 && !/^[\d.,()]+[KM]?$/.test(l)) : [];
+  const category = after[0] && !/^(Open|Closed|Opens|Closes|More options)\b/.test(after[0]) ? after[0] : null;
+  return { name, rating: r ? (/Rated ([0-5](?:[.,]\d)?)/.exec(r) ?? [])[1] ?? null : null, reviews: rv ? rv.replace(/ reviews?$/i, '') : null, category };
+}
+
 export function rankWithoutFinder(
   pages: (string | null | undefined)[],
   aiSnapshots: (string | null | undefined)[],
   target: string,
-): { rank: number | null; list: string[]; from: 'map_pack' | 'ai_overview_list' | 'none' } {
+): { rank: number | null; list: string[]; from: 'map_pack' | 'single_business' | 'ai_overview_list' | 'none' } {
   const names = (ls: Listing[] | undefined) => (ls ?? []).filter((y) => !y.ad).map((y) => y.name);
   const pack = pages.filter((x): x is string => !!x).map((x) => names(readResultsPage(x)?.pack)).find((l) => l.length) ?? [];
+  // No pack: a single-business panel is Google's local answer for this spot, and comes before an AI Overview's list.
+  const solo = pack.length ? null : (pages.map((x) => readSoloPanel(x)).find(Boolean) ?? null);
+  if (solo) return { rank: sameBusiness(solo.name, target) ? 1 : null, list: [solo.name], from: 'single_business' };
   const ai = pack.length ? [] : (aiSnapshots.filter((x): x is string => !!x).map((x) => names(readAiOverview(x)?.businesses)).find((l) => l.length) ?? []);
   const list = pack.length ? pack : ai;
   const i = list.findIndex((n) => sameBusiness(n, target));

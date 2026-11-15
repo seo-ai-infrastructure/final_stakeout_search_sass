@@ -82,12 +82,14 @@ export async function backfillInsights(limit = 500) {
  * once (proxyMeta.packChecked), whatever the outcome.
  */
 export async function backfillPackRanks(limit = 200) {
-  const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string; target: string }[]>`
-    SELECT p.id, p."scanId", p."dumpsTarUrl", s."targetBusiness" AS target
+  const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string; target: string; was: string }[]>`
+    SELECT p.id, p."scanId", p."dumpsTarUrl", s."targetBusiness" AS target, p."proxyMeta"->>'rankFrom' AS was
     FROM "GridPin" p JOIN "GridScan" s ON s.id = p."scanId"
-    WHERE s."targetType" = 'mobile_chrome' AND p.status = 'COMPLETED' AND p."rankFound" IS NULL
-      AND p."proxyMeta"->>'finderShown' = 'false' AND p."proxyMeta"->>'rankFrom' = 'none'
-      AND p."proxyMeta"->>'packChecked' IS NULL AND p."dumpsTarUrl" IS NOT NULL
+    WHERE s."targetType" = 'mobile_chrome' AND p.status = 'COMPLETED'
+      AND p."proxyMeta"->>'finderShown' = 'false' AND p."dumpsTarUrl" IS NOT NULL
+      AND ((p."rankFound" IS NULL AND p."proxyMeta"->>'rankFrom' = 'none' AND p."proxyMeta"->>'packChecked' IS NULL)
+        -- Points ranked from an AI Overview's list before single-business panels were read: checked once for one.
+        OR (p."proxyMeta"->>'rankFrom' = 'ai_overview_list' AND p."proxyMeta"->>'soloChecked' IS NULL))
     LIMIT ${limit}`;
   if (!pins.length) return;
   let fixed = 0;
@@ -115,8 +117,8 @@ export async function backfillPackRanks(limit = 200) {
       }
     }
     const current = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true } });
-    const meta = { ...((current?.proxyMeta as Record<string, unknown> | null) ?? {}), packChecked: true };
-    if (found && found.from !== 'none') {
+    const meta = { ...((current?.proxyMeta as Record<string, unknown> | null) ?? {}), packChecked: true, soloChecked: true };
+    if (found && found.from !== 'none' && found.from !== p.was) {
       await db.gridPin.update({ where: { id: p.id }, data: { rankFound: found.rank, topCompetitors: found.list, proxyMeta: { ...meta, rankFrom: found.from } } });
       scans.add(p.scanId);
       fixed++;

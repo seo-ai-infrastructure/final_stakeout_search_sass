@@ -474,6 +474,10 @@ export function GeoGridDashboard({
         el.style.fontSize = '11px';
       } else if (standout) el.style.width = el.style.height = '38px';
       el.style.boxShadow = standout ? '0 0 0 4px rgba(168,85,247,0.28)' : cited && aiRing && mapMode !== 'ai' ? '0 0 0 4px #c084fc' : '';
+      // A point where Google showed one business only: a gold outline, whoever holds it.
+      const solo = p.proxyMeta?.rankFrom === 'single_business' && mapMode === 'rank';
+      el.style.outline = solo ? '2px solid #fde047' : '';
+      el.style.outlineOffset = solo ? '3px' : '';
       el.style.opacity = pinPasses(p, rank, { bpFilters, rankBand, legendBand, focusIds, id: p.id }) ? '1' : '0.25';
       el.title =
         'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + p.status;
@@ -495,6 +499,19 @@ export function GeoGridDashboard({
   }, [scan, projected, bpFilters, rankBand, view3d, style3d, mapMode, legendBand, aiRing, focusIds]);
   // The winning radius, drawn around the business: how far out it holds the top 3.
   const radiusMiles = scan ? (winningRadius(scan.pins, { lat: scan.centerLat, lng: scan.centerLng })?.radius ?? null) : null;
+  // Points where Google answered with one business and no map pack, and who holds them.
+  const soloPins = scan ? scan.pins.filter((x) => x.status === 'COMPLETED' && x.proxyMeta?.rankFrom === 'single_business') : [];
+  const soloWinners = (() => {
+    const tally = new Map<string, { name: string; count: number; isYou: boolean }>();
+    for (const x of soloPins) {
+      const name = x.topCompetitors?.[0] ?? 'Unknown business';
+      const k = name.trim().toLowerCase();
+      const row = tally.get(k) ?? { name, count: 0, isYou: x.rankFound === 1 };
+      row.count++;
+      tally.set(k, row);
+    }
+    return [...tally.values()].sort((a, b) => b.count - a.count);
+  })();
   useEffect(() => {
     const m = map.current;
     if (!m || !mapReady || !scan) return;
@@ -794,6 +811,12 @@ export function GeoGridDashboard({
                     AI Overview named you
                   </button>
                 )}
+                {mapMode === 'rank' && soloPins.length > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-slate-300" title="Google answered with one business at these points">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-700" style={{ outline: '2px solid #fde047', outlineOffset: 2 }} />
+                    Single-business result
+                  </span>
+                )}
                 {radiusMiles !== null && (
                   <span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-slate-400">
                     <span className="inline-block w-4 border-t-2 border-dashed border-slate-200" />
@@ -1014,6 +1037,23 @@ export function GeoGridDashboard({
             </div>
           )}
           {/* Under the map: the right-hand column is the taller one, and this fills the space beside it. */}
+          {soloPins.length > 0 && (
+            <div className="mt-4 rounded-xl border border-yellow-300/40 bg-yellow-300/[0.06] p-4">
+              <h3 className="text-sm font-bold text-yellow-200">Single-business results</h3>
+              <p className="mt-1 text-sm text-slate-200">
+                At {soloPins.length} of {scan.pins.filter((x) => x.status === 'COMPLETED').length} points Google showed one business and no map pack: the whole local answer went to one company.
+              </p>
+              <ul className="mt-2 space-y-1 text-sm">
+                {soloWinners.map((w) => (
+                  <li key={w.name} className="flex items-baseline justify-between gap-3">
+                    <span className={w.isYou ? 'font-bold text-emerald-300' : 'text-slate-200'}>{w.name}{w.isYou ? ' (you)' : ''}</span>
+                    <span className="text-slate-400">{w.count} point{w.count === 1 ? '' : 's'}</span>
+                  </li>
+                ))}
+              </ul>
+              {!soloWinners.some((w) => w.isYou) && <p className="mt-2 text-xs text-slate-400">You hold none of them yet. These are the points where a rival gets the whole screen.</p>}
+            </div>
+          )}
           <div className="mt-4">
             <RankDistributionCard scan={scan} band={rankBand} onBand={setRankBand} />
           </div>

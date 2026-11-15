@@ -212,3 +212,17 @@ test('insights: the AI\'s list includes businesses named without a Google link, 
   assert.equal(ins.c, 2);
   assert.equal(buildPinInsights({ serp: null, finder: null, target: 'x' }).c, undefined, 'no AI Overview, no marker');
 });
+
+test('a single-business panel (no map pack) is the local result at #1, ahead of the AI Overview list', async () => {
+  const { readSoloPanel, rankWithoutFinder } = await import('../packages/core/serpEvidence');
+  const fs = await import('node:fs');
+  const a = fs.readFileSync(new URL('./fixtures/real-single-business-panel-2026-11-15.xml', import.meta.url), 'utf8');
+  const b = fs.readFileSync(new URL('./fixtures/real-single-business-panel-b-2026-11-15.xml', import.meta.url), 'utf8');
+  assert.deepEqual(readSoloPanel(a), { name: 'Bro’s Master Plumbers', rating: '5.0', reviews: '19', category: 'Plumber' });
+  assert.equal(readSoloPanel(b)?.name, 'True Plumbers & AC');
+  assert.equal(readSoloPanel(b)?.rating, '4.7');
+  // Someone else holds it: not found, and the list is that one business (not the AI Overview's six).
+  assert.deepEqual(rankWithoutFinder([a], [a], "Stuart's Plumbing"), { rank: null, list: ['Bro’s Master Plumbers'], from: 'single_business' });
+  // The target holds it: #1 (apostrophe style does not matter).
+  assert.equal(rankWithoutFinder([a], [a], "Bro's Master Plumbers").rank, 1);
+});

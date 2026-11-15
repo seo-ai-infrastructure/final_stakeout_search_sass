@@ -25,6 +25,8 @@ function rankLine(pin: GridPinData): string {
   if (pin.proxyMeta?.finderShown === false) {
     if (pin.proxyMeta.rankFrom === 'map_pack') return r != null ? `#${r} in the map pack (the full list was not opened)` : 'Not in the map pack (the full list was not opened)';
     if (pin.proxyMeta.rankFrom === 'none') return 'No local results on this page';
+    if (pin.proxyMeta.rankFrom === 'single_business')
+      return r === 1 ? 'Google showed only you here: the single-business result' : `Google showed a single business here: ${pin.topCompetitors?.[0] ?? 'another business'}`;
     return r != null ? `#${r} in the AI Overview’s list (no local list on this page)` : 'Not in the AI Overview’s list (no local list on this page)';
   }
   return r != null ? `#${r} in the local results` : 'Not in the top 10';
