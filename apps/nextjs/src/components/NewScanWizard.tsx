@@ -80,11 +80,9 @@ export function NewScanWizard() {
   // Points left out on the map ("row_col"): not created, not charged.
   const [skipped, setSkipped] = useState<string[]>([]);
   // The grid's shape: the full square, a wide or tall rectangle inside it, or a rough circle.
-  // 'wealth' keeps the 25 points in the highest-income areas; 'drive' keeps the points within a drive time.
-  const [shape, setShape] = useState<GridShape | 'wealth' | 'drive'>('square');
-  const [driveMin, setDriveMin] = useState(15);
-  const [driveArea, setDriveArea] = useState<number[][] | null>(null);
-  const [driveNote, setDriveNote] = useState('');
+  // 'wealth' is not a grid: one point at the middle of each of the highest-income census areas near the business.
+  const [shape, setShape] = useState<GridShape | 'wealth'>('square');
+  const [areas, setAreas] = useState<{ lat: number; lng: number; inc: number }[]>([]);
   const [rows, setRows] = useState(5);
   const [cols, setCols] = useState(5);
   const [showWealth, setShowWealth] = useState(false);
@@ -224,60 +222,7 @@ export function NewScanWizard() {
   }, [gridSize]);
   useEffect(() => setSkipped([]), [shape, rows, cols]);
   // Points the shape leaves out, and every point left out for any reason.
-  // The area reachable by car in N minutes from the business (a free community routing service).
-  useEffect(() => {
-    if (shape !== 'drive') return;
-    let live = true;
-    setDriveArea(null);
-    setDriveNote('Working out the drive-time area…');
-    const q = JSON.stringify({ locations: [{ lat: centerLat, lon: centerLng }], costing: 'auto', contours: [{ time: driveMin }], polygons: true });
-    const t = setTimeout(() => {
-      fetch('https://valhalla1.openstreetmap.de/isochrone?json=' + encodeURIComponent(q))
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-        .then((d) => {
-          if (!live) return;
-          const g = d?.features?.[0]?.geometry;
-          const ring: number[][] | undefined = g?.type === 'Polygon' ? g.coordinates?.[0] : g?.type === 'MultiPolygon' ? g.coordinates?.[0]?.[0] : undefined;
-          if (!ring || ring.length < 4) throw new Error('no area');
-          setDriveArea(ring);
-          setDriveNote('');
-        })
-        .catch(() => live && setDriveNote('The drive-time area could not be worked out right now. Try again, or use another shape.'));
-    }, 500);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [shape, driveMin, centerLat, centerLng]);
-  const outOfShape = useMemo(() => {
-    const keys: { key: string; lat: number; lng: number }[] = [];
-    const half = Math.floor(gridSize / 2);
-    const latDelta = (spacingKm / 6371.0) * (180.0 / Math.PI), lngDelta = latDelta / Math.cos((centerLat * Math.PI) / 180.0);
-    for (let r = 0; r < gridSize; r++)
-      for (let c = 0; c < gridSize; c++)
-        if (!(r === half && c === half)) keys.push({ key: r + '_' + c, lat: centerLat - (r - half) * latDelta, lng: centerLng + (c - half) * lngDelta });
-    if (shape === 'wealth') {
-      // The 24 points in the highest-income areas, plus the business: 25 in all. Until the map has read the incomes, nothing is dropped.
-      const known = keys.filter((k) => pointInfo[k.key]?.inc != null);
-      if (known.length < 25) return [];
-      const keep = new Set(known.sort((a, b) => (pointInfo[b.key]!.inc ?? 0) - (pointInfo[a.key]!.inc ?? 0)).slice(0, 24).map((k) => k.key));
-      return keys.filter((k) => !keep.has(k.key)).map((k) => k.key);
-    }
-    if (shape === 'drive') {
-      if (!driveArea) return [];
-      // Ray casting: is the point inside the drive-time area?
-      const inside = (x: number, y: number) => {
-        let hit = false;
-        for (let i = 0, j = driveArea.length - 1; i < driveArea.length; j = i++) {
-          const [xi, yi] = driveArea[i], [xj, yj] = driveArea[j];
-          if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
-        }
-        return hit;
-      };
-      return keys.filter((k) => !inside(k.lng, k.lat)).map((k) => k.key);
-    }
-    return shapeSkips(shape, gridSize, rows, cols);
-  }, [shape, gridSize, rows, cols, pointInfo, driveArea, spacingKm, centerLat, centerLng]);
+  const outOfShape = useMemo(() => (shape === 'wealth' ? [] : shapeSkips(shape, gridSize, rows, cols)), [shape, gridSize, rows, cols]);
   const allSkipped = useMemo(() => [...new Set([...outOfShape, ...skipped])], [outOfShape, skipped]);
   // 2. Auto-detect local ZIP/City/State when coordinates move
   useEffect(() => {
@@ -310,6 +255,11 @@ export function NewScanWizard() {
     const half = Math.floor(gridSize / 2);
     const latDelta = (spacingKm / 6371.0) * (180.0 / Math.PI);
     const lngDelta = latDelta / Math.cos((centerLat * Math.PI) / 180.0);
+    if (shape === 'wealth')
+      return [
+        { lat: centerLat, lng: centerLng, isCenter: true, key: 'c', skipped: false, out: false, n: 0 },
+        ...areas.map((a, i) => ({ lat: a.lat, lng: a.lng, isCenter: false, key: 'a' + a.lat + ',' + a.lng, skipped: skipped.includes('a' + a.lat + ',' + a.lng), out: false, n: i + 1 })),
+      ];
     const pts = [];
     for (let r = -half; r <= half; r++) {
       for (let c = -half; c <= half; c++) {
@@ -320,14 +270,15 @@ export function NewScanWizard() {
           key: r + half + '_' + (c + half),
           skipped: !(r === 0 && c === 0) && skipped.includes(r + half + '_' + (c + half)),
           out: outOfShape.includes(r + half + '_' + (c + half)),
+          n: (r + half) * gridSize + (c + half) + 1,
         });
       }
     }
     return pts;
-  }, [centerLat, centerLng, gridSize, spacingKm, skipped, outOfShape]);
+  }, [centerLat, centerLng, gridSize, spacingKm, skipped, outOfShape, shape, areas]);
   // 4. Credit cost: one credit per grid point. AI Overview tracking is included.
   const creditSummary = useMemo(() => {
-    const totalPins = gridSize * gridSize - allSkipped.length;
+    const totalPins = shape === 'wealth' ? previewPoints.filter((p) => !p.skipped).length : gridSize * gridSize - allSkipped.length;
     const isDesktop = targetType.startsWith('desktop_');
     const costPerPin = isDesktop ? 2 : 1;
     const totalCost = totalPins * costPerPin;
@@ -339,7 +290,7 @@ export function NewScanWizard() {
       spanMiles,
       hasEnoughCredits: creditBalance >= totalCost,
     };
-  }, [gridSize, spacingKm, targetType, creditBalance, allSkipped]);
+  }, [gridSize, spacingKm, targetType, creditBalance, allSkipped, shape, previewPoints]);
   // 5. MapLibre Initialization
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -439,7 +390,6 @@ export function NewScanWizard() {
       return el;
     };
     const inShape = previewPoints.filter((pt) => !pt.out);
-    if (shape === 'wealth' || shape === 'drive') previewPoints.forEach((pt) => bounds.extend([pt.lng, pt.lat]));
     inShape.forEach((pt) => {
       bounds.extend([pt.lng, pt.lat]);
       if (pt.isCenter) {
@@ -468,8 +418,7 @@ export function NewScanWizard() {
           ? 'border-dashed border-slate-500 bg-slate-950/70 text-slate-500'
           : 'border-emerald-400 bg-slate-950 text-emerald-100 ' + (rich ? 'shadow-[0_0_0_4px_rgba(125,211,252,0.55)]' : 'shadow-[0_0_0_3px_rgba(52,211,153,0.18)]'));
       el.style.fontSize = (dot >= 26 ? 11 : dot >= 22 ? 10 : 8) + 'px';
-      const [r, c] = pt.key.split('_').map(Number);
-      el.textContent = pt.skipped ? '' : String(r * gridSize + c + 1);
+      el.textContent = pt.skipped ? '' : String(pt.n);
       el.setAttribute('aria-pressed', String(!pt.skipped));
       el.setAttribute('aria-label', pt.skipped ? 'Skipped point: click to include it' : 'Grid point: click to skip it');
       el.title =
@@ -483,6 +432,18 @@ export function NewScanWizard() {
       });
       add(el, pt.lng, pt.lat);
     });
+    // The box the highest-income areas are searched in: the square the size and spacing buttons describe.
+    const halfN = Math.floor(gridSize / 2) + 0.5;
+    const dLat = (spacingKm / 6371.0) * (180.0 / Math.PI), dLng = dLat / Math.cos((centerLat * Math.PI) / 180.0);
+    const box = { N: centerLat + halfN * dLat, S: centerLat - halfN * dLat, W: centerLng - halfN * dLng, E: centerLng + halfN * dLng };
+    if (shape === 'wealth') {
+      bounds.extend([box.W, box.S]);
+      bounds.extend([box.E, box.N]);
+      (map.getSource('grid-frame') as maplibregl.GeoJSONSource | undefined)?.setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [[[box.W, box.N], [box.E, box.N], [box.E, box.S], [box.W, box.S], [box.W, box.N]]] } }],
+      });
+    } else {
     // Labels: the step between two neighbouring points, and the size of the shape.
     const mi = Number((spacingKm / 1.60934).toFixed(1));
     const lats = inShape.map((p) => p.lat), lngs = inShape.map((p) => p.lng);
@@ -497,11 +458,7 @@ export function NewScanWizard() {
     if (src) {
       const N = top + stepLat / 3, S = bottom - stepLat / 3, W = west - stepLng / 3, E = east + stepLng / 3;
       const ring: number[][] =
-        shape === 'drive' && driveArea
-          ? driveArea
-          : shape === 'wealth'
-          ? [[W, N], [W, N], [W, N], [W, N]]
-          : shape === 'round'
+        shape === 'round'
           ? Array.from({ length: 49 }, (_, i) => {
               const t = (i / 48) * 2 * Math.PI;
               return [centerLng + Math.cos(t) * ((E - W) / 2) * 1.04, centerLat + Math.sin(t) * ((N - S) / 2) * 1.04];
@@ -528,15 +485,58 @@ export function NewScanWizard() {
         features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [ring] } }, ...lines, ...reach],
       });
     }
+    }
     // Refit only when the grid itself moved or changed size, not when a point is skipped.
     const fitKey = [centerLat, centerLng, gridSize, spacingKm, shape, rows, cols].join('|');
-    void driveArea;
-    if (inShape.length > 1 && fitKey !== lastFit.current) {
+    if ((inShape.length > 1 || shape === 'wealth') && fitKey !== lastFit.current) {
       lastFit.current = fitKey;
       map.fitBounds(bounds, { padding: { top: 110, bottom: 130, left: 70, right: 70 }, maxZoom: 14, duration: 400 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewPoints, mapState, pointInfo, showWealth, driveArea]);
+  }, [previewPoints, mapState, pointInfo, showWealth]);
+  // Top income: read every census area the map has drawn inside the search box and keep the 24 richest.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (shape !== 'wealth' || !map || mapState !== 'ready') {
+      setAreas((prev) => (prev.length ? [] : prev));
+      return;
+    }
+    const halfN = Math.floor(gridSize / 2) + 0.5;
+    const dLat = (spacingKm / 6371.0) * (180.0 / Math.PI), dLng = dLat / Math.cos((centerLat * Math.PI) / 180.0);
+    const read = () => {
+      let feats: maplibregl.MapGeoJSONFeature[] = [];
+      try {
+        if (map.getLayer('setup-income')) feats = map.queryRenderedFeatures({ layers: ['setup-income'] });
+      } catch {
+        /* not drawn yet */
+      }
+      // An area can arrive in several pieces (one per map tile): its middle is the average of all their corners.
+      const sums = new Map<string, { inc: number; x: number; y: number; n: number }>();
+      for (const f of feats) {
+        const inc = Number(f.properties?.inc);
+        if (!(inc > 0)) continue;
+        const g = f.geometry;
+        const rings: number[][][] = g.type === 'Polygon' ? [g.coordinates[0] as number[][]] : g.type === 'MultiPolygon' ? g.coordinates.map((poly) => poly[0] as number[][]) : [];
+        const id = String(f.id ?? f.properties?.id ?? '');
+        if (!id) continue;
+        const acc = sums.get(id) ?? { inc, x: 0, y: 0, n: 0 };
+        for (const ring of rings) for (const [x, y] of ring) { acc.x += x; acc.y += y; acc.n++; }
+        sums.set(id, acc);
+      }
+      const next = [...sums.values()]
+        .filter((a) => a.n > 2)
+        .map((a) => ({ lat: Number((a.y / a.n).toFixed(5)), lng: Number((a.x / a.n).toFixed(5)), inc: a.inc }))
+        .filter((a) => Math.abs(a.lat - centerLat) <= halfN * dLat && Math.abs(a.lng - centerLng) <= halfN * dLng)
+        .sort((a, b) => b.inc - a.inc || a.lat - b.lat)
+        .slice(0, 24);
+      setAreas((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    };
+    map.on('idle', read);
+    if (map.loaded()) read();
+    return () => {
+      map.off('idle', read);
+    };
+  }, [shape, mapState, centerLat, centerLng, gridSize, spacingKm]);
   // Once the map has drawn, read each point's surroundings off it: income of its area, and water.
   useEffect(() => {
     const map = mapRef.current;
@@ -689,7 +689,9 @@ export function NewScanWizard() {
           targetType,
           trackAiOverviews,
           scheduleType,
-          skip: allSkipped,
+          skip: shape === 'wealth' ? [] : allSkipped,
+          // Top income: the points are the areas' own middles, not grid points.
+          ...(shape === 'wealth' ? { points: previewPoints.filter((p) => !p.isCenter && !p.skipped).map((p) => ({ lat: p.lat, lng: p.lng })) } : {}),
         }),
       });
       const data = await res.json();
@@ -868,7 +870,7 @@ export function NewScanWizard() {
             <div className="flex items-center gap-2">
               <span className="whitespace-nowrap text-xs text-slate-300">Shape</span>
               <div className="grid flex-1 grid-cols-3 gap-1.5" role="radiogroup" aria-label="Grid shape">
-                {([['square', 'Square'], ['custom', 'Rectangle'], ['round', 'Round'], ['wealth', 'Top 25 income'], ['drive', 'Drive time']] as const).map(([id, text]) => (
+                {([['square', 'Square'], ['custom', 'Rectangle'], ['round', 'Round'], ['wealth', 'Top income areas']] as const).map(([id, text]) => (
                   <button key={id} type="button" role="radio" aria-checked={shape === id} onClick={() => setShape(id)} className={pill(shape === id)}>
                     {text}
                   </button>
@@ -877,29 +879,10 @@ export function NewScanWizard() {
             </div>
             {shape === 'wealth' && (
               <p className="text-xs text-slate-300">
-                {outOfShape.length
-                  ? `Keeps the 24 points in the highest-income areas of this ${gridSize}×${gridSize}, plus the business. Use a 7×7 or 9×9 so there is more to choose from.`
-                  : gridSize * gridSize <= 25
-                  ? 'Pick a 7×7 or 9×9: the best 25 points are chosen from it.'
-                  : 'Reading incomes from the map…'}
+                {areas.length
+                  ? `One point in the middle of each of the ${areas.length} highest-income census areas inside this ${spanMi + spacingMi} mi box, plus the business. Not a grid.${areas.length < 24 ? ' Make the box bigger (size or spacing) to reach 25.' : ''}`
+                  : 'Reading incomes from the map… If nothing appears, make the box bigger with the size or spacing buttons.'}
               </p>
-            )}
-            {shape === 'drive' && (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="whitespace-nowrap text-xs text-slate-300">Drive</span>
-                  <div className="grid flex-1 grid-cols-3 gap-1.5" role="radiogroup" aria-label="Drive time">
-                    {[15, 20, 30].map((m) => (
-                      <button key={m} type="button" role="radio" aria-checked={driveMin === m} onClick={() => setDriveMin(m)} className={pill(driveMin === m)}>
-                        {m} min
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <p className="text-xs text-slate-300">
-                  {driveNote || `Keeps the points within a ${driveMin}-minute drive of the business. Widen the spacing or size if the area is not filled.`}
-                </p>
-              </div>
             )}
             {shape === 'custom' && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-300">
@@ -1086,7 +1069,7 @@ export function NewScanWizard() {
         )}
         <div className="pointer-events-none absolute bottom-5 left-5 z-20 max-w-sm rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 shadow-2xl backdrop-blur">
           <p className="text-sm font-bold text-white">
-            {shape === 'round' ? `Round grid, ${points} points` : shape === 'wealth' ? `Top income points, ${points}` : shape === 'drive' ? `${driveMin}-minute drive, ${points} points` : `${shapeRows}×${shapeCols} grid`} · points {spacingMi} mi apart
+            {shape === 'round' ? `Round grid, ${points} points` : shape === 'wealth' ? `Top income areas, ${points} points` : `${shapeRows}×${shapeCols} grid`}{shape === 'wealth' ? '' : ` · points ${spacingMi} mi apart`}
           </p>
           <p className="mt-0.5 text-xs text-slate-300">
             Centre {centerLat.toFixed(5)}, {centerLng.toFixed(5)}

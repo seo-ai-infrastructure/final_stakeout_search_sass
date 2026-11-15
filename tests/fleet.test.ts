@@ -93,3 +93,20 @@ test('storage and DuoPlus errors never count against a phone; real phone failure
   assert.equal(isDeviceAttributable(failureCode(new Error('DEVICE_SCRIPT_FAILED boom'))), true);
   assert.equal(isDeviceAttributable(failureCode(new Error('FLAG_CAPTCHA_DETECTED'))), true);
 });
+
+test('freely placed points: the business is included, they are numbered north to south, west to east', async () => {
+  const { placedPins } = await import('../packages/core/grid');
+  const c = { lat: 28.0395, lng: -81.9498 };
+  const pts = [{ lat: 28.06, lng: -81.93 }, { lat: 28.02, lng: -81.97 }, { lat: 28.06, lng: -81.99 }, { lat: 'x', lng: 1 }, { lat: 40, lng: -81.9 }, { lat: 28.06, lng: -81.93 }];
+  const out = placedPins(c, pts, [3, 5, 7, 9])!;
+  // Three usable points plus the business: a 3-wide layout, 4 pins.
+  assert.equal(out.gridSize, 3);
+  assert.equal(out.pins.length, 4);
+  assert.deepEqual(out.pins.map((p) => [p.rowIdx, p.colIdx]), [[0, 0], [0, 1], [0, 2], [1, 0]]);
+  assert.equal(out.pins[0].lng, -81.99);
+  assert.equal(placedPins(c, [{ lat: 28.06, lng: -81.93 }], [3, 5]), null);
+  assert.equal(placedPins(c, undefined, [3, 5]), null);
+  // 24 areas plus the business fit a 5-wide layout exactly.
+  const many = Array.from({ length: 24 }, (_, i) => ({ lat: 28.0 + i * 0.003, lng: -81.95 + (i % 5) * 0.01 }));
+  assert.equal(placedPins(c, many, [3, 5, 7, 9])!.gridSize, 5);
+});

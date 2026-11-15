@@ -148,6 +148,37 @@ export function buildGrid(s: ScanSpec) {
     return { rowIdx, colIdx, lat, lng, ...market(lat, lng) };
   });
 }
+/**
+ * Points placed freely instead of on a grid (the highest-income areas near the business). The
+ * business itself is always one of them. They are numbered north to south, west to east, in rows
+ * of the smallest offered size that holds them all, so the report can still lay them out.
+ * Returns null when the list is not usable.
+ */
+export function placedPins(center: { lat: number; lng: number }, input: unknown, sizes: readonly number[]) {
+  if (!Array.isArray(input)) return null;
+  const seen = new Set<string>();
+  const pts: { lat: number; lng: number }[] = [{ lat: +center.lat.toFixed(6), lng: +center.lng.toFixed(6) }];
+  for (const v of input.slice(0, 120)) {
+    const lat = Number((v as { lat?: unknown })?.lat), lng = Number((v as { lng?: unknown })?.lng);
+    // Within about 50 km of the business, and not the same spot twice.
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat - center.lat) > 0.45 || Math.abs(lng - center.lng) > 0.6) continue;
+    const key = lat.toFixed(4) + ',' + lng.toFixed(4);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pts.push({ lat: +lat.toFixed(6), lng: +lng.toFixed(6) });
+  }
+  const max = Math.max(...sizes) ** 2;
+  const kept = pts.slice(0, max);
+  if (kept.length < 3) return null;
+  const gridSize = [...sizes].sort((a, b) => a - b).find((n) => n * n >= kept.length)!;
+  const rows = [...kept].sort((a, b) => b.lat - a.lat);
+  const pins: ({ rowIdx: number; colIdx: number; lat: number; lng: number } & ReturnType<typeof market>)[] = [];
+  for (let r = 0; r * gridSize < rows.length; r++) {
+    const row = rows.slice(r * gridSize, (r + 1) * gridSize).sort((a, b) => a.lng - b.lng);
+    row.forEach((p, c) => pins.push({ rowIdx: r, colIdx: c, lat: p.lat, lng: p.lng, ...market(p.lat, p.lng) }));
+  }
+  return { gridSize, pins };
+}
 export function campaignId(userId: string, s: ScanSpec) {
   return createHash('sha256')
     .update(
