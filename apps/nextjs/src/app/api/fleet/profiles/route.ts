@@ -1,6 +1,6 @@
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
-import { availableProfiles } from '@stakeout/core/fleet';
+import { availableProfiles, fleetPhones } from '@stakeout/core/fleet';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   try {
     await getAuthenticatedUser();
-    return Response.json({ profiles: await availableProfiles() });
+    return Response.json({ profiles: await availableProfiles(), phones: await fleetPhones() });
   } catch (e) {
     return errorResponse(e);
   }

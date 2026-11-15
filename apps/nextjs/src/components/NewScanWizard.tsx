@@ -81,7 +81,7 @@ export function NewScanWizard() {
   const [skipped, setSkipped] = useState<string[]>([]);
   const [showWealth, setShowWealth] = useState(false);
   // The phones a scan will run on, by model.
-  const [profiles, setProfiles] = useState<{ brand: string; model: string; phones: number }[]>([]);
+  const [phones, setPhones] = useState<{ brand: string; model: string }[]>([]);
   const [launched, setLaunched] = useState<{ ids: string[]; summary: string; points: number; repeat: boolean } | null>(null);
   function addKeyword() {
     const v = keyword.trim();
@@ -202,7 +202,7 @@ export function NewScanWizard() {
     loadUser();
     fetch('/api/fleet/profiles')
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => Array.isArray(d?.profiles) && setProfiles(d.profiles))
+      .then((d) => Array.isArray(d?.phones) && setPhones(d.phones))
       .catch(() => {});
   }, []);
   // A different grid size is a different set of points: skips start over.
@@ -568,13 +568,13 @@ export function NewScanWizard() {
   const creditsLeft = creditBalance - totalCost;
   const spacingMi = Number((spacingKm / 1.60934).toFixed(1));
   const spanMi = Number(((gridSize - 1) * spacingMi).toFixed(1));
-  const phoneCount = profiles.reduce((n, p) => n + p.phones, 0);
+  const phoneCount = phones.length;
   // About four minutes a point plus the two-minute rest, one point at a time per phone.
   const minutes = phoneCount ? Math.ceil((points * Math.max(1, runKeywords.length)) / phoneCount) * 6 : 0;
   const eta = !minutes ? '' : minutes < 90 ? `about ${minutes} min` : `about ${(minutes / 60).toFixed(1)} hours`;
-  const phoneNames = profiles.flatMap((p) =>
-    Array.from({ length: p.phones }, () => (p.model.toLowerCase().startsWith(p.brand.toLowerCase()) ? p.model : p.brand.charAt(0).toUpperCase() + p.brand.slice(1) + ' ' + p.model)),
-  );
+  const phoneNames = phones
+    .filter((p) => p.model)
+    .map((p) => (!p.brand || p.model.toLowerCase().startsWith(p.brand.toLowerCase()) ? p.model : p.brand.charAt(0).toUpperCase() + p.brand.slice(1) + ' ' + p.model));
   const enabledSurfaces = (process.env.NEXT_PUBLIC_ENABLED_SURFACES ?? 'mobile_chrome').split(',').map((x) => x.trim());
   const surfaces = [
     { id: 'mobile_maps', title: 'Maps app', note: 'The Maps app list, as a customer sees it.', Icon: MapPin },
@@ -592,7 +592,7 @@ export function NewScanWizard() {
     <div className="flex min-h-[calc(100vh-4rem)] w-full flex-col bg-slate-950 text-slate-100 lg:h-[calc(100vh-4rem)] lg:flex-row lg:overflow-hidden">
       {/* LEFT RAIL: the settings scroll if they must; the order bar never leaves the screen. */}
       <form onSubmit={handleLaunchScan} className="flex w-full flex-col border-r border-slate-800 bg-slate-900/95 lg:w-[410px] lg:shrink-0">
-        <div className="flex-1 space-y-5 overflow-y-auto p-4 [scrollbar-color:#2a3854_transparent] [scrollbar-width:thin]">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 [scrollbar-color:#2a3854_transparent] [scrollbar-width:thin]">
           {errorMsg && (
             <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-950/40 p-3 text-xs">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
@@ -671,6 +671,10 @@ export function NewScanWizard() {
               ))}
             </div>
             <p className="text-xs text-slate-400">{surfaces.find((x) => x.id === targetType)?.note}</p>
+            <p className="flex items-center gap-1.5 text-xs text-purple-300">
+              <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {askMapsSoon ? 'A phone video for every point is included.' : 'AI Overviews, cited sites and phone videos included, no extra credits.'}
+            </p>
           </section>
           {/* Grid and network */}
           <section className="space-y-2">
@@ -728,33 +732,36 @@ export function NewScanWizard() {
             </details>
           </section>
         </div>
-        {/* ORDER BAR: always on screen */}
-        <div className="shrink-0 space-y-2 border-t border-slate-700 bg-slate-950/90 px-4 pb-4 pt-3 backdrop-blur">
-          <div className="flex items-baseline justify-between gap-3">
-            <span><span className="text-2xl font-extrabold text-white">{totalCost}</span> <span className="text-[13px] text-slate-300">credits</span></span>
-            {creditsLeft >= 0 ? (
-              <span className="text-[13px] text-slate-400">{creditsLeft.toLocaleString()} left of {creditBalance.toLocaleString()}</span>
-            ) : (
-              <button type="button" onClick={() => setIsTopUpOpen(true)} className="text-[13px] font-semibold text-rose-300 underline">You need {(-creditsLeft).toLocaleString()} more: top up</button>
-            )}
-          </div>
-          <p className="text-[13px] text-slate-300">
-            {points} points × {Math.max(1, runKeywords.length)} keyword{runKeywords.length > 1 ? 's' : ''}
-            {eta ? ` · ${eta} on ${phoneCount} phone${phoneCount === 1 ? '' : 's'}` : ''}
-          </p>
-          <p className="flex items-center gap-1.5 text-xs text-purple-300">
-            <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
-            {askMapsSoon ? 'Maps scans track the Maps results list. Phone videos included.' : 'AI Overviews, cited sites and phone videos included, no extra credits'}
-          </p>
-          <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Repeat this scan">
-            {([['once', 'Run once'], ['weekly', 'Every Monday'], ['daily', 'Every day, 8 am ET']] as const).map(([id, text]) => (
-              <button key={id} type="button" role="radio" aria-checked={scheduleType === id} onClick={() => setScheduleType(id)} className={pill(scheduleType === id) + ' text-xs'}>
-                {text}
-              </button>
-            ))}
+        {/* ORDER BAR: always on screen, and kept short so the settings above stay usable */}
+        <div className="shrink-0 space-y-2 border-t border-slate-700 bg-slate-950/90 px-4 pb-3 pt-2.5 backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="leading-tight">
+                <span className="text-xl font-extrabold text-white">{totalCost}</span> <span className="text-[13px] text-slate-300">credits</span>
+                {creditsLeft >= 0 ? (
+                  <span className="text-xs text-slate-400"> · {creditsLeft.toLocaleString()} left</span>
+                ) : (
+                  <button type="button" onClick={() => setIsTopUpOpen(true)} className="ml-1 text-xs font-semibold text-rose-300 underline">{(-creditsLeft).toLocaleString()} short: top up</button>
+                )}
+              </p>
+              <p className="truncate text-xs text-slate-400">
+                {points} points × {Math.max(1, runKeywords.length)} keyword{runKeywords.length > 1 ? 's' : ''}
+                {eta ? ` · ${eta}` : ''}
+              </p>
+            </div>
+            <select
+              aria-label="Repeat this scan"
+              value={scheduleType}
+              onChange={(e) => setScheduleType(e.target.value as 'once' | 'daily' | 'weekly')}
+              className="min-h-[40px] shrink-0 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs font-semibold text-slate-200"
+            >
+              <option value="once">Run once</option>
+              <option value="weekly">Every Monday</option>
+              <option value="daily">Every day, 8 am ET</option>
+            </select>
           </div>
           <button type="submit" disabled={isSubmitting || Boolean(blockedWhy)}
-            className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 text-base font-extrabold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-300">
+            className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-300">
             {isSubmitting ? (
               <><Loader2 className="h-4 w-4 animate-spin" aria-hidden />Starting…</>
             ) : blockedWhy ? (
