@@ -30,7 +30,9 @@ export async function createScan(
     return prior;
   }
   const pins = templatePins ?? buildGrid(s),
-    middle = pins[(pins.length - 1) / 2];
+    // The grid's centre point; a grid with skipped points still has it (it can never be skipped).
+    mid = (s.gridSize - 1) / 2,
+    middle = pins.find((p) => p.rowIdx === mid && p.colIdx === mid) ?? pins[Math.floor((pins.length - 1) / 2)];
   // One credit per grid point. AI Overview tracking is part of every Chrome scan, not an add-on.
   const cost = lead || opts?.free ? 0 : pins.length;
   try {

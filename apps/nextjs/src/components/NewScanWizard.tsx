@@ -5,19 +5,19 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { declutterBasemap } from '../lib/censusLayer';
+import { Protocol } from 'pmtiles';
+import { declutterBasemap, quietBasemap, fillColor, CENSUS_VINTAGE, PALETTE } from '../lib/censusLayer';
 import {
   Smartphone,
   Monitor,
   Sparkles,
-  Calendar,
-  Coins,
   AlertCircle,
   ArrowRight,
   Loader2,
   MapPin,
   Search,
-  Cpu,
+  Globe,
+  Lock,
 } from 'lucide-react';
 import { IspSelectorDropdown, type IspMode, type IspOption } from '@/components/IspSelectorDropdown';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
@@ -28,16 +28,17 @@ const GRID_SIZES = OFFERED_GRID_SIZES.map((size) => ({ size, label: `${size}×${
 /** A size carried over from an older scan or a saved business that is no longer offered falls back to 5×5. */
 const offeredSize = (n: number) => (OFFERED_GRID_SIZES.includes(n) ? n : 5);
 const SPACING_OPTIONS = [
-  { label: '0.5 Miles', km: 0.80467 },
-  { label: '1.0 Mile', km: 1.60934 },
-  { label: '2.0 Miles', km: 3.21868 },
-  { label: '5.0 Miles', km: 8.04672 },
+  { label: '0.5 Miles', short: '0.5 mi', km: 0.80467 },
+  { label: '1.0 Mile', short: '1 mi', km: 1.60934 },
+  { label: '2.0 Miles', short: '2 mi', km: 3.21868 },
+  { label: '5.0 Miles', short: '5 mi', km: 8.04672 },
 ];
 export function NewScanWizard() {
   const router = useRouter();
   // All 8 User Inputs
   const [targetType, setTargetType] = useState<TargetType>('mobile_chrome');
-  const [keyword, setKeyword] = useState('emergency plumber');
+  // The keyword being typed; chosen keywords live in `picked`.
+  const [keyword, setKeyword] = useState('');
   const [targetBusiness, setTargetBusiness] = useState('');
   const [centerLat, setCenterLat] = useState<number>(28.039465);
   const [centerLng, setCenterLng] = useState<number>(-81.949804);
@@ -76,6 +77,19 @@ export function NewScanWizard() {
   const [keywordList, setKeywordList] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
   const [saveMsg, setSaveMsg] = useState('');
+  // Points left out on the map ("row_col"): not created, not charged.
+  const [skipped, setSkipped] = useState<string[]>([]);
+  const [showWealth, setShowWealth] = useState(false);
+  // The phones a scan will run on, by model.
+  const [profiles, setProfiles] = useState<{ brand: string; model: string; phones: number }[]>([]);
+  const [launched, setLaunched] = useState<{ ids: string[]; summary: string; points: number; repeat: boolean } | null>(null);
+  function addKeyword() {
+    const v = keyword.trim();
+    if (!v) return;
+    setKeywordList((l) => (l.includes(v) ? l : [...l, v]));
+    setPicked((l) => (l.includes(v) ? l : [...l, v]));
+    setKeyword('');
+  }
   function applyBusiness(b: SavedBusiness) {
     setBusinessId(b.id);
     setTargetBusiness(b.name);
@@ -91,13 +105,12 @@ export function NewScanWizard() {
     setScheduleType(b.scheduleType);
     setKeywordList(b.keywords);
     setPicked(b.keywords.slice(0, 1));
-    setKeyword(b.keywords[0] ?? '');
+    setKeyword('');
     setSaveMsg('');
   }
   function togglePick(k: string) {
     const next = picked.includes(k) ? picked.filter((x) => x !== k) : [...picked, k];
     setPicked(next);
-    if (next[0]) setKeyword(next[0]);
   }
   useEffect(() => {
     let live = true;
@@ -118,7 +131,6 @@ export function NewScanWizard() {
         const sc = scan?.scan ?? scan;
         if (!live || !sc?.keyword) return;
         setTargetBusiness(sc.targetBusiness);
-        setKeyword(sc.keyword);
         setCenterLat(sc.centerLat);
         setCenterLng(sc.centerLng);
         if (sc.targetType) setTargetType(sc.targetType);
@@ -126,7 +138,9 @@ export function NewScanWizard() {
         if (sc.spacingKm) setSpacingKm(sc.spacingKm);
         setTrackAiOverviews(Boolean(sc.trackAiOverviews));
         const match = list.find((x) => x.name === sc.targetBusiness);
-        if (match) { setBusinessId(match.id); setKeywordList(match.keywords); setPicked(match.keywords.includes(sc.keyword) ? [sc.keyword] : []); }
+        if (match) setBusinessId(match.id);
+        setKeywordList([...new Set([...(match?.keywords ?? []), sc.keyword])]);
+        setPicked([sc.keyword]);
       }
     })();
     return () => { live = false; };
@@ -186,7 +200,13 @@ export function NewScanWizard() {
       } catch {}
     }
     loadUser();
+    fetch('/api/fleet/profiles')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => Array.isArray(d?.profiles) && setProfiles(d.profiles))
+      .catch(() => {});
   }, []);
+  // A different grid size is a different set of points: skips start over.
+  useEffect(() => setSkipped([]), [gridSize]);
   // 2. Auto-detect local ZIP/City/State when coordinates move
   useEffect(() => {
     const controller = new AbortController();
@@ -225,14 +245,16 @@ export function NewScanWizard() {
           lat: Number((centerLat - r * latDelta).toFixed(6)),
           lng: Number((centerLng + c * lngDelta).toFixed(6)),
           isCenter: r === 0 && c === 0,
+          key: r + half + '_' + (c + half),
+          skipped: !(r === 0 && c === 0) && skipped.includes(r + half + '_' + (c + half)),
         });
       }
     }
     return pts;
-  }, [centerLat, centerLng, gridSize, spacingKm]);
+  }, [centerLat, centerLng, gridSize, spacingKm, skipped]);
   // 4. Credit cost: one credit per grid point. AI Overview tracking is included.
   const creditSummary = useMemo(() => {
-    const totalPins = gridSize * gridSize;
+    const totalPins = gridSize * gridSize - skipped.length;
     const isDesktop = targetType.startsWith('desktop_');
     const costPerPin = isDesktop ? 2 : 1;
     const totalCost = totalPins * costPerPin;
@@ -244,7 +266,7 @@ export function NewScanWizard() {
       spanMiles,
       hasEnoughCredits: creditBalance >= totalCost,
     };
-  }, [gridSize, spacingKm, targetType, creditBalance]);
+  }, [gridSize, spacingKm, targetType, creditBalance, skipped]);
   // 5. MapLibre Initialization
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -263,7 +285,29 @@ export function NewScanWizard() {
       setMapState('error');
       return;
     }
-    map.on('load', () => declutterBasemap(map));
+    map.on('load', () => {
+      declutterBasemap(map);
+      // The same quiet base as the report, so the grid is the only strong colour.
+      quietBasemap(map);
+      const beforeLabels = map.getStyle().layers?.find((l) => l.type === 'symbol')?.id;
+      if (CENSUS_VINTAGE) {
+        try {
+          maplibregl.addProtocol('pmtiles', new Protocol().tile);
+          map.addSource('census', { type: 'vector', url: `pmtiles://${window.location.origin}/api/census/${CENSUS_VINTAGE}.pmtiles`, promoteId: 'id' });
+          map.addLayer(
+            { id: 'setup-income', type: 'fill', source: 'census', 'source-layer': 'tract', layout: { visibility: 'none' }, paint: { 'fill-color': fillColor('income') as never, 'fill-opacity': 0.4 } },
+            beforeLabels,
+          );
+        } catch (e) {
+          console.error('[census layer]', e);
+        }
+      }
+      // The grid's outline and the lines between its points.
+      map.addSource('grid-frame', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({ id: 'grid-lines', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'line'], paint: { 'line-color': '#34d399', 'line-opacity': 0.28, 'line-width': 1 } });
+      map.addLayer({ id: 'grid-fill', type: 'fill', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'box'], paint: { 'fill-color': '#34d399', 'fill-opacity': 0.04 } });
+      map.addLayer({ id: 'grid-box', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'box'], paint: { 'line-color': '#34d399', 'line-opacity': 0.6, 'line-width': 1.5, 'line-dasharray': [3, 3] } });
+    });
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', (e) => {
       setCenterLat(Number(e.lngLat.lat.toFixed(6)));
@@ -287,44 +331,93 @@ export function NewScanWizard() {
       mapRef.current = null;
     };
   }, []);
-  // 6. Render Preview Pins
+  // 6. The grid on the map: points (click to skip), the storefront at the centre, outline and labels.
+  const lastFit = useRef('');
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     previewMarkersRef.current.forEach((m) => m.remove());
     previewMarkersRef.current = [];
     const bounds = new maplibregl.LngLatBounds();
+    const dot = gridSize <= 3 ? 24 : gridSize <= 5 ? 20 : gridSize <= 7 ? 16 : 13;
+    const add = (el: HTMLElement, lng: number, lat: number, draggable = false, offset: [number, number] = [0, 0]) => {
+      const marker = new maplibregl.Marker({ element: el, draggable, anchor: 'center', offset }).setLngLat([lng, lat]).addTo(map);
+      previewMarkersRef.current.push(marker);
+      return marker;
+    };
+    const tag = (text: string) => {
+      const el = document.createElement('div');
+      el.className = 'pointer-events-none whitespace-nowrap rounded-md border border-slate-700 bg-slate-900/95 px-2 py-0.5 text-xs font-semibold text-emerald-300';
+      el.textContent = text;
+      return el;
+    };
     previewPoints.forEach((pt) => {
       bounds.extend([pt.lng, pt.lat]);
-      const el = document.createElement('div');
       if (pt.isCenter) {
-        el.className =
-          'flex h-7 w-7 cursor-grab items-center justify-center rounded-full border-2 border-white bg-emerald-500 text-xs';
-        el.innerText = '★';
-      } else {
-        el.className =
-          'flex h-4 w-4 items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/25';
-      }
-      const marker = new maplibregl.Marker({
-        element: el,
-        draggable: pt.isCenter,
-        anchor: 'center',
-      })
-        .setLngLat([pt.lng, pt.lat])
-        .addTo(map);
-      if (pt.isCenter) {
+        const el = document.createElement('div');
+        el.className = 'flex h-9 w-9 cursor-grab items-center justify-center rounded-full border-2 border-emerald-400 bg-white text-slate-900 shadow-[0_0_0_5px_rgba(52,211,153,0.35)]';
+        el.setAttribute('aria-label', 'The business: drag to move the whole grid');
+        el.innerHTML =
+          '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l1.5-5h13L20 10"/><path d="M4 10a2.7 2.7 0 0 0 5.3 0a2.7 2.7 0 0 0 5.4 0a2.7 2.7 0 0 0 5.3 0"/><path d="M5.5 12.5V20h13v-7.5"/><path d="M10 20v-4.5h4V20"/></svg>';
+        const marker = add(el, pt.lng, pt.lat, true);
         marker.on('dragend', () => {
           const lngLat = marker.getLngLat();
           setCenterLat(Number(lngLat.lat.toFixed(6)));
           setCenterLng(Number(lngLat.lng.toFixed(6)));
         });
+        return;
       }
-      previewMarkersRef.current.push(marker);
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.style.width = el.style.height = dot + 'px';
+      el.className =
+        'rounded-full border-2 ' +
+        (pt.skipped ? 'border-slate-400 bg-slate-950/70' : 'border-slate-950 bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.22)]');
+      el.setAttribute('aria-pressed', String(!pt.skipped));
+      el.setAttribute('aria-label', pt.skipped ? 'Skipped point: click to include it' : 'Grid point: click to skip it');
+      el.title = pt.skipped ? 'Skipped (not charged). Click to include.' : 'Click to skip this point';
+      // A click on a point skips or restores it; it must not also move the grid's centre.
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        setSkipped((list) => (list.includes(pt.key) ? list.filter((k) => k !== pt.key) : [...list, pt.key]));
+      });
+      add(el, pt.lng, pt.lat);
     });
-    if (previewPoints.length > 1) {
-      map.fitBounds(bounds, { padding: 65, maxZoom: 14, duration: 400 });
+    // Labels: the step between two neighbouring points, and the whole width.
+    const n = gridSize;
+    const first = previewPoints[0], second = previewPoints[1], last = previewPoints[previewPoints.length - 1];
+    const mi = Number((spacingKm / 1.60934).toFixed(1));
+    add(tag(mi + ' mi'), (first.lng + second.lng) / 2, first.lat, false, [0, -dot - 8]);
+    add(tag(Number(((n - 1) * mi).toFixed(1)) + ' mi across'), (first.lng + last.lng) / 2, last.lat, false, [0, dot + 14]);
+    // Outline and grid lines.
+    const src = map.getSource('grid-frame') as maplibregl.GeoJSONSource | undefined;
+    if (src) {
+      const padLat = (first.lat - last.lat) / (n - 1) / 3, padLng = (last.lng - first.lng) / (n - 1) / 3;
+      const N = first.lat + padLat, S = last.lat - padLat, W = first.lng - padLng, E = last.lng + padLng;
+      const lines = [];
+      for (let i = 0; i < n; i++) {
+        const row = previewPoints[i * n], col = previewPoints[i];
+        lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[first.lng, row.lat], [last.lng, row.lat]] } });
+        lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[col.lng, first.lat], [col.lng, last.lat]] } });
+      }
+      src.setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [[[W, N], [E, N], [E, S], [W, S], [W, N]]] } }, ...lines],
+      });
     }
-  }, [previewPoints]);
+    // Refit only when the grid itself moved or changed size, not when a point is skipped.
+    const fitKey = [centerLat, centerLng, gridSize, spacingKm].join('|');
+    if (previewPoints.length > 1 && fitKey !== lastFit.current) {
+      lastFit.current = fitKey;
+      map.fitBounds(bounds, { padding: { top: 110, bottom: 130, left: 70, right: 70 }, maxZoom: 14, duration: 400 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewPoints, mapState]);
+  // Income shading on or off.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map && mapState === 'ready' && map.getLayer('setup-income')) map.setLayoutProperty('setup-income', 'visibility', showWealth ? 'visible' : 'none');
+  }, [showWealth, mapState]);
   async function findPlaces(q: string): Promise<Place[]> {
     const needle = q.toLowerCase();
     const mine: Place[] = saved
@@ -408,8 +501,8 @@ export function NewScanWizard() {
   async function handleLaunchScan(e: React.FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
-    if (!keyword.trim() || !targetBusiness.trim()) {
-      setErrorMsg('Enter both a target business name and search query.');
+    if (!runKeywords.length || !targetBusiness.trim()) {
+      setErrorMsg('Enter the business name and at least one keyword.');
       return;
     }
     if ((ispMode === 'single' && ispSelected.length !== 1) || (ispMode === 'mix' && ispSelected.length < 2)) {
@@ -444,6 +537,7 @@ export function NewScanWizard() {
           targetType,
           trackAiOverviews,
           scheduleType,
+          skip: skipped,
         }),
       });
       const data = await res.json();
@@ -453,356 +547,230 @@ export function NewScanWizard() {
       }
       started.push(data.scanId);
       }
-      router.push(started.length > 1 ? '/scans' : `/scans/${started[0]}`);
+      const cost = creditSummary.totalCost * runKeywords.length;
+      setCreditBalance((b) => b - cost);
+      setLaunched({
+        ids: started,
+        points: creditSummary.totalPins * runKeywords.length,
+        repeat: scheduleType !== 'once',
+        summary: `${creditSummary.totalPins} points × ${runKeywords.length} keyword${runKeywords.length > 1 ? 's' : ''} · ${cost} credits used`,
+      });
     } catch (err: any) {
       setErrorMsg(err.message);
       setIsSubmitting(false);
     }
   }
-  const runKeywords = picked.length ? picked : [keyword.trim()].filter(Boolean);
-  const isDesktop = targetType === 'desktop_aimode';
   const askMapsSoon = targetType === 'mobile_maps';
-  const aiAddonLabel = askMapsSoon
-    ? 'Track "Ask Maps" AI answers (coming soon)'
-    : 'Google AI Overviews & citations';
+  const runKeywords = picked.length ? picked : [keyword.trim()].filter(Boolean);
+  const shownKeywords = [...new Set([...keywordList, ...picked])];
+  const points = creditSummary.totalPins;
+  const totalCost = creditSummary.totalCost * Math.max(1, runKeywords.length);
+  const creditsLeft = creditBalance - totalCost;
+  const spacingMi = Number((spacingKm / 1.60934).toFixed(1));
+  const spanMi = Number(((gridSize - 1) * spacingMi).toFixed(1));
+  const phoneCount = profiles.reduce((n, p) => n + p.phones, 0);
+  // About four minutes a point plus the two-minute rest, one point at a time per phone.
+  const minutes = phoneCount ? Math.ceil((points * Math.max(1, runKeywords.length)) / phoneCount) * 6 : 0;
+  const eta = !minutes ? '' : minutes < 90 ? `about ${minutes} min` : `about ${(minutes / 60).toFixed(1)} hours`;
+  const phoneNames = profiles.flatMap((p) =>
+    Array.from({ length: p.phones }, () => (p.model.toLowerCase().startsWith(p.brand.toLowerCase()) ? p.model : p.brand.charAt(0).toUpperCase() + p.brand.slice(1) + ' ' + p.model)),
+  );
+  const enabledSurfaces = (process.env.NEXT_PUBLIC_ENABLED_SURFACES ?? 'mobile_chrome').split(',').map((x) => x.trim());
+  const surfaces = [
+    { id: 'mobile_maps', title: 'Maps app', note: 'The Maps app list, as a customer sees it.', Icon: MapPin },
+    { id: 'mobile_chrome', title: 'Chrome', note: 'The local pack on a Google search, plus the AI Overview and the sites it cites.', Icon: Globe },
+    { id: 'mobile_google', title: 'Google app', note: 'The Google app search.', Icon: Smartphone },
+    ...(process.env.NEXT_PUBLIC_DESKTOP_ENABLED === 'true' ? [{ id: 'desktop_aimode', title: 'Desktop AI', note: 'Desktop search in AI Mode.', Icon: Monitor }] : []),
+  ].map((x) => ({ ...x, live: enabledSurfaces.includes(x.id) || x.id === 'desktop_aimode' }));
+  const pill = (on: boolean) =>
+    'min-h-[44px] rounded-lg border px-2 text-[13px] font-semibold transition ' +
+    (on ? 'border-emerald-400 bg-emerald-400/15 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500');
+  const label = 'text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400';
+  const field = 'min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-white placeholder-slate-500';
+  const blockedWhy = !targetBusiness.trim() ? 'Add the business name' : !runKeywords.length ? 'Choose a keyword' : '';
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] w-full flex-col lg:h-[calc(100vh-4rem)] lg:overflow-hidden bg-slate-950 text-slate-100 lg:flex-row">
-      {/* LEFT PANEL: ALL 8 CONFIGURATION INPUTS */}
-      <div className="flex w-full flex-col justify-between overflow-y-auto lg:w-[430px] lg:shrink-0 border-r border-slate-800 bg-slate-900/95">
-        <form onSubmit={handleLaunchScan} className="space-y-5 p-5">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-            <div>
-              <h1 className="text-lg font-extrabold text-white">
-                New scan
-              </h1>
-              <p className="text-xs text-slate-400">
-                Real phones · local residential IPs · AI Overviews
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsTopUpOpen(true)}
-              className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-3 py-1.5"
-            >
-              <Coins className="h-4 w-4 text-emerald-400" />
-              <div>
-                <div className="text-[10px] uppercase text-emerald-400">
-                  {creditBalance.toLocaleString()} Credits
-                </div>
-                <div className="text-xs font-bold text-white underline">
-                  + Top Up
-                </div>
-              </div>
-            </button>
-          </div>
+    <div className="flex min-h-[calc(100vh-4rem)] w-full flex-col bg-slate-950 text-slate-100 lg:h-[calc(100vh-4rem)] lg:flex-row lg:overflow-hidden">
+      {/* LEFT RAIL: the settings scroll if they must; the order bar never leaves the screen. */}
+      <form onSubmit={handleLaunchScan} className="flex w-full flex-col border-r border-slate-800 bg-slate-900/95 lg:w-[410px] lg:shrink-0">
+        <div className="flex-1 space-y-5 overflow-y-auto p-4 [scrollbar-color:#2a3854_transparent] [scrollbar-width:thin]">
           {errorMsg && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-950/40 p-3 text-xs">
-              <AlertCircle className="h-4 w-4 shrink-0 text-red-400 mt-0.5" />
+            <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-950/40 p-3 text-xs">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
               <span>{errorMsg}</span>
             </div>
           )}
-          {/* Saved business: fills every field */}
-          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950 p-3">
-            <label className="block text-sm font-semibold text-slate-200">
-              Saved business
+          {/* Business and keywords: one card */}
+          <section className="space-y-2">
+            <label htmlFor="ns-business" className={label}>Business &amp; keywords</label>
+            <div className="space-y-2.5 rounded-xl border border-slate-800 bg-slate-950 p-3">
               <select
+                id="ns-business"
                 value={businessId}
                 onChange={(e) => {
                   const b = saved.find((x) => x.id === e.target.value);
                   if (b) applyBusiness(b);
-                  else { setBusinessId(''); setKeywordList([]); setPicked([]); }
+                  else { setBusinessId(''); setTargetBusiness(''); setKeywordList([]); setPicked([]); }
                 }}
-                className="mt-1.5 block w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-sm normal-case tracking-normal text-white"
+                className={field + ' font-semibold'}
               >
-                <option value="">{saved.length ? '— New business —' : 'No saved businesses yet'}</option>
+                <option value="">New business…</option>
                 {saved.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}{b.centerLabel ? ' · ' + b.centerLabel : ''} ({b.keywords.length} keyword{b.keywords.length === 1 ? '' : 's'})</option>
+                  <option key={b.id} value={b.id}>{b.name}{b.centerLabel ? ' · ' + b.centerLabel : ''}</option>
                 ))}
               </select>
-            </label>
-            {keywordList.length > 0 && (
-              <div>
-                <p className="text-[11px] text-slate-400">Keywords to run ({picked.length} selected · one scan each)</p>
-                <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  {keywordList.map((k) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => togglePick(k)}
-                      aria-pressed={picked.includes(k)}
-                      className={`rounded-full border px-2.5 py-1 text-xs ${picked.includes(k) ? 'border-emerald-400 bg-emerald-400/15 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}
-                    >
+              <input
+                type="text"
+                aria-label="Business name exactly as it appears on Google"
+                placeholder="Business name exactly as on Google"
+                value={targetBusiness}
+                onChange={(e) => setTargetBusiness(e.target.value)}
+                className={field}
+              />
+              {shownKeywords.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {shownKeywords.map((k) => (
+                    <button key={k} type="button" onClick={() => togglePick(k)} aria-pressed={picked.includes(k)}
+                      className={`min-h-[36px] rounded-full border px-3 text-[13px] ${picked.includes(k) ? 'border-emerald-400 bg-emerald-400/15 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}>
                       {k}
                     </button>
                   ))}
                 </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  aria-label="Add a keyword"
+                  placeholder="Type a keyword and press Enter"
+                  value={keyword}
+                  onChange={(e) => setKeyword(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
+                  className={field + ' min-w-0 flex-1'}
+                />
+                <button type="button" onClick={addKeyword} className="min-h-[44px] rounded-lg border border-slate-700 px-3.5 text-[13px] font-semibold text-slate-200 hover:border-emerald-400">Add</button>
               </div>
-            )}
-          </div>
-          {/* 1. Target App */}
-          <div className="space-y-1.5">
-            <label className="block text-sm font-semibold text-slate-200">
-              1. Target Mobile App Surface
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                {
-                  id: 'mobile_maps',
-                  title: 'Google Maps App',
-                  sub: 'Local Pack & Ask Maps',
-                },
-                {
-                  id: 'mobile_chrome',
-                  title: 'Google Chrome',
-                  sub: 'Mobile Web + AI Overviews',
-                },
-                {
-                  id: 'mobile_google',
-                  title: 'Google App',
-                  sub: 'Search Widget + AI Overviews',
-                },
-                {
-                  id: 'desktop_aimode',
-                  title: 'Desktop + AI Mode',
-                  sub: 'CloakBrowser (&udm=50)',
-                },
-              ]
-                .filter(
-                  (item) =>
-                    item.id !== 'desktop_aimode' ||
-                    process.env.NEXT_PUBLIC_DESKTOP_ENABLED === 'true',
-                )
-                .map((item) => {
-                  // Surfaces without a working search template are shown but cannot be picked.
-                  const live = (process.env.NEXT_PUBLIC_ENABLED_SURFACES ?? 'mobile_chrome').split(',').map((x) => x.trim()).includes(item.id) || item.id === 'desktop_aimode';
-                  return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    disabled={!live}
-                    title={live ? undefined : 'Coming soon'}
-                    onClick={() => live && setTargetType(item.id as TargetType)}
-                    className={`rounded-lg border p-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-40 ${
-                      targetType === item.id
-                        ? 'border-emerald-500 bg-emerald-500/15 text-white'
-                        : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    <div className="text-xs font-bold text-slate-100">
-                      {item.title}
-                    </div>
-                    <div className="text-[11px] text-slate-400">{live ? item.sub : 'Coming soon'}</div>
-                  </button>
-                  );
-                })}
-            </div>
-          </div>
-          {/* 2. Search Query & Business Name */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-semibold text-slate-200">
-                2A. Exact Business Name (GBP)
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g., Polk Rapid Plumbing"
-                value={targetBusiness}
-                onChange={(e) => setTargetBusiness(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-200">
-                2B. Search Query
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g., plumber near me"
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-              />
-            </div>
-          </div>
-          {/* 4. Size of Map Grid & Spacing */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-semibold text-slate-200">
-                4. Grid Matrix Size
-              </label>
-              <select
-                value={gridSize}
-                onChange={(e) => setGridSize(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-              >
-                {GRID_SIZES.map((g) => (
-                  <option key={g.size} value={g.size}>
-                    {g.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-200">
-                Pin Spacing
-              </label>
-              <select
-                value={spacingKm}
-                onChange={(e) => setSpacingKm(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
-              >
-                {SPACING_OPTIONS.map((s) => (
-                  <option key={s.label} value={s.km}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {/* Residential ISP Selector */}
-          <IspSelectorDropdown
-            stateCode={detectedState}
-            city={detectedCity}
-            zip={detectedZip}
-            mode={ispMode}
-            selected={ispSelected}
-            options={ispOptions}
-            loading={ispLoading}
-            source={proxySource}
-            onChange={(mode, selected) => {
-              setIspMode(mode);
-              setIspSelected(selected);
-            }}
-          />
-          {/* 7. AI Overviews: part of every Chrome scan */}
-          <div className="rounded-xl border border-purple-500/30 bg-purple-950/15 p-3.5">
-            <div className="flex items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-purple-200">
-                  <Sparkles className="h-4 w-4 text-purple-400" />
-                  5. {aiAddonLabel}
-                </div>
-                <div className="text-[11px] text-slate-400">
-                  {askMapsSoon
-                    ? 'Maps scans track the Maps results list. Ask Maps answers are coming soon.'
-                    : 'Every point captures the AI panel, its text and the sources it cites. No extra credit.'}
-                </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                <span>{runKeywords.length === 0 ? 'Tick or type at least one keyword.' : runKeywords.length === 1 ? '1 keyword: one scan.' : `${runKeywords.length} keywords: one scan each.`}</span>
+                <button type="button" onClick={saveBusiness} disabled={!targetBusiness.trim()} className="font-semibold text-emerald-300 underline disabled:opacity-50">
+                  {businessId ? 'Update saved business' : 'Save business'}
+                </button>
+                {businessId && <button type="button" onClick={deleteBusiness} className="underline hover:text-red-300">Delete</button>}
+                {saveMsg && <span role="status" className="text-emerald-300">{saveMsg}</span>}
               </div>
-              <span className={'shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ' + (askMapsSoon ? 'bg-slate-800 text-slate-300' : 'bg-purple-500/25 text-purple-100')}>
-                {askMapsSoon ? 'Soon' : 'Included'}
-              </span>
             </div>
-          </div>
-          {/* 8. Automation Schedule */}
-          <div className="space-y-1.5">
-            <label className="block text-sm font-semibold text-slate-200">
-              6. Search Execution Schedule
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { id: 'once', label: 'Run Once Now' },
-                { id: 'daily', label: 'Daily (8 AM EST)' },
-                { id: 'weekly', label: 'Weekly (Mondays)' },
-              ].map((sch) => (
-                <button
-                  key={sch.id}
-                  type="button"
-                  onClick={() => setScheduleType(sch.id as any)}
-                  className={`rounded-lg border py-2 px-2.5 text-xs font-bold transition ${
-                    scheduleType === sch.id
-                      ? 'border-emerald-500 bg-emerald-500/20 text-white'
-                      : 'border-slate-800 bg-slate-950 text-slate-400 hover:border-slate-700'
-                  }`}
-                >
-                  {sch.label}
+          </section>
+          {/* App surface: one row */}
+          <section className="space-y-2">
+            <span className={label}>App surface</span>
+            <div className={`grid gap-2 ${surfaces.length > 3 ? 'grid-cols-4' : 'grid-cols-3'}`}>
+              {surfaces.map(({ id, title, live, Icon }) => (
+                <button key={id} type="button" disabled={!live} aria-pressed={targetType === id} onClick={() => live && setTargetType(id as TargetType)}
+                  className={pill(targetType === id) + ' flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500'}>
+                  {live ? <Icon className="h-4 w-4" aria-hidden /> : <Lock className="h-3.5 w-3.5" aria-hidden />}
+                  <span>{title}{live ? '' : ' · soon'}</span>
                 </button>
               ))}
             </div>
-          </div>
-          {/* 3. Center Coordinates Display & Launch Button */}
-          <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-4">
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>
-                3. Center Lat/Lng ({detectedCity}, {detectedState}):
-              </span>
-              <span className="flex gap-1">
-                <input
-                  aria-label="Center latitude"
-                  type="number"
-                  step="any"
-                  min="-85"
-                  max="85"
-                  className="w-24 bg-slate-800 p-1"
-                  value={centerLat}
-                  onChange={(e) => setCenterLat(Number(e.target.value))}
-                />
-                <input
-                  aria-label="Center longitude"
-                  type="number"
-                  step="any"
-                  min="-180"
-                  max="180"
-                  className="w-24 bg-slate-800 p-1"
-                  value={centerLng}
-                  onChange={(e) => setCenterLng(Number(e.target.value))}
-                />
-              </span>
+            <p className="text-xs text-slate-400">{surfaces.find((x) => x.id === targetType)?.note}</p>
+          </section>
+          {/* Grid and network */}
+          <section className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <span className={label}>Grid &amp; network</span>
+              <span className="text-xs font-semibold text-emerald-300">{spanMi} × {spanMi} mi area · {points} points</span>
             </div>
-            <div className="flex items-center justify-between border-t border-slate-800 pt-2.5">
-              <span className="text-sm font-bold text-white">
-                Total Cost ({creditSummary.totalPins} pins ×{' '}
-                {creditSummary.costPerPin} cr{runKeywords.length > 1 ? ' × ' + runKeywords.length + ' keywords' : ''}):
-              </span>
-              <span className="text-base font-extrabold text-emerald-400">
-                {creditSummary.totalCost * runKeywords.length} Credits
-              </span>
-            </div>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-3 text-sm"
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Provisioning {creditSummary.totalPins} Pins...
-                </>
-              ) : creditBalance >= creditSummary.totalCost * runKeywords.length ? (
-                <>
-                  Launch {runKeywords.length > 1 ? runKeywords.length + ' ' : ''}{gridSize}×{gridSize} Stakeout Scan{runKeywords.length > 1 ? 's' : ''} (
-                  {creditSummary.totalCost * runKeywords.length} Cr)
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              ) : (
-                <>
-                  Top Up Credits to Launch ({creditSummary.totalCost * runKeywords.length} Cr Needed)
-                </>
-              )}
-            </button>
-            <div className="flex flex-wrap items-center gap-3 border-t border-slate-800 pt-3">
-              <button
-                type="button"
-                onClick={saveBusiness}
-                disabled={!targetBusiness.trim()}
-                className="min-h-[40px] rounded-lg border border-slate-700 px-3 text-sm font-semibold text-slate-200 hover:border-emerald-400 disabled:opacity-50"
-              >
-                {businessId ? 'Update saved business' : 'Save as business'}
-              </button>
-              {businessId && (
-                <button type="button" onClick={deleteBusiness} className="text-xs text-slate-400 underline hover:text-red-300">
-                  Delete
+            <div className="grid grid-cols-4 gap-2">
+              {OFFERED_GRID_SIZES.map((n) => (
+                <button key={n} type="button" aria-pressed={gridSize === n} onClick={() => setGridSize(n)}
+                  className={`flex flex-col items-center gap-1 rounded-lg border py-2 ${gridSize === n ? 'border-emerald-400 bg-emerald-400/15' : 'border-slate-700 hover:border-slate-500'}`}>
+                  <span aria-hidden className="h-7 w-7" style={{ backgroundImage: `radial-gradient(circle, ${gridSize === n ? '#34d399' : '#7c8ba5'} ${n > 6 ? 1 : 1.5}px, transparent ${n > 6 ? 1.4 : 2}px)`, backgroundSize: `${28 / n}px ${28 / n}px` }} />
+                  <span className="text-sm font-bold text-white">{n}×{n}</span>
+                  <span className="text-[11px] text-slate-400">{n * n} credits</span>
                 </button>
-              )}
-              {saveMsg && <span role="status" className="text-xs text-emerald-300">{saveMsg}</span>}
+              ))}
             </div>
+            <div className="flex items-center gap-2">
+              <span className="whitespace-nowrap text-xs text-slate-300">Points apart</span>
+              <div className="grid flex-1 grid-cols-4 gap-1.5">
+                {SPACING_OPTIONS.map((sp) => (
+                  <button key={sp.km} type="button" aria-pressed={spacingKm === sp.km} onClick={() => setSpacingKm(sp.km)} className={pill(spacingKm === sp.km)}>
+                    {sp.short}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {spanMi > 20 && <p className="text-xs text-amber-300">That is a very wide area for a local search. Most scans stay under 20 miles across.</p>}
+            {skipped.length > 0 && (
+              <p className="text-xs text-amber-200">
+                {skipped.length} point{skipped.length === 1 ? '' : 's'} skipped on the map, not charged.{' '}
+                <button type="button" onClick={() => setSkipped([])} className="font-semibold underline">Restore</button>
+              </p>
+            )}
+            <IspSelectorDropdown
+              stateCode={detectedState}
+              city={detectedCity}
+              zip={detectedZip}
+              mode={ispMode}
+              selected={ispSelected}
+              options={ispOptions}
+              loading={ispLoading}
+              source={proxySource}
+              onChange={(mode, selected) => {
+                setIspMode(mode);
+                setIspSelected(selected);
+              }}
+            />
+            <details className="text-xs text-slate-400">
+              <summary className="cursor-pointer py-1">Centre coordinates ({detectedCity}, {detectedState})</summary>
+              <span className="mt-1 flex gap-2">
+                <input aria-label="Center latitude" type="number" step="any" min="-85" max="85" className={field} value={centerLat} onChange={(e) => setCenterLat(Number(e.target.value))} />
+                <input aria-label="Center longitude" type="number" step="any" min="-180" max="180" className={field} value={centerLng} onChange={(e) => setCenterLng(Number(e.target.value))} />
+              </span>
+            </details>
+          </section>
+        </div>
+        {/* ORDER BAR: always on screen */}
+        <div className="shrink-0 space-y-2 border-t border-slate-700 bg-slate-950/90 px-4 pb-4 pt-3 backdrop-blur">
+          <div className="flex items-baseline justify-between gap-3">
+            <span><span className="text-2xl font-extrabold text-white">{totalCost}</span> <span className="text-[13px] text-slate-300">credits</span></span>
+            {creditsLeft >= 0 ? (
+              <span className="text-[13px] text-slate-400">{creditsLeft.toLocaleString()} left of {creditBalance.toLocaleString()}</span>
+            ) : (
+              <button type="button" onClick={() => setIsTopUpOpen(true)} className="text-[13px] font-semibold text-rose-300 underline">You need {(-creditsLeft).toLocaleString()} more: top up</button>
+            )}
           </div>
-        </form>
-      </div>
-      {/* RIGHT PANEL: INTERACTIVE MAPLIBRE CANVAS */}
-      <div className="relative min-h-80 flex-1 bg-slate-950">
-        <div className="pointer-events-auto absolute left-5 right-5 top-5 z-20 max-w-md">
+          <p className="text-[13px] text-slate-300">
+            {points} points × {Math.max(1, runKeywords.length)} keyword{runKeywords.length > 1 ? 's' : ''}
+            {eta ? ` · ${eta} on ${phoneCount} phone${phoneCount === 1 ? '' : 's'}` : ''}
+          </p>
+          <p className="flex items-center gap-1.5 text-xs text-purple-300">
+            <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {askMapsSoon ? 'Maps scans track the Maps results list. Phone videos included.' : 'AI Overviews, cited sites and phone videos included, no extra credits'}
+          </p>
+          <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Repeat this scan">
+            {([['once', 'Run once'], ['weekly', 'Every Monday'], ['daily', 'Every day, 8 am ET']] as const).map(([id, text]) => (
+              <button key={id} type="button" role="radio" aria-checked={scheduleType === id} onClick={() => setScheduleType(id)} className={pill(scheduleType === id) + ' text-xs'}>
+                {text}
+              </button>
+            ))}
+          </div>
+          <button type="submit" disabled={isSubmitting || Boolean(blockedWhy)}
+            className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 text-base font-extrabold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-300">
+            {isSubmitting ? (
+              <><Loader2 className="h-4 w-4 animate-spin" aria-hidden />Starting…</>
+            ) : blockedWhy ? (
+              blockedWhy
+            ) : creditsLeft < 0 ? (
+              'Top up to run'
+            ) : (
+              <>{runKeywords.length > 1 ? `Launch ${runKeywords.length} real-phone scans` : 'Launch real-phone scan'}<ArrowRight className="h-4 w-4" aria-hidden /></>
+            )}
+          </button>
+        </div>
+      </form>
+      {/* RIGHT PANEL: the map */}
+      <div className="relative min-h-[28rem] flex-1 bg-slate-950">
+        <div className="pointer-events-none absolute left-5 right-5 top-5 z-20 flex flex-wrap items-start gap-2">
+          <div className="pointer-events-auto w-full max-w-sm">
           <form
             onSubmit={handleGeocodeSearch}
             className="flex items-center overflow-hidden rounded-xl border border-slate-700 bg-slate-900/95 shadow-2xl"
@@ -830,6 +798,7 @@ export function NewScanWizard() {
             <button
               type="submit"
               disabled={isGeocoding}
+              aria-label="Search"
               className="border-l border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs font-semibold text-emerald-400"
             >
               {isGeocoding ? '...' : <Search className="h-4 w-4" />}
@@ -857,6 +826,20 @@ export function NewScanWizard() {
               {searchNote}
             </p>
           )}
+          </div>
+          {CENSUS_VINTAGE && (
+            <button type="button" aria-pressed={showWealth} onClick={() => setShowWealth((v) => !v)}
+              className={`pointer-events-auto min-h-[46px] rounded-xl border px-3.5 text-[13px] font-semibold shadow-2xl ${showWealth ? 'border-sky-300 bg-sky-950 text-sky-200' : 'border-slate-700 bg-slate-900/95 text-slate-100'}`}>
+              Show buying power
+            </button>
+          )}
+          {CENSUS_VINTAGE && showWealth && (
+            <span className="pointer-events-auto flex min-h-[46px] items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/95 px-3 text-xs text-slate-300 shadow-2xl">
+              Lower income
+              <span aria-hidden className="h-2.5 w-24 rounded-full" style={{ background: `linear-gradient(90deg, ${PALETTE.join(', ')})` }} />
+              Higher
+            </span>
+          )}
         </div>
         {/* MapLibre's stylesheet makes every map container position: relative, which would cancel
             "absolute inset-0" and collapse the map to zero height: the wrapper fills the panel instead. */}
@@ -867,22 +850,52 @@ export function NewScanWizard() {
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
             <p className="rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-sm text-slate-300">
               {mapState === 'error'
-                ? 'The map couldn’t load. You can still search a place above or type the centre coordinates.'
+                ? 'The map couldn’t load. You can still search a place above or open “Centre coordinates” on the left.'
                 : 'Loading map…'}
             </p>
           </div>
         )}
         <div className="pointer-events-none absolute bottom-5 left-5 z-20 max-w-sm rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 shadow-2xl backdrop-blur">
           <p className="text-sm font-bold text-white">
-            {gridSize}×{gridSize} grid · {(spacingKm / 1.60934).toFixed(spacingKm % 1.60934 === 0 ? 0 : 1)} mi spacing
+            {gridSize}×{gridSize} grid · points {spacingMi} mi apart
           </p>
-          <p className="mt-0.5 text-xs text-slate-400">
+          <p className="mt-0.5 text-xs text-slate-300">
             Centre {centerLat.toFixed(5)}, {centerLng.toFixed(5)}
             {detectedCity ? ' · ' + detectedCity + ', ' + detectedState + ' ' + detectedZip : ''}
           </p>
-          <p className="mt-1 text-[11px] text-emerald-300">Click the map or drag ★ to move the grid.</p>
+          <p className="mt-1 text-xs text-slate-400">Click a point to skip it (water, empty land). Drag the storefront, or click the map, to move the grid.</p>
         </div>
       </div>
+      {launched && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4">
+          <div role="dialog" aria-modal="true" aria-label="Scan queued" className="w-full max-w-lg space-y-3.5 rounded-2xl border border-slate-700 bg-slate-900 p-6">
+            <div>
+              <h2 className="text-xl font-extrabold text-white">{launched.ids.length > 1 ? `${launched.ids.length} scans queued` : 'Scan queued'}</h2>
+              <p className="mt-1 text-sm text-slate-300">{launched.summary}</p>
+            </div>
+            {phoneNames.length > 0 && (
+              <ul className="space-y-1.5">
+                {phoneNames.slice(0, Math.min(phoneNames.length, launched.points)).map((name, i) => (
+                  <li key={name + i} className="flex min-h-[40px] items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-950 px-3 text-[13px]">
+                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-sky-300" />
+                    <span className="flex-1 font-semibold text-white">{name}</span>
+                    <span className="text-xs text-slate-400">real Android phone</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-[13px] text-slate-300">
+              {launched.repeat ? 'This scan repeats on its schedule. ' : ''}First results in a few minutes{eta ? `; everything done in ${eta}` : ''}. Each point records its search, ads, AI Overview and a phone video.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => router.push(launched.ids.length > 1 ? '/scans' : `/scans/${launched.ids[0]}`)}
+                className="min-h-[48px] flex-1 rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950">Watch it run</button>
+              <button type="button" onClick={() => { setLaunched(null); setIsSubmitting(false); submissionKey.current = null; setSkipped([]); }}
+                className="min-h-[48px] flex-1 rounded-xl border border-slate-700 px-4 text-sm font-semibold text-slate-100">Set up another scan</button>
+            </div>
+          </div>
+        </div>
+      )}
       <CreditTopUpModal
         isOpen={isTopUpOpen}
         onClose={() => setIsTopUpOpen(false)}

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { createScan } from '@stakeout/core/scans';
 import { parseSpec, market, buildGrid, InputError, OFFERED_GRID_SIZES } from '@stakeout/core/grid';
+import { skippedPoints } from '@stakeout/core/gridSizes';
 import { getSettings, ispAllowed } from '@stakeout/core/settings';
 import { targetableIspCodes } from '@stakeout/core/proxySeller';
 import { listsEnabled, prepareGridProxies } from '@stakeout/core/proxyLists';
@@ -14,7 +15,8 @@ export const maxDuration = 300;
 export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser(),
-      s = parseSpec(await req.json());
+      body = (await req.json()) as Record<string, unknown>,
+      s = parseSpec(body);
       // Checked here as well as on the page, so a size that is switched off cannot be requested directly.
       if (!OFFERED_GRID_SIZES.includes(s.gridSize))
         throw new InputError(`A ${s.gridSize}×${s.gridSize} grid is not available right now. Choose ${OFFERED_GRID_SIZES.map((n) => n + '×' + n).join(', ')}.`);
@@ -33,7 +35,8 @@ export async function POST(req: Request) {
         // city and every other city the grid's points fall in, one list per chosen
         // ISP plus an any-ISP fallback. Lists are saved and reused by later scans.
         const center = market(s.centerLat, s.centerLng);
-        const places = buildGrid(s).map((p) => ({ city: p.city, stateCode: p.stateCode }));
+        const left = skippedPoints(body.skip, s.gridSize);
+        const places = buildGrid(s).filter((p) => !left.has(p.rowIdx + '_' + p.colIdx)).map((p) => ({ city: p.city, stateCode: p.stateCode }));
         const { market: m } = await prepareGridProxies(center, places, s.isps);
         s.proxyRegion = m.region;
         s.proxyCity = m.city;
@@ -41,7 +44,10 @@ export async function POST(req: Request) {
         throw new InputError('That ISP cannot be targeted yet. Choose "Any ISP".');
       }
     }
-    const scan = await createScan(u.id, s, u.id + ':' + key);
+    // Points the customer left out on the map (water, empty land) are not created or charged.
+    const skip = skippedPoints(body.skip, s.gridSize);
+    const pins = skip.size ? buildGrid(s).filter((p) => !skip.has(p.rowIdx + '_' + p.colIdx)) : undefined;
+    const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins);
     return Response.json(
       { scanId: scan.id, creditsCharged: scan.creditsCharged },
       { status: 202 },

@@ -177,6 +177,7 @@ export function EvidencePanel({
                 type="button"
                 onClick={() => onSelect(p.id)}
                 aria-pressed={on}
+                style={{ gridColumn: p.colIdx + 1, gridRow: p.rowIdx + 1 }}
                 aria-label={`Row ${p.rowIdx + 1}, column ${p.colIdx + 1}: ${p.status === 'COMPLETED' ? (rank ? 'rank ' + rank : 'not in the list') : p.status.toLowerCase()}`}
                 className={`flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border-2 transition-colors ${on ? 'border-emerald-400 bg-slate-800' : 'border-slate-800 bg-slate-950 hover:border-slate-600'}`}
               >

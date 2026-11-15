@@ -97,7 +97,8 @@ export function PinEvidenceCard({
                 aria-label={`Point ${p.rowIdx * size + p.colIdx + 1}: row ${p.rowIdx + 1}, column ${p.colIdx + 1}`}
                 aria-pressed={pin?.id === p.id}
                 className={'h-3.5 w-3.5 rounded-[3px] ' + (pin?.id === p.id ? 'ring-2 ring-white ring-offset-1 ring-offset-slate-900' : 'hover:ring-1 hover:ring-slate-300')}
-                style={{ backgroundColor: rankColor(p.status, p.rankFound) }}
+                // Placed by its own row and column, so a grid with skipped points keeps its shape.
+                style={{ backgroundColor: rankColor(p.status, p.rankFound), gridColumn: p.colIdx + 1, gridRow: p.rowIdx + 1 }}
               />
             ))}
           </div>

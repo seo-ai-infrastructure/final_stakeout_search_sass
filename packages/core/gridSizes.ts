@@ -7,3 +7,22 @@
  * read it without pulling in the server-side grid code and its ZIP code database.
  */
 export const OFFERED_GRID_SIZES: readonly number[] = [3, 5, 7, 9];
+
+/**
+ * Points the customer chose to leave out of a grid (water, empty land), as "row_col" keys.
+ * Only whole points inside the grid count, the centre can never be skipped, and anything
+ * else in the list is ignored.
+ */
+export function skippedPoints(input: unknown, gridSize: number): Set<string> {
+  const out = new Set<string>();
+  if (!Array.isArray(input)) return out;
+  const mid = (gridSize - 1) / 2;
+  for (const v of input.slice(0, 200)) {
+    const m = typeof v === 'string' ? /^(\d{1,2})_(\d{1,2})$/.exec(v) : null;
+    if (!m) continue;
+    const r = Number(m[1]), c = Number(m[2]);
+    if (r >= gridSize || c >= gridSize || (r === mid && c === mid)) continue;
+    out.add(r + '_' + c);
+  }
+  return out;
+}

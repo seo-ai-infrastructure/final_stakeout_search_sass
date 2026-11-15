@@ -81,3 +81,10 @@ test('grid sizes on offer: 3×3, 5×5, 7×7 and 9×9 for now; the default is one
   // Older scans of any size still parse (they re-run and repeat on schedule); the create route limits new ones.
   assert.equal(parseSpec({ ...base, gridSize: 7 }).gridSize, 7);
 });
+
+test('skipped points: only real grid points count, and the centre is never skipped', async () => {
+  const { skippedPoints } = await import('../packages/core/gridSizes');
+  assert.deepEqual([...skippedPoints(['0_0', '4_4', '2_2', '5_0', 'x', 7, '0_0'], 5)].sort(), ['0_0', '4_4']);
+  assert.equal(skippedPoints('0_0', 5).size, 0);
+  assert.equal(skippedPoints(undefined, 3).size, 0);
+});
