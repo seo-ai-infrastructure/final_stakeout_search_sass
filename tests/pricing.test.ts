@@ -102,3 +102,17 @@ test('grid shapes are the square grid with points left out', async () => {
   assert.equal(25 - shapeSkips('round', 5).length, 21);
   assert.equal(shapeSkips('round', 9).includes('4_4'), false);
 });
+
+test('clients: names differing by capitals or spaces are one client, and merges chain without looping', async () => {
+  const { clientKey, clientName, addMerge } = await import('../packages/core/clientNames');
+  assert.equal(clientKey('  Payne  Air '), clientKey('payne air'));
+  let m = addMerge({}, 'Payne Air', 'Payne Air Conditioning & Heating')!;
+  assert.equal(clientName('PAYNE AIR', m), 'Payne Air Conditioning & Heating');
+  assert.equal(clientName('McIntyre Painting', m), 'McIntyre Painting');
+  // Merging the long name onward carries the short one with it.
+  m = addMerge(m, 'Payne Air Conditioning & Heating', 'Payne HVAC')!;
+  assert.equal(clientName('payne air', m), 'Payne HVAC');
+  // Same client, or a merge back onto itself, is refused.
+  assert.equal(addMerge(m, 'Payne HVAC', 'payne hvac'), null);
+  assert.equal(addMerge(m, 'Payne HVAC', 'Payne Air'), null);
+});
