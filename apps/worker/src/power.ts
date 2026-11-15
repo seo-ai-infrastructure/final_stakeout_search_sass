@@ -15,7 +15,7 @@ import { redis, duoplusPost } from '@stakeout/core/redis';
 import { getSettings } from '@stakeout/core/settings';
 import { planPower, type PowerPhone } from '@stakeout/core/fleetPower';
 import { phoneInScope, expiresWithin } from '@stakeout/core/fleetHealth';
-import { fleetGroupId, setPowerManaged } from './duoplus';
+import { fleetGroupId, setPowerManaged, ensureAdbWhitelist } from './duoplus';
 
 let lastDemandAt = Date.now();
 let resting = false; // every phone confirmed off and nothing waiting: no need to keep asking DuoPlus
@@ -43,6 +43,10 @@ async function listPhones(): Promise<any[] | null> {
   }
   return null; // incomplete listing: act on nothing
 }
+
+/** IPv4 addresses DuoPlus says are "not allowed to access". */
+export const refusedIps = (text: string) =>
+  /not allowed to access/i.test(text) ? [...new Set(text.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) ?? [])] : [];
 
 const chunks = <T,>(a: T[], n: number) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
@@ -94,9 +98,19 @@ export async function powerTick(): Promise<boolean> {
 
   const due = plan.on.filter((id) => now - (lastOnAt.get(id) ?? 0) > 5 * 60000);
   if (due.length) {
-    due.forEach((id) => lastOnAt.set(id, now));
-    const r = await duoplusPost('/api/v1/cloudPhone/powerOn', { image_ids: due }).catch((e) => ({ error: String(e) }));
-    console.log(`[power] ${pending} point(s) waiting: switching on ${due.join(', ')} ·`, JSON.stringify((r as any)?.data ?? r).slice(0, 200));
+    let r: any = await duoplusPost('/api/v1/cloudPhone/powerOn', { image_ids: due }).catch((e) => ({ error: String(e) }));
+    // DuoPlus refuses phone actions from an address that is not on the whitelist, and names the
+    // address. Railway can send from several, so add the one it named and try once more.
+    const refused = refusedIps(JSON.stringify(r));
+    if (refused.length) {
+      console.warn('[power] DuoPlus refused', refused.join(', '), '- adding to the whitelist and trying again');
+      await ensureAdbWhitelist(true, refused).catch((e) => console.warn('[power] whitelist not updated:', e instanceof Error ? e.message : e));
+      await new Promise((res) => setTimeout(res, 3000));
+      r = await duoplusPost('/api/v1/cloudPhone/powerOn', { image_ids: due }).catch((e) => ({ error: String(e) }));
+    }
+    // Only a request DuoPlus accepted counts: a refused one is tried again at the next look (30 s).
+    if (!r?.error && !refusedIps(JSON.stringify(r)).length) due.forEach((id) => lastOnAt.set(id, now));
+    console.log(`[power] ${pending} point(s) waiting: switching on ${due.join(', ')} ·`, JSON.stringify(r?.data ?? r).slice(0, 300));
   }
   if (plan.off.length) {
     for (const ids of chunks(plan.off, 20)) {
