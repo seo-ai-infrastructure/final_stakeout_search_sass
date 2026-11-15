@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Coins, LogOut, User } from 'lucide-react';
+import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 export function UserSessionBadge() {
   const router = useRouter();
   const [user, setUser] = useState<{
@@ -10,6 +11,7 @@ export function UserSessionBadge() {
     name?: string;
     creditBalance: number;
   } | null>(null);
+  const [buying, setBuying] = useState(false);
   useEffect(() => {
     const update = () =>
       fetch('/api/user/me', { cache: 'no-store' })
@@ -30,10 +32,23 @@ export function UserSessionBadge() {
   if (!user) return null;
   return (
     <div className="flex items-center gap-3">
-      <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1">
+      <button
+        type="button"
+        onClick={() => setBuying(true)}
+        title="Credits: what they cost and how to buy more"
+        aria-label={user.creditBalance.toLocaleString() + ' credits. See prices and buy more'}
+        className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1 hover:border-emerald-400 hover:bg-emerald-900/40"
+      >
         <Coins className="h-3.5 w-3.5" />
         <span>{user.creditBalance.toLocaleString()} Cr</span>
-      </div>
+      </button>
+      <CreditTopUpModal
+        isOpen={buying}
+        onClose={() => setBuying(false)}
+        userId=""
+        currentBalance={user.creditBalance}
+        onBalanceUpdated={(n) => setUser((u) => (u ? { ...u, creditBalance: n } : u))}
+      />
       <div className="hidden items-center gap-1.5 text-xs text-slate-300 sm:flex">
         <User className="h-3.5 w-3.5 text-slate-500" />
         <span className="max-w-[160px] truncate font-medium">

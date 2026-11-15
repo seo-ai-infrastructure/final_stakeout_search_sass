@@ -17,8 +17,11 @@ export function CreditTopUpModal(p: Props) {
       fetch('/api/paypal/order')
         .then((r) => r.json())
         .then((d) => {
-          setPacks(d.packs ?? []);
-          choose(d.packs?.[0]?.credits ?? 500);
+          // Someone opening this wants more credits now, so the top-up comes first and is preselected.
+          const list: { key: string; name: string; credits: number; cents: number; blurb: string }[] = d.packs ?? [];
+          const sorted = [...list.filter((k) => k.key.startsWith('extra')), ...list.filter((k) => !k.key.startsWith('extra'))];
+          setPacks(sorted);
+          choose(sorted[0]?.credits ?? 500);
         })
         .catch(() => setError('Unable to load the price list.'));
   }, [p.isOpen]);
@@ -48,7 +51,11 @@ export function CreditTopUpModal(p: Props) {
           <h2 className="text-lg font-bold">{packs.length === 1 && packs[0].key === 'onboarding' ? 'Start with onboarding' : 'Buy scan credits'}</h2>
           <button type="button" onClick={p.onClose} className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Close</button>
         </div>
-        <p>Current balance · {p.currentBalance}</p>
+        <p>Current balance · {p.currentBalance.toLocaleString()} credits</p>
+        <p className="text-sm text-slate-400">
+          One credit is one grid point.{' '}
+          <a href="/pricing" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">Full price list</a>
+        </p>
         {clientId && packs.length > 0 ? (
           <>
             <div role="radiogroup" aria-label="What to buy" className="space-y-2">
@@ -63,7 +70,7 @@ export function CreditTopUpModal(p: Props) {
                       <span className="font-semibold">{k.name}</span>
                       <span className="shrink-0 font-bold">USD {(k.cents / 100).toFixed(2)}</span>
                     </span>
-                    <span className="block text-sm text-slate-400">{k.blurb}</span>
+                    <span className="block text-sm text-slate-400">{k.blurb} ${(k.cents / 100 / k.credits).toFixed(2)} per credit.</span>
                   </span>
                 </label>
               ))}

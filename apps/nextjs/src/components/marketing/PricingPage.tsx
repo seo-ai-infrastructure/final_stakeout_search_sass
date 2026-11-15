@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { OFFERED_GRID_SIZES } from '@stakeout/core/gridSizes';
 import { SiteHeader, SiteFooter, SIGNUPS_OPEN } from './SiteChrome';
-import { EXTRA, ONBOARDING, PLANS, perCredit, scans5x5, usd } from '@/lib/pricing';
+import { EXTRAS, ONBOARDING, PLANS, perCredit, scans5x5, usd } from '@/lib/pricing';
 import './marketing.css';
 
 const ACCESS = 'mailto:sass@stakeoutsearch.com?subject=Access%20to%20Stakeout%20Search';
@@ -26,7 +26,7 @@ const GRIDS: [string, number][] = OFFERED_GRID_SIZES.map((n) => [`${n} × ${n}`,
 const FAQ: [string, string][] = [
   ['Why is there an onboarding fee?', `Every search runs on a real phone, and we only have so many, so we take a small number of customers and set each one up properly. The fee covers that setup and a first audit, and comes with ${ONBOARDING.credits.toLocaleString('en-US')} credits.`],
   ['Is there a contract?', 'No. Plans are bought a month at a time from your account, and you can change plan or stop whenever you like.'],
-  ['What if I need more than my plan?', `Add ${EXTRA.credits} credits for ${usd(EXTRA.cents)} at any time, or move up a plan, which costs less per credit.`],
+  ['What if I need more than my plan?', `Add credits at any time: ${EXTRAS.map((e) => `${e.credits} for ${usd(e.cents)}`).join(', ')}. Or move up a plan, which costs less per credit.`],
   ['What does a credit buy?', 'One grid point: a real phone moved to that spot, the search run and recorded, and a receipt with the results, the location Google used and a fingerprint of the evidence.'],
   [
     'How do I get an account?',
@@ -120,7 +120,7 @@ One credit is one grid point searched on a real phone, with its recording, recei
           })}
         </div>
         <p className="mt-6 text-center text-sm text-[#9aa7b8]">
-          Need more in a month? Add {EXTRA.credits} credits for {usd(EXTRA.cents)} ({usd(Math.round(perCredit(EXTRA) * 100))} each).
+          Need more in a month? Add {EXTRAS.map((e) => `${e.credits} credits for ${usd(e.cents)}`).join(', ')}.
         </p>
       </section>
 

@@ -21,8 +21,12 @@ export const PLANS: (PriceItem & { fits: string; featured?: boolean })[] = [
   { key: 'agency', name: 'Agency', credits: 3500, cents: 69700, blurb: 'Monthly plan: 3,500 credits.', fits: '10 or more clients, or daily scans' },
 ];
 
-/** Credits on top of a plan, at a higher rate than any plan. */
-export const EXTRA: PriceItem = { key: 'extra', name: 'Extra credits', credits: 200, cents: 7000, blurb: '200 more credits, at $0.35 each.' };
+/** Credits on top of a plan, each at a higher rate than any plan. Smallest first. */
+export const EXTRAS: PriceItem[] = [
+  { key: 'extra-100', name: '100 credits', credits: 100, cents: 3900, blurb: 'One-time top-up.' },
+  { key: 'extra-250', name: '250 credits', credits: 250, cents: 8900, blurb: 'One-time top-up.' },
+  { key: 'extra-500', name: '500 credits', credits: 500, cents: 16900, blurb: 'One-time top-up.' },
+];
 
 /**
  * Only an admin sees or can buy this: a real $1 purchase that proves the live payment settings
@@ -30,14 +34,14 @@ export const EXTRA: PriceItem = { key: 'extra', name: 'Extra credits', credits: 
  */
 export const ADMIN_TEST: PriceItem = { key: 'admin-test', name: 'Live payment test (admin only)', credits: 5, cents: 100, blurb: 'A real $1 charge to check that payments work. Adds 5 credits.' };
 
-export const ALL_ITEMS: PriceItem[] = [ONBOARDING, ...PLANS, EXTRA, ADMIN_TEST];
+export const ALL_ITEMS: PriceItem[] = [ONBOARDING, ...PLANS, ...EXTRAS, ADMIN_TEST];
 
 /**
  * What an account can buy: onboarding first, and only once; after it, the plans and extra
  * credits. An admin also gets the $1 payment test.
  */
 export function itemsFor(state: { onboarded: boolean; admin?: boolean }): PriceItem[] {
-  const items = state.onboarded ? [...PLANS, EXTRA] : [ONBOARDING];
+  const items = state.onboarded ? [...PLANS, ...EXTRAS] : [ONBOARDING];
   return state.admin ? [...items, ADMIN_TEST] : items;
 }
 
