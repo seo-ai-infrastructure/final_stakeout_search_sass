@@ -80,7 +80,11 @@ export function NewScanWizard() {
   // Points left out on the map ("row_col"): not created, not charged.
   const [skipped, setSkipped] = useState<string[]>([]);
   // The grid's shape: the full square, a wide or tall rectangle inside it, or a rough circle.
-  const [shape, setShape] = useState<GridShape>('square');
+  // 'wealth' keeps the 25 points in the highest-income areas; 'drive' keeps the points within a drive time.
+  const [shape, setShape] = useState<GridShape | 'wealth' | 'drive'>('square');
+  const [driveMin, setDriveMin] = useState(15);
+  const [driveArea, setDriveArea] = useState<number[][] | null>(null);
+  const [driveNote, setDriveNote] = useState('');
   const [rows, setRows] = useState(5);
   const [cols, setCols] = useState(5);
   const [showWealth, setShowWealth] = useState(false);
@@ -220,7 +224,60 @@ export function NewScanWizard() {
   }, [gridSize]);
   useEffect(() => setSkipped([]), [shape, rows, cols]);
   // Points the shape leaves out, and every point left out for any reason.
-  const outOfShape = useMemo(() => shapeSkips(shape, gridSize, rows, cols), [shape, gridSize, rows, cols]);
+  // The area reachable by car in N minutes from the business (a free community routing service).
+  useEffect(() => {
+    if (shape !== 'drive') return;
+    let live = true;
+    setDriveArea(null);
+    setDriveNote('Working out the drive-time area…');
+    const q = JSON.stringify({ locations: [{ lat: centerLat, lon: centerLng }], costing: 'auto', contours: [{ time: driveMin }], polygons: true });
+    const t = setTimeout(() => {
+      fetch('https://valhalla1.openstreetmap.de/isochrone?json=' + encodeURIComponent(q))
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((d) => {
+          if (!live) return;
+          const g = d?.features?.[0]?.geometry;
+          const ring: number[][] | undefined = g?.type === 'Polygon' ? g.coordinates?.[0] : g?.type === 'MultiPolygon' ? g.coordinates?.[0]?.[0] : undefined;
+          if (!ring || ring.length < 4) throw new Error('no area');
+          setDriveArea(ring);
+          setDriveNote('');
+        })
+        .catch(() => live && setDriveNote('The drive-time area could not be worked out right now. Try again, or use another shape.'));
+    }, 500);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [shape, driveMin, centerLat, centerLng]);
+  const outOfShape = useMemo(() => {
+    const keys: { key: string; lat: number; lng: number }[] = [];
+    const half = Math.floor(gridSize / 2);
+    const latDelta = (spacingKm / 6371.0) * (180.0 / Math.PI), lngDelta = latDelta / Math.cos((centerLat * Math.PI) / 180.0);
+    for (let r = 0; r < gridSize; r++)
+      for (let c = 0; c < gridSize; c++)
+        if (!(r === half && c === half)) keys.push({ key: r + '_' + c, lat: centerLat - (r - half) * latDelta, lng: centerLng + (c - half) * lngDelta });
+    if (shape === 'wealth') {
+      // The 24 points in the highest-income areas, plus the business: 25 in all. Until the map has read the incomes, nothing is dropped.
+      const known = keys.filter((k) => pointInfo[k.key]?.inc != null);
+      if (known.length < 25) return [];
+      const keep = new Set(known.sort((a, b) => (pointInfo[b.key]!.inc ?? 0) - (pointInfo[a.key]!.inc ?? 0)).slice(0, 24).map((k) => k.key));
+      return keys.filter((k) => !keep.has(k.key)).map((k) => k.key);
+    }
+    if (shape === 'drive') {
+      if (!driveArea) return [];
+      // Ray casting: is the point inside the drive-time area?
+      const inside = (x: number, y: number) => {
+        let hit = false;
+        for (let i = 0, j = driveArea.length - 1; i < driveArea.length; j = i++) {
+          const [xi, yi] = driveArea[i], [xj, yj] = driveArea[j];
+          if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit;
+        }
+        return hit;
+      };
+      return keys.filter((k) => !inside(k.lng, k.lat)).map((k) => k.key);
+    }
+    return shapeSkips(shape, gridSize, rows, cols);
+  }, [shape, gridSize, rows, cols, pointInfo, driveArea, spacingKm, centerLat, centerLng]);
   const allSkipped = useMemo(() => [...new Set([...outOfShape, ...skipped])], [outOfShape, skipped]);
   // 2. Auto-detect local ZIP/City/State when coordinates move
   useEffect(() => {
@@ -382,6 +439,7 @@ export function NewScanWizard() {
       return el;
     };
     const inShape = previewPoints.filter((pt) => !pt.out);
+    if (shape === 'wealth' || shape === 'drive') previewPoints.forEach((pt) => bounds.extend([pt.lng, pt.lat]));
     inShape.forEach((pt) => {
       bounds.extend([pt.lng, pt.lat]);
       if (pt.isCenter) {
@@ -439,20 +497,24 @@ export function NewScanWizard() {
     if (src) {
       const N = top + stepLat / 3, S = bottom - stepLat / 3, W = west - stepLng / 3, E = east + stepLng / 3;
       const ring: number[][] =
-        shape === 'round'
+        shape === 'drive' && driveArea
+          ? driveArea
+          : shape === 'wealth'
+          ? [[W, N], [W, N], [W, N], [W, N]]
+          : shape === 'round'
           ? Array.from({ length: 49 }, (_, i) => {
               const t = (i / 48) * 2 * Math.PI;
               return [centerLng + Math.cos(t) * ((E - W) / 2) * 1.04, centerLat + Math.sin(t) * ((N - S) / 2) * 1.04];
             })
           : [[W, N], [E, N], [E, S], [W, S], [W, N]];
       const lines = [];
-      if (shape !== 'round') {
+      if (shape === 'square' || shape === 'custom') {
         for (const lat of [...new Set(lats)]) lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[west, lat], [east, lat]] } });
         for (const lng of [...new Set(lngs)]) lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[lng, top], [lng, bottom]] } });
       }
       // A scale ring through the outermost points east and west of the business.
       const reach = [];
-      if (shape !== 'round' && east > west) {
+      if ((shape === 'square' || shape === 'custom') && east > west) {
         const rx = (east - west) / 2, ry = rx * (stepLat / stepLng);
         reach.push({
           type: 'Feature' as const,
@@ -468,12 +530,13 @@ export function NewScanWizard() {
     }
     // Refit only when the grid itself moved or changed size, not when a point is skipped.
     const fitKey = [centerLat, centerLng, gridSize, spacingKm, shape, rows, cols].join('|');
+    void driveArea;
     if (inShape.length > 1 && fitKey !== lastFit.current) {
       lastFit.current = fitKey;
       map.fitBounds(bounds, { padding: { top: 110, bottom: 130, left: 70, right: 70 }, maxZoom: 14, duration: 400 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewPoints, mapState, pointInfo, showWealth]);
+  }, [previewPoints, mapState, pointInfo, showWealth, driveArea]);
   // Once the map has drawn, read each point's surroundings off it: income of its area, and water.
   useEffect(() => {
     const map = mapRef.current;
@@ -481,7 +544,6 @@ export function NewScanWizard() {
     const read = () => {
       const next: Record<string, { inc: number | null; water: boolean }> = {};
       for (const pt of previewPoints) {
-        if (pt.out) continue;
         const px = map.project([pt.lng, pt.lat]);
         let inc: number | null = null, water = false;
         try {
@@ -675,10 +737,10 @@ export function NewScanWizard() {
     .map((p) => (!p.brand || p.model.toLowerCase().startsWith(p.brand.toLowerCase()) ? p.model : p.brand.charAt(0).toUpperCase() + p.brand.slice(1) + ' ' + p.model));
   const enabledSurfaces = (process.env.NEXT_PUBLIC_ENABLED_SURFACES ?? 'mobile_chrome').split(',').map((x) => x.trim());
   const surfaces = [
-    { id: 'mobile_maps', title: 'Maps app', note: 'The Maps app list, as a customer sees it.', Icon: MapPin },
-    { id: 'mobile_chrome', title: 'Chrome', note: 'The local pack on a Google search, plus the AI Overview and the sites it cites.', Icon: Globe },
-    { id: 'mobile_google', title: 'Google app', note: 'The Google app search.', Icon: Smartphone },
-    ...(process.env.NEXT_PUBLIC_DESKTOP_ENABLED === 'true' ? [{ id: 'desktop_aimode', title: 'Desktop AI', note: 'Desktop search in AI Mode.', Icon: Monitor }] : []),
+    { id: 'mobile_maps', title: 'Maps app', sub: 'Local pack & Ask Maps', note: 'The Maps app list, as a customer sees it.', Icon: MapPin },
+    { id: 'mobile_chrome', title: 'Chrome', sub: 'Web + AI Overviews', note: 'The local pack on a Google search, plus the AI Overview and the sites it cites.', Icon: Globe },
+    { id: 'mobile_google', title: 'Google app', sub: 'Search in the app', note: 'The Google app search.', Icon: Smartphone },
+    ...(process.env.NEXT_PUBLIC_DESKTOP_ENABLED === 'true' ? [{ id: 'desktop_aimode', title: 'Desktop AI', sub: 'AI Mode', note: 'Desktop search in AI Mode.', Icon: Monitor }] : []),
   ].map((x) => ({ ...x, live: enabledSurfaces.includes(x.id) || x.id === 'desktop_aimode' }));
   const pill = (on: boolean) =>
     'min-h-[44px] rounded-lg border px-2 text-[13px] font-semibold transition ' +
@@ -760,11 +822,14 @@ export function NewScanWizard() {
           <section className="space-y-2">
             <span className={label}>App surface</span>
             <div className={`grid gap-2 ${surfaces.length > 3 ? 'grid-cols-4' : 'grid-cols-3'}`}>
-              {surfaces.map(({ id, title, live, Icon }) => (
+              {surfaces.map(({ id, title, sub, live, Icon }) => (
                 <button key={id} type="button" disabled={!live} aria-pressed={targetType === id} onClick={() => live && setTargetType(id as TargetType)}
-                  className={pill(targetType === id) + ' flex items-center justify-center gap-1.5 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-500'}>
-                  {live ? <Icon className="h-4 w-4" aria-hidden /> : <Lock className="h-3.5 w-3.5" aria-hidden />}
-                  <span>{title}{live ? '' : ' · soon'}</span>
+                  className={`relative flex min-h-[78px] flex-col items-start gap-1 rounded-xl border p-2.5 text-left transition disabled:cursor-not-allowed ${targetType === id ? 'border-emerald-400 bg-emerald-400/15' : 'border-slate-700 hover:border-slate-500'}`}>
+                  <Icon className={`h-4 w-4 ${live ? 'text-slate-200' : 'text-slate-500'}`} aria-hidden />
+                  <span className={`text-sm font-bold ${live ? 'text-white' : 'text-slate-400'}`}>{title}</span>
+                  <span className="text-[11px] leading-tight text-slate-400">{sub}</span>
+                  {targetType === id && <span aria-hidden className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-emerald-400" />}
+                  {!live && <span className="absolute right-2 top-2 rounded bg-indigo-500/25 px-1.5 py-0.5 text-[10px] font-bold text-indigo-200">Soon</span>}
                 </button>
               ))}
             </div>
@@ -803,13 +868,39 @@ export function NewScanWizard() {
             <div className="flex items-center gap-2">
               <span className="whitespace-nowrap text-xs text-slate-300">Shape</span>
               <div className="grid flex-1 grid-cols-3 gap-1.5" role="radiogroup" aria-label="Grid shape">
-                {([['square', 'Square'], ['custom', 'Rectangle'], ['round', 'Round']] as const).map(([id, text]) => (
+                {([['square', 'Square'], ['custom', 'Rectangle'], ['round', 'Round'], ['wealth', 'Top 25 income'], ['drive', 'Drive time']] as const).map(([id, text]) => (
                   <button key={id} type="button" role="radio" aria-checked={shape === id} onClick={() => setShape(id)} className={pill(shape === id)}>
                     {text}
                   </button>
                 ))}
               </div>
             </div>
+            {shape === 'wealth' && (
+              <p className="text-xs text-slate-300">
+                {outOfShape.length
+                  ? `Keeps the 24 points in the highest-income areas of this ${gridSize}×${gridSize}, plus the business. Use a 7×7 or 9×9 so there is more to choose from.`
+                  : gridSize * gridSize <= 25
+                  ? 'Pick a 7×7 or 9×9: the best 25 points are chosen from it.'
+                  : 'Reading incomes from the map…'}
+              </p>
+            )}
+            {shape === 'drive' && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="whitespace-nowrap text-xs text-slate-300">Drive</span>
+                  <div className="grid flex-1 grid-cols-3 gap-1.5" role="radiogroup" aria-label="Drive time">
+                    {[15, 20, 30].map((m) => (
+                      <button key={m} type="button" role="radio" aria-checked={driveMin === m} onClick={() => setDriveMin(m)} className={pill(driveMin === m)}>
+                        {m} min
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-300">
+                  {driveNote || `Keeps the points within a ${driveMin}-minute drive of the business. Widen the spacing or size if the area is not filled.`}
+                </p>
+              </div>
+            )}
             {shape === 'custom' && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-300">
                 {([['Rows', rows, setRows], ['Columns', cols, setCols]] as const).map(([name, val, set]) => (
@@ -995,7 +1086,7 @@ export function NewScanWizard() {
         )}
         <div className="pointer-events-none absolute bottom-5 left-5 z-20 max-w-sm rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 shadow-2xl backdrop-blur">
           <p className="text-sm font-bold text-white">
-            {shape === 'round' ? `Round grid, ${points} points` : `${shapeRows}×${shapeCols} grid`} · points {spacingMi} mi apart
+            {shape === 'round' ? `Round grid, ${points} points` : shape === 'wealth' ? `Top income points, ${points}` : shape === 'drive' ? `${driveMin}-minute drive, ${points} points` : `${shapeRows}×${shapeCols} grid`} · points {spacingMi} mi apart
           </p>
           <p className="mt-0.5 text-xs text-slate-300">
             Centre {centerLat.toFixed(5)}, {centerLng.toFixed(5)}
