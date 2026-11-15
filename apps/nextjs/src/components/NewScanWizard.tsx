@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Protocol } from 'pmtiles';
-import { declutterBasemap, quietBasemap, fillColor, CENSUS_VINTAGE, PALETTE } from '../lib/censusLayer';
+import { declutterBasemap, quietBasemap, fillColor, legend, CENSUS_VINTAGE } from '../lib/censusLayer';
 import {
   Smartphone,
   Monitor,
@@ -84,6 +84,9 @@ export function NewScanWizard() {
   const [rows, setRows] = useState(5);
   const [cols, setCols] = useState(5);
   const [showWealth, setShowWealth] = useState(false);
+  // What the map knows about each point once its tiles have drawn: the area's median income, and whether it sits on water.
+  const [pointInfo, setPointInfo] = useState<Record<string, { inc: number | null; water: boolean }>>({});
+  const waterLayers = useRef<string[]>([]);
   // The phones a scan will run on, by model.
   const [phones, setPhones] = useState<{ brand: string; model: string }[]>([]);
   const [launched, setLaunched] = useState<{ ids: string[]; summary: string; points: number; repeat: boolean } | null>(null);
@@ -302,13 +305,26 @@ export function NewScanWizard() {
       declutterBasemap(map);
       // The same quiet base as the report, so the grid is the only strong colour.
       quietBasemap(map);
+      // Lakes stand out here (a clear shoreline and blue names), so a point on water is easy to spot.
+      for (const l of map.getStyle().layers ?? []) {
+        const src = (l as { 'source-layer'?: string })['source-layer'];
+        try {
+          if (l.type === 'fill' && src === 'water') {
+            waterLayers.current.push(l.id);
+            map.setPaintProperty(l.id, 'fill-color', '#060c1a');
+            map.setPaintProperty(l.id, 'fill-outline-color', '#3b82a6');
+          } else if (l.type === 'symbol' && src === 'water_name') map.setPaintProperty(l.id, 'text-color', '#7dd3fc');
+        } catch {
+          /* this style lacks the property */
+        }
+      }
       const beforeLabels = map.getStyle().layers?.find((l) => l.type === 'symbol')?.id;
       if (CENSUS_VINTAGE) {
         try {
           maplibregl.addProtocol('pmtiles', new Protocol().tile);
           map.addSource('census', { type: 'vector', url: `pmtiles://${window.location.origin}/api/census/${CENSUS_VINTAGE}.pmtiles`, promoteId: 'id' });
           map.addLayer(
-            { id: 'setup-income', type: 'fill', source: 'census', 'source-layer': 'tract', layout: { visibility: 'none' }, paint: { 'fill-color': fillColor('income') as never, 'fill-opacity': 0.4 } },
+            { id: 'setup-income', type: 'fill', source: 'census', 'source-layer': 'tract', paint: { 'fill-color': fillColor('income') as never, 'fill-opacity': 0.01 } },
             beforeLabels,
           );
         } catch (e) {
@@ -317,7 +333,8 @@ export function NewScanWizard() {
       }
       // The grid's outline and the lines between its points.
       map.addSource('grid-frame', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      map.addLayer({ id: 'grid-lines', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'line'], paint: { 'line-color': '#34d399', 'line-opacity': 0.28, 'line-width': 1 } });
+      map.addLayer({ id: 'grid-lines', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'line'], paint: { 'line-color': '#34d399', 'line-opacity': 0.4, 'line-width': 1, 'line-dasharray': [2, 3] } });
+      map.addLayer({ id: 'grid-ring', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'ring'], paint: { 'line-color': '#e2e8f0', 'line-opacity': 0.35, 'line-width': 1.2, 'line-dasharray': [4, 4] } });
       map.addLayer({ id: 'grid-fill', type: 'fill', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'box'], paint: { 'fill-color': '#34d399', 'fill-opacity': 0.04 } });
       map.addLayer({ id: 'grid-box', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'box'], paint: { 'line-color': '#34d399', 'line-opacity': 0.6, 'line-width': 1.5, 'line-dasharray': [3, 3] } });
     });
@@ -352,7 +369,7 @@ export function NewScanWizard() {
     previewMarkersRef.current.forEach((m) => m.remove());
     previewMarkersRef.current = [];
     const bounds = new maplibregl.LngLatBounds();
-    const dot = gridSize <= 3 ? 24 : gridSize <= 5 ? 20 : gridSize <= 7 ? 16 : 13;
+    const dot = gridSize <= 3 ? 30 : gridSize <= 5 ? 26 : gridSize <= 7 ? 22 : 18;
     const add = (el: HTMLElement, lng: number, lat: number, draggable = false, offset: [number, number] = [0, 0]) => {
       const marker = new maplibregl.Marker({ element: el, draggable, anchor: 'center', offset }).setLngLat([lng, lat]).addTo(map);
       previewMarkersRef.current.push(marker);
@@ -384,12 +401,23 @@ export function NewScanWizard() {
       const el = document.createElement('button');
       el.type = 'button';
       el.style.width = el.style.height = dot + 'px';
+      const info = pointInfo[pt.key];
+      const rich = showWealth && !pt.skipped && (info?.inc ?? 0) >= 100000;
+      // A numbered ring, like the report's points; a point in a $100k+ area gets a blue halo while buying power is shown.
       el.className =
-        'rounded-full border-2 ' +
-        (pt.skipped ? 'border-slate-400 bg-slate-950/70' : 'border-slate-950 bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.22)]');
+        'flex items-center justify-center rounded-full border-2 font-bold leading-none ' +
+        (pt.skipped
+          ? 'border-dashed border-slate-500 bg-slate-950/70 text-slate-500'
+          : 'border-emerald-400 bg-slate-950 text-emerald-100 ' + (rich ? 'shadow-[0_0_0_4px_rgba(125,211,252,0.55)]' : 'shadow-[0_0_0_3px_rgba(52,211,153,0.18)]'));
+      el.style.fontSize = (dot >= 26 ? 11 : dot >= 22 ? 10 : 8) + 'px';
+      const [r, c] = pt.key.split('_').map(Number);
+      el.textContent = pt.skipped ? '' : String(r * gridSize + c + 1);
       el.setAttribute('aria-pressed', String(!pt.skipped));
       el.setAttribute('aria-label', pt.skipped ? 'Skipped point: click to include it' : 'Grid point: click to skip it');
-      el.title = pt.skipped ? 'Skipped (not charged). Click to include.' : 'Click to skip this point';
+      el.title =
+        (pt.skipped ? 'Skipped (not charged). Click to include.' : 'Click to skip this point') +
+        (info?.water ? ' · on water' : '') +
+        (info?.inc ? ` · area median income $${Math.round(info.inc / 1000)}k` : '');
       // A click on a point skips or restores it; it must not also move the grid's centre.
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -422,9 +450,20 @@ export function NewScanWizard() {
         for (const lat of [...new Set(lats)]) lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[west, lat], [east, lat]] } });
         for (const lng of [...new Set(lngs)]) lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[lng, top], [lng, bottom]] } });
       }
+      // A scale ring through the outermost points east and west of the business.
+      const reach = [];
+      if (shape !== 'round' && east > west) {
+        const rx = (east - west) / 2, ry = rx * (stepLat / stepLng);
+        reach.push({
+          type: 'Feature' as const,
+          properties: { kind: 'ring' },
+          geometry: { type: 'LineString' as const, coordinates: Array.from({ length: 65 }, (_, i) => [centerLng + Math.cos((i / 64) * 2 * Math.PI) * rx, centerLat + Math.sin((i / 64) * 2 * Math.PI) * ry]) },
+        });
+        add(tag(Number((wide / 2).toFixed(1)) + ' mi from the business'), centerLng + rx * 0.7071, centerLat + ry * 0.7071, false, [0, -12]);
+      }
       src.setData({
         type: 'FeatureCollection',
-        features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [ring] } }, ...lines],
+        features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [ring] } }, ...lines, ...reach],
       });
     }
     // Refit only when the grid itself moved or changed size, not when a point is skipped.
@@ -434,11 +473,40 @@ export function NewScanWizard() {
       map.fitBounds(bounds, { padding: { top: 110, bottom: 130, left: 70, right: 70 }, maxZoom: 14, duration: 400 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewPoints, mapState, pointInfo, showWealth]);
+  // Once the map has drawn, read each point's surroundings off it: income of its area, and water.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || mapState !== 'ready') return;
+    const read = () => {
+      const next: Record<string, { inc: number | null; water: boolean }> = {};
+      for (const pt of previewPoints) {
+        if (pt.out) continue;
+        const px = map.project([pt.lng, pt.lat]);
+        let inc: number | null = null, water = false;
+        try {
+          if (map.getLayer('setup-income')) {
+            const v = Number(map.queryRenderedFeatures(px, { layers: ['setup-income'] })[0]?.properties?.inc);
+            inc = Number.isFinite(v) && v > 0 ? v : null;
+          }
+          if (waterLayers.current.length) water = map.queryRenderedFeatures(px, { layers: waterLayers.current }).length > 0;
+        } catch {
+          /* the layers are not drawn yet */
+        }
+        next[pt.key] = { inc, water };
+      }
+      setPointInfo((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+    };
+    map.on('idle', read);
+    if (map.loaded()) read();
+    return () => {
+      map.off('idle', read);
+    };
   }, [previewPoints, mapState]);
   // Income shading on or off.
   useEffect(() => {
     const map = mapRef.current;
-    if (map && mapState === 'ready' && map.getLayer('setup-income')) map.setLayoutProperty('setup-income', 'visibility', showWealth ? 'visible' : 'none');
+    if (map && mapState === 'ready' && map.getLayer('setup-income')) map.setPaintProperty('setup-income', 'fill-opacity', showWealth ? 0.45 : 0.01);
   }, [showWealth, mapState]);
   async function findPlaces(q: string): Promise<Place[]> {
     const needle = q.toLowerCase();
@@ -592,6 +660,11 @@ export function NewScanWizard() {
   const spanMi = Number(((gridSize - 1) * spacingMi).toFixed(1));
   const shapeRows = shape === 'custom' ? rows : gridSize, shapeCols = shape === 'custom' ? cols : gridSize;
   const spanW = Number(((shapeCols - 1) * spacingMi).toFixed(1)), spanH = Number(((shapeRows - 1) * spacingMi).toFixed(1));
+  // Points on water that are still in the scan, and how many points sit in $100k+ areas.
+  const live = previewPoints.filter((p) => !p.out && !p.skipped);
+  const onWater = live.filter((p) => !p.isCenter && pointInfo[p.key]?.water).map((p) => p.key);
+  const known = live.filter((p) => pointInfo[p.key]?.inc != null);
+  const richStat = known.length >= live.length / 2 && known.length > 0 ? { rich: known.filter((p) => (pointInfo[p.key]?.inc ?? 0) >= 100000).length, known: known.length } : null;
   const oddStep = (v: number, d: number) => Math.max(1, Math.min(gridSize, v + d * 2));
   const phoneCount = phones.length;
   // About four minutes a point plus the two-minute rest, one point at a time per phone.
@@ -889,11 +962,21 @@ export function NewScanWizard() {
             </button>
           )}
           {CENSUS_VINTAGE && showWealth && (
-            <span className="pointer-events-auto flex min-h-[46px] items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/95 px-3 text-xs text-slate-300 shadow-2xl">
-              Lower income
-              <span aria-hidden className="h-2.5 w-24 rounded-full" style={{ background: `linear-gradient(90deg, ${PALETTE.join(', ')})` }} />
-              Higher
+            <span className="pointer-events-auto flex min-h-[46px] flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-slate-700 bg-slate-900/95 px-3 py-1.5 text-xs text-slate-300 shadow-2xl">
+              <span className="font-semibold text-slate-200">Median income</span>
+              {legend('income').map((b) => (
+                <span key={b.label} className="flex items-center gap-1 whitespace-nowrap">
+                  <span aria-hidden className="h-3 w-3 rounded-sm border border-sky-300/30" style={{ backgroundColor: b.color }} />
+                  {b.label}
+                </span>
+              ))}
             </span>
+          )}
+          {onWater.length > 0 && (
+            <button type="button" onClick={() => setSkipped((list) => [...new Set([...list, ...onWater])])}
+              className="pointer-events-auto min-h-[46px] rounded-xl border border-amber-500/60 bg-amber-950/80 px-3.5 text-[13px] font-semibold text-amber-100 shadow-2xl">
+              Skip {onWater.length} point{onWater.length === 1 ? '' : 's'} on water · save {onWater.length * Math.max(1, runKeywords.length)} credit{onWater.length * Math.max(1, runKeywords.length) === 1 ? '' : 's'}
+            </button>
           )}
         </div>
         {/* MapLibre's stylesheet makes every map container position: relative, which would cancel
@@ -918,6 +1001,9 @@ export function NewScanWizard() {
             Centre {centerLat.toFixed(5)}, {centerLng.toFixed(5)}
             {detectedCity ? ' · ' + detectedCity + ', ' + detectedState + ' ' + detectedZip : ''}
           </p>
+          {showWealth && richStat && (
+            <p className="mt-1.5 text-[13px] font-semibold text-sky-300">{richStat.rich} of {richStat.known} points sit in $100k+ income areas</p>
+          )}
           <p className="mt-1 text-xs text-slate-400">Click a point to skip it (water, empty land). Drag the storefront, or click the map, to move the grid.</p>
         </div>
       </div>
