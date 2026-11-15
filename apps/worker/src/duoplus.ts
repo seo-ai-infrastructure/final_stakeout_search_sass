@@ -152,7 +152,7 @@ export async function syncDuoPlusDevicePool() {
       let proxyId = item.proxy_id ? String(item.proxy_id) : '';
       if (!proxyId || usedProxies.has(proxyId)) {
         // Give the phone its own DuoPlus proxy record instead of waiting for someone to bind one.
-        const created = autoSetup ? await createOwnProxy(imageId) : null;
+        const created = autoSetup ? await createOwnProxy(imageId, usedProxies) : null;
         if (!created) {
           console.warn(
             '[duoplus] skipped new phone without a unique proxy binding',
@@ -164,9 +164,10 @@ export async function syncDuoPlusDevicePool() {
         proxyId = created;
       }
       usedProxies.add(proxyId);
-      await db.devicePool.create({
-        data: { imageId, proxyId, adbAddr: String(item.adb), cooldownUntil: new Date(0) },
-      });
+      // One phone that cannot be registered must not stop the others, or the setup step below.
+      await db.devicePool
+        .create({ data: { imageId, proxyId, adbAddr: String(item.adb), cooldownUntil: new Date(0) } })
+        .catch((e) => console.warn('[duoplus] could not register', imageId, '-', (e instanceof Error ? e.message : String(e)).trim().split('\n').pop()));
     }
     await autoBootstrap();
   } catch (err) {
@@ -450,15 +451,20 @@ export async function phonePowerStatus(imageId: string): Promise<{ on: boolean; 
  * the worker rewrites it to the right city and ISP before every point) and binds it.
  * Returns null until a scan has created at least one list.
  */
-async function createOwnProxy(imageId: string): Promise<string | null> {
+async function createOwnProxy(imageId: string, taken: Set<unknown> = new Set()): Promise<string | null> {
   const list = await db.proxyList.findFirst({ orderBy: { lastUsedAt: 'desc' } });
   if (!list) return null;
-  const ports = list.ports as number[];
-  // Test the credentials first (Check Proxy works on unsaved settings), so a phone is
-  // never set up with a dead or foreign proxy. Up to three ports of the list.
-  let port: number | null = null;
+  const all = list.ports as number[];
+  // Each phone starts at a different port. DuoPlus hands back the SAME record for the same
+  // host and port, so two new phones given one port would share a record, which is not allowed:
+  // a record another phone already has is passed over and the next port is tried.
+  const start = [...imageId].reduce((n, ch) => n + ch.charCodeAt(0), 0) % Math.max(1, all.length);
+  const ports = [...all.slice(start), ...all.slice(0, start)].slice(0, 8);
+  let id: string | null = null;
   let lastTip = '';
-  for (const p of ports.slice(0, 3)) {
+  for (const p of ports) {
+    // Test the credentials first (Check Proxy works on unsaved settings), so a phone is
+    // never set up with a dead or foreign proxy.
     const check = await duoplusPost('/api/v1/proxy/check', {
       protocol: 'socks5',
       host: list.host,
@@ -468,25 +474,30 @@ async function createOwnProxy(imageId: string): Promise<string | null> {
       ip_scan_channel: 'ip2location',
     }).catch(() => null);
     const d = check?.data;
-    if (d?.success && /^(us|usa|united states)$/i.test(String(d.country ?? '').trim())) {
-      port = Number(p);
-      break;
+    if (!(d?.success && /^(us|usa|united states)$/i.test(String(d.country ?? '').trim()))) {
+      lastTip = String(d?.tips || (d?.country ? 'exits in ' + d.country : '') || check?.message || 'no response');
+      continue;
     }
-    lastTip = String(d?.tips || (d?.country ? 'exits in ' + d.country : '') || check?.message || 'no response');
+    const res = await duoplusPost('/api/v1/proxy/add', {
+      proxy_list: [
+        { protocol: 'socks5', host: list.host, port: Number(p), user: list.login, password: list.password, name: 'stakeout-' + imageId },
+      ],
+      ip_scan_channel: 'ip2location',
+    }).catch(() => null);
+    const got = res?.data?.success?.[0]?.id;
+    if (!got) {
+      lastTip = 'could not create a record: ' + JSON.stringify(res?.data?.fail ?? res?.message ?? '').slice(0, 120);
+      continue;
+    }
+    if (taken.has(String(got))) {
+      lastTip = 'port ' + p + ' already belongs to another phone';
+      continue;
+    }
+    id = String(got);
+    break;
   }
-  if (port === null) {
-    console.warn('[duoplus] no working US port to set up', imageId, 'with:', lastTip.slice(0, 160));
-    return null;
-  }
-  const res = await duoplusPost('/api/v1/proxy/add', {
-    proxy_list: [
-      { protocol: 'socks5', host: list.host, port, user: list.login, password: list.password, name: 'stakeout-' + imageId },
-    ],
-    ip_scan_channel: 'ip2location',
-  }).catch(() => null);
-  const id = res?.data?.success?.[0]?.id;
   if (!id) {
-    console.warn('[duoplus] could not create a proxy record for', imageId, JSON.stringify(res?.data?.fail ?? res?.message ?? '').slice(0, 200));
+    console.warn('[duoplus] no usable port to set up', imageId, 'with:', lastTip.slice(0, 160));
     return null;
   }
   const bound = await duoplusPost('/api/v1/cloudPhone/update', {

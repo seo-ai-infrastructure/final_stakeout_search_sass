@@ -861,6 +861,12 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       // The page's own map pack first (three listings, or four in Google's newer layout with
       // "See more on Google"), then an AI Overview's business list.
       const r = rankWithoutFinder([b.serp, b.final], [...[...b.ai].reverse(), b.serp, b.final], scan.targetBusiness);
+      // Nothing read at all, and every snapshot is byte-for-byte the same page: the template never
+      // scrolled, so the map pack was never looked for. That is a failed run to retry, not a
+      // "not found" result.
+      const shots = Object.entries(b.fingerprints ?? {}).filter(([name]) => /^(serp|final|dump_\d+)\.xml$/.test(name)).map(([, hash]) => hash);
+      if (r.from === 'none' && shots.length >= 3 && new Set(shots).size === 1)
+        throw new Error('RPA_SURFACE_ERROR no_scroll: the template finished without scrolling the results page');
       aiList = { rank: r.rank, list: r.list };
       Object.assign(proof, { finderShown: false, rankFrom: r.from });
     }
