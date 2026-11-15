@@ -2,19 +2,19 @@ import { brandForUser } from '@stakeout/core/brands';
 import { randomBytes } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { report } from '@/lib/reports';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getAuthenticatedUser, readScope } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { InputError, scheduleCron } from '@stakeout/core/grid';
 import { requestRerun, stopScan } from '@stakeout/core/scans';
 type C = { params: Promise<{ scanId: string }> };
 export async function GET(_: Request, c: C) {
   try {
-    return Response.json(
-      await report({
-        id: (await c.params).scanId,
-        userId: (await getAuthenticatedUser()).id,
-      }),
-    );
+    const id = (await c.params).scanId,
+      me = await getAuthenticatedUser(),
+      data = await report({ id, ...readScope(me) });
+    // An admin reading someone else's scan is told whose it is, so the page can say so.
+    const owner = me.role === 'ADMIN' ? await db.gridScan.findUnique({ where: { id }, select: { userId: true, user: { select: { email: true } } } }) : null;
+    return Response.json(owner && owner.userId !== me.id ? { ...data, viewingFor: owner.user.email } : data);
   } catch (e) {
     return errorResponse(e);
   }

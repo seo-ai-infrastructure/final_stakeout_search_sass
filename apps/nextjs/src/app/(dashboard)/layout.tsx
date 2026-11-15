@@ -25,6 +25,7 @@ export default async function DashboardLayout({
           {user.role === 'ADMIN' && (
             <Link href="/admin/devices">Device fleet</Link>
           )}
+          {user.role === 'ADMIN' && <Link href="/admin/scans">All scans</Link>}
         </nav>
         <UserSessionBadge />
       </header>

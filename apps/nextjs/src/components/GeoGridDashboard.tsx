@@ -162,6 +162,8 @@ export type GridPinData = {
 export type GridScanData = {
   /** On a shared report: the white-label name and logo it is shown under, when the owner has one. */
   brand?: { name: string; accent: string | null; logo: string | null } | null;
+  /** Set when an admin is reading another account's scan: that account's email. */
+  viewingFor?: string;
   id: string;
   targetBusiness: string;
   keyword: string;
@@ -594,6 +596,12 @@ export function GeoGridDashboard({
   const pinZip = pin?.census?.zcta ? describeArea('zcta', pin.census.zcta) : null;
   return (
     <div className="mx-auto max-w-screen-2xl space-y-5 p-5">
+      {scan.viewingFor && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-950/30 px-4 py-2 text-sm text-amber-200">
+          Quality-control view: this scan belongs to {scan.viewingFor}. You can read it and stop it; re-runs, sharing and schedules stay with the owner.{' '}
+          <a href="/admin/scans" className="underline">All scans</a>
+        </div>
+      )}
       {shared && scan.brand && (
         <div className="flex items-center gap-4 border-b border-slate-800 pb-4">
           {scan.brand.logo && (

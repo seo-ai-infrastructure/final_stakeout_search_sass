@@ -1,5 +1,5 @@
 import { db } from '@stakeout/db';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getAuthenticatedUser, readScope } from '@/lib/auth';
 import { signedRead } from '@stakeout/core/r2';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
@@ -18,7 +18,7 @@ export async function GET(
       throw new InputError('Unavailable proof.', 404);
     const scope = share
       ? { shareToken: share }
-      : { userId: (await getAuthenticatedUser()).id };
+      : readScope(await getAuthenticatedUser());
     const pin = await db.gridPin.findFirst({
       where: { id: (await c.params).pinId, scan: scope },
     });

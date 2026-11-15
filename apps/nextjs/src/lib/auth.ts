@@ -52,3 +52,10 @@ export async function getAuthenticatedUser() {
   if (!user || user.role === 'BLOCKED') throw new Error('UNAUTHORIZED');
   return user;
 }
+
+/**
+ * Which scans an account may read: its own, or every scan for an admin (quality control: an admin
+ * opens a customer's report and its recordings without digging through logs). Reading only;
+ * re-running, sharing and schedules stay with the owner.
+ */
+export const readScope = (user: { id: string; role: string }): { userId?: string } => (user.role === 'ADMIN' ? {} : { userId: user.id });

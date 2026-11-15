@@ -3,7 +3,7 @@ import { db } from '@stakeout/db';
 import { r2, bucket } from '@stakeout/core/r2';
 import { InputError } from '@stakeout/core/grid';
 import { untarGz, readResultsPage, readLocalFinder, readAiOverview, readAiCopy, uiLabels, rankIn, sameBusiness, isLocalFinder, isMapsList, readMapsList, readAiOverviewLayout } from '@stakeout/core/serpEvidence';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getAuthenticatedUser, readScope } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 
 export const runtime = 'nodejs';
@@ -20,7 +20,7 @@ const TTL = 10 * 60000;
 export async function GET(req: Request, c: { params: Promise<{ pinId: string }> }) {
   try {
     const share = new URL(req.url).searchParams.get('share');
-    const scope = share ? { shareToken: share } : { userId: (await getAuthenticatedUser()).id };
+    const scope = share ? { shareToken: share } : readScope(await getAuthenticatedUser());
     const pin = await db.gridPin.findFirst({
       where: { id: (await c.params).pinId, scan: scope },
       include: { scan: { select: { targetBusiness: true } } },
