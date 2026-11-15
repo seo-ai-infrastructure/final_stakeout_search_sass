@@ -58,6 +58,9 @@ export async function syncDuoPlusDevicePool() {
     const needAdb: string[] = [];
     const needPower: string[] = [];
     const scopedSkips: string[] = [];
+    // Phones DuoPlus reports as "powering on" or "configuring": it shows that for a few seconds
+    // every time a point changes the phone's proxy or GPS. They are busy, not gone.
+    const settling: string[] = [];
     const autoSetup = process.env.DUOPLUS_AUTO_PROVISION !== 'false';
     let listed = 0;
     let complete = false;
@@ -86,6 +89,7 @@ export async function syncDuoPlusDevicePool() {
         if (u.ok) online.push(i);
         else {
           skipped[u.why] = (skipped[u.why] ?? 0) + 1;
+          if (Number(i.status) === 10 || Number(i.status) === 11) settling.push(String(i.id));
           // Your own phones are named, with DuoPlus's raw fields, so a dashboard/API mismatch shows.
           scopedSkips.push(String(i.id) + ' ' + u.why + ' [status=' + String(i.status) + (i.link_status !== undefined ? ' link=' + String(i.link_status) : '') + ']');
           // One of your listed phones is off: power it on (subscription phones only: never billed per minute).
@@ -124,11 +128,13 @@ export async function syncDuoPlusDevicePool() {
     const usedProxies = new Set(known.map((d) => d.proxyId));
     const onlineIds = online.map((i) => String(i.id));
     // Only a complete listing counts: a partial one would look like phones had gone.
-    if (complete) readyPhones = online.length;
+    if (complete) readyPhones = online.length + settling.length;
 
     if (complete)
       await db.devicePool.updateMany({
-        where: { imageId: { notIn: onlineIds }, offlineAt: null },
+        // A phone that is only applying settings keeps its place: taking it out of service for a
+        // minute each time left one phone idle through most of a scan.
+        where: { imageId: { notIn: [...onlineIds, ...settling] }, offlineAt: null },
         data: { offlineAt: now },
       });
 
