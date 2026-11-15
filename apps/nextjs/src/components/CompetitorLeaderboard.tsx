@@ -316,7 +316,7 @@ export function CompetitorLeaderboard({
   if (completedPins.length === 0) {
     return (
       <div className="flex h-64 w-full items-center justify-center rounded-xl border border-slate-800 bg-slate-900/60">
-        Waiting for completed XML dumps to calculate market-wide Share of Local
+        Waiting for completed points to calculate market-wide Share of Local
         Voice & AI Citation Share...
       </div>
     );

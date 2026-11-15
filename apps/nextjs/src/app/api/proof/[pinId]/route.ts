@@ -1,6 +1,8 @@
 import { db } from '@stakeout/db';
 import { getAuthenticatedUser, readScope } from '@/lib/auth';
-import { signedRead } from '@stakeout/core/r2';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
+import { bucket, r2, signedRead } from '@stakeout/core/r2';
+import { customerReceipt } from '@/lib/receipt';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
 export async function GET(
@@ -16,11 +18,14 @@ export async function GET(
       (share && kind !== 'video')
     )
       throw new InputError('Unavailable proof.', 404);
-    const scope = share
-      ? { shareToken: share }
-      : readScope(await getAuthenticatedUser());
+    const me = share ? null : await getAuthenticatedUser();
+    const admin = me?.role === 'ADMIN';
+    // The raw bundle shows how a search is carried out: admins only.
+    if (kind === 'bundle' && !admin) throw new InputError('Unavailable proof.', 404);
+    const scope = me ? readScope(me) : { shareToken: share! };
     const pin = await db.gridPin.findFirst({
       where: { id: (await c.params).pinId, scan: scope },
+      include: { scan: { select: { keyword: true, targetBusiness: true } } },
     });
     const key =
       pin &&
@@ -37,6 +42,19 @@ export async function GET(
     }
     if (!objectKey.startsWith('scans/' + pin.scanId + '/'))
       throw new InputError('Proof unavailable.', 404);
+    // A customer's receipt is rebuilt from the stored record with only what a receipt states. The
+    // full record (which also describes the run itself) is served to admins alone.
+    if (kind === 'meta' && !admin) {
+      const obj = await r2().send(new GetObjectCommand({ Bucket: bucket, Key: objectKey }));
+      const full = JSON.parse(await obj.Body!.transformToString());
+      return new Response(JSON.stringify(customerReceipt(full, pin), null, 2), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Disposition': `attachment; filename="stakeout-receipt-${pin.rowIdx + 1}-${pin.colIdx + 1}.json"`,
+          'Cache-Control': 'private, no-store',
+        },
+      });
+    }
     return new Response(null, {
       status: 307,
       headers: {

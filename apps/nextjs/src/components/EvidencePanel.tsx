@@ -98,7 +98,7 @@ export function EvidencePanel({
 
   useEffect(() => {
     // Refused points can keep their evidence (worker v39): open them too, so the reason is visible.
-    if (!pin || !(pin.status === 'COMPLETED' || (pin.status === 'FAILED' && pin.dumpsTarUrl))) return setEv(null);
+    if (!pin || !(pin.status === 'COMPLETED' || (pin.status === 'FAILED' && (pin.hasBundle ?? Boolean(pin.dumpsTarUrl))))) return setEv(null);
     const hit = cache.get(pin.id);
     if (hit) return setEv(hit), setState('idle');
     let live = true;
@@ -214,7 +214,7 @@ export function EvidencePanel({
 
       {/* Phone */}
       <section aria-label="What the phone saw" className="flex flex-col items-center gap-3">
-        {pin.status === 'FAILED' && pin.dumpsTarUrl && (
+        {pin.status === 'FAILED' && (pin.hasBundle ?? Boolean(pin.dumpsTarUrl)) && (
           <p role="status" className="max-w-[360px] rounded-lg bg-rose-500/15 px-3 py-2 text-xs text-rose-200">Refused point: this evidence was kept so you can see why. It has no rank and was refunded.</p>
         )}
         <div role="group" aria-label="Phone view" className="flex flex-wrap justify-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1">
@@ -239,7 +239,7 @@ export function EvidencePanel({
               ) : (
                 <Empty text="No recording for this point." />
               )
-            ) : pin.status !== 'COMPLETED' && !(pin.status === 'FAILED' && pin.dumpsTarUrl) ? (
+            ) : pin.status !== 'COMPLETED' && !(pin.status === 'FAILED' && (pin.hasBundle ?? Boolean(pin.dumpsTarUrl))) ? (
               <Empty text={`This point is ${pin.status.toLowerCase()}.`} />
             ) : state === 'loading' ? (
               <Empty text="Rebuilding the page from this point’s snapshot…" />
@@ -431,8 +431,8 @@ export function EvidencePanel({
           )}
           {!shareToken && (pin.metaJsonUrl || pin.dumpsTarUrl) && (
             <div className="mt-4 flex flex-wrap gap-2">
-              {pin.metaJsonUrl && <a className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-emerald-300 hover:border-emerald-400" href={pin.metaJsonUrl}>Receipt JSON</a>}
-              {pin.dumpsTarUrl && <a className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-emerald-300 hover:border-emerald-400" href={pin.dumpsTarUrl}>Raw bundle</a>}
+              {pin.metaJsonUrl && <a className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-emerald-300 hover:border-emerald-400" href={pin.metaJsonUrl}>Receipt</a>}
+              {pin.dumpsTarUrl && <a className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-emerald-300 hover:border-emerald-400" href={pin.dumpsTarUrl}>Raw bundle (admin)</a>}
             </div>
           )}
         </div>

@@ -138,7 +138,7 @@ export function PinEvidenceCard({
             )}
             {!shared && pin.dumpsTarUrl && (
               <a className={btn} href={pin.dumpsTarUrl} title="Every snapshot and the recording from this search, as captured">
-                Raw bundle
+                Raw bundle (admin)
               </a>
             )}
           </div>

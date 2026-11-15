@@ -149,7 +149,10 @@ export type GridPinData = {
   aiCitations: string[] | null;
   videoUrl: string | null;
   metaJsonUrl?: string | null;
+  /** The raw evidence bundle: sent to admins only. */
   dumpsTarUrl?: string | null;
+  /** Evidence was kept for this point (so its page can be rebuilt), whoever is looking. */
+  hasBundle?: boolean;
   proxyMeta: {
     /** The internet provider the point ran on, as a display name. */
     isp: string | null;

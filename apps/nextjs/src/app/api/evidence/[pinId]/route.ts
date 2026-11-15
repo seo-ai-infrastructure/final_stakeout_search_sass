@@ -20,7 +20,10 @@ const TTL = 10 * 60000;
 export async function GET(req: Request, c: { params: Promise<{ pinId: string }> }) {
   try {
     const share = new URL(req.url).searchParams.get('share');
-    const scope = share ? { shareToken: share } : readScope(await getAuthenticatedUser());
+    const me = share ? null : await getAuthenticatedUser();
+    // The run's own step log and manifest describe how a search is carried out: admins only.
+    const reply = (body: string) => respond(me?.role === 'ADMIN' ? body : JSON.stringify({ ...JSON.parse(body), capture: null, events: [] }));
+    const scope = me ? readScope(me) : { shareToken: share! };
     const pin = await db.gridPin.findFirst({
       where: { id: (await c.params).pinId, scan: scope },
       include: { scan: { select: { targetBusiness: true } } },
@@ -108,5 +111,5 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
   }
 }
 
-const reply = (body: string) =>
+const respond = (body: string) =>
   new Response(body, { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, max-age=600' } });

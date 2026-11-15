@@ -80,7 +80,11 @@ export const reportSelect = {
   aioCitationRate: true,
   pins: { select: pinSelect, orderBy: [{ rowIdx: 'asc' }, { colIdx: 'asc' }] },
 } satisfies Prisma.GridScanSelect;
-export async function report(where: Prisma.GridScanWhereInput) {
+/**
+ * A scan's report. `admin` adds the link to each point's raw evidence bundle: that file shows how
+ * a search is carried out, so only an admin may download it. Everyone else gets `hasBundle`.
+ */
+export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: boolean } = {}) {
   const s = await db.gridScan.findFirst({ where, select: reportSelect });
   if (!s) throw new InputError('Report unavailable.', 404);
   await fillCensus(s.pins);
@@ -99,7 +103,8 @@ export async function report(where: Prisma.GridScanWhereInput) {
         // The report needs each point's summary, not its whole Local Finder list (the Evidence tab reads that).
         insights: p.insights ? { ...(p.insights as Record<string, unknown>), finder: undefined } : null,
         metaJsonUrl: !token && p.metaJsonUrl ? route + 'meta' : null,
-        dumpsTarUrl: !token && p.dumpsTarUrl ? route + 'bundle' : null,
+        dumpsTarUrl: opts.admin && !token && p.dumpsTarUrl ? route + 'bundle' : null,
+        hasBundle: Boolean(p.dumpsTarUrl),
         // Only what a report shows: the provider's name, and where a rank came from when no Local
         // Finder opened. The exit's city is not sent: a point is located by its GPS, not its IP.
         proxyMeta: m

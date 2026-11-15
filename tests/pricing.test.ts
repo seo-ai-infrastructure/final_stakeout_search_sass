@@ -116,3 +116,21 @@ test('clients: names differing by capitals or spaces are one client, and merges 
   assert.equal(addMerge(m, 'Payne HVAC', 'payne hvac'), null);
   assert.equal(addMerge(m, 'Payne HVAC', 'Payne Air'), null);
 });
+
+test('a customer receipt carries only receipt fields, never how the run was done', async () => {
+  const { customerReceipt } = await import('../apps/nextjs/src/lib/receipt');
+  const full = {
+    timestamp: '2026-11-15T21:47:19.000Z', observedModel: 'Pixel 5', locationSource: 'Lakeland, FL - From your device',
+    proxyCheck: { ip: '47.194.10.35', port: 10136, listId: 22246786, proxySource: 'proxy-seller-list', ispObserved: 'AS5650 Verizon Business · Frontier Communications Corporation', rpaTemplate: { id: 'txM9y', name: 'Stakeout_chrome_final_v3_34' } },
+    rawKey: 'scans/x/pin_3_0/y/raw.tar.gz', evidenceTransfer: 'adb_pull', fingerprints: { 'video.mp4': 'abc', 'serp.xml': 'def' },
+  };
+  const pin = { rowIdx: 3, colIdx: 0, lat: 27.9, lng: -82, zip: '33811', city: 'Lakeland', stateCode: 'FL', rankFound: null, topCompetitors: ['AP Drain Service LLC Plumbing And Septic'], hasAiOverview: true, targetCitedInAi: false, evidenceSha256: 'a00e1b611e59', scan: { keyword: 'emergency plumber near me', targetBusiness: "Stuart's Plumbing" } };
+  const out = JSON.stringify(customerReceipt(full, pin));
+  for (const secret of ['proxy', 'rpa', 'txM9y', 'adb', '47.194', '10136', '22246786', 'raw.tar', 'serp.xml', 'Stakeout_chrome'])
+    assert.ok(!out.toLowerCase().includes(secret.toLowerCase()), 'receipt must not contain ' + secret);
+  const r = customerReceipt(full, pin);
+  assert.equal(r.phone, 'Pixel 5');
+  assert.equal(r.internetProvider, 'Frontier Communications');
+  assert.equal(r.evidence.fingerprint, 'a00e1b611e59');
+  assert.deepEqual(r.point, { row: 4, column: 1, latitude: 27.9, longitude: -82, city: 'Lakeland', state: 'FL', zip: '33811' });
+});
