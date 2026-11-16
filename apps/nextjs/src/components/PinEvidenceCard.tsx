@@ -74,6 +74,8 @@ export function PinEvidenceCard({
   const isYou = (n: string) => key(n) === key(scan.targetBusiness);
   // What a searcher passes before the business's own listing, top of the page first.
   const stack: { tone: string; label: string; text: string }[] = [];
+  // Where this point's rank was read from, when the full local list was not opened (null: the Local Finder).
+  const from = pin?.proxyMeta?.finderShown === false ? (pin.proxyMeta.rankFrom ?? 'ai_overview_list') : null;
   if (pin?.status === 'COMPLETED') {
     if (ads != null && ads > 0) stack.push({ tone: 'border-rose-500/40 bg-rose-950/30 text-rose-300', label: 'Sponsored', text: `${ads} sponsored ${ads === 1 ? 'result' : 'results'} above you` });
     if (pin.hasAiOverview)
@@ -82,8 +84,24 @@ export function PinEvidenceCard({
         label: 'AI Overview',
         text: place ? `You are #${place.pos} of ${place.of} businesses it names` : pin.targetCitedInAi ? 'It names you' : 'It does not name you',
       });
-    stack.push({ tone: 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300', label: 'Local results', text: pin.rankFound != null ? `You are #${pin.rankFound}` : 'You are not in the top 10' });
+    const green = 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300';
+    // The last block is whatever Google showed as its local answer here, named for what it was.
+    if (from === 'ai_overview_list') stack.push({ tone: 'border-slate-700 bg-slate-950/40 text-slate-400', label: 'Local results', text: 'None on this page: no map pack and no business panel' });
+    else if (from === 'none') stack.push({ tone: 'border-slate-700 bg-slate-950/40 text-slate-400', label: 'Local results', text: 'None on this page' });
+    else if (from === 'single_business')
+      stack.push({ tone: green, label: 'Single-business result', text: pin.rankFound === 1 ? 'You hold it' : `Held by ${pin.topCompetitors?.[0] ?? 'another business'}` });
+    else if (from === 'map_pack') stack.push({ tone: green, label: 'Map pack', text: pin.rankFound != null ? `You are #${pin.rankFound}` : 'You are not in it' });
+    else stack.push({ tone: green, label: 'Local results', text: pin.rankFound != null ? `You are #${pin.rankFound}` : 'You are not in the top 10' });
   }
+  // What the numbered list on the left is, by where it was read from.
+  const listTitle =
+    from === 'ai_overview_list' ? 'Businesses the AI Overview lists, in its order' : from === 'single_business' ? 'Single-business result' : from === 'map_pack' ? 'Map pack, in Google’s order' : 'Local results, in Google’s order';
+  const stackNote =
+    from === 'ai_overview_list' || from === 'none'
+      ? 'Google showed no local results at this point, so the rank here is your place in the AI Overview’s list.'
+      : stack.length > 1
+        ? `A searcher passes ${stack.length - 1 === 1 ? 'one block' : stack.length - 1 + ' blocks'} before reaching the ${from === 'single_business' ? 'single-business result' : 'local results'}.`
+        : 'Nothing sits above the local results at this point.';
 
   return (
     <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5" aria-label="Point evidence">
@@ -198,7 +216,7 @@ export function PinEvidenceCard({
                 )}
                 {pin.topCompetitors?.length ? (
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Local results, in Google&apos;s order</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{listTitle}</p>
                     <ol className="mt-1.5 space-y-1">
                       {pin.topCompetitors.slice(0, 10).map((n, i) => (
                         <li key={i} className={'flex items-center gap-3 rounded-lg border px-3 py-1.5 text-sm ' + (isYou(n) ? 'border-emerald-500/50 bg-emerald-950/30' : 'border-slate-800')}>
@@ -278,9 +296,7 @@ export function PinEvidenceCard({
                   ))}
                 </ol>
                 <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                  {stack.length > 1
-                    ? `A searcher passes ${stack.length - 1 === 1 ? 'one block' : stack.length - 1 + ' blocks'} before reaching the local results.`
-                    : 'Nothing sits above the local results at this point.'}
+                  {stackNote}
                 </p>
               </>
             ) : (

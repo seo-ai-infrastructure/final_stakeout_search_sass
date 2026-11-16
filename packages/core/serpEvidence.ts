@@ -498,20 +498,40 @@ export type SoloPanel = { name: string; rating: string | null; reviews: string |
 
 /**
  * A results page where Google answers a local search with ONE business: a panel with the
- * business's name, rating and its own tabs (Overview, Services, Reviews, About), and no map
- * pack. The tab strip is what marks it: its last tab reads "About . <business name>". Cards in
- * a map pack, the Local Finder or an AI Overview have no such tabs.
+ * business's name, rating, photos and actions, and no map pack. Two things mark it, and either is
+ * enough:
+ *  - its own tab strip, whose last tab reads "About . <business name>";
+ *  - its header: the name, "Rated X out of 5,", "N reviews", then "More options for <name>". Google
+ *    also shows the panel without tabs (they become filter chips at the top of the page), so the
+ *    header has to stand on its own.
+ * Cards in a map pack, the Local Finder or an AI Overview have neither.
  */
 export function readSoloPanel(xml: string | null | undefined): SoloPanel | null {
   if (!xml) return null;
   const L = uiLabels(xml);
-  const at = L.findIndex((x, i) => /^About \. .+/.test(x.label) && L.slice(Math.max(0, i - 14), i).some((y) => y.label === 'Overview') && L.slice(Math.max(0, i - 14), i).some((y) => y.label === 'Reviews'));
-  if (at < 0) return null;
-  const name = L[at].label.replace(/^About \. /, '').trim();
-  // The header sits just above the tabs: "Rated 5.0 out of 5," · "19 reviews" · "(" "19" ")" "‧" category "‧" Open.
-  const head = L.slice(Math.max(0, at - 45), at).map((x) => x.label);
-  const r = [...head].reverse().find((l) => /^Rated [0-5](?:[.,]\d)? out of 5/.test(l));
-  const rv = [...head].reverse().find((l) => /^[\d.,]+[KM]? reviews?$/i.test(l));
+  const rated = /^Rated [0-5](?:[.,]\d)? out of 5/, count = /^[\d.,]+[KM]? reviews?$/i;
+  let name: string | null = null,
+    head: string[] = [];
+  const tabs = L.findIndex((x, i) => /^About \. .+/.test(x.label) && L.slice(Math.max(0, i - 14), i).some((y) => y.label === 'Overview') && L.slice(Math.max(0, i - 14), i).some((y) => y.label === 'Reviews'));
+  if (tabs >= 0) {
+    name = L[tabs].label.replace(/^About \. /, '').trim();
+    head = L.slice(Math.max(0, tabs - 45), tabs).map((x) => x.label);
+  } else {
+    // No tabs: "More options for <name>", with that same name and its rating in the few labels above it.
+    for (let i = 0; i < L.length && !name; i++) {
+      const m = /^More options for (.+)$/.exec(L[i].label);
+      if (!m || /^response\b/i.test(m[1])) continue;
+      const above = L.slice(Math.max(0, i - 8), i).map((x) => x.label);
+      const at = above.lastIndexOf(m[1].trim());
+      if (at < 0 || !above.slice(at + 1).some((l) => rated.test(l)) || !above.slice(at + 1).some((l) => count.test(l))) continue;
+      name = m[1].trim();
+      head = above.slice(at);
+    }
+  }
+  if (!name) return null;
+  // The header: "Rated 5.0 out of 5," · "19 reviews" · "(" "19" ")" "‧" category "‧" Open.
+  const r = [...head].reverse().find((l) => rated.test(l));
+  const rv = [...head].reverse().find((l) => count.test(l));
   // The category is the first real word after the review count ("(", "19", ")" and the dots are skipped).
   const after = rv ? head.slice(head.lastIndexOf(rv) + 1).filter((l) => l.length > 2 && !/^[\d.,()]+[KM]?$/.test(l)) : [];
   const category = after[0] && !/^(Open|Closed|Opens|Closes|More options)\b/.test(after[0]) ? after[0] : null;

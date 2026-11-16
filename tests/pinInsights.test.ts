@@ -226,3 +226,15 @@ test('a single-business panel (no map pack) is the local result at #1, ahead of 
   // The target holds it: #1 (apostrophe style does not matter).
   assert.equal(rankWithoutFinder([a], [a], "Bro's Master Plumbers").rank, 1);
 });
+
+test('a single-business panel without its tab strip is still read (header: name, rating, "More options for")', async () => {
+  const { readSoloPanel, rankWithoutFinder } = await import('../packages/core/serpEvidence');
+  const fs = await import('node:fs');
+  const x = fs.readFileSync(new URL('./fixtures/real-single-business-panel-no-tabs-2026-11-15.xml', import.meta.url), 'utf8');
+  assert.deepEqual(readSoloPanel(x), { name: '1-Tom-Plumber Lakeland', rating: '4.9', reviews: '455', category: 'Plumber in Polk County, Florida' });
+  // The AI Overview above it lists Stuart's third; the panel is the local result, and it is not Stuart's.
+  assert.deepEqual(rankWithoutFinder([x], [x], "Stuart's Plumbing"), { rank: null, list: ['1-Tom-Plumber Lakeland'], from: 'single_business' });
+  // Pages with a map pack, a Local Finder or only an AI Overview list have no such panel.
+  for (const f of ['real-pack-2026-11-09.xml', 'real-pack4-see-more-2026-11-12.xml', 'real-r3c2-finder.xml', 'real-aio-list-no-finder.xml', 'real-uidump-aio-no-map-pack.xml'])
+    assert.equal(readSoloPanel(fs.readFileSync(new URL('./fixtures/' + f, import.meta.url), 'utf8')), null, f);
+});

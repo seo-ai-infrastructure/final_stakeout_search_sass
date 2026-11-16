@@ -88,8 +88,9 @@ export async function backfillPackRanks(limit = 200) {
     WHERE s."targetType" = 'mobile_chrome' AND p.status = 'COMPLETED'
       AND p."proxyMeta"->>'finderShown' = 'false' AND p."dumpsTarUrl" IS NOT NULL
       AND ((p."rankFound" IS NULL AND p."proxyMeta"->>'rankFrom' = 'none' AND p."proxyMeta"->>'packChecked' IS NULL)
-        -- Points ranked from an AI Overview's list before single-business panels were read: checked once for one.
-        OR (p."proxyMeta"->>'rankFrom' = 'ai_overview_list' AND p."proxyMeta"->>'soloChecked' IS NULL))
+        -- Points ranked from an AI Overview's list before single-business panels were read (and again
+        -- once the panel without its tab strip was): checked once for one.
+        OR (p."proxyMeta"->>'rankFrom' = 'ai_overview_list' AND p."proxyMeta"->>'soloChecked2' IS NULL))
     LIMIT ${limit}`;
   if (!pins.length) return;
   let fixed = 0;
@@ -117,7 +118,7 @@ export async function backfillPackRanks(limit = 200) {
       }
     }
     const current = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true } });
-    const meta = { ...((current?.proxyMeta as Record<string, unknown> | null) ?? {}), packChecked: true, soloChecked: true };
+    const meta = { ...((current?.proxyMeta as Record<string, unknown> | null) ?? {}), packChecked: true, soloChecked: true, soloChecked2: true };
     if (found && found.from !== 'none' && found.from !== p.was) {
       await db.gridPin.update({ where: { id: p.id }, data: { rankFound: found.rank, topCompetitors: found.list, proxyMeta: { ...meta, rankFrom: found.from } } });
       scans.add(p.scanId);
