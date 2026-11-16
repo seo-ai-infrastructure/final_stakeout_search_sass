@@ -323,7 +323,11 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
         const reuse =
           Number.isInteger(prior) && ports.includes(prior) && !(await redis().exists(`stakeout:portbad:${list.psListId}:${prior}`));
         const lease = reuse ? { port: prior, reused: true } : await leasePort(list.psListId, ports, p.id + ':' + list.psListId + ':' + t, used);
-        if (!lease) break;
+        if (!lease) {
+          // Nothing usable left on this list (every port resting or in use): say so, and the next list is tried.
+          if (!used.size) tried.push(label + ':-:NO_FREE_PORT');
+          break;
+        }
         if (reuse) await redis().set(`stakeout:portbusy:${list.psListId}:${lease.port}`, p.id, 'PX', 15 * 60000).catch(() => {});
         used.add(lease.port);
         const devKey = `stakeout:devport:${device.imageId}`;
