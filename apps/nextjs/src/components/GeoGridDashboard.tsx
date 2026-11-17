@@ -176,7 +176,7 @@ export type GridScanData = {
   createdAt: string;
   gridSize: number;
   spacingKm: number;
-  /** "mobile" for a mobile-data scan; home internet otherwise. */
+  /** "mobile", "mix" (mobile and residential) or "residential". */
   network?: string;
   centerLat: number;
   centerLng: number;
@@ -653,7 +653,7 @@ export function GeoGridDashboard({
           <p className="text-slate-300">
             {scan.keyword} · {scan.gridSize} × {scan.gridSize} ·{' '}
             {scan.targetType.replaceAll('_', ' ')}
-            {scan.network === 'mobile' ? ' · mobile data' : ''}
+            {scan.network === 'mobile' ? ' · Mobile Network' : scan.network === 'mix' ? ' · Mobile & Residential Networks' : ''}
           </p>
         </div>
         {shared ? (

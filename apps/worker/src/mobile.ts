@@ -9,7 +9,8 @@ import { db, type GridPin, type GridScan } from '@stakeout/db';
 import { listsForPin, normPlace, locationVerified } from '@stakeout/core/proxyLists';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
-import { isProxyProblem, outageKey, supplyDown } from '@stakeout/core/proxyWait';
+import { isProxyProblem, pinOutageKey, supplyDown } from '@stakeout/core/proxyWait';
+import { pinNetwork } from '@stakeout/core/network';
 import { decodoEndpoint, decodoLadder, decodoMobileLadder, decodoServes, decodoUser, proxyProviders } from '@stakeout/core/decodo';
 import { mobileHubs, mobileProvider, voidmobEndpoint, voidmobUser } from '@stakeout/core/voidmob';
 import { clearProxyOutage } from './proxyOutage';
@@ -394,7 +395,7 @@ async function provisionGateway(
         tried.push(target.rung + ':' + session + ':' + capped);
         continue;
       }
-      await clearProxyOutage(outageKey(p.scan));
+      await clearProxyOutage(pinOutageKey(p));
       const city = g.ipinfo?.city || g.ipapi?.city || '';
       return {
         ip: v.ip ?? '',
@@ -581,7 +582,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
           continue;
         }
         await redis().set(stickyKey, String(lease.port), 'EX', 6 * 3600).catch(() => {});
-        await clearProxyOutage(outageKey(p.scan));
+        await clearProxyOutage(pinOutageKey(p));
         return {
           ip: v.ip ?? '',
           org: g.ipinfo?.org || g.ipapi?.as || '',
@@ -656,7 +657,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
       continue;
     }
     await db.proxyList.update({ where: { id: list.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
-    await clearProxyOutage(outageKey(p.scan));
+    await clearProxyOutage(pinOutageKey(p));
     const ispWord = normPlace(isp).split(' ')[0] ?? '';
     return {
       ...c,
@@ -687,8 +688,8 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
  */
 export async function provision(device: LeasedDevice, p: Pin) {
   await device.assertOwned();
-  // Mobile data scans run only on mobile carrier IPs (Decodo mobile), never on home internet.
-  if (p.scan.network === 'mobile') {
+  // Mobile points (a mobile scan, or the mobile half of a mix) run only on mobile carrier IPs, never on home internet.
+  if (pinNetwork(p.scan.network, p.rowIdx, p.colIdx) === 'mobile') {
     const provider = mobileProvider();
     if (!provider) throw new Error('MOBILE_DATA_NOT_CONFIGURED set VOIDMOB_USERNAME and VOIDMOB_PASSWORD (or the Decodo mobile login) on the worker');
     if (transportFor(device) !== 'adb') throw new Error('PROXY_MOBILE_NEEDS_ADB_PHONE');

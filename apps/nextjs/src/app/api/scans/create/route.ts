@@ -27,11 +27,12 @@ export async function POST(req: Request) {
       const settings = await getSettings();
       if (s.isps.some((v: string) => !ispAllowed(v, settings))) throw new InputError('That ISP is not available here. Choose another.');
       // Mobile data: admins only until it is switched on for customers (admin settings).
-      if (s.network === 'mobile' && u.role !== 'ADMIN' && !settings.mobileForCustomers) throw new InputError('Mobile data scans are not available yet.');
-      if (s.network === 'mobile' && s.targetType === 'desktop_aimode') throw new InputError('Mobile data is for phone scans.');
-      if (s.network === 'mobile') {
+      // The mobile network (on its own or in a mix): admins only until it is switched on for customers.
+      if (s.network !== 'residential' && u.role !== 'ADMIN' && !settings.mobileForCustomers) throw new InputError('The mobile network is not available yet. Choose Residential Network.');
+      if (s.network !== 'residential' && s.targetType === 'desktop_aimode') throw new InputError('The mobile network is for phone scans.');
+      if (s.network !== 'residential') {
         const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
-        if (!health?.mobileData) throw new InputError('Mobile data is not available right now.');
+        if (!health?.mobileData) throw new InputError('The mobile network is not available right now. Choose Residential Network.');
       }
     const key = req.headers.get('Idempotency-Key') ?? randomUUID();
     if (!/^[\w-]{8,80}$/.test(key))

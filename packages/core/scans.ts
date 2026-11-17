@@ -12,6 +12,7 @@ import {
 import { ispForPin } from './proxyGeo';
 import { RERUN_MARKER, rerunCharge, rerunIsp } from './rerun';
 import { creditsPerPoint, getSettings } from './settings';
+import { pointPrice, scanCost } from './network';
 
 export async function createScan(
   userId: string,
@@ -36,8 +37,7 @@ export async function createScan(
     middle = pins.find((p) => p.rowIdx === mid && p.colIdx === mid) ?? pins[Math.floor((pins.length - 1) / 2)];
   // One credit per grid point, or the mobile-data price per point on a mobile scan (an admin
   // setting, 2 by default). AI Overview tracking is part of every Chrome scan, not an add-on.
-  const per = s.network === 'mobile' ? creditsPerPoint('mobile', await getSettings()) : 1;
-  const cost = lead || opts?.free ? 0 : pins.length * per;
+  const cost = lead || opts?.free ? 0 : s.network === 'residential' ? pins.length : scanCost(s.network, pins, creditsPerPoint('mobile', await getSettings()));
   try {
     return await db.$transaction(
       async (tx) => {
@@ -121,7 +121,12 @@ export async function settlePin(
         include: { scan: true },
       });
       const failed = 'error' in result;
-      const refund = failed ? pin.scan.creditsCharged / pin.scan.totalPins : 0;
+      // A failed point gives back what it cost (in a mixed network, mobile and home-internet points differ).
+      const refund = !failed
+        ? 0
+        : pin.scan.network === 'mix'
+          ? pointPrice(pin.scan, await tx.gridPin.findMany({ where: { scanId: pin.scanId }, select: { rowIdx: true, colIdx: true } }))(pin)
+          : pin.scan.creditsCharged / pin.scan.totalPins;
       const update = await tx.gridPin.updateMany({
         where: { id: pinId, status: 'PENDING' },
         data: failed
@@ -255,15 +260,20 @@ export async function requestRerun(scanId: string, userId: string, pinIds?: stri
     async (tx) => {
       const scan = await tx.gridScan.findFirst({
         where: { id: scanId, userId },
-        select: { id: true, creditsCharged: true, totalPins: true, ispMode: true, isps: true },
+        select: { id: true, creditsCharged: true, totalPins: true, ispMode: true, isps: true, network: true },
       });
       if (!scan) throw new InputError('Scan unavailable.', 404);
       const points = await tx.gridPin.findMany({
         where: { scanId, status: 'FAILED', ...(pinIds?.length ? { id: { in: pinIds } } : {}) },
-        select: { id: true, isRefunded: true, isp: true, lastError: true },
+        select: { id: true, isRefunded: true, isp: true, lastError: true, rowIdx: true, colIdx: true },
       });
       if (!points.length) throw new InputError('There are no failed points to re-run.', 400);
-      const { perPoint, credits } = rerunCharge(points, scan.creditsCharged, scan.totalPins);
+      // Each refunded point costs what it cost the first time (mixed networks: mobile and home points differ).
+      const price =
+        scan.network === 'mix'
+          ? pointPrice(scan, await tx.gridPin.findMany({ where: { scanId }, select: { rowIdx: true, colIdx: true } }))
+          : () => rerunCharge(points, scan.creditsCharged, scan.totalPins).perPoint;
+      const credits = points.filter((p) => p.isRefunded).reduce((n, p) => n + price(p), 0);
       if (credits > 0) {
         const paid = await tx.user.updateMany({
           where: { id: userId, creditBalance: { gte: credits } },
@@ -279,7 +289,7 @@ export async function requestRerun(scanId: string, userId: string, pinIds?: stri
         // One ledger row per point and reason: earlier refunds and re-runs keep numbered names.
         const n = (await tx.creditLedger.count({ where: { pinId: p.id, reason: { startsWith: 'PIN_RETRY' } } })) + 1;
         await tx.creditLedger.updateMany({ where: { pinId: p.id, reason: 'PIN_REFUND' }, data: { reason: `PIN_REFUND_${n}` } });
-        await tx.creditLedger.create({ data: { userId, amount: -perPoint, reason: `PIN_RETRY_${n}`, pinId: p.id, scanId } });
+        await tx.creditLedger.create({ data: { userId, amount: -price(p), reason: `PIN_RETRY_${n}`, pinId: p.id, scanId } });
       }
       await tx.gridPin.updateMany({
         where: { id: { in: points.map((p) => p.id) }, status: 'FAILED' },

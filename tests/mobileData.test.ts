@@ -11,7 +11,9 @@ test('scan spec: home internet unless mobile data is asked for; mobile data has 
   assert.equal(parseSpec(base).network, 'residential');
   assert.equal(parseSpec({ ...base, network: 'satellite' }).network, 'residential');
   assert.equal(parseSpec({ ...base, network: 'mobile' }).network, 'mobile');
-  assert.throws(() => parseSpec({ ...base, network: 'mobile', ispMode: 'single', isps: ['Spectrum'] }), /any carrier/);
+  assert.throws(() => parseSpec({ ...base, network: 'mobile', ispMode: 'single', isps: ['Spectrum'] }), /no ISP choice/);
+  assert.equal(parseSpec({ ...base, network: 'mix' }).network, 'mix');
+  assert.throws(() => parseSpec({ ...base, network: 'mix', ispMode: 'mix', isps: ['A', 'B'] }), /no ISP choice/);
 });
 
 test('campaign ids: home-internet scans keep their ids; mobile runs are a campaign of their own', () => {
@@ -23,6 +25,8 @@ test('campaign ids: home-internet scans keep their ids; mobile runs are a campai
     .digest('hex');
   assert.equal(campaignId('u1', home), before);
   assert.notEqual(campaignId('u1', parseSpec({ ...base, network: 'mobile' })), before);
+  assert.notEqual(campaignId('u1', parseSpec({ ...base, network: 'mix' })), before);
+  assert.notEqual(campaignId('u1', parseSpec({ ...base, network: 'mix' })), campaignId('u1', parseSpec({ ...base, network: 'mobile' })));
 });
 
 test('mobile data asks Decodo for the point’s state, with its own login', () => {

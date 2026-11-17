@@ -18,7 +18,8 @@ import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
-import { isProxyProblem, outageKey, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
+import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
+import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
 import { mobileProvider, voidmobUsage } from '@stakeout/core/voidmob';
 import { claimProxyProbe, clearProxyOutage, noteProxyOutage, proxyOutageSince } from './proxyOutage';
@@ -62,13 +63,13 @@ async function execute(job: Job, token?: string) {
     }
     // While this state's proxies are all down, one point at a time checks whether they are back;
     // the rest wait here, without taking a phone or calling DuoPlus.
-    const region = outageKey(pin.scan);
+    const region = pinOutageKey(pin);
     if (region && Date.now() - job.timestamp < PROXY_WAIT_MS && (await proxyOutageSince(region)) && !(await claimProxyProbe(region, pin.id))) {
       await job.moveToDelayed(Date.now() + 60000 + Math.floor(Math.random() * 30000), token);
       throw new DelayedError();
     }
     // A phone already on this point's Proxy-Seller list is preferred (home internet only).
-    const preferred = pin.scan.proxyRegion && pin.scan.network !== 'mobile' ? (await listsForPin(pin.scan, pin))[0]?.id : null;
+    const preferred = pin.scan.proxyRegion && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'residential' ? (await listsForPin(pin.scan, pin))[0]?.id : null;
     const lease = await acquireDeviceLease(pin.id, pin.scan.phoneModel, preferred);
     if (!('device' in lease)) {
       const waited = Date.now() - job.timestamp;
@@ -152,7 +153,7 @@ async function execute(job: Job, token?: string) {
       if (Date.now() - since < PROXY_WAIT_MS) {
         const waits = (Number(job.data.proxyWaits) || 0) + 1;
         const outage = msg.startsWith('PROXY_SUPPLY_DOWN');
-        const key = outageKey(pin.scan);
+        const key = pinOutageKey(pin);
         if (outage && key) {
           const down = await noteProxyOutage(key);
           console.warn('[proxy] every proxy in', key, 'is refused or dead since', down, '- points wait for them (out of traffic?)');
@@ -354,7 +355,8 @@ async function openProxyOutages() {
     select: { proxyRegion: true, stateCode: true, network: true },
     distinct: ['proxyRegion', 'stateCode', 'network'],
   });
-  const keys = [...new Set(open.map((s) => outageKey(s)).filter((k): k is string => Boolean(k)))];
+  // A mix can be held up on either network.
+  const keys = [...new Set(open.flatMap((s) => (s.network === 'mix' ? (['residential', 'mobile'] as const).map((network) => outageKey({ ...s, network })) : [outageKey(s)])).filter((k): k is string => Boolean(k)))];
   const down: { region: string; since: string }[] = [];
   for (const key of keys) {
     const since = await proxyOutageSince(key);

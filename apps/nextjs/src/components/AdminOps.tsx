@@ -564,12 +564,12 @@ export function AdminOps() {
               while you work on a phone by hand in DuoPlus.
             </p>
             <label className="text-xs text-slate-400">
-              Mobile data: credits per point (home internet is 1)
+              Mobile Network: credits per point (Residential is 1)
               <input className={input + ' mt-1 block w-full'} type="number" min={1} max={10} value={form.mobileCredits} onChange={(e) => setForm({ ...form, mobileCredits: e.target.value })} />
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-200">
               <input type="checkbox" className="h-4 w-4" checked={form.mobileCustomers} onChange={(e) => setForm({ ...form, mobileCustomers: e.target.checked })} />
-              Customers can choose mobile data (otherwise admins only)
+              Customers can choose Mobile Network and the Mix (otherwise admins only)
             </label>
           </div>
           <button

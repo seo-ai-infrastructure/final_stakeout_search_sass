@@ -1,3 +1,4 @@
+import { asScanNetwork, placedLayout } from './network';
 import { createHash } from 'node:crypto';
 import zipcodes from 'zipcodes';
 import { ANY_PHONE } from './hardware';
@@ -67,10 +68,10 @@ export function parseSpec(input: Record<string, unknown>) {
   )
     throw new InputError('Choose any ISP, one ISP, or a mix of 2–6 ISPs.');
   const ispId = ispMode === 'single' ? isps[0] : ispMode === 'mix' ? 'MIX' : 'ANY';
-  // Where the searches come from: home internet (residential IPs) or mobile data (a mobile
-  // carrier's IPs). A mobile scan uses whichever carrier has an IP in the point's state.
-  const network = input.network === 'mobile' ? 'mobile' : 'residential';
-  if (network === 'mobile' && ispMode !== 'any') throw new InputError('Mobile data scans use any carrier: choose "Any ISP".');
+  // Which network the searches go out on: residential (home internet), mobile (mobile data) or a
+  // mix of both. There is no ISP choice with mobile data or a mix.
+  const network = asScanNetwork(input.network);
+  if (network !== 'residential' && ispMode !== 'any') throw new InputError('Mobile and mixed networks have no ISP choice: choose "Any ISP".');
   const proxyRegion = typeof input.proxyRegion === 'string' ? input.proxyRegion : null;
   const proxyCity = typeof input.proxyCity === 'string' ? input.proxyCity : null;
   if (
@@ -175,13 +176,10 @@ export function placedPins(center: { lat: number; lng: number }, input: unknown,
   const max = Math.max(...sizes) ** 2;
   const kept = pts.slice(0, max);
   if (kept.length < 3) return null;
-  const gridSize = [...sizes].sort((a, b) => a - b).find((n) => n * n >= kept.length)!;
-  const rows = [...kept].sort((a, b) => b.lat - a.lat);
-  const pins: ({ rowIdx: number; colIdx: number; lat: number; lng: number } & ReturnType<typeof market>)[] = [];
-  for (let r = 0; r * gridSize < rows.length; r++) {
-    const row = rows.slice(r * gridSize, (r + 1) * gridSize).sort((a, b) => a.lng - b.lng);
-    row.forEach((p, c) => pins.push({ rowIdx: r, colIdx: c, lat: p.lat, lng: p.lng, ...market(p.lat, p.lng) }));
-  }
+  // North to south in rows, west to east within a row (network.ts placedLayout, which the New scan
+  // page also uses to price a mixed network).
+  const { gridSize, cells } = placedLayout(kept, sizes);
+  const pins = cells.map((p) => ({ rowIdx: p.rowIdx, colIdx: p.colIdx, lat: p.lat, lng: p.lng, ...market(p.lat, p.lng) }));
   return { gridSize, pins };
 }
 export function campaignId(userId: string, s: ScanSpec) {
@@ -201,8 +199,8 @@ export function campaignId(userId: string, s: ScanSpec) {
         s.ispMode,
         [...s.isps].sort(),
         s.trackAiOverviews,
-        // Mobile runs are their own campaign; home-internet ids stay exactly as they were.
-        ...(s.network === 'mobile' ? ['mobile'] : []),
+        // Mobile and mixed runs are their own campaigns; home-internet ids stay exactly as they were.
+        ...(s.network && s.network !== 'residential' ? [s.network] : []),
       ]),
     )
     .digest('hex');

@@ -19,7 +19,8 @@ import {
   Globe,
   Lock,
 } from 'lucide-react';
-import { IspSelectorDropdown, type IspMode, type IspOption } from '@/components/IspSelectorDropdown';
+import { type IspMode, type IspOption } from '@/components/IspSelectorDropdown';
+import { NETWORK_LABELS, pinNetwork, placedLayout, type ScanNetwork } from '@stakeout/core/network';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';
@@ -53,8 +54,8 @@ export function NewScanWizard() {
   const [detectedCity, setDetectedCity] = useState('Lakeland');
   const [detectedState, setDetectedState] = useState('FL');
   const [ispMode, setIspMode] = useState<IspMode>('any');
-  // Home internet (residential IPs) or mobile data (a carrier IP in each point's state).
-  const [network, setNetwork] = useState<'residential' | 'mobile'>('residential');
+  // Which network the searches go out on: residential, mobile, or a mix of both (no ISP choice).
+  const [network, setNetwork] = useState<ScanNetwork>('residential');
   const [mobileData, setMobileData] = useState<{ available: boolean; ready: boolean; creditsPerPoint: number } | null>(null);
   const [ispSelected, setIspSelected] = useState<string[]>([]);
   const [ispOptions, setIspOptions] = useState<IspOption[]>([]);
@@ -148,6 +149,7 @@ export function NewScanWizard() {
         if (sc.targetType) setTargetType(sc.targetType);
         if (sc.gridSize) setGridSize(offeredSize(sc.gridSize));
         if (sc.spacingKm) setSpacingKm(sc.spacingKm);
+        if (sc.network === 'mobile' || sc.network === 'mix') setNetwork(sc.network);
         setTrackAiOverviews(Boolean(sc.trackAiOverviews));
         const match = list.find((x) => x.name === sc.targetBusiness);
         if (match) setBusinessId(match.id);
@@ -163,7 +165,7 @@ export function NewScanWizard() {
     const keywords = [...new Set([...keywordList, ...picked, keyword].map((k) => k.trim()).filter(Boolean))];
     const body = {
       name: targetBusiness, centerLabel: addressQuery || [detectedCity, detectedState, detectedZip].filter(Boolean).join(' '),
-      centerLat, centerLng, keywords, targetType, gridSize, spacingKm, ispMode, isps: ispMode === 'any' ? [] : ispSelected,
+      centerLat, centerLng, keywords, targetType, gridSize, spacingKm, ispMode: 'any', isps: [],
       trackAiOverviews, scheduleType,
     };
     const res = await fetch(businessId ? '/api/businesses/' + businessId : '/api/businesses', {
@@ -284,8 +286,15 @@ export function NewScanWizard() {
   const creditSummary = useMemo(() => {
     const totalPins = shape === 'wealth' ? previewPoints.filter((p) => !p.skipped).length : gridSize * gridSize - allSkipped.length;
     const isDesktop = targetType.startsWith('desktop_');
-    const costPerPin = isDesktop ? 2 : network === 'mobile' && mobileData ? mobileData.creditsPerPoint : 1;
-    const totalCost = totalPins * costPerPin;
+    const mobilePrice = mobileData?.creditsPerPoint ?? 2;
+    // Mobile points cost the mobile price, residential ones 1. In a mix the points alternate like a
+    // checkerboard (the same rule the server charges by, with the same rows for placed points).
+    const kept = shape === 'wealth'
+      ? placedLayout(previewPoints.filter((p) => !p.skipped), OFFERED_GRID_SIZES).cells
+      : previewPoints.filter((p) => !p.skipped && !p.out).map((p) => { const [r, c] = p.key.split('_').map(Number); return { rowIdx: r, colIdx: c }; });
+    const mobilePins = network === 'residential' ? 0 : kept.filter((p) => pinNetwork(network, p.rowIdx, p.colIdx) === 'mobile').length;
+    const totalCost = isDesktop ? totalPins * 2 : totalPins - mobilePins + mobilePins * mobilePrice;
+    const costPerPin = isDesktop ? 2 : network === 'mobile' ? mobilePrice : 1;
     const spanMiles = ((gridSize - 1) * spacingKm * 0.621371).toFixed(1);
     return {
       totalPins,
@@ -661,10 +670,6 @@ export function NewScanWizard() {
       setErrorMsg('Enter the business name and at least one keyword.');
       return;
     }
-    if (network !== 'mobile' && ((ispMode === 'single' && ispSelected.length !== 1) || (ispMode === 'mix' && ispSelected.length < 2))) {
-      setErrorMsg(ispMode === 'single' ? 'Choose an ISP, or switch to Any ISP.' : 'Choose at least 2 ISPs for a mix.');
-      return;
-    }
     if (creditBalance < creditSummary.totalCost * runKeywords.length) {
       setIsTopUpOpen(true);
       return;
@@ -686,9 +691,9 @@ export function NewScanWizard() {
           targetBusiness: targetBusiness.trim(),
           centerLat,
           centerLng,
-          // Mobile data uses any carrier, so it has no ISP choice.
-          ispMode: network === 'mobile' ? 'any' : ispMode,
-          isps: network === 'mobile' || ispMode === 'any' ? [] : ispSelected,
+          // No ISP targeting: the network choice replaces it.
+          ispMode: 'any',
+          isps: [],
           network,
           gridSize,
           spacingKm,
@@ -859,7 +864,7 @@ export function NewScanWizard() {
                   className={`flex flex-col items-center gap-1 rounded-lg border py-2 ${gridSize === n ? 'border-emerald-400 bg-emerald-400/15' : 'border-slate-700 hover:border-slate-500'}`}>
                   <span aria-hidden className="h-7 w-7" style={{ backgroundImage: `radial-gradient(circle, ${gridSize === n ? '#34d399' : '#7c8ba5'} ${n > 6 ? 1 : 1.5}px, transparent ${n > 6 ? 1.4 : 2}px)`, backgroundSize: `${28 / n}px ${28 / n}px` }} />
                   <span className="text-sm font-bold text-white">{n}×{n}</span>
-                  <span className="text-[11px] text-slate-400">{n * n * creditSummary.costPerPin} credits</span>
+                  <span className="text-[11px] text-slate-400">{network === 'mix' ? `${n * n}–${n * n * (mobileData?.creditsPerPoint ?? 2)}` : n * n * creditSummary.costPerPin} credits</span>
                 </button>
               ))}
             </div>
@@ -911,37 +916,23 @@ export function NewScanWizard() {
               </p>
             )}
             {mobileData && (
-              <div className="space-y-1.5">
-                <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Network">
-                  <button type="button" role="radio" aria-checked={network === 'residential'} onClick={() => setNetwork('residential')} className={pill(network === 'residential')}>
-                    Home internet · 1 credit/point
-                  </button>
-                  <button type="button" role="radio" aria-checked={network === 'mobile'} disabled={!mobileData.ready} onClick={() => setNetwork('mobile')} className={pill(network === 'mobile') + ' disabled:opacity-40'}>
-                    Mobile data · {mobileData.creditsPerPoint} credits/point
-                  </button>
+              <fieldset className="space-y-2">
+                <legend className="text-xs font-semibold text-slate-300">Network</legend>
+                <div className="grid gap-1.5" role="radiogroup" aria-label="Network">
+                  {(['residential', 'mobile', 'mix'] as const).map((id) => {
+                    const price = id === 'residential' ? '1 credit a point' : id === 'mobile' ? `${mobileData.creditsPerPoint} credits a point` : `1–${mobileData.creditsPerPoint} credits a point`;
+                    const off = id !== 'residential' && !mobileData.ready;
+                    return (
+                      <button key={id} type="button" role="radio" aria-checked={network === id} disabled={off} onClick={() => setNetwork(id)}
+                        className={`flex min-h-[44px] items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm disabled:opacity-40 ${network === id ? 'border-emerald-400 bg-emerald-400/15 text-white' : 'border-slate-700 text-slate-200 hover:border-slate-500'}`}>
+                        <span className="font-semibold">{NETWORK_LABELS[id]}</span>
+                        <span className="shrink-0 text-xs text-slate-400">{price}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-                {!mobileData.ready && <p className="text-xs text-amber-300">Mobile data is not set up yet: add the VoidMob login to the worker.</p>}
-              </div>
-            )}
-            {network === 'mobile' ? (
-              <p className="rounded-xl border border-slate-700 bg-slate-950/40 p-3.5 text-xs leading-relaxed text-slate-300">
-                Every point searches over a mobile carrier’s network (Verizon, AT&amp;T, T-Mobile or a regional carrier) in its own state, the way a phone on 5G would.
-              </p>
-            ) : (
-              <IspSelectorDropdown
-                stateCode={detectedState}
-                city={detectedCity}
-                zip={detectedZip}
-                mode={ispMode}
-                selected={ispSelected}
-                options={ispOptions}
-                loading={ispLoading}
-                source={proxySource}
-                onChange={(mode, selected) => {
-                  setIspMode(mode);
-                  setIspSelected(selected);
-                }}
-              />
+                {!mobileData.ready && <p className="text-xs text-amber-300">The mobile network is not set up yet: add the VoidMob login to the worker.</p>}
+              </fieldset>
             )}
             <details className="text-xs text-slate-400">
               <summary className="cursor-pointer py-1">Centre coordinates ({detectedCity}, {detectedState})</summary>

@@ -1,3 +1,5 @@
+import { pinNetwork } from './network';
+
 /**
  * A point never fails because of a proxy. When no proxy works for it, it goes back in the queue
  * and tries again until one does (see the worker's execute). These rules say which failures
@@ -37,6 +39,11 @@ export function proxyRetryDelay(waits: number, outage: boolean, random: () => nu
 export function outageKey(scan: { proxyRegion?: string | null; stateCode?: string | null; network?: string | null }) {
   if (scan.network === 'mobile') return (scan.proxyRegion || scan.stateCode || 'US') + ' (mobile data)';
   return scan.proxyRegion || null;
+}
+
+/** The outage a point's proxy problems count towards (in a mix, each point by its own network). */
+export function pinOutageKey(p: { rowIdx: number; colIdx: number; scan: { proxyRegion?: string | null; stateCode?: string | null; network?: string | null } }) {
+  return outageKey({ ...p.scan, network: pinNetwork(p.scan.network, p.rowIdx, p.colIdx) });
 }
 
 /** The traffic left is low: under PROXY_TRAFFIC_WARN_GB, or less than a day at today's pace. */
