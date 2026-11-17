@@ -19,6 +19,7 @@ import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
 import { isProxyProblem, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
+import { proxyProviders } from '@stakeout/core/decodo';
 import { claimProxyProbe, clearProxyOutage, noteProxyOutage, proxyOutageSince } from './proxyOutage';
 
 function formatErr(e: unknown) {
@@ -392,6 +393,8 @@ async function reportHealth() {
     trafficLow: trafficLow(traffic),
     // States whose proxies are all down right now, and since when (points there are waiting).
     proxyDown: await openProxyOutages(),
+    // The proxy providers in use, in the order they are tried (PROXY_PROVIDERS).
+    proxyProviders: proxyProviders(),
     templates: { chrome: await template('chrome'), maps: await template('maps'), google: await template('google') },
     // Throughput: phones ready at the last fleet check, and how many points run at once.
     phonesReady: readyPhoneCount(),

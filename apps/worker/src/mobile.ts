@@ -9,7 +9,8 @@ import { db, type GridPin, type GridScan } from '@stakeout/db';
 import { listsForPin, normPlace, locationVerified } from '@stakeout/core/proxyLists';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
-import { supplyDown } from '@stakeout/core/proxyWait';
+import { isProxyProblem, supplyDown } from '@stakeout/core/proxyWait';
+import { decodoEndpoint, decodoLadder, decodoServes, decodoUser, proxyProviders } from '@stakeout/core/decodo';
 import { clearProxyOutage } from './proxyOutage';
 import { OBSERVE_SH } from '@stakeout/core/observer';
 import type { RpaSurface } from '@stakeout/core/rpaRules';
@@ -274,22 +275,141 @@ const benchPort = (listId: number, port: number) => redis().set(`stakeout:portba
  * the one it has (record gone, or not editable while bound). The new record is bound by the next
  * applyNetworkAndGps; the replaced record is deleted once the phone has moved off it.
  */
-async function replaceProxyRecord(device: LeasedDevice, list: { id: string; host: string; login: string; password: string }, port: number) {
+type ProxyRecord = { host: string; port: number; user: string; password: string; protocol?: 'socks5' | 'http' };
+
+async function replaceProxyRecord(device: LeasedDevice, rec: ProxyRecord, listId: string | null) {
   const res = await duoplusPost('/api/v1/proxy/add', {
-    proxy_list: [{ protocol: 'socks5', host: list.host, port, user: list.login, password: list.password, name: 'stakeout-' + device.imageId }],
+    proxy_list: [{ protocol: rec.protocol ?? 'socks5', host: rec.host, port: rec.port, user: rec.user, password: rec.password, name: 'stakeout-' + device.imageId }],
     ip_scan_channel: 'ip2location',
   });
   const id = res?.data?.success?.[0]?.id;
   if (!id) throw new Error('DUOPLUS_PROXY_ADD_FAILED ' + JSON.stringify(res?.data?.fail ?? res?.message ?? '').slice(0, 160));
   const replaced = device.proxyId;
   device.proxyId = String(id);
-  device.proxyListId = list.id;
-  await db.devicePool.update({ where: { imageId: device.imageId }, data: { proxyId: String(id), proxyListId: list.id } });
+  device.proxyListId = listId;
+  await db.devicePool.update({ where: { imageId: device.imageId }, data: { proxyId: String(id), proxyListId: listId } });
   console.log('[duoplus] phone', device.imageId, 'now uses proxy record', String(id), replaced ? '(replacing ' + replaced + ')' : '');
   return replaced && replaced !== String(id) ? replaced : null;
 }
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 240);
+
+/**
+ * Two limits on searches per exit IP per hour. Per phone (SEARCHES_PER_IP_PER_HOUR): several
+ * phones behind one home connection is normal, so each phone has its own count and a town with
+ * few real IPs keeps its searches local. Across all phones (SEARCHES_PER_IP_ALL_PHONES_PER_HOUR,
+ * three times the per-phone limit unless set): one IP never carries the whole fleet. Counts this
+ * search and returns null when it may go ahead on this IP; otherwise says which limit it hit.
+ */
+async function ipCapReached(ip: string, imageId: string): Promise<'IP_HOURLY_CAP' | 'IP_HOURLY_CAP_THIS_PHONE' | null> {
+  const cap = Number(process.env.SEARCHES_PER_IP_PER_HOUR ?? 8);
+  const ceiling = Number(process.env.SEARCHES_PER_IP_ALL_PHONES_PER_HOUR ?? cap * 3);
+  if (!(cap > 0) || !ip) return null;
+  const count = async (k: string) => {
+    const n = await redis().incr(k);
+    if (n === 1) await redis().expire(k, 3600);
+    return n;
+  };
+  const mine = await count('stakeout:ipcount:' + ip + ':' + imageId);
+  const all = await count('stakeout:ipcount:' + ip);
+  if (mine <= cap && !(ceiling > 0 && all > ceiling)) return null;
+  // The search does not happen on this IP, so it is not counted against it.
+  await redis().decr('stakeout:ipcount:' + ip).catch(() => {});
+  await redis().decr('stakeout:ipcount:' + ip + ':' + imageId).catch(() => {});
+  return ceiling > 0 && all > ceiling ? 'IP_HOURLY_CAP' : 'IP_HOURLY_CAP_THIS_PHONE';
+}
+
+/**
+ * Decodo (ADB phones): one sticky residential IP per point, asked for at the point's ZIP code,
+ * then its town, the area around it, then anywhere in its state, and put through the same
+ * pre-flight gatekeeper as Proxy-Seller's ports. A new session is a new IP.
+ */
+async function provisionDecodo(device: LeasedDevice, p: Pin) {
+  const { host, port, protocol } = decodoEndpoint();
+  const username = process.env.DECODO_USERNAME!.trim(),
+    password = process.env.DECODO_PASSWORD!;
+  const tries = Math.max(1, Number(process.env.DECODO_TRIES_PER_TARGET ?? 2));
+  const minutes = Number(process.env.DECODO_SESSION_MINUTES ?? 30);
+  const isp = p.isp ?? '';
+  const tried: string[] = [];
+  for (const target of decodoLadder(p)) {
+    for (let t = 0; t < tries; t++) {
+      await device.assertOwned();
+      const session = randomBytes(6).toString('hex');
+      const rec: ProxyRecord = { host, port, user: decodoUser(username, target.params, session, minutes), password, protocol };
+      let superseded: string | null = null;
+      try {
+        await duoplusPost('/api/v1/proxy/update', { id: device.proxyId, ...rec, ip_scan_channel: 'ip2location' });
+        if (device.proxyListId) {
+          await db.devicePool.update({ where: { imageId: device.imageId }, data: { proxyListId: null } });
+          device.proxyListId = null;
+        }
+      } catch (err) {
+        // DuoPlus checks the proxy before saving it: a ZIP or town with no IP online right now is
+        // refused here, and the next target is tried.
+        console.warn('[duoplus] proxy/update refused for', device.imageId, 'record', device.proxyId, '(decodo ' + target.rung + ') -', errText(err));
+        try {
+          superseded = await replaceProxyRecord(device, rec, null);
+        } catch (e2) {
+          console.warn('[duoplus] could not give', device.imageId, 'a fresh proxy record (decodo) -', errText(e2));
+          tried.push(target.rung + ':' + session + ':UPDATE_FAILED');
+          continue;
+        }
+      }
+      // The phone no longer points at a Proxy-Seller port: a later list point must bind it again.
+      await redis().del(`stakeout:devport:${device.imageId}`).catch(() => {});
+      // "Mix of ISPs": the ISP is a preference, so a residential IP in the right state will do.
+      const g = await preflightExit(device, p, p.scan.ispMode === 'mix' ? '' : isp);
+      if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
+      if (!g.verdict.ok) {
+        tried.push(target.rung + ':' + session + ':' + g.verdict.reasons.join('+'));
+        continue;
+      }
+      const v = g.verdict;
+      const capped = v.ip ? await ipCapReached(v.ip, device.imageId) : null;
+      if (capped) {
+        tried.push(target.rung + ':' + session + ':' + capped);
+        continue;
+      }
+      await clearProxyOutage(p.scan.proxyRegion);
+      const city = g.ipinfo?.city || g.ipapi?.city || '';
+      return {
+        ip: v.ip ?? '',
+        org: g.ipinfo?.org || g.ipapi?.as || '',
+        city,
+        region: g.ipinfo?.region || g.ipapi?.regionName || '',
+        country: g.ipinfo?.country || g.ipapi?.countryCode || '',
+        timezone: '',
+        proxySource: 'decodo',
+        listId: null,
+        rungUsed: target.rung,
+        rotation: 'sticky ' + minutes + 'm',
+        ispRequested: isp || 'ANY',
+        ispRuleApplied: false,
+        ispObserved: v.network || null,
+        ispMatched: isp ? ispMatches(isp, v.network) : null,
+        stateMatched: true,
+        cityMatched: cityMatches(city, p.city),
+        port,
+        portReused: false,
+        rungsTried: tried,
+        gate: {
+          passed: true,
+          policy: gatePolicy(),
+          asn: v.asn,
+          network: v.network,
+          hosting: v.hosting,
+          sourcesAgree: v.sourcesAgree,
+          googleLang: v.googleLang,
+          googleHost: g.google?.host ?? null,
+          ipinfoIp: g.ipinfo?.ip ?? null,
+          ipapiIp: g.ipapi?.ip ?? null,
+        },
+      };
+    }
+  }
+  throw new Error((supplyDown(tried) ? 'PROXY_SUPPLY_DOWN ' : 'PROXY_GATE_REJECTED ') + tried.join(',').slice(0, 300));
+}
 
 async function provisionFromLists(device: LeasedDevice, p: Pin) {
   const isp = p.isp ?? '';
@@ -354,7 +474,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
         } catch (err) {
           console.warn('[duoplus] proxy/update refused for', device.imageId, 'record', device.proxyId, '-', errText(err));
           try {
-            superseded = await replaceProxyRecord(device, list, lease.port);
+            superseded = await replaceProxyRecord(device, { host: list.host, port: lease.port, user: list.login, password: list.password }, list.id);
           } catch (e2) {
             console.warn('[duoplus] could not give', device.imageId, 'a fresh proxy record -', errText(e2));
             tried.push(label + ':' + lease.port + ':UPDATE_FAILED');
@@ -375,32 +495,13 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
         }
         await db.proxyList.update({ where: { id: list.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
         const v = g.verdict;
-        // Two limits on searches per exit IP per hour. Per phone (SEARCHES_PER_IP_PER_HOUR): several
-        // phones behind one home connection is normal, so each phone has its own count and a town
-        // with few real IPs keeps its searches local. Across all phones
-        // (SEARCHES_PER_IP_ALL_PHONES_PER_HOUR, three times the per-phone limit unless set): one IP
-        // never carries the whole fleet. Past the first, this phone tries another port; past the
-        // second, the port rests for an hour for everyone.
-        const cap = Number(process.env.SEARCHES_PER_IP_PER_HOUR ?? 8);
-        const ceiling = Number(process.env.SEARCHES_PER_IP_ALL_PHONES_PER_HOUR ?? cap * 3);
-        if (cap > 0 && v.ip) {
-          const count = async (k: string) => {
-            const n = await redis().incr(k);
-            if (n === 1) await redis().expire(k, 3600);
-            return n;
-          };
-          const mine = await count('stakeout:ipcount:' + v.ip + ':' + device.imageId);
-          const all = await count('stakeout:ipcount:' + v.ip);
-          if (mine > cap || (ceiling > 0 && all > ceiling)) {
-            // The search does not happen on this IP, so it is not counted against it.
-            await redis().decr('stakeout:ipcount:' + v.ip).catch(() => {});
-            await redis().decr('stakeout:ipcount:' + v.ip + ':' + device.imageId).catch(() => {});
-            const whole = ceiling > 0 && all > ceiling;
-            if (whole) await redis().set(`stakeout:portbad:${list.psListId}:${lease.port}`, '1', 'PX', 3600000);
-            await redis().del(stickyKey);
-            tried.push(label + ':' + lease.port + (whole ? ':IP_HOURLY_CAP' : ':IP_HOURLY_CAP_THIS_PHONE'));
-            continue;
-          }
+        const capped = v.ip ? await ipCapReached(v.ip, device.imageId) : null;
+        if (capped) {
+          // Past the limit for every phone, the port rests for an hour for everyone.
+          if (capped === 'IP_HOURLY_CAP') await redis().set(`stakeout:portbad:${list.psListId}:${lease.port}`, '1', 'PX', 3600000);
+          await redis().del(stickyKey);
+          tried.push(label + ':' + lease.port + ':' + capped);
+          continue;
         }
         await redis().set(stickyKey, String(lease.port), 'EX', 6 * 3600).catch(() => {});
         await clearProxyOutage(p.scan.proxyRegion);
@@ -500,8 +601,36 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
   throw new Error((supplyDown(tried) ? 'PROXY_SUPPLY_DOWN ' : 'PROXY_LADDER_EXHAUSTED ') + tried.join(','));
 }
 
+/**
+ * A working proxy for this point, from each provider in turn (PROXY_PROVIDERS: Decodo first by
+ * default once it is set up, then Proxy-Seller). A point that must use one particular ISP goes to
+ * Proxy-Seller, whose lists target a town and an ISP together. Only when every provider fails is
+ * it a proxy problem (and the point waits; see the worker), and only when all of them are down is
+ * it an outage.
+ */
 export async function provision(device: LeasedDevice, p: Pin) {
   await device.assertOwned();
+  const failures: string[] = [];
+  let usedProxySeller = false;
+  for (const provider of proxyProviders()) {
+    if (provider === 'decodo' && (!decodoServes(p) || transportFor(device) !== 'adb')) continue;
+    usedProxySeller ||= provider === 'proxyseller';
+    try {
+      return provider === 'decodo' ? await provisionDecodo(device, p) : await provisionProxySeller(device, p);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!isProxyProblem(msg)) throw e;
+      failures.push(provider + ': ' + msg);
+      console.warn('[proxy]', provider, 'had no working proxy for point', p.id, '-', msg.slice(0, 160));
+    }
+  }
+  // Decodo could not serve this point and Proxy-Seller was left out of PROXY_PROVIDERS: use it anyway.
+  if (!usedProxySeller && !failures.length) return provisionProxySeller(device, p);
+  const allDown = failures.every((f) => f.slice(f.indexOf(': ') + 2).startsWith('PROXY_SUPPLY_DOWN'));
+  throw new Error((allDown ? 'PROXY_SUPPLY_DOWN ' : 'PROXY_GATE_REJECTED ') + failures.join(' | ').slice(0, 400));
+}
+
+async function provisionProxySeller(device: LeasedDevice, p: Pin) {
   if (p.scan.proxyRegion) return provisionFromLists(device, p);
   const requireState = process.env.PROXY_REQUIRE_STATE_MATCH !== 'false';
   const ispRequested = p.scan.ispId;

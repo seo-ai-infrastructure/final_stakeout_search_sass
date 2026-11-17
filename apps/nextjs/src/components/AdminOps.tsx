@@ -10,7 +10,7 @@ type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
   at: string;
   settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number };
-  system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[] } | null;
+  system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[] } | null;
   capacity: {
     completed24h: number; completedLastHour: number; started24h: number; timedPoints: number; medianSeconds: number | null; perPhoneHour: number | null;
     waiting: number; readyPhones: number; etaMinutes: number | null; cost24hUsd: number;
@@ -164,12 +164,12 @@ export function AdminOps() {
           {ops.system?.proxyDown?.length ? (
             <p>
               <span className="font-bold">Proxies down</span> in {ops.system.proxyDown.map((d) => d.region).join(', ')} since{' '}
-              {new Date(ops.system.proxyDown.map((d) => d.since).sort()[0]).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}: every port is refused. Points there are waiting, not failing, and finish by themselves once proxies answer. Usually the Proxy-Seller traffic has run out.
+              {new Date(ops.system.proxyDown.map((d) => d.since).sort()[0]).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}: every port is refused. Points there are waiting, not failing, and finish by themselves once proxies answer. Usually the traffic has run out (Proxy-Seller, and Decodo if it is on).
             </p>
           ) : null}
           {ops.system?.trafficLow ? (
             <p>
-              <span className="font-bold">Proxy traffic low:</span> {gb(ops.system.traffic?.leftBytes)} left
+              <span className="font-bold">Proxy-Seller traffic low:</span> {gb(ops.system.traffic?.leftBytes)} left
               {ops.system.traffic?.todayBytes ? `, ${gb(ops.system.traffic.todayBytes)} used today` : ''}. Buy more at Proxy-Seller before it runs out.
             </p>
           ) : null}
@@ -187,7 +187,12 @@ export function AdminOps() {
                 ['Per phone, per hour', ops.capacity.perPhoneHour === null ? '—' : String(ops.capacity.perPhoneHour), `a point plus the ${ops.settings.searchGapSeconds}s pause`],
                 ['Waiting', `${ops.capacity.waiting} points`, ops.capacity.waiting === 0 ? 'nothing in line' : ops.capacity.etaMinutes === null ? `${ops.capacity.readyPhones} ready phone(s); no estimate until points are timed` : `about ${ops.capacity.etaMinutes} min with ${ops.capacity.readyPhones} ready phone(s)`],
                 ['Estimated cost', '$' + ops.capacity.cost24hUsd.toFixed(2), `${ops.capacity.started24h} points started × $${ops.settings.costPerPointUsd}`],
-                ['Proxy traffic today', gb(ops.system?.traffic?.todayBytes), ops.system?.traffic ? `${gb(ops.system.traffic.leftBytes)} left of ${gb(ops.system.traffic.limitBytes)}${ops.system.traffic.expires ? ' · expires ' + ops.system.traffic.expires : ''}` : 'not reported by the worker yet'],
+                [
+                  'Proxy providers',
+                  (ops.system?.proxyProviders ?? ['proxyseller']).map((p) => (p === 'decodo' ? 'Decodo' : 'Proxy-Seller')).join(' → '),
+                  (ops.system?.proxyProviders ?? []).includes('decodo') ? 'in this order; ISP-only points use Proxy-Seller' : 'Decodo is off: set DECODO_USERNAME and DECODO_PASSWORD',
+                ],
+                ['Proxy-Seller traffic today', gb(ops.system?.traffic?.todayBytes), ops.system?.traffic ? `${gb(ops.system.traffic.leftBytes)} left of ${gb(ops.system.traffic.limitBytes)}${ops.system.traffic.expires ? ' · expires ' + ops.system.traffic.expires : ''}` : 'not reported by the worker yet'],
                 ['Captchas today', String(ops.captchas.today), `${ops.captchas.yesterday} yesterday`],
               ] as [string, string, string][]
             ).map(([label, value, hint]) => (
