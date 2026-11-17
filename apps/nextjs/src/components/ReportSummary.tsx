@@ -313,42 +313,4 @@ export function AiCoverageCard({ scan }: { scan: GridScanData }) {
   );
 }
 
-/** Three of the scan's own recordings on the front page: its best, middle and worst points. */
-export function ProofStrip({ scan, onOpen }: { scan: GridScanData; onOpen: (pinId: string) => void }) {
-  const withVideo = scan.pins
-    .filter((p) => p.status === 'COMPLETED' && p.videoUrl)
-    .sort((a, b) => (a.rankFound ?? 99) - (b.rankFound ?? 99));
-  if (!withVideo.length) return null;
-  const picks = [...new Map([withVideo[0], withVideo[Math.floor(withVideo.length / 2)], withVideo[withVideo.length - 1]].map((p) => [p.id, p])).values()];
-  const label = ['Best point', 'A typical point', 'Weakest point'];
-  return (
-    <section className={box} aria-label="What the phone saw">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-bold text-white">What the phone saw</h2>
-          <p className="mt-1 text-xs text-slate-400">Every point has its own screen recording and receipt. These are from this scan.</p>
-        </div>
-        <button type="button" onClick={() => onOpen(picks[0].id)} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800">
-          All {withVideo.length} recordings
-        </button>
-      </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-3">
-        {picks.map((p, i) => (
-          <figure key={p.id} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
-            <video src={p.videoUrl ? p.videoUrl + '#t=6' : undefined} muted playsInline preload="metadata" className="block h-56 w-full bg-black object-cover object-top" aria-label={`Recording of point ${p.rowIdx + 1},${p.colIdx + 1}`} />
-            <figcaption className="flex items-center justify-between gap-2 p-3 text-xs">
-              <span className="text-slate-300">
-                <span className="font-bold text-white">{picks.length === 3 ? label[i] : 'Point'}</span> · {p.rowIdx + 1},{p.colIdx + 1} · {p.rankFound == null ? 'not found' : 'rank #' + p.rankFound}
-              </span>
-              <button type="button" onClick={() => onOpen(p.id)} className="shrink-0 rounded-lg border border-slate-700 px-2.5 py-1.5 font-semibold text-slate-200 hover:bg-slate-800">
-                Open evidence
-              </button>
-            </figcaption>
-          </figure>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 export { bandOf };

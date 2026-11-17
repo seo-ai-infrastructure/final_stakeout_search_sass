@@ -11,7 +11,7 @@ import {
 import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
 import type { PinInsights } from '@stakeout/core/pinInsights';
-import { ReportVerdict, RankDistributionCard, AiCoverageCard, ProofStrip } from './ReportSummary';
+import { ReportVerdict, RankDistributionCard, AiCoverageCard } from './ReportSummary';
 import { bandOf, reportSummary, type RankBucket, type FindingKind } from '../lib/reportSummary';
 import { groundOwners, aiPosition, winningRadius } from '../lib/marketInsights';
 import { combinedReading, combinedStyle, combinedTotals, COMBINED_LEGEND } from '../lib/combinedMap';
@@ -1212,14 +1212,6 @@ export function GeoGridDashboard({
       />
       </div>
       <AiCoverageCard scan={scan} />
-      <ProofStrip
-        scan={scan}
-        onOpen={(id) => {
-          select(id);
-          setTab('evidence');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        }}
-      />
       <MarketInsights scan={scan} />
       </div>
     </div>
