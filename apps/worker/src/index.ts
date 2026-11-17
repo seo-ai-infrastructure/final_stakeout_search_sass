@@ -18,6 +18,8 @@ import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
+import { isProxyProblem, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
+import { claimProxyProbe, clearProxyOutage, noteProxyOutage, proxyOutageSince } from './proxyOutage';
 
 function formatErr(e: unknown) {
   if (e instanceof Error) {
@@ -42,6 +44,8 @@ const queueConnection = redis(),
 /** Template failures (with no point completed) that stop a scan automatically. */
 const AUTO_PAUSE_TEMPLATE_FAILS = Number(process.env.AUTO_PAUSE_TEMPLATE_FAILS ?? 3);
 const NO_DEVICE_GRACE_MS = Number(process.env.NO_DEVICE_GRACE_MINUTES ?? 30) * 60000;
+/** How long a point keeps waiting for a working proxy before it is given up (and refunded). */
+const PROXY_WAIT_MS = Number(process.env.PROXY_WAIT_HOURS ?? 24) * 3600000;
 
 async function execute(job: Job, token?: string) {
   const pin = await db.gridPin.findUnique({
@@ -54,7 +58,14 @@ async function execute(job: Job, token?: string) {
       await settlePin(pin.id, { data: await measureDesktop(pin) });
       return;
     }
-    const preferred = pin.scan.proxyRegion ? (await listsForPin(pin.scan, pin))[0]?.id : null;
+    // While this state's proxies are all down, one point at a time checks whether they are back;
+    // the rest wait here, without taking a phone or calling DuoPlus.
+    const region = pin.scan.proxyRegion;
+    if (region && Date.now() - job.timestamp < PROXY_WAIT_MS && (await proxyOutageSince(region)) && !(await claimProxyProbe(region, pin.id))) {
+      await job.moveToDelayed(Date.now() + 60000 + Math.floor(Math.random() * 30000), token);
+      throw new DelayedError();
+    }
+    const preferred = region ?(await listsForPin(pin.scan, pin))[0]?.id : null;
     const lease = await acquireDeviceLease(pin.id, pin.scan.phoneModel, preferred);
     if (!('device' in lease)) {
       const waited = Date.now() - job.timestamp;
@@ -129,6 +140,30 @@ async function execute(job: Job, token?: string) {
   } catch (e) {
     if (e instanceof DelayedError) throw e;
     const msg = e instanceof Error ? e.message : 'PIN_FAILED';
+    // A proxy problem never fails a point: it goes back in the queue (no attempt used, nothing
+    // refunded, nothing shown to the customer) and tries again, on whichever phone is free, until
+    // a proxy works. The ladder (own town, nearest towns, then anywhere in the state) is tried
+    // anew each time. Only after PROXY_WAIT_HOURS is the point given up.
+    if (isProxyProblem(msg)) {
+      const since = Number(job.data.proxyWaitSince) || Date.now();
+      if (Date.now() - since < PROXY_WAIT_MS) {
+        const waits = (Number(job.data.proxyWaits) || 0) + 1;
+        const outage = msg.startsWith('PROXY_SUPPLY_DOWN');
+        if (outage && pin.scan.proxyRegion) {
+          const down = await noteProxyOutage(pin.scan.proxyRegion);
+          console.warn('[proxy] every proxy in', pin.scan.proxyRegion, 'is refused or dead since', down, '- points wait for them (out of traffic?)');
+        } else if (pin.scan.proxyRegion && !msg.startsWith('PROXY_LIST_MISSING')) {
+          // Some port answered (wrong place, busy IP...): the proxies themselves are working.
+          await clearProxyOutage(pin.scan.proxyRegion);
+        }
+        await job.updateData({ ...job.data, proxyWaitSince: since, proxyWaits: waits });
+        console.warn('[proxy] point', pin.id, 'waits for a working proxy, try', waits + ':', msg.slice(0, 140));
+        await job.moveToDelayed(Date.now() + proxyRetryDelay(waits, outage), token);
+        throw new DelayedError();
+      }
+      await settlePin(pin.id, { error: 'PROXY_UNAVAILABLE ' + msg.slice(0, 160) });
+      throw new UnrecoverableError(msg);
+    }
     if (/^RPA_(SURFACE_ERROR|TASK_FAILED|TASK_TIMEOUT|TEMPLATE_NOT_FOUND|NO_KEYWORD_VARIABLE)/.test(msg)) {
       // The search template failed. If it keeps failing before any point has completed,
       // stop the whole scan (refunded) instead of retrying every point three times.
@@ -307,6 +342,20 @@ let templatesReadAt = Date.now(),
   trafficAt = 0,
   traffic: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null = null;
 
+async function openProxyOutages() {
+  const open = await db.gridScan.findMany({
+    where: { status: { in: ['QUEUED', 'RUNNING'] }, proxyRegion: { not: null } },
+    select: { proxyRegion: true },
+    distinct: ['proxyRegion'],
+  });
+  const down: { region: string; since: string }[] = [];
+  for (const { proxyRegion } of open) {
+    const since = proxyRegion ? await proxyOutageSince(proxyRegion) : null;
+    if (proxyRegion && since) down.push({ region: proxyRegion, since });
+  }
+  return down;
+}
+
 async function reportHealth() {
   // Templates are re-read when an admin asks (stakeout:templates:reload) and every 10 minutes
   // anyway, so importing a template into DuoPlus never needs a worker restart.
@@ -328,7 +377,7 @@ async function reportHealth() {
       traffic = { limitBytes: p.limitBytes, usedBytes: p.usedBytes, leftBytes: p.leftBytes, todayBytes: Math.max(0, p.usedBytes - first), expires: p.expires, at: new Date().toISOString() };
     }
   }
-  const template = async (surface: 'chrome' | 'maps') => {
+  const template = async (surface: 'chrome' | 'maps' | 'google') => {
     const t = await rpaTemplate(surface).catch(() => null);
     const v = t?.vars.find((x) => x.key === 'template_version')?.value;
     return t ? { id: t.id, name: t.name, version: v == null || v === '' ? null : String(v) } : null;
@@ -339,7 +388,11 @@ async function reportHealth() {
     searchGapSeconds: (await getSettings()).searchGapSeconds,
     templatesReadAt: new Date(templatesReadAt).toISOString(),
     traffic,
-    templates: { chrome: await template('chrome'), maps: await template('maps') },
+    // Under PROXY_TRAFFIC_WARN_GB, or less than a day at today's pace: buy more before it runs out.
+    trafficLow: trafficLow(traffic),
+    // States whose proxies are all down right now, and since when (points there are waiting).
+    proxyDown: await openProxyOutages(),
+    templates: { chrome: await template('chrome'), maps: await template('maps'), google: await template('google') },
     // Throughput: phones ready at the last fleet check, and how many points run at once.
     phonesReady: readyPhoneCount(),
     concurrency: deviceWorker.concurrency,

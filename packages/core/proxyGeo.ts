@@ -218,6 +218,32 @@ export function listTries(center: ListPlace, local: ListPlace | null, isp: strin
 
 
 /**
+ * The lists of nearby towns worth trying for a point, nearest first: at most `max`, none further
+ * than `maxKm`. A list whose town cannot be placed on the map is left out.
+ */
+export function nearestLists<T extends { city: string }>(
+  lists: T[],
+  from: { lat: number; lng: number },
+  coords: (city: string) => { lat: number; lng: number } | null,
+  max = Number(process.env.PROXY_NEARBY_LISTS ?? 4),
+  maxKm = Number(process.env.PROXY_NEARBY_KM ?? 40),
+): T[] {
+  const km = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+    const rad = Math.PI / 180, dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(h));
+  };
+  return lists
+    .map((l) => ({ l, at: coords(l.city) }))
+    .filter((x): x is { l: T; at: { lat: number; lng: number } } => !!x.at)
+    .map((x) => ({ l: x.l, d: km(from, x.at) }))
+    .filter((x) => x.d <= maxKm)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, Math.max(0, max))
+    .map((x) => x.l);
+}
+
+/**
  * Google's own location line on a results page, e.g. "37122, Tennessee - From your device".
  * A web point only counts when Google says it used the device's location AND names the
  * point's state or ZIP. A foreign-language page, an IP-based location, or the wrong state

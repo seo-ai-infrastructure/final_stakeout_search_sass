@@ -10,7 +10,7 @@ type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
   at: string;
   settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number };
-  system: { templates?: { chrome: Tpl; maps: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null } | null;
+  system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[] } | null;
   capacity: {
     completed24h: number; completedLastHour: number; started24h: number; timedPoints: number; medianSeconds: number | null; perPhoneHour: number | null;
     waiting: number; readyPhones: number; etaMinutes: number | null; cost24hUsd: number;
@@ -158,6 +158,23 @@ export function AdminOps() {
           </ul>
         )}
       </section>
+
+      {ops && (ops.system?.proxyDown?.length || ops.system?.trafficLow) ? (
+        <section role="alert" className="space-y-1 rounded-2xl border border-rose-500/60 bg-rose-500/10 p-4 text-sm text-rose-100">
+          {ops.system?.proxyDown?.length ? (
+            <p>
+              <span className="font-bold">Proxies down</span> in {ops.system.proxyDown.map((d) => d.region).join(', ')} since{' '}
+              {new Date(ops.system.proxyDown.map((d) => d.since).sort()[0]).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}: every port is refused. Points there are waiting, not failing, and finish by themselves once proxies answer. Usually the Proxy-Seller traffic has run out.
+            </p>
+          ) : null}
+          {ops.system?.trafficLow ? (
+            <p>
+              <span className="font-bold">Proxy traffic low:</span> {gb(ops.system.traffic?.leftBytes)} left
+              {ops.system.traffic?.todayBytes ? `, ${gb(ops.system.traffic.todayBytes)} used today` : ''}. Buy more at Proxy-Seller before it runs out.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       {ops && (
         <section className={card}>
@@ -539,11 +556,11 @@ export function AdminOps() {
           </button>
           <div className="mt-5 border-t border-slate-800 pt-4">
             <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">Templates</h3>
-            {(['chrome', 'maps'] as const).map((k) => {
+            {([['chrome', 'Chrome'], ['maps', 'Maps'], ['google', 'Google app']] as const).map(([k, label]) => {
               const t = ops.system?.templates?.[k];
               return (
                 <p key={k} className="mt-1 text-sm text-slate-200">
-                  <span className="font-semibold capitalize">{k}:</span> {t ? `${t.id} · ${t.name} · ${t.version ? 'version ' + t.version : 'no version declared'}` : 'not found'}
+                  <span className="font-semibold">{label}:</span> {t ? `${t.id} · ${t.name} · ${t.version ? 'version ' + t.version : 'no version declared'}` : k === 'google' ? 'not found (name the DuoPlus template "Stakeout Google App")' : 'not found'}
                 </p>
               );
             })}

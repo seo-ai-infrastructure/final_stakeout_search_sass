@@ -8,7 +8,7 @@
  * Proxy-Seller puts the API key in the URL path, so URLs are never logged here.
  */
 import { cityCoords } from './grid';
-import { db } from '@stakeout/db';
+import { db, type ProxyList } from '@stakeout/db';
 import { InputError } from './grid';
 import {
   extractGeoRows,
@@ -20,6 +20,7 @@ import {
   type Market,
   marketKey,
   listTries,
+  nearestLists,
 } from './proxyGeo';
 export * from './proxyGeo';
 
@@ -123,21 +124,30 @@ export async function ensureList(m: Pick<Market, 'region' | 'city'>, isp: string
   const fmt = encodeURIComponent('%ip%:%port%:%login%:%password%');
   const endpoints = parseProxyLines(String(await psCall(`proxy/download/resident?ext=${fmt}&listId=${id}`, undefined, true)));
   if (!endpoints.length) throw new Error('PROXY_SELLER_LIST_EMPTY');
-  return db.proxyList.upsert({
-    where,
-    create: {
-      psListId: id,
-      region: m.region,
-      city: m.city,
-      isp,
-      rotation,
-      host: endpoints[0].host,
-      login: endpoints[0].login,
-      password: endpoints[0].password,
-      ports: endpoints.map((e) => e.port),
-    },
-    update: {},
-  });
+  try {
+    return await db.proxyList.upsert({
+      where,
+      create: {
+        psListId: id,
+        region: m.region,
+        city: m.city,
+        isp,
+        rotation,
+        host: endpoints[0].host,
+        login: endpoints[0].login,
+        password: endpoints[0].password,
+        ports: endpoints.map((e) => e.port),
+      },
+      update: {},
+    });
+  } catch (e) {
+    // The same list was saved a moment ago by another point: use that one, and delete the one
+    // just made at Proxy-Seller so it is not left behind unused.
+    const theirs = await db.proxyList.findUnique({ where });
+    if (!theirs) throw e;
+    await psCall('resident/list/delete', { id }, false, 'DELETE').catch(() => {});
+    return theirs;
+  }
 }
 
 /**
@@ -190,27 +200,28 @@ export async function prepareGridProxies(
   return { market, cities };
 }
 
-/** Creations of a state-wide list in progress, so points arriving together make one list, not one each. */
-const wideInFlight = new Map<string, Promise<Awaited<ReturnType<typeof ensureList>> | null>>();
-function wideList(region: string, rotation: number) {
-  const key = region + '|' + rotation;
-  let p = wideInFlight.get(key);
+/** List creations in progress, so points arriving together make one list, not one each. */
+const listsInFlight = new Map<string, Promise<Awaited<ReturnType<typeof ensureList>> | null>>();
+function sharedList(m: { region: string; city: string }, isp: string, rotation: number) {
+  const key = [m.region, m.city, isp, rotation].join('|');
+  let p = listsInFlight.get(key);
   if (!p) {
-    p = ensureList({ region, city: '' }, '', rotation)
+    p = ensureList(m, isp, rotation)
       .catch((e) => {
-        console.warn('[proxy] could not create the state-wide list for', region, (e as Error).message);
+        console.warn('[proxy] could not create the list for', m.region, m.city || '(whole state)', isp || '*', (e as Error).message);
         return null;
       })
-      .finally(() => wideInFlight.delete(key));
-    wideInFlight.set(key, p);
+      .finally(() => listsInFlight.delete(key));
+    listsInFlight.set(key, p);
   }
   return p;
 }
+const wideList = (region: string, rotation: number) => sharedList({ region, city: '' }, '', rotation);
 
 /** The saved lists a grid point uses, best first (see listTries for the order). */
 export async function listsForPin(
   scan: { proxyRegion: string | null; proxyCity: string | null },
-  pin: { isp?: string | null; city?: string | null; stateCode?: string | null },
+  pin: { isp?: string | null; city?: string | null; stateCode?: string | null; lat?: number | null; lng?: number | null },
 ) {
   if (!scan.proxyRegion) return [];
   const rotation = listRotation();
@@ -220,10 +231,29 @@ export async function listsForPin(
     const m = await db.proxyMarket.findUnique({ where: { key: marketKey(pin.city, pin.stateCode) } });
     if (m && m.level === 'city') local = { region: m.region, city: m.city };
   }
-  const lists = [];
+  const lists: ProxyList[] = [];
   for (const t of listTries(center, local, pin.isp ?? '')) {
     const found = await db.proxyList.findUnique({ where: { region_city_isp_rotation: { ...t, rotation } } });
     if (found) lists.push(found);
+  }
+  if (!lists.length) {
+    // Lists are deleted while no scan runs (see releaseIdleProxyLists), so a re-run or a scan that
+    // started around that moment finds none: it makes them again, the point's own town first, then
+    // the centre city (its chosen ISP, then any). Points arriving together share each new list.
+    const sameAsCentre = local && local.region === center.region && local.city === center.city;
+    const places = local && !sameAsCentre ? [local, center] : [center];
+    for (const [n, place] of places.entries())
+      for (const isp of n === places.length - 1 && pin.isp ? [pin.isp, ''] : ['']) {
+        const made = await sharedList(place, isp, rotation);
+        if (made && !lists.some((l) => l.id === made.id)) lists.push(made);
+      }
+  }
+  // Then the neighbouring towns' lists (already made for this grid or another scan nearby), nearest
+  // to the point first: a local address from the next town over beats one from across the state.
+  if (lists.length && pin.stateCode && typeof pin.lat === 'number' && typeof pin.lng === 'number') {
+    const others = await db.proxyList.findMany({ where: { region: center.region, isp: '', rotation, NOT: { city: '' } } });
+    const near = nearestLists(others.filter((l) => !lists.some((x) => x.id === l.id)), { lat: pin.lat, lng: pin.lng }, (city) => cityCoords(city, pin.stateCode!));
+    lists.push(...near);
   }
   // Last resort, when it was prepared (the scan's city is not covered, so it borrows the nearest
   // one): any address in the state, tried only after every city list has failed.
@@ -232,17 +262,6 @@ export async function listsForPin(
     // A scan queued before this list was kept for every scan (or after it was deleted as idle) gets it now.
     const wide = found ?? (lists.length ? await wideList(center.region, rotation) : null);
     if (wide && !lists.some((l) => l.id === wide.id)) lists.push(wide);
-  }
-  if (!lists.length) {
-    // Lists are deleted while no scan runs (see releaseIdleProxyLists); a scan that started around
-    // that moment recreates the centre city's lists it needs: the chosen ISP, then any ISP.
-    for (const isp of pin.isp ? [pin.isp, ''] : ['']) {
-      try {
-        lists.push(await ensureList(center, isp, rotation));
-      } catch (e) {
-        console.warn('[proxy] could not recreate list', center.region, center.city, isp || '*', (e as Error).message);
-      }
-    }
   }
   return lists;
 }

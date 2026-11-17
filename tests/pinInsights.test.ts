@@ -238,3 +238,12 @@ test('a single-business panel without its tab strip is still read (header: name,
   for (const f of ['real-pack-2026-11-09.xml', 'real-pack4-see-more-2026-11-12.xml', 'real-r3c2-finder.xml', 'real-aio-list-no-finder.xml', 'real-uidump-aio-no-map-pack.xml'])
     assert.equal(readSoloPanel(fs.readFileSync(new URL('./fixtures/' + f, import.meta.url), 'utf8')), null, f);
 });
+
+test('neighbouring proxy lists are tried nearest first, within reach, a few at most', async () => {
+  const { nearestLists } = await import('../packages/core/proxyGeo');
+  const at: Record<string, { lat: number; lng: number }> = { 'Willow Grove': { lat: 40.144, lng: -75.116 }, Jenkintown: { lat: 40.096, lng: -75.125 }, Philadelphia: { lat: 39.953, lng: -75.165 }, Pittsburgh: { lat: 40.44, lng: -79.996 } };
+  const lists = ['Pittsburgh', 'Philadelphia', 'Nowhere', 'Jenkintown', 'Willow Grove'].map((city) => ({ city }));
+  const hatboro = { lat: 40.174, lng: -75.107 };
+  assert.deepEqual(nearestLists(lists, hatboro, (c) => at[c] ?? null, 4, 40).map((l) => l.city), ['Willow Grove', 'Jenkintown', 'Philadelphia']);
+  assert.deepEqual(nearestLists(lists, hatboro, (c) => at[c] ?? null, 1, 40).map((l) => l.city), ['Willow Grove']);
+});

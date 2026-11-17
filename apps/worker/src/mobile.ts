@@ -9,6 +9,8 @@ import { db, type GridPin, type GridScan } from '@stakeout/db';
 import { listsForPin, normPlace, locationVerified } from '@stakeout/core/proxyLists';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
+import { supplyDown } from '@stakeout/core/proxyWait';
+import { clearProxyOutage } from './proxyOutage';
 import { OBSERVE_SH } from '@stakeout/core/observer';
 import type { RpaSurface } from '@stakeout/core/rpaRules';
 import { runRpaSearch, runWarmup } from './rpa';
@@ -373,20 +375,35 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
         }
         await db.proxyList.update({ where: { id: list.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
         const v = g.verdict;
-        // A cap on searches per exit IP per hour; past it, this port rests and another is used.
+        // Two limits on searches per exit IP per hour. Per phone (SEARCHES_PER_IP_PER_HOUR): several
+        // phones behind one home connection is normal, so each phone has its own count and a town
+        // with few real IPs keeps its searches local. Across all phones
+        // (SEARCHES_PER_IP_ALL_PHONES_PER_HOUR, three times the per-phone limit unless set): one IP
+        // never carries the whole fleet. Past the first, this phone tries another port; past the
+        // second, the port rests for an hour for everyone.
         const cap = Number(process.env.SEARCHES_PER_IP_PER_HOUR ?? 8);
+        const ceiling = Number(process.env.SEARCHES_PER_IP_ALL_PHONES_PER_HOUR ?? cap * 3);
         if (cap > 0 && v.ip) {
-          const k = 'stakeout:ipcount:' + v.ip;
-          const n = await redis().incr(k);
-          if (n === 1) await redis().expire(k, 3600);
-          if (n > cap) {
-            await redis().set(`stakeout:portbad:${list.psListId}:${lease.port}`, '1', 'PX', 3600000);
+          const count = async (k: string) => {
+            const n = await redis().incr(k);
+            if (n === 1) await redis().expire(k, 3600);
+            return n;
+          };
+          const mine = await count('stakeout:ipcount:' + v.ip + ':' + device.imageId);
+          const all = await count('stakeout:ipcount:' + v.ip);
+          if (mine > cap || (ceiling > 0 && all > ceiling)) {
+            // The search does not happen on this IP, so it is not counted against it.
+            await redis().decr('stakeout:ipcount:' + v.ip).catch(() => {});
+            await redis().decr('stakeout:ipcount:' + v.ip + ':' + device.imageId).catch(() => {});
+            const whole = ceiling > 0 && all > ceiling;
+            if (whole) await redis().set(`stakeout:portbad:${list.psListId}:${lease.port}`, '1', 'PX', 3600000);
             await redis().del(stickyKey);
-            tried.push(label + ':' + lease.port + ':IP_HOURLY_CAP');
+            tried.push(label + ':' + lease.port + (whole ? ':IP_HOURLY_CAP' : ':IP_HOURLY_CAP_THIS_PHONE'));
             continue;
           }
         }
         await redis().set(stickyKey, String(lease.port), 'EX', 6 * 3600).catch(() => {});
+        await clearProxyOutage(p.scan.proxyRegion);
         return {
           ip: v.ip ?? '',
           org: g.ipinfo?.org || g.ipapi?.as || '',
@@ -423,7 +440,9 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
         };
       }
     }
-    throw new Error('PROXY_GATE_REJECTED ' + tried.join(',').slice(0, 300));
+    // Every port refused or dead: the proxies are down, not just these ports (the worker then holds
+    // the state's points until they answer again). Otherwise the point simply tries again.
+    throw new Error((supplyDown(tried) ? 'PROXY_SUPPLY_DOWN ' : 'PROXY_GATE_REJECTED ') + tried.join(',').slice(0, 300));
   }
   for (const [i, list] of lists.entries()) {
     await device.assertOwned();
@@ -459,6 +478,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
       continue;
     }
     await db.proxyList.update({ where: { id: list.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+    await clearProxyOutage(p.scan.proxyRegion);
     const ispWord = normPlace(isp).split(' ')[0] ?? '';
     return {
       ...c,
@@ -477,7 +497,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
       rungsTried: tried,
     };
   }
-  throw new Error('PROXY_LADDER_EXHAUSTED ' + tried.join(','));
+  throw new Error((supplyDown(tried) ? 'PROXY_SUPPLY_DOWN ' : 'PROXY_LADDER_EXHAUSTED ') + tried.join(','));
 }
 
 export async function provision(device: LeasedDevice, p: Pin) {
@@ -743,7 +763,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
   if (pullEvidence) {
     await waitForBundleOnPhone();
     // One proxy for the whole search: the exit after recording must be the one the
-    // gatekeeper approved before it. A changed exit fails the point (it is retried).
+    // gatekeeper approved before it. A changed exit throws this search away and the point goes
+    // back in the queue for a fresh port (a proxy problem never fails a point).
     const approved = proof as { ip?: string; gate?: unknown; exitHeld?: boolean | null; exitAfter?: string | null };
     if (approved?.gate && approved.ip) {
       const token = process.env.IPINFO_TOKEN ? '?token=' + encodeURIComponent(process.env.IPINFO_TOKEN) : '';
