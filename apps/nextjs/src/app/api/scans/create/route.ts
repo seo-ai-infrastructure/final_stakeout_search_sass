@@ -6,6 +6,7 @@ import { getSettings, ispAllowed } from '@stakeout/core/settings';
 import { targetableIspCodes } from '@stakeout/core/proxySeller';
 import { listsEnabled, prepareGridProxies } from '@stakeout/core/proxyLists';
 import { assertFleetSupports } from '@stakeout/core/fleet';
+import { requestKeyValid } from '@stakeout/core/requestKey';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { redis } from '@stakeout/core/redis';
@@ -35,8 +36,8 @@ export async function POST(req: Request) {
         if (!health?.mobileData) throw new InputError('The mobile network is not available right now. Choose Residential Network.');
       }
     const key = req.headers.get('Idempotency-Key') ?? randomUUID();
-    if (!/^[\w-]{8,80}$/.test(key))
-      throw new InputError('Invalid request key.');
+    if (!requestKeyValid(key))
+      throw new InputError('This launch could not be checked. Reload the page and try again.');
     // Only surfaces with a working search template can be scanned (Chrome today).
     if (s.targetType !== 'desktop_aimode' && !(process.env.NEXT_PUBLIC_ENABLED_SURFACES ?? 'mobile_chrome').split(',').map((x) => x.trim()).includes(s.targetType))
       throw new InputError('That search surface is not available yet. Choose Google Chrome.');

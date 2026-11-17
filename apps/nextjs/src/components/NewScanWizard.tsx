@@ -684,7 +684,7 @@ export function NewScanWizard() {
         headers: {
           'Content-Type': 'application/json',
           // One key per keyword, so a retry never starts the same scan twice.
-          'Idempotency-Key': runKeywords.length > 1 ? baseKey + ':' + i : baseKey,
+          'Idempotency-Key': runKeywords.length > 1 ? baseKey + '-' + i : baseKey,
         },
         body: JSON.stringify({
           keyword: kw,
@@ -707,7 +707,9 @@ export function NewScanWizard() {
       });
       const data = await res.json();
       if (!res.ok) {
-        if (res.status < 500) submissionKey.current = null;
+        // A rejected launch gets a fresh key, so it can be fixed and sent again; but once some of the
+        // keywords' scans have started, the key is kept, so pressing Launch again only starts the rest.
+        if (res.status < 500 && !started.length) submissionKey.current = null;
         throw new Error((started.length ? started.length + ' scan(s) started; then: ' : '') + (data.error ?? 'Failed to launch scan'));
       }
       started.push(data.scanId);
