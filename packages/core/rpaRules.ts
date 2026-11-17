@@ -54,12 +54,22 @@ export function buildTaskConfig(
   keyword: string,
   pinId: string,
   businessName = '',
+  /** Per-run values for variables the template declares (others are ignored, so older templates are unaffected). */
+  extra: Record<string, string> = {},
 ) {
   const cfg: Record<string, { key: string; value: unknown; type: string; required: boolean }> = {};
   for (const v of vars) {
     // business_name is only used for screenshots when the business is visible; the template never taps it.
     const value =
-      v.key === keywordKey ? keyword : v.key === 'pin_id' ? pinId : v.key === 'business_name' && businessName ? businessName : v.value ?? '';
+      v.key === keywordKey
+        ? keyword
+        : v.key === 'pin_id'
+          ? pinId
+          : v.key === 'business_name' && businessName
+            ? businessName
+            : Object.prototype.hasOwnProperty.call(extra, v.key)
+              ? extra[v.key]
+              : v.value ?? '';
     cfg[v.key] = { key: v.key, value, type: v.type || 'string', required: v.required };
   }
   if (!cfg[keywordKey]) cfg[keywordKey] = { key: keywordKey, value: keyword, type: 'string', required: true };

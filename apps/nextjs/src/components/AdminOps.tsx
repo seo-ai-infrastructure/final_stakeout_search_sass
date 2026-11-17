@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { AdminRuns } from './AdminRuns';
 
 type OpenScan = { id: string; keyword: string; targetBusiness: string; targetType: string; gridSize: number; status: string; totalPins: number; completedPins: number; failedPins: number; createdAt: string; owner: string };
 type Brand = { domain: string; userId: string; name: string; hasLogo: boolean };
@@ -223,6 +224,8 @@ export function AdminOps() {
           )}
         </section>
       )}
+
+      <AdminRuns />
 
       <section className={card}>
         <h2 className="text-sm font-bold text-white">Add credits</h2>

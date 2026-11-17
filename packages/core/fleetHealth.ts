@@ -53,6 +53,51 @@ export function pauseReason(
   return `${failed} of the last ${outcomes.length} pins failed`;
 }
 
+/** Redis keys shared by the worker and the admin API. */
+export const probationKey = (imageId: string) => 'stakeout:probation:' + imageId;
+export const autoResumeKey = (imageId: string) => 'stakeout:autoresumes:' + imageId;
+
+/**
+ * A phone resumed automatically is on probation until it has run 10 pins: two failures in that
+ * time pause it again straight away, instead of after the usual ten-pin window.
+ */
+export function probationReason(outcomes: string, failures = 2, length = 10) {
+  if (outcomes.length > length) return null;
+  const failed = [...outcomes].filter((c) => c === 'F').length;
+  return failed >= failures ? `${failed} of its first ${outcomes.length} pins after an automatic resume failed` : null;
+}
+
+/**
+ * A failure that `minPhones` or more OTHER phones also had in the last few minutes says something
+ * about the search (Google changed a page, the template, the proxies), not about this phone, so
+ * it is not held against the phone.
+ */
+export function fleetWideFailure(otherPhones: number, minPhones = Number(process.env.FLEET_WIDE_FAIL_PHONES ?? 3)) {
+  return minPhones > 0 && otherPhones >= minPhones;
+}
+
+/**
+ * What to do with an auto-paused phone: resume it once it has rested `minutes`, at most `max`
+ * times a day (a phone that keeps failing then waits for an admin).
+ */
+export function autoResumeDecision(x: { pausedAt: Date; now: number; minutes: number; resumesToday: number; max: number }): 'resume' | 'wait' | 'hold' {
+  if (!(x.minutes > 0) || x.resumesToday >= x.max) return 'hold';
+  return x.now - x.pausedAt.getTime() >= x.minutes * 60000 ? 'resume' : 'wait';
+}
+
+/**
+ * One phone's power state from a cloudPhone/status response ({data: {list: [{id, status}]}}, one
+ * request for many phones). Null when the phone is not in the response.
+ */
+export function readPhoneStatus(res: any, imageId: string, asked = 1): { on: boolean; status: string } | null {
+  const data = res?.data;
+  const items: any[] = Array.isArray(data) ? data : Array.isArray(data?.list) ? data.list : data && typeof data === 'object' && 'status' in data ? [data] : [];
+  const item = items.find((i) => String(i?.id ?? i?.image_id ?? '') === imageId) ?? (asked === 1 && items.length === 1 ? items[0] : null);
+  if (!item || item.status === undefined || item.status === null) return null;
+  const code = Number(item.status);
+  return { on: code === 1, status: PHONE_STATUS[code] ?? 'status ' + String(item.status) };
+}
+
 /** Nearest-rank percentile of a list of numbers; null for an empty list. */
 export function percentile(values: number[], p: number) {
   if (!values.length) return null;

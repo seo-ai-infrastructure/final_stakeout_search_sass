@@ -65,3 +65,17 @@ test('rpa: the tracked business is passed to the template as business_name', () 
   assert.equal(buildTaskConfig(vars, 'keyword', 'kw', 'run1', 'Steinger, Greene & Feiner').business_name.value, 'Steinger, Greene & Feiner');
   assert.equal(buildTaskConfig(vars, 'keyword', 'kw', 'run1').business_name.value, 'McIntyre Painting');
 });
+
+test('rpa: per-run values reach only the variables a template declares', () => {
+  const vars = [
+    { key: 'keyword', type: 'string', required: true, desc: '' },
+    { key: 'pin_id', type: 'string', required: true, desc: '' },
+    { key: 'location_skip_class', type: 'string', required: false, desc: '', value: 'stakeout.NoFooterSkip' },
+  ];
+  const cfg = buildTaskConfig(vars, 'keyword', 'kw', 'run1', '', { location_skip_class: 'android.widget.FrameLayout', not_declared: 'x' });
+  assert.equal(cfg.location_skip_class.value, 'android.widget.FrameLayout');
+  assert.equal('not_declared' in cfg, false);
+  assert.equal(buildTaskConfig(vars, 'keyword', 'kw', 'run1').location_skip_class.value, 'stakeout.NoFooterSkip');
+  // The keyword and pin id can never be overridden.
+  assert.equal(buildTaskConfig(vars, 'keyword', 'kw', 'run1', '', { keyword: 'other', pin_id: 'x' }).keyword.value, 'kw');
+});

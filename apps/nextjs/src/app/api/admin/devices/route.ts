@@ -6,7 +6,8 @@ import { redis, duoplusPost } from '@stakeout/core/redis';
 import { RUN_PIN_SH_V2 } from '@stakeout/core/runner';
 import { proxyPort } from '@stakeout/core/proxySeller';
 import { profilesForDevice } from '@stakeout/core/hardware';
-import { failureRate, percentile } from '@stakeout/core/fleetHealth';
+import { autoResumeKey, failureRate, percentile, probationKey } from '@stakeout/core/fleetHealth';
+import { locationKey, parseEntries, skipFooterHunt, type LocationRun } from '@stakeout/core/runLog';
 import { createHash } from 'node:crypto';
 
 const RUNNER_SHA = createHash('sha256').update(RUN_PIN_SH_V2).digest('hex');
@@ -71,6 +72,17 @@ export async function GET() {
     const lockKeys = devices.map((d) => 'lock:duoplus:' + d.imageId);
     const locks = lockKeys.length ? await redis().mget(...lockKeys) : [];
     const lockOf = new Map(devices.map((d, i) => [d.imageId, locks[i]]));
+    // What the worker remembers per phone: how its Chrome refreshes Google's location, and
+    // whether it is on probation after an automatic resume.
+    const [locs, probation] = devices.length
+      ? await Promise.all([redis().mget(...devices.map((d) => locationKey(d.imageId))), redis().mget(...devices.map((d) => probationKey(d.imageId)))])
+      : [[], []];
+    const locationOf = new Map(
+      devices.map((d, i) => {
+        const runs = parseEntries<{ runs?: LocationRun[] }>([locs[i]])[0]?.runs ?? [];
+        return [d.imageId, { runs: runs.length, footerFound: runs.filter((r) => r.footer).length, ...skipFooterHunt(runs) }];
+      }),
+    );
     const health = await fleetHealth(devices, locks.filter(Boolean).length);
     // The worker's own status record (written every minute): null when the worker is not running.
     const system = await redis()
@@ -91,6 +103,8 @@ export async function GET() {
             ...d,
             activePinId: value?.split('|')[0],
             recentFailureRate: failureRate(d.recentOutcomes),
+            location: locationOf.get(d.imageId) ?? null,
+            onProbation: Boolean(probation[devices.indexOf(d)]),
             cooldownRemainingSec: cooldown,
             proxyPort: displayPort(d.slotIndex),
             profiles: profilesForDevice(d).map((p) => p.model),
@@ -200,13 +214,15 @@ export async function POST(req: Request) {
           where: { imageId },
           data: { cooldownUntil: new Date(0) },
         });
-      else if (action === 'RESUME_DEVICE')
-        // Fresh start: clears the pause and the failure window that triggered it.
+      else if (action === 'RESUME_DEVICE') {
+        // Fresh start: clears the pause and the failure window that triggered it. No probation,
+        // and the day's automatic resumes count from zero again.
         await db.devicePool.update({
           where: { imageId },
           data: { autoPausedAt: null, autoPauseReason: null, recentOutcomes: '' },
         });
-      else if (action === 'TOGGLE_ENABLED' && typeof isEnabled === 'boolean')
+        await redis().del(probationKey(imageId), autoResumeKey(imageId)).catch(() => {});
+      } else if (action === 'TOGGLE_ENABLED' && typeof isEnabled === 'boolean')
         await db.devicePool.update({ where: { imageId }, data: { isEnabled } });
       else if (action === 'DELETE_DEVICE') {
         if (d.isEnabled || (await redis().exists('lock:duoplus:' + imageId)))

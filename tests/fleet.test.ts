@@ -110,3 +110,39 @@ test('freely placed points: the business is included, they are numbered north to
   const many = Array.from({ length: 24 }, (_, i) => ({ lat: 28.0 + i * 0.003, lng: -81.95 + (i % 5) * 0.01 }));
   assert.equal(placedPins(c, many, [3, 5, 7, 9])!.gridSize, 5);
 });
+
+test('a phone resumed automatically is paused again after two failures in its first ten pins', async () => {
+  const { probationReason } = await import('../packages/core/fleetHealth');
+  assert.equal(probationReason('SF'), null);
+  assert.equal(probationReason('SFF'), '2 of its first 3 pins after an automatic resume failed');
+  assert.equal(probationReason('SSSSSSSSSSSFF'), null, 'probation ends after ten pins');
+});
+
+test('a failure three other phones also had is not held against a phone', async () => {
+  const { fleetWideFailure } = await import('../packages/core/fleetHealth');
+  assert.equal(fleetWideFailure(2, 3), false);
+  assert.equal(fleetWideFailure(3, 3), true);
+  assert.equal(fleetWideFailure(10, 0), false, '0 turns the rule off');
+});
+
+test('auto-paused phones resume after their rest, at most twice a day', async () => {
+  const { autoResumeDecision } = await import('../packages/core/fleetHealth');
+  const pausedAt = new Date('2026-11-17T20:00:00Z');
+  const at = (min: number) => pausedAt.getTime() + min * 60000;
+  assert.equal(autoResumeDecision({ pausedAt, now: at(10), minutes: 30, resumesToday: 0, max: 2 }), 'wait');
+  assert.equal(autoResumeDecision({ pausedAt, now: at(30), minutes: 30, resumesToday: 1, max: 2 }), 'resume');
+  assert.equal(autoResumeDecision({ pausedAt, now: at(90), minutes: 30, resumesToday: 2, max: 2 }), 'hold');
+  assert.equal(autoResumeDecision({ pausedAt, now: at(90), minutes: 0, resumesToday: 0, max: 2 }), 'hold');
+});
+
+test('one phone-status request answers for many phones', async () => {
+  const { readPhoneStatus } = await import('../packages/core/fleetHealth');
+  const res = { code: 200, data: { list: [{ id: 'UXsp5', name: 'a', status: 1 }, { id: 'x0Puo', name: 'b', status: 11 }] } };
+  assert.deepEqual(readPhoneStatus(res, 'UXsp5', 2), { on: true, status: 'powered on' });
+  assert.deepEqual(readPhoneStatus(res, 'x0Puo', 2), { on: false, status: 'configuring' });
+  assert.equal(readPhoneStatus(res, 'iYdxS', 2), null, 'not in the answer');
+  // A single-phone answer without an id is still read; a many-phone one never is.
+  assert.deepEqual(readPhoneStatus({ data: { list: [{ status: 2 }] } }, 'UXsp5', 1), { on: false, status: 'powered off' });
+  assert.equal(readPhoneStatus({ data: { list: [{ status: 2 }] } }, 'UXsp5', 2), null);
+  assert.equal(readPhoneStatus(null, 'UXsp5'), null);
+});

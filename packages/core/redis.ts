@@ -67,14 +67,42 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  * every worker and the web app enforces that across ALL endpoints (the earlier
  * limiter was per endpoint, so three endpoints could fire in the same second).
  */
-async function takeDuoPlusSlot() {
+async function takeDuoPlusSlot(endpoint: string) {
   const interval = Number(process.env.DUOPLUS_MIN_INTERVAL_MS ?? 1050);
   const store = redis();
+  const t0 = Date.now();
   for (;;) {
-    if (await store.set('rl:duoplus:global', '1', 'PX', interval, 'NX')) return;
+    if (await store.set('rl:duoplus:global', '1', 'PX', interval, 'NX')) {
+      noteSlot(endpoint, Date.now() - t0);
+      return;
+    }
     const ttl = await store.pttl('rl:duoplus:global');
     await pause(Math.max(25, ttl) + Math.random() * 60);
   }
+}
+
+/**
+ * How long this process's DuoPlus requests waited for the shared slot, kept for the admin page:
+ * a long wait means requests are queueing behind each other (too many phones polling at once).
+ */
+const slotLog: { at: number; ms: number; endpoint: string }[] = [];
+function noteSlot(endpoint: string, ms: number) {
+  slotLog.push({ at: Date.now(), ms, endpoint: endpoint.replace(/^\/api\/v1\//, '') });
+  if (slotLog.length > 6000) slotLog.splice(0, slotLog.length - 6000);
+}
+export function duoplusSlotStats(windowMs = 5 * 60000) {
+  const since = Date.now() - windowMs;
+  const recent = slotLog.filter((x) => x.at >= since);
+  const byEndpoint = new Map<string, number>();
+  for (const x of recent) byEndpoint.set(x.endpoint, (byEndpoint.get(x.endpoint) ?? 0) + 1);
+  const minutes = windowMs / 60000;
+  return {
+    windowMinutes: minutes,
+    perMinute: Math.round((recent.length / minutes) * 10) / 10,
+    avgWaitMs: recent.length ? Math.round(recent.reduce((s, x) => s + x.ms, 0) / recent.length) : 0,
+    maxWaitMs: recent.reduce((m, x) => Math.max(m, x.ms), 0),
+    top: [...byEndpoint].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([endpoint, n]) => ({ endpoint, perMinute: Math.round((n / minutes) * 10) / 10 })),
+  };
 }
 
 const isRateLimited = (status: number, result: any) =>
@@ -87,7 +115,7 @@ export async function duoplusPost(
   payload: Record<string, unknown>,
 ) {
   for (let attempt = 0; ; attempt++) {
-    await takeDuoPlusSlot();
+    await takeDuoPlusSlot(endpoint);
     const response = await fetch('https://openapi.duoplus.net' + endpoint, {
       method: 'POST',
       headers: {

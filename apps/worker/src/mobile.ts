@@ -2,7 +2,7 @@ import { rpaTemplate } from './rpa';
 import { buildPinInsights, type PinInsights } from '@stakeout/core/pinInsights';
 import { searchLocationLine, isLocalFinder, readAiOverview, readLocalFinder, sameBusiness, rankWithoutFinder } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { db, type GridPin, type GridScan } from '@stakeout/db';
@@ -23,6 +23,7 @@ import { captureEnded, captureStarted, duoplusPost, updatePhone, phonePowerStatu
 import { pull, push, shell, transportFor } from './deviceShell';
 import { readBundle, readBundleFile } from './bundle';
 import { stateTimezone } from '@stakeout/core/fleetHealth';
+import { HUNT_FOOTER, SKIP_FOOTER_HUNT, locationKey, locationPathOf, nextLocationRuns, skipFooterHunt, withEvidence, type Evidence, type LocationRun, type Marks } from '@stakeout/core/runLog';
 import { parsePinXmlBundle, parseWebResults } from './xmlParser';
 import { shellQuote, RUN_PIN_SH_V2 } from '@stakeout/core/runner';
 import {
@@ -794,7 +795,34 @@ async function provisionProxySeller(device: LeasedDevice, p: Pin) {
 
 export { readBundle, readBundleFile } from './bundle';
 
-export async function measureMobile(p: Pin, d: LeasedDevice) {
+/** What execute() hands a point: where to note its moments, and how to give the phone back early. */
+export type RunContext = {
+  marks: Marks;
+  /**
+   * The phone is no longer needed (its evidence is ready on it and the exit was checked): its rest
+   * starts and its lease is released, while the evidence is pulled, checked and saved here.
+   */
+  phoneDone: () => Promise<void>;
+};
+
+/** How each phone's Chrome lets the template refresh Google's location (see skipFooterHunt). */
+export async function locationRuns(imageId: string): Promise<LocationRun[]> {
+  const raw = await redis().get(locationKey(imageId)).catch(() => null);
+  try {
+    const v = raw ? JSON.parse(raw) : null;
+    return Array.isArray(v?.runs) ? v.runs : [];
+  } catch {
+    return [];
+  }
+}
+async function noteLocationRun(imageId: string, run: LocationRun) {
+  const runs = nextLocationRuns(await locationRuns(imageId), run);
+  await redis().set(locationKey(imageId), JSON.stringify({ runs, at: new Date().toISOString() }), 'EX', 14 * 86400).catch(() => {});
+}
+
+const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
   const scan = p.scan,
     tagBase = randomBytes(6).toString('hex'),
     point = p.rowIdx + '_' + p.colIdx,
@@ -807,20 +835,32 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     mobile_chrome: 'chrome',
   };
   if (!app[scan.targetType]) throw new Error('UNSUPPORTED_SURFACE');
+  // Where this attempt's evidence went: carried on any error, so a rejected search can be watched.
+  const ev: Evidence = { video: null, bundle: null, locationPath: null, template: null };
 
+  // Counted while the phone is being set up (GPS waves share one DuoPlus update; see updatePhone).
   captureStarted();
+  let settingUp = true;
+  const setupDone = () => {
+    if (settingUp) {
+      settingUp = false;
+      captureEnded();
+    }
+  };
   try {
     return await capture();
   } catch (e) {
     bootstrappedInMemory.delete(d.imageId);
-    throw e;
+    throw withEvidence(e, ev);
   } finally {
-    captureEnded();
+    setupDone();
   }
 
   async function capture() {
   await ensureRunnerInstalled(d);
   const proof = await provision(d, p);
+  run.marks.proxy = Date.now();
+  setupDone();
   await d.assertOwned();
   // A phone just switched on (power saving): once its proxy is set, run the warm-up template one
   // time before its first search. A failed warm-up is logged; the point still runs.
@@ -831,6 +871,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       (e) => console.warn('[power] warm-up did not finish on', d.imageId, '-', e instanceof Error ? e.message : e),
     );
     await redis().set(warmKey(d.imageId), '1', 'EX', 7 * 86400).catch(() => {});
+    run.marks.warmup = Date.now();
     await d.assertOwned();
   }
   // Over ADB the exit check already bound the proxy and set GPS; over the API it
@@ -862,6 +903,14 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
   const pidFile = `${RT_DIR}/${tag}.pid`;
   const rpaMode = searchMode() === 'rpa' && pullEvidence;
   const rpaSecs = Math.max(120, Number(process.env.RPA_TIMEOUT_SECONDS ?? 420));
+  const surface = app[scan.targetType] as RpaSurface;
+  const tpl = rpaMode ? await rpaTemplate(surface).catch(() => null) : null;
+  const tplVersion = tpl?.vars.find((v) => v.key === 'template_version')?.value;
+  ev.template = tplVersion == null || tplVersion === '' ? null : String(tplVersion);
+  // Template v3.42+: phones whose Chrome never shows the results' footer skip the warm-up's hunt for it.
+  const knowsSkip = Boolean(tpl?.vars.some((v) => v.key === 'location_skip_class'));
+  const hunt = knowsSkip ? skipFooterHunt(await locationRuns(d.imageId)) : { skip: false, probe: false };
+  if (knowsSkip) Object.assign(proof, { locationSkip: hunt.skip, ...(hunt.probe ? { locationProbe: true } : {}) });
   if (rpaMode) {
     // The recorder only records while the template runs, then reads the results list.
     await ensureObserverInstalled(d);
@@ -872,7 +921,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       `find ${RT_DIR} -mindepth 1 -maxdepth 1 ! -name "observe.*" -mmin +30 -exec rm -rf {} + 2>/dev/null; find /sdcard/stakeout -maxdepth 1 -type f -mmin +30 -delete 2>/dev/null; true`,
     ).catch(() => {});
     // Templates that mark the moment they type (record_start, v3.9+) are recorded from there.
-    const waitRec = (await rpaTemplate(app[scan.targetType] as RpaSurface).catch(() => null))?.vars.some((v) => v.key === 'record_start') ? 120 : 0;
+    const waitRec = tpl?.vars.some((v) => v.key === 'record_start') ? 120 : 0;
     await shell(
       d,
       `nohup sh ${RT_DIR}/observe.sh ${shellQuote(tagBase)} ${shellQuote(point)} ${rpaSecs + 60} ${shellQuote(tag)} ${waitRec} >${RT_DIR}/last_run.log 2>&1 & echo $! > ${pidFile}`,
@@ -887,48 +936,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
   }
 
   const deadline = Date.now() + (rpaMode ? (rpaSecs + 180) * 1000 : 240000);
-  if (rpaMode) {
-    await sleep(2000);
-    // The capture-only template marks a wrong page / blocked run on the phone itself.
-    const templateProblem = async () =>
-      (
-        await shell(
-          d,
-          `cd /sdcard/stakeout 2>/dev/null && for f in blocked surface_error; do [ -e ${tag}.$f ] && echo "$f: $(head -c 120 ${tag}.$f)"; done; true`,
-        ).catch(() => '')
-      ).replace(/\s+/g, ' ').trim();
-    try {
-      let stopLooked = Date.now();
-      const run = await runRpaSearch({
-        imageId: d.imageId,
-        surface: app[scan.targetType] as RpaSurface,
-        keyword: scan.keyword,
-        pinId: tag,
-        businessName: scan.targetBusiness,
-        name: 'stakeout-' + p.id + '-' + tagBase,
-        timeoutMs: rpaSecs * 1000,
-        doneCheck: async () => (await shell(d, `test -f /sdcard/stakeout/${tag}.done && echo y`).catch(() => '')).trim() === 'y',
-        // A stopped scan settles its points at once; looked up at most every 12 s while the phone works.
-        stopCheck: async () => {
-          if (Date.now() - stopLooked < 12000) return false;
-          stopLooked = Date.now();
-          return (await db.gridPin.findUnique({ where: { id: p.id }, select: { status: true } }))?.status !== 'PENDING';
-        },
-      });
-      const problem = await templateProblem();
-      if (problem) throw new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160));
-      // Every result can be traced to the exact template (and DuoPlus task) that produced it.
-      Object.assign(proof, { rpaTemplate: { id: run.templateId, name: run.templateName, version: run.templateVersion, taskId: run.taskId } });
-      // How long the point took from the phone's lease to the end of the search (capacity figures).
-      if (p.startedAt) Object.assign(proof, { ranSeconds: Math.round((Date.now() - p.startedAt.getTime()) / 1000) });
-    } catch (e) {
-      const problem = e instanceof Error && e.message.startsWith('RPA_SURFACE_ERROR') ? '' : await templateProblem();
-      throw problem ? new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160)) : e;
-    } finally {
-      // Template finished (or failed): the recorder now reads the results list and stops.
-      await shell(d, `touch ${shellQuote(RT_DIR + '/' + tag + '/stop')}`).catch(() => {});
-    }
-  } else await sleep(30000);
+  const dir = await mkdtemp(join(tmpdir(), 'stakeout-pin-'));
+  const folder = `${RT_DIR}/${tag}`;
 
   // Over ADB the worker can see the script exit, so a failed capture is reported
   // in seconds instead of after the full upload timeout. Checking costs no API call.
@@ -955,8 +964,6 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     }
   }
 
-  const dir = await mkdtemp(join(tmpdir(), 'stakeout-pin-'));
-  const folder = `${RT_DIR}/${tag}`;
   async function waitForBundleOnPhone() {
     while (Date.now() < deadline) {
       await d.assertOwned();
@@ -968,14 +975,102 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         const log = await shell(d, `tail -n 5 ${RT_DIR}/last_run.log 2>/dev/null`).catch(() => '');
         throw new Error('DEVICE_SCRIPT_FAILED ' + log.replace(/\s+/g, ' ').slice(0, 160));
       }
-      await sleep(3000);
+      await sleep(2000);
     }
     throw new Error('DEVICE_BUNDLE_TIMEOUT');
   }
+
+  /**
+   * After a failed template run: the recorder keeps the screen as it is now (no scrolling) and
+   * packs up within seconds; the bundle and video are stored so an admin can see where it stopped.
+   * Gives up after 30 s rather than hold the phone.
+   */
+  async function salvageEvidence() {
+    const until = Date.now() + 30000;
+    for (;;) {
+      const status = (await shell(d, 'cat ' + shellQuote(folder + '/status') + ' 2>/dev/null').catch(() => '')).trim();
+      if (status === 'done') break;
+      if (Date.now() > until || (await scriptExitedWithoutResult())) return;
+      await sleep(2000);
+    }
+    const local = join(dir, 'salvage.tgz');
+    await pull(d, folder + '.tar.gz', local, 90000);
+    await put(tarKey, await readFile(local), 'application/gzip');
+    ev.bundle = tarKey;
+    try {
+      const sb = await readBundleFile(local, tag, dir);
+      ev.locationPath = locationPathOf(sb.meta);
+      if (sb.video.length) {
+        await put(prefix + '/video.mp4', sb.video, 'video/mp4');
+        ev.video = prefix + '/video.mp4';
+      }
+    } catch {
+      /* a bundle without its video still shows the screen */
+    }
+    await shell(d, `rm -rf ${shellQuote(folder)} ${shellQuote(folder + '.tar.gz')} ${shellQuote(pidFile)}`).catch(() => {});
+  }
+
   try {
+  if (rpaMode) {
+    await sleep(2000);
+    // The capture-only template marks a wrong page / blocked run on the phone itself.
+    const templateProblem = async () =>
+      (
+        await shell(
+          d,
+          `cd /sdcard/stakeout 2>/dev/null && for f in blocked surface_error; do [ -e ${tag}.$f ] && echo "$f: $(head -c 120 ${tag}.$f)"; done; true`,
+        ).catch(() => '')
+      ).replace(/\s+/g, ' ').trim();
+    let rpaError: unknown = null;
+    try {
+      let stopLooked = Date.now();
+      const r = await runRpaSearch({
+        imageId: d.imageId,
+        surface,
+        keyword: scan.keyword,
+        pinId: tag,
+        businessName: scan.targetBusiness,
+        vars: knowsSkip ? { location_skip_class: hunt.skip ? SKIP_FOOTER_HUNT : HUNT_FOOTER } : undefined,
+        name: 'stakeout-' + p.id + '-' + tagBase,
+        timeoutMs: rpaSecs * 1000,
+        onAdded: () => void (run.marks.added = Date.now()),
+        onStarted: () => void (run.marks.started = Date.now()),
+        doneCheck: async () => (await shell(d, `test -f /sdcard/stakeout/${tag}.done && echo y`).catch(() => '')).trim() === 'y',
+        // A stopped scan settles its points at once; looked up at most every 12 s while the phone works.
+        stopCheck: async () => {
+          if (Date.now() - stopLooked < 12000) return false;
+          stopLooked = Date.now();
+          return (await db.gridPin.findUnique({ where: { id: p.id }, select: { status: true } }))?.status !== 'PENDING';
+        },
+      });
+      run.marks.templateDone = Date.now();
+      const problem = await templateProblem();
+      if (problem) throw new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160));
+      // Every result can be traced to the exact template (and DuoPlus task) that produced it.
+      Object.assign(proof, { rpaTemplate: { id: r.templateId, name: r.templateName, version: r.templateVersion, taskId: r.taskId } });
+      // How long the point took from the phone's lease to the end of the search (capacity figures).
+      if (p.startedAt) Object.assign(proof, { ranSeconds: Math.round((Date.now() - p.startedAt.getTime()) / 1000) });
+    } catch (e) {
+      run.marks.templateDone ??= Date.now();
+      const problem = e instanceof Error && e.message.startsWith('RPA_SURFACE_ERROR') ? '' : await templateProblem();
+      rpaError = problem ? new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160)) : e;
+    } finally {
+      // Template finished: the recorder now reads the results list and stops. Template failed:
+      // the recorder keeps only the screen as it is now (abort), so the run can be looked at.
+      const failed = rpaError !== null && !/^CANCELLED/.test(errMsg(rpaError));
+      await shell(d, (failed ? `touch ${shellQuote(folder + '/abort')}; ` : '') + `touch ${shellQuote(folder + '/stop')}`).catch(() => {});
+    }
+    if (rpaError) {
+      if (!/^CANCELLED/.test(errMsg(rpaError)))
+        await salvageEvidence().catch((e) => console.warn('[evidence]', tag, 'not kept after a failed template:', errMsg(e).slice(0, 140)));
+      throw rpaError;
+    }
+  } else await sleep(30000);
+
   let b: Awaited<ReturnType<typeof readBundleFile>>;
   if (pullEvidence) {
     await waitForBundleOnPhone();
+    run.marks.bundle = Date.now();
     // One proxy for the whole search: the exit after recording must be the one the
     // gatekeeper approved before it. A changed exit throws this search away and the point goes
     // back in the queue for a fresh port (a proxy problem never fails a point).
@@ -987,11 +1082,16 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       approved.exitHeld = after ? after.ip === approved.ip : null;
       if (after && after.ip !== approved.ip) throw new Error('PROXY_EXIT_CHANGED ' + approved.ip + '>' + after.ip);
     }
+    // The phone's part is over: its rest starts now and the next point can have it, while the
+    // evidence is pulled, checked and saved here.
+    await run.phoneDone();
     const local = join(dir, 'raw.tgz');
     await pull(d, folder + '.tar.gz', local);
     b = await readBundleFile(local, tag, dir);
     // Stored exactly as received, so the fingerprint can be re-checked later.
     await put(tarKey, b.raw, 'application/gzip');
+    ev.bundle = tarKey;
+    run.marks.stored = Date.now();
     await shell(d, `rm -rf ${shellQuote(folder)} ${shellQuote(folder + '.tar.gz')} ${shellQuote(pidFile)}`).catch(() => {});
   } else if (detachedUpload) {
     let ready = false;
@@ -1005,6 +1105,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       await sleep(5000);
     }
     if (!ready) throw new Error('DEVICE_BUNDLE_TIMEOUT');
+    run.marks.bundle = Date.now();
     try {
       await updatePhone({ image_id: d.imageId, proxy: { id: '', dns: 2 } });
       await sleep(2000);
@@ -1023,10 +1124,40 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       await d.assertOwned();
     }
     b = await readBundle(tarKey, tag, dir);
+    ev.bundle = tarKey;
+    run.marks.stored = Date.now();
   } else {
     await waitForUpload();
+    run.marks.bundle = Date.now();
     b = await readBundle(tarKey, tag, dir);
+    ev.bundle = tarKey;
+    run.marks.stored = Date.now();
   }
+  // How the template refreshed Google's location on this run (v3.42+), remembered per phone. A
+  // skip counts only when the template confirms it skipped the hunt.
+  ev.locationPath = locationPathOf(b.meta);
+  if (ev.locationPath) Object.assign(proof, { locationPath: ev.locationPath });
+  if (knowsSkip) {
+    const skipped = hunt.skip && /^hunt_skipped=1/m.test(b.meta);
+    Object.assign(proof, { locationSkip: skipped });
+    if (/^evidence=template$/m.test(b.meta)) await noteLocationRun(d.imageId, { footer: /(^|,)footer(,|$)/.test(ev.locationPath ?? ''), skipped });
+  }
+
+  // A refused search keeps its video (for the admin page's list of rejected searches).
+  const keepVideo = async () => {
+    if (ev.video || !b?.video?.length) return;
+    await put(prefix + '/video.mp4', b.video, 'video/mp4').then(
+      () => void (ev.video = prefix + '/video.mp4'),
+      () => {},
+    );
+  };
+  // A refused point keeps its evidence (the bundle is already uploaded): link it and upload
+  // its video, so the report shows what the phone saw. A later successful retry replaces it.
+  const keepRefusedEvidence = async () => {
+    await keepVideo();
+    if (ev.video) await db.gridPin.update({ where: { id: p.id }, data: { dumpsTarUrl: tarKey, videoUrl: ev.video } }).catch(() => {});
+  };
+  try {
     if (
       /unusual traffic|not a robot|verify you are human/i.test(
         b.scroll.join(' '),
@@ -1036,7 +1167,6 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     if (b.flags.trim()) throw new Error('FLAG_MAP_DRIFT_OR_CHALLENGE');
     if (!b.video.length) throw new Error('EMPTY_VIDEO');
 
-    const surface = app[scan.targetType];
     // The results page dump (serp.xml) holds the AI Overview too on web surfaces.
     const aiDumps = scan.trackAiOverviews ? [...b.ai, ...(b.serp && surface !== 'maps' ? [b.serp] : [])] : [];
     const result =
@@ -1045,14 +1175,6 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
         : { ...parsePinXmlBundle(b.final ? [...b.scroll, b.final] : b.scroll, aiDumps, scan.targetBusiness), locationSource: null, locationFromIp: false };
     // Google said it located this search by IP, so the pin's GPS was not used:
     // the result is not a measurement at this coordinate. Fail (and refund) it.
-    // A refused point keeps its evidence (the bundle is already uploaded): link it and upload
-    // its video, so the report shows what the phone saw. A later successful retry replaces it.
-    const keepRefusedEvidence = async () => {
-      if (!tarKey || !b?.video) return;
-      const refusedVideo = prefix + '/video.mp4';
-      await put(refusedVideo, b.video, 'video/mp4').catch(() => {});
-      await db.gridPin.update({ where: { id: p.id }, data: { dumpsTarUrl: tarKey, videoUrl: refusedVideo } }).catch(() => {});
-    };
     // The Local Finder snapshot can lack Google's location line; the results page of the same search has it.
     if ((surface === 'chrome' || surface === 'google') && !result.locationSource) {
       // Then any other snapshot of the run: Google only adds the footer that holds the line once
@@ -1082,8 +1204,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     // must prove it did; otherwise Google may have reused an earlier point's location.
     // The Google app shows the same results page as Chrome, so the same rules apply.
     if (surface === 'chrome' || surface === 'google') {
-      const tpl = await rpaTemplate(surface).catch(() => null);
-      if (tpl?.vars.some((v) => v.key === 'update_location_text') && !/location_refreshed=1/.test(b.meta)) {
+      const t = tpl ?? (await rpaTemplate(surface).catch(() => null));
+      if (t?.vars.some((v) => v.key === 'update_location_text') && !/location_refreshed=1/.test(b.meta)) {
         await keepRefusedEvidence();
         throw new Error("RPA_SURFACE_ERROR location_not_refreshed: the template finished without refreshing Google's location");
       }
@@ -1115,6 +1237,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     const videoUrl = prefix + '/video.mp4',
       metaJsonUrl = prefix + '/meta.json';
     await put(videoUrl, b.video, 'video/mp4');
+    ev.video = videoUrl;
     await put(
       metaJsonUrl,
       JSON.stringify({
@@ -1151,6 +1274,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
     } catch (e) {
       console.error('[insights]', (e as Error).message);
     }
+    run.marks.saved = Date.now();
     return {
       assignedDeviceId: d.imageId,
       rankFound: aiList ? aiList.rank : result.targetRank,
@@ -1167,6 +1291,10 @@ export async function measureMobile(p: Pin, d: LeasedDevice) {
       metaJsonUrl,
       evidenceSha256: b.fingerprints['raw.tar.gz'],
     };
+  } catch (e) {
+    await keepVideo();
+    throw e;
+  }
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

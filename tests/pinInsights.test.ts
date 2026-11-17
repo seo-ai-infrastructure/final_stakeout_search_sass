@@ -161,6 +161,16 @@ test('the recorder keeps the location flag and the results page whichever eviden
   assert.ok(!/input swipe \$X \$\(\(H\*30\/100\)\) \$X \$\(\(H\*80\/100\)\)/.test(OBSERVE_SH), 'no drag down at the top of the page: that is pull-to-refresh');
 });
 
+test('the recorder notes how the location was refreshed, and keeps a failed run without scrolling', async () => {
+  const { OBSERVE_SH } = await import('../packages/core/observer');
+  assert.ok(OBSERVE_SH.includes('echo "location_path=$P"'), 'v3.42 marker lines name the path');
+  assert.ok(OBSERVE_SH.includes('hunt_skipped=1'));
+  assert.ok(OBSERVE_SH.indexOf('location_path=') < OBSERVE_SH.indexOf('evidence=aborted'), 'recorded before the evidence is chosen');
+  const abort = OBSERVE_SH.slice(OBSERVE_SH.indexOf('if [ -f "$D/abort" ]'), OBSERVE_SH.indexOf('elif [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]'));
+  assert.ok(abort.includes('evidence=aborted') && abort.includes('uiautomator dump'), 'one snapshot of the screen as it is');
+  assert.ok(!/input (swipe|keyevent)/.test(abort), 'no scrolling after a failure');
+});
+
 test('the recorder fetches Google\'s location footer when the template\'s snapshots lack it (web runs only)', async () => {
   const { OBSERVE_SH } = await import('../packages/core/observer');
   const { searchLocationLine } = await import('../packages/core/serpEvidence');

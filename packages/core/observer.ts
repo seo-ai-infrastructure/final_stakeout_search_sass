@@ -5,10 +5,11 @@
  * worker writes $D/stop (template finished), a read-only pass over the results list the
  * template ended on: back to the top, then a snapshot after each swipe down to the footer
  * (where Google prints "From your device"). Output matches run_pin.sh: dump_N.xml,
- * serp.xml, final.xml, meta.txt, video.mp4, status=done.
+ * serp.xml, final.xml, meta.txt, video.mp4, status=done. When the worker also writes $D/abort
+ * (the template failed or timed out), only the screen as it is now is kept, without scrolling.
  */
 export const OBSERVE_SH = `#!/system/bin/sh
-# observe v10
+# observe v11
 SCAN=$1; PIN=$2; MAXS=$3; RUN=$4; WAITREC=\${5:-0}
 [ -n "$MAXS" ] || MAXS=420
 TS=$(date +%s)
@@ -46,7 +47,15 @@ if [ -n "$RUN" ]; then
   [ -s "$T/$RUN.done" ] && echo "done_status=$(head -c 20 "$T/$RUN.done" | tr -d '\n ')" >> "$D/meta.txt"
   # The template refreshes Google's location and leaves this marker (v3.7+). Recorded here, before
   # the evidence is chosen: it is a fact about the run, whichever snapshots end up being used.
-  [ -e "$T/$RUN".location_refreshed ] && echo "location_refreshed=1" >> "$D/meta.txt"
+  # From v3.42 each line also names how it was refreshed ("footer", "precise", "top"...).
+  if [ -e "$T/$RUN".location_refreshed ]; then
+    echo "location_refreshed=1" >> "$D/meta.txt"
+    P=''
+    while read -r _ts how _rest; do case "$how" in [a-z]*) P="$P\${P:+,}$how";; esac; done < "$T/$RUN".location_refreshed
+    [ -n "$P" ] && echo "location_path=$P" >> "$D/meta.txt"
+  fi
+  # v3.42: the worker asked this phone to skip the warm-up's footer hunt, and the template did.
+  [ -e "$T/$RUN".hunt_skipped ] && echo "hunt_skipped=1" >> "$D/meta.txt"
 fi
 sleep 1
 n=0
@@ -57,7 +66,17 @@ if [ -n "$RUN" ] && [ ! -s "$T/$RUN"_finder.xml ] && ls "$T/$RUN"_list_*.xml >/d
   for f in $(ls "$T/$RUN"_list_*.xml | sort); do cp "$f" "$D/dump_$n.xml" && n=$((n+1)); done
   cp "$(ls "$T/$RUN"_list_*.xml | sort | tail -1)" "$T/$RUN"_finder.xml
 fi
-if [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
+if [ -f "$D/abort" ]; then
+  # The template failed or ran out of time (the worker says so): keep what the phone shows right
+  # now and whatever the template saved, without scrolling, so an admin can see where it stopped.
+  echo "evidence=aborted" >> "$D/meta.txt"
+  if [ -n "$RUN" ]; then
+    [ -s "$T/$RUN"_serp.xml ] && cp "$T/$RUN"_serp.xml "$D/serp_page.xml"
+    for x in error.xml rpa_status.json rpa_events.tsv location.xml; do [ -s "$T/$RUN"_$x ] && cp "$T/$RUN"_$x "$D/$x"; done
+    for x in events.tsv captures.tsv capture.json; do [ -s "$T/$RUN.$x" ] && cp "$T/$RUN.$x" "$D/$x"; done
+  fi
+  uiautomator dump "$D/dump_$n.xml" >/dev/null 2>&1 && n=$((n+1))
+elif [ -n "$RUN" ] && [ -s "$T/$RUN"_finder.xml ]; then
   [ -s "$T/$RUN"_serp.xml ] && cp "$T/$RUN"_serp.xml "$D/dump_$n.xml" && n=$((n+1))
   cp "$T/$RUN"_finder.xml "$D/dump_$n.xml" && n=$((n+1))
   # AI Overview: collapsed (inside the results page) and, when the template expanded it, the full view.

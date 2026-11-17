@@ -4,7 +4,8 @@
  * DuoPlus automation API (help.duoplus.net/docs/api-reference):
  *   automation/userTemplateList, userTemplateInfo   find the template and its variables
  *   automation/addTask                              run it on one phone (returns no id)
- *   automation/taskList                             find our task by its unique name; status
+ *   automation/taskList                             one shared list of the newest tasks (every running
+ *                                                   search reads its own status from it); by name as a fallback
  *   automation/updateTaskTime                       reschedule (server clock correction)
  *   automation/taskLogList                          per-step errors when a run fails
  *   automation/setTaskStatus                        status 5 = cancel
@@ -12,6 +13,7 @@
  * learns that clock's offset from the first task's created_at.
  */
 import { duoplusPost } from '@stakeout/core/redis';
+import { asTaskRow, createTaskWatcher, type TaskRow, type TaskWatch } from '@stakeout/core/taskWatcher';
 import {
   buildTaskConfig,
   extractTemplateVars,
@@ -82,8 +84,6 @@ export async function describeRpaTemplates() {
   }
 }
 
-type TaskRow = { id: string; status: number; created_at?: string; issue_at?: string; start_at?: string; finish_at?: string };
-
 async function findTask(name: string): Promise<TaskRow | null> {
   const now = Date.now();
   const res = await duoplusPost('/api/v1/automation/taskList', {
@@ -97,7 +97,62 @@ async function findTask(name: string): Promise<TaskRow | null> {
   });
   const list: any[] = res?.data?.list ?? [];
   const row = list.find((t) => String(t.name) === name);
-  return row ? { ...row, id: String(row.id), status: Number(row.status) } : null;
+  return row ? asTaskRow(row) : null;
+}
+
+// ---------------------------------------------------------------------------
+// One task-list request for the whole fleet
+// ---------------------------------------------------------------------------
+/**
+ * DuoPlus allows about one API request a second for the whole account. Asking about each running
+ * search's task separately (one request per phone every 4 s) queued every other request (proxy
+ * changes, starting templates, phone checks) behind those questions once more than a few phones
+ * ran at once. Now one request lists the newest tasks every few seconds and each waiting search
+ * reads its own task from it; the template's own "done" file is read over ADB, which costs no
+ * API request at all.
+ */
+let listWarnedAt = 0;
+const tasks = createTaskWatcher({
+  pollMs: Math.max(2000, Number(process.env.DUOPLUS_TASK_POLL_MS ?? 5000)),
+  list: async () => {
+    const now = Date.now();
+    const res = await duoplusPost('/api/v1/automation/taskList', {
+      issue_at_start: formatServerTime(now - 2 * 86400000, serverOffsetMin, true),
+      issue_at_end: formatServerTime(now + 2 * 86400000, serverOffsetMin, true),
+      sort_by: 'created_at',
+      order: 'desc',
+      page: 1,
+      pagesize: 50,
+    });
+    return res?.data?.list ?? [];
+  },
+  byName: (name) => findTask(name),
+  // Each task is then asked for by name instead (slower, never wrong); said once a minute at most.
+  onListError: (e) => {
+    if (Date.now() - listWarnedAt < 60000) return;
+    listWarnedAt = Date.now();
+    console.warn('[rpa] shared task list not read, asking task by task:', (e instanceof Error ? e.message : String(e)).slice(0, 160));
+  },
+  afterPoll: (watching) => learnClock(watching),
+});
+
+/**
+ * Learns DuoPlus's clock from the first task seen, and starts any task that was scheduled on the
+ * wrong clock (it would otherwise wait hours).
+ */
+async function learnClock(watching: ReadonlyMap<string, TaskWatch>) {
+  if (offsetLearned) return;
+  const w = [...watching.values()].find((x) => x.task?.created_at);
+  if (!w?.task?.created_at) return;
+  const learned = learnServerOffset(w.task.created_at, Date.now());
+  if (learned === null) return;
+  offsetLearned = true;
+  if (learned === serverOffsetMin) return;
+  console.log('[rpa] DuoPlus clock is UTC' + (learned >= 0 ? '+' : '') + learned / 60 + 'h; adjusting (was ' + serverOffsetMin / 60 + 'h)');
+  serverOffsetMin = learned;
+  for (const x of watching.values())
+    if (x.task && x.task.status === 0)
+      await duoplusPost('/api/v1/automation/updateTaskTime', { id: x.task.id, issue_at: formatServerTime(Date.now(), serverOffsetMin) }).catch(() => {});
 }
 
 async function failureDetail(taskId: string) {
@@ -123,8 +178,13 @@ export async function runRpaSearch(opts: {
   pinId: string;
   /** The scan's tracked business, for the template's "business visible" screenshots. */
   businessName?: string;
+  /** Per-run values for template variables (only those the template declares are sent). */
+  vars?: Record<string, string>;
   name: string;
   timeoutMs: number;
+  /** DuoPlus accepted the task. */
+  onAdded?: () => void;
+  /** DuoPlus reports the task running. */
   onStarted?: () => void;
   /** True once the template's own "done" file exists: finish without waiting for DuoPlus's status. */
   doneCheck?: () => Promise<boolean>;
@@ -135,7 +195,7 @@ export async function runRpaSearch(opts: {
   // DuoPlus keeps a template's name whatever is imported into it, so the template itself declares
   // its version (a variable named template_version) and every receipt records it.
   const version = t.vars.find((v) => v.key === 'template_version')?.value;
-  const ran = (taskId: string) => ({ taskId, templateId: t.id, templateName: t.name, templateVersion: version == null || version === '' ? null : String(version) });
+  const ran = (taskId: string | null) => ({ taskId, templateId: t.id, templateName: t.name, templateVersion: version == null || version === '' ? null : String(version) });
   if (!t.keywordKey) throw new Error('RPA_NO_KEYWORD_VARIABLE in template ' + t.name + ' (set DUOPLUS_RPA_KEYWORD_KEY)');
   await duoplusPost('/api/v1/automation/addTask', {
     template_id: t.id,
@@ -146,54 +206,45 @@ export async function runRpaSearch(opts: {
       {
         image_id: opts.imageId,
         issue_at: formatServerTime(Date.now(), serverOffsetMin),
-        config: buildTaskConfig(t.vars, t.keywordKey, opts.keyword, opts.pinId, opts.businessName),
+        config: buildTaskConfig(t.vars, t.keywordKey, opts.keyword, opts.pinId, opts.businessName, opts.vars),
       },
     ],
   });
+  opts.onAdded?.();
 
+  const w = tasks.watch(opts.name);
   const deadline = Date.now() + opts.timeoutMs;
-  let task: TaskRow | null = null;
-  let rescheduled = false;
   let started = false;
-  while (Date.now() < deadline) {
-    task = await findTask(opts.name).catch(() => null);
-    if (task) {
-      // Learn DuoPlus's clock from the first task, and correct this task's time if we guessed wrong.
-      if (!offsetLearned && task.created_at) {
-        const learned = learnServerOffset(task.created_at, Date.now());
-        if (learned !== null) {
-          offsetLearned = true;
-          if (learned !== serverOffsetMin) {
-            console.log('[rpa] DuoPlus clock is UTC' + (learned >= 0 ? '+' : '') + learned / 60 + 'h; adjusting (was ' + serverOffsetMin / 60 + 'h)');
-            serverOffsetMin = learned;
-            if (task.status === 0 && !rescheduled) {
-              rescheduled = true;
-              await duoplusPost('/api/v1/automation/updateTaskTime', { id: task.id, issue_at: formatServerTime(Date.now(), serverOffsetMin) }).catch(() => {});
-            }
-          }
+  try {
+    while (Date.now() < deadline) {
+      const task = w.task;
+      if (task) {
+        if (task.status === 1 && !started) {
+          started = true;
+          opts.onStarted?.();
+        }
+        if (task.status === 3) return ran(task.id);
+        if (task.status === 4 || task.status === 5) {
+          const why = await failureDetail(task.id);
+          throw new Error('RPA_TASK_FAILED ' + (task.status === 5 ? 'cancelled' : why || 'failed').slice(0, 200));
         }
       }
-      if (task.status === 1 && !started) {
-        started = true;
-        opts.onStarted?.();
-      }
-      if (task.status === 3) return ran(task.id);
       // The template writes <pin_id>.done as its last step: that is the end of the search.
-      if (task.status === 1 && opts.doneCheck && (await opts.doneCheck().catch(() => false)))
-        return ran(task.id);
-      if (task.status === 4 || task.status === 5) {
-        const why = await failureDetail(task.id);
-        throw new Error('RPA_TASK_FAILED ' + (task.status === 5 ? 'cancelled' : why || 'failed').slice(0, 200));
+      if (opts.doneCheck && (await opts.doneCheck().catch(() => false)))
+        return ran(w.task?.id ?? (await findTask(opts.name).catch(() => null))?.id ?? null);
+      if (opts.stopCheck && (await opts.stopCheck().catch(() => false))) {
+        const t2 = w.task ?? (await findTask(opts.name).catch(() => null));
+        if (t2) await cancelRpaTask(t2.id);
+        throw new Error('CANCELLED: stopped by the user');
       }
+      await sleep(2500);
     }
-    if (opts.stopCheck && (await opts.stopCheck().catch(() => false))) {
-      if (task) await cancelRpaTask(task.id);
-      throw new Error('CANCELLED: stopped by the user');
-    }
-    await sleep(4000);
+    const task = w.task ?? (await findTask(opts.name).catch(() => null));
+    if (task) await cancelRpaTask(task.id);
+    throw new Error('RPA_TASK_TIMEOUT ' + (task ? 'status=' + task.status : 'task not found'));
+  } finally {
+    tasks.unwatch(opts.name);
   }
-  if (task) await cancelRpaTask(task.id);
-  throw new Error('RPA_TASK_TIMEOUT ' + (task ? 'status=' + task.status : 'task not found'));
 }
 
 /**
@@ -215,29 +266,19 @@ export async function runWarmup(imageId: string, timeoutMs = 180000) {
     remark: 'stakeout warm-up',
     images: [{ image_id: imageId, issue_at: formatServerTime(Date.now(), serverOffsetMin), config }],
   });
+  const w = tasks.watch(name);
   const deadline = Date.now() + timeoutMs;
-  let task: TaskRow | null = null;
-  let rescheduled = false;
-  while (Date.now() < deadline) {
-    task = await findTask(name).catch(() => null);
-    if (task) {
-      // Same clock correction as a search: a task scheduled on the wrong clock would never start.
-      if (!offsetLearned && task.created_at && !rescheduled) {
-        const learned = learnServerOffset(task.created_at, Date.now());
-        if (learned !== null) {
-          offsetLearned = true;
-          if (learned !== serverOffsetMin) {
-            serverOffsetMin = learned;
-            rescheduled = true;
-            if (task.status === 0) await duoplusPost('/api/v1/automation/updateTaskTime', { id: task.id, issue_at: formatServerTime(Date.now(), serverOffsetMin) }).catch(() => {});
-          }
-        }
-      }
-      if (task.status === 3) return true;
-      if (task.status === 4 || task.status === 5) throw new Error('WARMUP_FAILED ' + ((await failureDetail(task.id)) || 'status ' + task.status).slice(0, 160));
+  try {
+    while (Date.now() < deadline) {
+      const task = w.task;
+      if (task?.status === 3) return true;
+      if (task && (task.status === 4 || task.status === 5)) throw new Error('WARMUP_FAILED ' + ((await failureDetail(task.id)) || 'status ' + task.status).slice(0, 160));
+      await sleep(2500);
     }
-    await sleep(4000);
+    const task = w.task ?? (await findTask(name).catch(() => null));
+    if (task) await cancelRpaTask(task.id);
+    throw new Error('WARMUP_TIMEOUT');
+  } finally {
+    tasks.unwatch(name);
   }
-  if (task) await cancelRpaTask(task.id);
-  throw new Error('WARMUP_TIMEOUT');
 }

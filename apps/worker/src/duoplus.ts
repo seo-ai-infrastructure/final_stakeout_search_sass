@@ -1,10 +1,10 @@
-import { phoneUsable, phoneInScope, expiresWithin, adbWhitelist, PHONE_STATUS } from '@stakeout/core/fleetHealth';
+import { phoneUsable, phoneInScope, expiresWithin, adbWhitelist, readPhoneStatus } from '@stakeout/core/fleetHealth';
 import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { redis, duoplusPost } from '@stakeout/core/redis';
 import { leasableDeviceWhere } from '@stakeout/core/hardware';
 import { setAdbPassword } from './deviceShell';
-import { isDeviceAttributable, nextOutcomes, pauseReason } from '@stakeout/core/fleetHealth';
+import { autoResumeDecision, autoResumeKey, fleetWideFailure, isDeviceAttributable, nextOutcomes, pauseReason, probationKey, probationReason } from '@stakeout/core/fleetHealth';
 import { RUN_PIN_SH_V2 } from '@stakeout/core/runner';
 import { push, shell } from './deviceShell';
 export { duoplusPost } from '@stakeout/core/redis';
@@ -251,9 +251,11 @@ let pendingUpdates: { item: PhoneUpdate; resolve: () => void; reject: (e: unknow
 let flushTimer: NodeJS.Timeout | null = null;
 
 /**
- * GPS waves: pins being captured right now are counted, and a batch is sent as soon
- * as every one of them has queued its update, or after the window at the latest.
- * One phone flushes at once; three phones starting together share one request.
+ * GPS waves: pins still setting up their phone (proxy, GPS) are counted, and a batch is sent as
+ * soon as every one of them has queued its update, or after the window at the latest. One phone
+ * flushes at once; three phones starting together share one request. A point stops counting once
+ * its proxy is ready (it will not queue another update), so a point that is already searching
+ * never holds the others' updates back for the whole window.
  */
 let activeCaptures = 0;
 export const captureStarted = () => void activeCaptures++;
@@ -322,18 +324,43 @@ async function flushUpdates() {
 /**
  * Records one pin attempt against the phone that ran it, and auto-pauses a phone
  * whose recent failure rate crosses the threshold. Failures that are not the
- * phone's fault (proxy, location, capacity) are not counted.
+ * phone's fault (proxy, location, capacity) are not counted, nor is a failure that
+ * several other phones had in the last few minutes (FLEET_WIDE_FAIL_PHONES, default 3, within
+ * FLEET_WIDE_FAIL_MINUTES, default 15): that is Google or the template, not this phone.
+ * A phone resumed automatically is on probation: two failures in its first ten pins pause it again.
  */
-export async function recordDeviceOutcome(imageId: string, errorCode: string | null) {
+const FLEET_WINDOW_MS = Number(process.env.FLEET_WIDE_FAIL_MINUTES ?? 15) * 60000;
+const fleetWideLogged = new Map<string, number>();
+
+/** Other phones that failed the same way within the window (each phone counted once). */
+async function othersWithSameFailure(imageId: string, kind: string) {
+  const key = 'stakeout:failkind:' + kind.replace(/[^\w-]+/g, '_').slice(0, 80);
+  const now = Date.now();
+  const res = await redis()
+    .multi()
+    .zadd(key, now, imageId)
+    .zremrangebyscore(key, 0, now - FLEET_WINDOW_MS)
+    .pexpire(key, FLEET_WINDOW_MS * 2)
+    .zrange(key, 0, -1)
+    .exec();
+  const members = (res?.[3]?.[1] as string[] | undefined) ?? [];
+  return members.filter((m) => m !== imageId).length;
+}
+
+export async function recordDeviceOutcome(imageId: string, errorCode: string | null, kind: string | null = errorCode) {
   const ok = errorCode === null;
   if (!ok && !isDeviceAttributable(errorCode)) return;
+  const others = !ok && kind ? await othersWithSameFailure(imageId, kind).catch(() => 0) : 0;
+  const notHeld = !ok && fleetWideFailure(others);
   const d = await db.devicePool.findUnique({
     where: { imageId },
     select: { recentOutcomes: true, autoPausedAt: true },
   });
   if (!d) return;
-  const outcomes = nextOutcomes(d.recentOutcomes, ok);
-  const reason = d.autoPausedAt ? null : pauseReason(outcomes);
+  const outcomes = notHeld ? d.recentOutcomes : nextOutcomes(d.recentOutcomes, ok);
+  const onProbation = !d.autoPausedAt && (await redis().exists(probationKey(imageId)).catch(() => 0)) === 1;
+  const reason = d.autoPausedAt || notHeld ? null : (onProbation ? probationReason(outcomes) : null) ?? pauseReason(outcomes);
+  if (onProbation && outcomes.length > 10) await redis().del(probationKey(imageId)).catch(() => {});
   await db.devicePool.update({
     where: { imageId },
     data: {
@@ -344,7 +371,48 @@ export async function recordDeviceOutcome(imageId: string, errorCode: string | n
       ...(reason ? { autoPausedAt: new Date(), autoPauseReason: reason } : {}),
     },
   });
+  if (notHeld && kind && Date.now() - (fleetWideLogged.get(kind) ?? 0) > 5 * 60000) {
+    fleetWideLogged.set(kind, Date.now());
+    console.warn('[fleet]', kind, 'on', others + 1, 'phones in', Math.round(FLEET_WINDOW_MS / 60000), 'min: a search problem, not held against the phones');
+  }
   if (reason) console.warn('[duoplus] auto-paused', imageId, reason);
+}
+
+/**
+ * Auto-paused phones get another chance by themselves: after AUTO_RESUME_MINUTES (default 30) they
+ * are resumed on probation, at most AUTO_RESUME_MAX_PER_DAY times (default 2) in a day; a phone that
+ * keeps failing then stays paused until an admin resumes it. Either setting at 0 turns this off.
+ */
+export const autoResumeSettings = () => ({ minutes: Number(process.env.AUTO_RESUME_MINUTES ?? 30), max: Number(process.env.AUTO_RESUME_MAX_PER_DAY ?? 2) });
+export async function autoResumePhones() {
+  const { minutes, max } = autoResumeSettings();
+  if (!(minutes > 0) || !(max > 0)) return;
+  const paused = await db.devicePool.findMany({
+    where: { isEnabled: true, autoPausedAt: { not: null } },
+    select: { imageId: true, autoPausedAt: true, autoPauseReason: true },
+  });
+  for (const d of paused) {
+    const resumesToday = Number((await redis().get(autoResumeKey(d.imageId)).catch(() => null)) ?? 0);
+    const what = autoResumeDecision({ pausedAt: d.autoPausedAt!, now: Date.now(), minutes, resumesToday, max });
+    if (what === 'wait') continue;
+    if (what === 'hold') {
+      if (!/stays paused/.test(d.autoPauseReason ?? ''))
+        await db.devicePool.updateMany({
+          where: { imageId: d.imageId, autoPausedAt: d.autoPausedAt },
+          data: { autoPauseReason: (d.autoPauseReason ?? 'paused') + ` · stays paused until you resume it (resumed automatically ${resumesToday}× in the last day)` },
+        });
+      continue;
+    }
+    const n = await redis().incr(autoResumeKey(d.imageId));
+    if (n === 1) await redis().expire(autoResumeKey(d.imageId), 86400);
+    const r = await db.devicePool.updateMany({
+      where: { imageId: d.imageId, autoPausedAt: d.autoPausedAt },
+      data: { autoPausedAt: null, autoPauseReason: null, recentOutcomes: '' },
+    });
+    if (!r.count) continue;
+    await redis().set(probationKey(d.imageId), '1', 'EX', 86400).catch(() => {});
+    console.warn('[duoplus] auto-resumed', d.imageId, 'after', minutes, 'min, on probation (' + n + ' of ' + max + ' today) · was:', d.autoPauseReason ?? '');
+  }
 }
 
 export type LeasedDevice = Awaited<ReturnType<typeof leaseCandidates>>[number] & {
@@ -375,6 +443,8 @@ export async function acquireDeviceLease(
   pinId: string,
   phoneModel: string,
   preferredListId?: string | null,
+  /** The phone this point last failed on: tried last, so a retry usually runs on another phone. */
+  avoidImageId?: string | null,
 ): Promise<LeaseResult> {
   let candidates = await leaseCandidates(phoneModel);
   if (!candidates.length && Date.now() - lastAutoSyncAt > 60000) {
@@ -391,6 +461,7 @@ export async function acquireDeviceLease(
     candidates = [...candidates].sort(
       (a, b) => Number(b.proxyListId === preferredListId) - Number(a.proxyListId === preferredListId),
     );
+  if (avoidImageId) candidates = [...candidates].sort((a, b) => Number(a.imageId === avoidImageId) - Number(b.imageId === avoidImageId));
   for (const d of candidates) {
     if (d.cooldownUntil > now) continue;
     const key = 'lock:duoplus:' + d.imageId,
@@ -434,15 +505,35 @@ export async function acquireDeviceLease(
  * Live check just before a point runs: is this phone still powered on?
  * Returns null when DuoPlus can't be asked (so a busy API never halts the fleet);
  * the ADB connection would fail on its own if the phone really were off.
+ *
+ * Phones asked about at the same moment share one request (cloudPhone/status takes many IDs),
+ * and an answer up to `maxAgeMs` old is reused: with many phones setting up at once, one request
+ * a second for the whole account must not be spent asking the same question phone by phone.
  */
-export async function phonePowerStatus(imageId: string): Promise<{ on: boolean; status: string } | null> {
-  const res = await duoplusPost('/api/v1/cloudPhone/status', { image_ids: [imageId] }).catch(() => null);
-  const data = res?.data;
-  const items: any[] = Array.isArray(data) ? data : Array.isArray(data?.list) ? data.list : data ? [data] : [];
-  const item = items.find((i) => String(i?.id ?? i?.image_id ?? '') === imageId) ?? (items.length === 1 ? items[0] : null);
-  if (!item || item.status === undefined) return null;
-  const code = Number(item.status);
-  return { on: code === 1, status: PHONE_STATUS[code] ?? 'status ' + String(item.status) };
+const statusCache = new Map<string, { at: number; v: { on: boolean; status: string } | null }>();
+let statusBatch: { ids: Set<string>; done: Promise<void> } | null = null;
+export async function phonePowerStatus(imageId: string, maxAgeMs = 2500): Promise<{ on: boolean; status: string } | null> {
+  const hit = statusCache.get(imageId);
+  if (hit && Date.now() - hit.at <= maxAgeMs) return hit.v;
+  if (!statusBatch) {
+    const ids = new Set<string>();
+    const done = (async () => {
+      await new Promise((r) => setTimeout(r, 300)); // gather the other phones asking right now
+      statusBatch = null;
+      const all = [...ids];
+      for (let i = 0; i < all.length; i += 50) {
+        const chunk = all.slice(i, i + 50);
+        const res = await duoplusPost('/api/v1/cloudPhone/status', { image_ids: chunk }).catch(() => null);
+        const at = Date.now();
+        for (const id of chunk) statusCache.set(id, { at, v: res ? readPhoneStatus(res, id, chunk.length) : null });
+      }
+    })();
+    statusBatch = { ids, done };
+  }
+  const batch = statusBatch;
+  batch.ids.add(imageId);
+  await batch.done;
+  return statusCache.get(imageId)?.v ?? null;
 }
 
 

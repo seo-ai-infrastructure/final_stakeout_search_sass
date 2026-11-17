@@ -34,6 +34,11 @@ interface EnrichedDevice {
   pinsFailed: number;
   lastFailureCode: string | null;
   autoPauseReason: string | null;
+  autoPausedAt: string | null;
+  /** How this phone's Chrome refreshes Google's location (template v3.42+), from its recent runs. */
+  location: { runs: number; footerFound: number; skip: boolean; probe: boolean } | null;
+  /** Resumed automatically: two failures in its first ten pins pause it again. */
+  onProbation: boolean;
 }
 interface FleetHealth {
   readyPhones: number;
@@ -66,6 +71,8 @@ type SystemHealth = {
   proxyListIdleSeconds?: number;
   openScans: number;
   pointsWithoutInsights: number;
+  /** Auto-paused phones are resumed on probation after this many minutes, at most this many times a day. */
+  autoResume?: { minutes: number; max: number };
 };
 
 /** The worker's own status, so a missing key or template is visible here instead of only in the logs. */
@@ -556,8 +563,16 @@ export default function AdminDeviceFleetPage() {
                         </span>
                       )}
                       {dev.runtimeState === 'AUTO_PAUSED' && (
-                        <span title={dev.autoPauseReason ?? ''} className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-[11px] text-red-300">
-                          <AlertTriangle className="h-3 w-3" /> AUTO-PAUSED
+                        <span className="inline-flex flex-col items-start gap-1">
+                          <span title={dev.autoPauseReason ?? ''} className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 px-2.5 py-1 text-[11px] text-red-300">
+                            <AlertTriangle className="h-3 w-3" /> AUTO-PAUSED
+                          </span>
+                          {dev.autoPausedAt && system?.autoResume && system.autoResume.minutes > 0 && system.autoResume.max > 0 && !/stays paused/.test(dev.autoPauseReason ?? '') && (
+                            <span className="text-[11px] text-slate-400">
+                              resumes by itself about{' '}
+                              {new Date(Math.max(Date.now(), Date.parse(dev.autoPausedAt) + system.autoResume.minutes * 60000)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                            </span>
+                          )}
                         </span>
                       )}
                       {dev.runtimeState === 'DISABLED' && (
@@ -567,22 +582,36 @@ export default function AdminDeviceFleetPage() {
                       )}
                     </td>
                     <td className="px-3 py-3.5">
-                      {dev.recentOutcomes ? (
-                        <div className="flex flex-col gap-1">
-                          <span className="flex gap-[2px]" aria-label={`${dev.recentOutcomes.length} recent pins, ${pct(dev.recentFailureRate)} failed`}>
-                            {[...dev.recentOutcomes].map((o, i) => (
-                              <span key={i} className={`h-3 w-1.5 rounded-sm ${o === 'S' ? 'bg-emerald-500/70' : 'bg-red-500'}`} />
-                            ))}
-                          </span>
+                      <div className="flex flex-col gap-1">
+                        {dev.recentOutcomes ? (
+                          <>
+                            <span className="flex gap-[2px]" aria-label={`${dev.recentOutcomes.length} recent pins, ${pct(dev.recentFailureRate)} failed`}>
+                              {[...dev.recentOutcomes].map((o, i) => (
+                                <span key={i} className={`h-3 w-1.5 rounded-sm ${o === 'S' ? 'bg-emerald-500/70' : 'bg-red-500'}`} />
+                              ))}
+                            </span>
+                            <span className="text-[11px] text-slate-400">
+                              {pct(dev.recentFailureRate)} failed · {dev.pinsSucceeded + dev.pinsFailed} total
+                              {dev.lastFailureCode ? ' · last: ' + dev.lastFailureCode : ''}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-slate-500">No pins yet</span>
+                        )}
+                        {dev.autoPauseReason && <span className="text-[11px] text-red-300">{dev.autoPauseReason}</span>}
+                        {dev.onProbation && !dev.autoPauseReason && (
+                          <span className="text-[11px] text-amber-300">On probation after an automatic resume: 2 failures in its first 10 pins pause it again</span>
+                        )}
+                        {dev.location && dev.location.runs > 0 && (
                           <span className="text-[11px] text-slate-400">
-                            {pct(dev.recentFailureRate)} failed · {dev.pinsSucceeded + dev.pinsFailed} total
-                            {dev.lastFailureCode ? ' · last: ' + dev.lastFailureCode : ''}
+                            {dev.location.skip
+                              ? 'Location: footer hunt skipped (this Chrome scrolls endlessly), Use precise location straight away'
+                              : dev.location.probe
+                                ? 'Location: checking whether the footer is back'
+                                : `Location: footer “Update location” found in ${dev.location.footerFound} of the last ${dev.location.runs} runs`}
                           </span>
-                          {dev.autoPauseReason && <span className="text-[11px] text-red-300">{dev.autoPauseReason}</span>}
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-slate-500">No pins yet</span>
-                      )}
+                        )}
+                      </div>
                     </td>
                     <td className="py-3.5 pl-3 pr-6 text-right">
                       <div className="inline-flex items-center gap-2">

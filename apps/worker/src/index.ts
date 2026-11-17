@@ -1,4 +1,5 @@
 import { failureCode } from '@stakeout/core/fleetHealth';
+import { evidenceOf, failureKind, parseEntries, refusedRun, refusedSummary, stageSeconds, timingLine, timingSummary, REFUSED_KEEP, REFUSED_KEY, TIMINGS_KEEP, TIMINGS_KEY, type Marks, type RefusedRun, type RunTiming } from '@stakeout/core/runLog';
 import { backfillInsights, backfillPackRanks } from './insightsBackfill';
 import 'dotenv/config';
 import { Queue, Worker, DelayedError, UnrecoverableError, type Job } from 'bullmq';
@@ -8,12 +9,13 @@ import {
   redis,
   createRedisClient,
   redactRedisUrl,
+  duoplusSlotStats,
 } from '@stakeout/core/redis';
 import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
 import { listsForPin, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
-import { acquireDeviceLease, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount } from './duoplus';
+import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, type LeasedDevice } from './duoplus';
 import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
@@ -70,7 +72,8 @@ async function execute(job: Job, token?: string) {
     }
     // A phone already on this point's Proxy-Seller list is preferred (home internet only).
     const preferred = pin.scan.proxyRegion && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'residential' ? (await listsForPin(pin.scan, pin))[0]?.id : null;
-    const lease = await acquireDeviceLease(pin.id, pin.scan.phoneModel, preferred);
+    // A retry goes to another phone when one is free (the phone it failed on is tried last).
+    const lease = await acquireDeviceLease(pin.id, pin.scan.phoneModel, preferred, typeof job.data.lastPhone === 'string' ? job.data.lastPhone : null);
     if (!('device' in lease)) {
       const waited = Date.now() - job.timestamp;
       // No phone of the requested model exists: wait briefly in case one is
@@ -92,6 +95,19 @@ async function execute(job: Job, token?: string) {
       throw new DelayedError();
     }
     const d = lease.device;
+    // A phone handed back early may still have its last point's evidence being pulled (only when
+    // its rest is shorter than that): wait for it, then make sure that point did not end in a
+    // captcha cooldown or a pause meanwhile.
+    const tail = phoneTails.get(d.imageId);
+    if (tail) {
+      await Promise.race([tail, new Promise((r) => setTimeout(r, 90000))]);
+      const now = await db.devicePool.findUnique({ where: { imageId: d.imageId }, select: { cooldownUntil: true, autoPausedAt: true } });
+      if (now && (now.cooldownUntil > new Date() || now.autoPausedAt)) {
+        await d.release();
+        await job.moveToDelayed(Date.now() + 15000, token);
+        throw new DelayedError();
+      }
+    }
     // Only ever measure on a phone that is powered on right now. If it was switched
     // off or expired since the last fleet sync, take it out of service and put this
     // point straight back in the queue for another phone: no credit used, no blame.
@@ -115,14 +131,41 @@ async function execute(job: Job, token?: string) {
       data: { startedAt: new Date() },
     });
     let pinError: unknown = null;
-    try {
-      const result = await measureMobile(pin, d);
+    // This attempt's moments (for the timing record), and the early hand-back of the phone.
+    const marks: Marks = {};
+    const attemptStart = Date.now();
+    let released = false;
+    let measuring: Promise<unknown> | null = null;
+    const phoneDone = async () => {
+      if (released) return;
       await d.assertOwned();
+      released = true;
+      marks.released = Date.now();
+      // Never let a failed write keep the lease: an unreleased lease would hold the phone for good.
+      await restPhone(d.imageId).catch(() => {});
+      await d.release().catch(() => {});
+      if (measuring) {
+        const t: Promise<unknown> = measuring.catch(() => {}).finally(() => {
+          if (phoneTails.get(d.imageId) === t) phoneTails.delete(d.imageId);
+        });
+        phoneTails.set(d.imageId, t);
+      }
+    };
+    try {
+      const run = measureMobile(pin, d, { marks, phoneDone });
+      measuring = run;
+      const result = await run;
+      if (!released) await d.assertOwned();
       await settlePin(pin.id, { data: result });
       await recordDeviceOutcome(d.imageId, null).catch(() => {});
     } catch (e) {
       pinError = e;
-      await recordDeviceOutcome(d.imageId, failureCode(e)).catch(() => {});
+      await recordDeviceOutcome(d.imageId, failureCode(e), failureKind(e)).catch(() => {});
+      // Every search that ran and was rejected is listed for the admin page, with its video.
+      if (searched(e) && !/^CANCELLED/.test(e instanceof Error ? e.message : '')) {
+        await noteRefused(pin, d, e, job.attemptsMade + 1, attemptStart).catch((err) => console.warn('[refused] not listed:', (err as Error).message));
+        await job.updateData({ ...job.data, lastPhone: d.imageId }).catch(() => {});
+      }
       // Can't reach the phone over ADB: our outbound IP may have changed. Re-whitelist it.
       if (e instanceof Error && e.message.startsWith('ADB_CONNECT_FAILED') && Date.now() - lastWhitelistFix > 60000) {
         lastWhitelistFix = Date.now();
@@ -138,8 +181,11 @@ async function execute(job: Job, token?: string) {
       throw e;
     } finally {
       // Pace only real searches: setup failures (ADB, proxy, DuoPlus) don't need a rest.
-      if (searched(pinError)) await restPhone(d.imageId);
-      await d.release();
+      if (!released) {
+        if (searched(pinError)) await restPhone(d.imageId).catch(() => {});
+        await d.release();
+      }
+      await noteTiming(pin, d.imageId, attemptStart, marks, pinError).catch(() => {});
     }
   } catch (e) {
     if (e instanceof DelayedError) throw e;
@@ -305,6 +351,64 @@ function searched(e: unknown) {
   return !/^(ADB_|PROXY_|DuoPlus|DUOPLUS_|PHONE_|RPA_TEMPLATE|RPA_NO_KEYWORD|NO_COMPATIBLE|DEVICE_LEASE)/.test(failureCode(e));
 }
 
+/** Phones handed back before their evidence was pulled: the next point on one waits for this. */
+const phoneTails = new Map<string, Promise<unknown>>();
+
+/**
+ * The latest attempts and rejected searches, kept in memory for the System health summary (one
+ * small record a minute instead of every admin page reading the whole lists); loaded from Redis at
+ * start so a restart keeps the history.
+ */
+const recentTimings: RunTiming[] = [];
+const recentRefused: RefusedRun[] = [];
+const remember = <T,>(list: T[], x: T, keep: number) => {
+  list.push(x);
+  if (list.length > keep) list.splice(0, list.length - keep);
+};
+async function loadRunLog() {
+  const [t, r] = await Promise.all([redis().lrange(TIMINGS_KEY, 0, -1), redis().lrange(REFUSED_KEY, 0, -1)]);
+  // Redis holds them newest first; memory oldest first. Anything noted meanwhile stays last.
+  recentTimings.unshift(...parseEntries<RunTiming>(t).reverse());
+  recentRefused.unshift(...parseEntries<RefusedRun>(r).reverse());
+  recentTimings.splice(0, Math.max(0, recentTimings.length - TIMINGS_KEEP));
+  recentRefused.splice(0, Math.max(0, recentRefused.length - REFUSED_KEEP));
+}
+
+type PinWithScan = NonNullable<Awaited<ReturnType<typeof db.gridPin.findUnique<{ where: { id: string }; include: { scan: true } }>>>>;
+
+/** A search that ran and was rejected: listed (newest first) for the admin page, with its video and bundle. */
+async function noteRefused(pin: PinWithScan, d: LeasedDevice, e: unknown, attempt: number, start: number) {
+  const ev = evidenceOf(e);
+  const entry = refusedRun({
+    pinId: pin.id,
+    scanId: pin.scanId,
+    point: `${pin.rowIdx + 1},${pin.colIdx + 1}`,
+    keyword: pin.scan.keyword,
+    phone: d.imageId,
+    model: d.hardwareModel ?? null,
+    attempt,
+    kind: failureKind(e),
+    message: e instanceof Error ? e.message : String(e),
+    template: ev?.template ?? null,
+    locationPath: ev?.locationPath ?? null,
+    video: ev?.video ?? null,
+    bundle: ev?.bundle ?? null,
+    seconds: Math.round((Date.now() - start) / 1000),
+  });
+  remember(recentRefused, entry, REFUSED_KEEP);
+  await redis().multi().lpush(REFUSED_KEY, JSON.stringify(entry)).ltrim(REFUSED_KEY, 0, REFUSED_KEEP - 1).exec();
+  console.warn('[refused]', entry.kind, '· point', entry.point, 'of scan', pin.scanId, 'on', d.imageId, '· attempt', attempt, '· evidence:', [entry.video && 'video', entry.bundle && 'bundle'].filter(Boolean).join(' + ') || 'none');
+}
+
+/** Where this attempt's time went: one log line, and a list for the admin page. */
+async function noteTiming(pin: PinWithScan, imageId: string, start: number, marks: Marks, error: unknown) {
+  const t = stageSeconds(start, marks, Date.now());
+  const entry: RunTiming = { ...t, at: new Date().toISOString(), pinId: pin.id, phone: imageId, ok: !error, kind: error ? failureKind(error) : null, searched: Boolean(error) && searched(error) };
+  remember(recentTimings, entry, TIMINGS_KEEP);
+  console.log('[timing] point', `${pin.rowIdx + 1},${pin.colIdx + 1}`, 'on', imageId, error ? 'failed (' + entry.kind + ')' : 'ok', '·', timingLine(t));
+  await redis().multi().lpush(TIMINGS_KEY, JSON.stringify(entry)).ltrim(TIMINGS_KEY, 0, TIMINGS_KEEP - 1).exec();
+}
+
 /**
  * A rest after every search on a phone (SEARCH_GAP_SECONDS, randomised); never shortens a longer one.
  * A shorter gap protects itself: after a captcha that phone rests the safe gap
@@ -416,6 +520,17 @@ async function reportHealth() {
     // Under MOBILE_TRAFFIC_WARN_GB (half a GB unless set), or less than a day at today's pace.
     mobileTrafficLow: trafficLow(mobileTraffic, Number(process.env.MOBILE_TRAFFIC_WARN_GB ?? 0.5)),
     templates: { chrome: await template('chrome'), maps: await template('maps'), google: await template('google') },
+    // DuoPlus allows about one request a second for the whole account: how busy that line is.
+    duoplus: duoplusSlotStats(),
+    // Where the time goes in a search, and what was rejected (admin page).
+    runs: {
+      timing2h: timingSummary(recentTimings, Date.now() - 2 * 3600000),
+      timing6h: timingSummary(recentTimings, Date.now() - 6 * 3600000),
+      refused1h: refusedSummary(recentRefused, Date.now() - 3600000),
+      refused24h: refusedSummary(recentRefused, Date.now() - 86400000),
+    },
+    // Auto-paused phones are resumed on probation after this many minutes, this many times a day.
+    autoResume: autoResumeSettings(),
     // Throughput: phones ready at the last fleet check, and how many points run at once.
     phonesReady: readyPhoneCount(),
     concurrency: deviceWorker.concurrency,
@@ -502,6 +617,7 @@ async function tick() {
     if (Date.now() - lastProxyRelease > 60000) {
       lastProxyRelease = Date.now();
       await releaseIdleProxyLists().catch((e) => console.warn('[proxy] release skipped:', (e as Error).message));
+      await autoResumePhones().catch((e) => console.warn('[duoplus] auto-resume skipped:', (e as Error).message));
       await reportHealth().catch((e) => console.warn('[health] not reported:', (e as Error).message));
     }
     if (Date.now() - lastRepair > 300000) {
@@ -557,6 +673,7 @@ setTimeout(() => {
   backfillInsights().catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));
   backfillPackRanks().catch((e) => console.error('[rank] re-read skipped:', (e as Error).message));
 }, 60_000);
+void loadRunLog().catch((e) => console.warn('[runs] history not loaded:', (e as Error).message));
 if ((process.env.SEARCH_MODE ?? '').toLowerCase() === 'rpa') {
   console.info('[rpa] SEARCH_MODE=rpa: the search step runs your DuoPlus RPA template');
   void describeRpaTemplates();
