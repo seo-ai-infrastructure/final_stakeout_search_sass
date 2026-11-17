@@ -11,6 +11,7 @@ import {
 } from './grid';
 import { ispForPin } from './proxyGeo';
 import { RERUN_MARKER, rerunCharge, rerunIsp } from './rerun';
+import { creditsPerPoint, getSettings } from './settings';
 
 export async function createScan(
   userId: string,
@@ -33,8 +34,10 @@ export async function createScan(
     // The grid's centre point; a grid with skipped points still has it (it can never be skipped).
     mid = (s.gridSize - 1) / 2,
     middle = pins.find((p) => p.rowIdx === mid && p.colIdx === mid) ?? pins[Math.floor((pins.length - 1) / 2)];
-  // One credit per grid point. AI Overview tracking is part of every Chrome scan, not an add-on.
-  const cost = lead || opts?.free ? 0 : pins.length;
+  // One credit per grid point, or the mobile-data price per point on a mobile scan (an admin
+  // setting, 2 by default). AI Overview tracking is part of every Chrome scan, not an add-on.
+  const per = s.network === 'mobile' ? creditsPerPoint('mobile', await getSettings()) : 1;
+  const cost = lead || opts?.free ? 0 : pins.length * per;
   try {
     return await db.$transaction(
       async (tx) => {

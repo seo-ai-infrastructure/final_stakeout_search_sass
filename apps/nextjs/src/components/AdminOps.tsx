@@ -9,8 +9,8 @@ type Account = { id: string; email: string; role: string; credits: number; confi
 type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
   at: string;
-  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number };
-  system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[] } | null;
+  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number; mobileCreditsPerPoint?: number; mobileForCustomers?: boolean };
+  system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[]; mobileData?: boolean; mobileProvider?: string | null; mobileTraffic?: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null } | null; mobileTrafficLow?: boolean } | null;
   capacity: {
     completed24h: number; completedLastHour: number; started24h: number; timedPoints: number; medianSeconds: number | null; perPhoneHour: number | null;
     waiting: number; readyPhones: number; etaMinutes: number | null; cost24hUsd: number;
@@ -58,7 +58,7 @@ export function AdminOps() {
   const [credit, setCredit] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
-  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string } | null>(null);
+  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string; mobileCredits: string; mobileCustomers: boolean } | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch('/api/admin/ops', { cache: 'no-store' }).catch(() => null);
@@ -70,7 +70,7 @@ export function AdminOps() {
     if (d.settings && d.capacity) {
       setOps(d);
       // The form is filled once, so a refresh never overwrites what is being typed.
-      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10) });
+      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 2), mobileCustomers: Boolean(d.settings.mobileForCustomers) });
     }
   }, []);
   useEffect(() => {
@@ -159,7 +159,7 @@ export function AdminOps() {
         )}
       </section>
 
-      {ops && (ops.system?.proxyDown?.length || ops.system?.trafficLow) ? (
+      {ops && (ops.system?.proxyDown?.length || ops.system?.trafficLow || ops.system?.mobileTrafficLow) ? (
         <section role="alert" className="space-y-1 rounded-2xl border border-rose-500/60 bg-rose-500/10 p-4 text-sm text-rose-100">
           {ops.system?.proxyDown?.length ? (
             <p>
@@ -171,6 +171,12 @@ export function AdminOps() {
             <p>
               <span className="font-bold">Proxy-Seller traffic low:</span> {gb(ops.system.traffic?.leftBytes)} left
               {ops.system.traffic?.todayBytes ? `, ${gb(ops.system.traffic.todayBytes)} used today` : ''}. Buy more at Proxy-Seller before it runs out.
+            </p>
+          ) : null}
+          {ops.system?.mobileTrafficLow ? (
+            <p>
+              <span className="font-bold">Mobile data low:</span> {gb(ops.system.mobileTraffic?.leftBytes)} left
+              {ops.system.mobileTraffic?.todayBytes ? `, ${gb(ops.system.mobileTraffic.todayBytes)} used today` : ''}. Top up the VoidMob package before it runs out.
             </p>
           ) : null}
         </section>
@@ -191,6 +197,13 @@ export function AdminOps() {
                   'Proxy providers',
                   (ops.system?.proxyProviders ?? ['proxyseller']).map((p) => (p === 'decodo' ? 'Decodo' : 'Proxy-Seller')).join(' → '),
                   (ops.system?.proxyProviders ?? []).includes('decodo') ? 'in this order; ISP-only points use Proxy-Seller' : 'Decodo is off: set DECODO_USERNAME and DECODO_PASSWORD',
+                ],
+                [
+                  'Mobile data',
+                  ops.system?.mobileData ? (ops.system.mobileProvider === 'decodo' ? 'Decodo mobile' : 'VoidMob') : 'Off',
+                  ops.system?.mobileData
+                    ? `${ops.settings.mobileCreditsPerPoint ?? 2} credits a point · ${ops.settings.mobileForCustomers ? 'customers can choose it' : 'admins only'}${ops.system.mobileTraffic ? ' · ' + gb(ops.system.mobileTraffic.leftBytes) + ' left' : ''}`
+                    : 'set VOIDMOB_USERNAME and VOIDMOB_PASSWORD on the worker',
                 ],
                 ['Proxy-Seller traffic today', gb(ops.system?.traffic?.todayBytes), ops.system?.traffic ? `${gb(ops.system.traffic.leftBytes)} left of ${gb(ops.system.traffic.limitBytes)}${ops.system.traffic.expires ? ' · expires ' + ops.system.traffic.expires : ''}` : 'not reported by the worker yet'],
                 ['Captchas today', String(ops.captchas.today), `${ops.captchas.yesterday} yesterday`],
@@ -550,12 +563,20 @@ export function AdminOps() {
               With this on, phones start when a scan arrives (about two minutes before its first point) and stop once the queue has been empty this long, so an idle phone uses no proxy data. Turn it off
               while you work on a phone by hand in DuoPlus.
             </p>
+            <label className="text-xs text-slate-400">
+              Mobile data: credits per point (home internet is 1)
+              <input className={input + ' mt-1 block w-full'} type="number" min={1} max={10} value={form.mobileCredits} onChange={(e) => setForm({ ...form, mobileCredits: e.target.value })} />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-200">
+              <input type="checkbox" className="h-4 w-4" checked={form.mobileCustomers} onChange={(e) => setForm({ ...form, mobileCustomers: e.target.checked })} />
+              Customers can choose mobile data (otherwise admins only)
+            </label>
           </div>
           <button
             type="button"
             disabled={busy !== ''}
             className={btn + ' mt-4 bg-emerald-500 text-slate-950 hover:bg-emerald-400'}
-            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups, powerSave: form.powerSave, idleOffMinutes: Number(form.idleOff) } }, () => 'Settings saved.')}
+            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups, powerSave: form.powerSave, idleOffMinutes: Number(form.idleOff), mobileCreditsPerPoint: Number(form.mobileCredits), mobileForCustomers: form.mobileCustomers } }, () => 'Settings saved.')}
           >
             {busy === 'settings' ? 'Saving…' : 'Save settings'}
           </button>

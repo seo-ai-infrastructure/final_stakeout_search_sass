@@ -18,6 +18,10 @@ export type Settings = {
   powerSave: boolean;
   /** Minutes the queue stays empty before the phones are switched off (POWER_IDLE_OFF_MINUTES). */
   idleOffMinutes: number;
+  /** Credits one mobile-data point costs (MOBILE_CREDITS_PER_POINT); a home-internet point costs 1. */
+  mobileCreditsPerPoint: number;
+  /** Whether customers, not only admins, can choose mobile data (MOBILE_FOR_CUSTOMERS). */
+  mobileForCustomers: boolean;
 };
 
 const KEY = 'stakeout:settings';
@@ -31,6 +35,8 @@ export const defaultSettings = (env: Record<string, string | undefined> = proces
   costPerPointUsd: num(env.COST_PER_POINT_USD, 0.033),
   powerSave: env.DUOPLUS_POWER_SAVE === 'true',
   idleOffMinutes: num(env.POWER_IDLE_OFF_MINUTES, 10),
+  mobileCreditsPerPoint: num(env.MOBILE_CREDITS_PER_POINT, 2),
+  mobileForCustomers: env.MOBILE_FOR_CUSTOMERS === 'true',
 });
 
 /** Checks values an admin typed; throws a message they can read. Only the given keys are returned. */
@@ -65,8 +71,21 @@ export function cleanSettings(input: Record<string, unknown>): Partial<Settings>
     if (!Number.isInteger(n) || n < 2 || n > 240) throw new Error('Phones can be switched off after 2 to 240 idle minutes (a whole number).');
     out.idleOffMinutes = n;
   }
+  if ('mobileCreditsPerPoint' in input) {
+    const n = Number(input.mobileCreditsPerPoint);
+    if (!Number.isInteger(n) || n < 1 || n > 10) throw new Error('A mobile-data point can cost 1 to 10 credits (a whole number).');
+    out.mobileCreditsPerPoint = n;
+  }
+  if ('mobileForCustomers' in input) {
+    if (typeof input.mobileForCustomers !== 'boolean') throw new Error('Mobile data for customers must be on or off.');
+    out.mobileForCustomers = input.mobileForCustomers;
+  }
   return out;
 }
+
+/** Credits one point of a scan costs: 1 on home internet, the mobile price on mobile data. */
+export const creditsPerPoint = (network: string | null | undefined, s: Pick<Settings, 'mobileCreditsPerPoint'>) =>
+  network === 'mobile' ? s.mobileCreditsPerPoint : 1;
 
 /** Stored values over the defaults; a stored value that no longer validates is ignored. */
 export function mergeSettings(stored: Record<string, string>, base: Settings): Settings {

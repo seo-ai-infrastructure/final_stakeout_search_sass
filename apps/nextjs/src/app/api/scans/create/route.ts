@@ -8,6 +8,7 @@ import { listsEnabled, prepareGridProxies } from '@stakeout/core/proxyLists';
 import { assertFleetSupports } from '@stakeout/core/fleet';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
+import { redis } from '@stakeout/core/redis';
 
 // Preparing proxy lists for every city in a new grid can take many Proxy-Seller calls.
 export const maxDuration = 300;
@@ -25,6 +26,13 @@ export async function POST(req: Request) {
       if (placed) s.gridSize = placed.gridSize;
       const settings = await getSettings();
       if (s.isps.some((v: string) => !ispAllowed(v, settings))) throw new InputError('That ISP is not available here. Choose another.');
+      // Mobile data: admins only until it is switched on for customers (admin settings).
+      if (s.network === 'mobile' && u.role !== 'ADMIN' && !settings.mobileForCustomers) throw new InputError('Mobile data scans are not available yet.');
+      if (s.network === 'mobile' && s.targetType === 'desktop_aimode') throw new InputError('Mobile data is for phone scans.');
+      if (s.network === 'mobile') {
+        const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
+        if (!health?.mobileData) throw new InputError('Mobile data is not available right now.');
+      }
     const key = req.headers.get('Idempotency-Key') ?? randomUUID();
     if (!/^[\w-]{8,80}$/.test(key))
       throw new InputError('Invalid request key.');

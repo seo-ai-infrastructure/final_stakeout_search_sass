@@ -12,7 +12,22 @@ import { US_STATE_NAMES } from './proxySeller';
 
 type Env = Record<string, string | undefined>;
 
-export type DecodoRung = 'DECODO_ZIP' | 'DECODO_CITY' | 'DECODO_AREA' | 'DECODO_STATE';
+export type DecodoRung = 'DECODO_ZIP' | 'DECODO_CITY' | 'DECODO_AREA' | 'DECODO_STATE' | 'MOBILE_STATE';
+
+/**
+ * Decodo mobile proxies power "Mobile data" scans: a real carrier IP (Verizon, AT&T, T-Mobile or a
+ * regional carrier, whichever has one) in the point's state. Its own proxy user, set in Railway as
+ * DECODO_MOBILE_USERNAME and DECODO_MOBILE_PASSWORD; same gateway and username format.
+ */
+export function decodoMobileConfigured(env: Env = process.env) {
+  return Boolean(env.DECODO_MOBILE_USERNAME?.trim() && env.DECODO_MOBILE_PASSWORD);
+}
+
+/** Mobile data targets the state: carrier IPs are located only roughly, and the state is what counts. */
+export function decodoMobileLadder(pin: { stateCode: string }) {
+  const state = US_STATE_NAMES[pin.stateCode.toUpperCase()];
+  return state ? [{ rung: 'MOBILE_STATE' as DecodoRung, params: 'country-us-state-us_' + decodoPlace(state) }] : [];
+}
 export type ProxyProvider = 'decodo' | 'proxyseller';
 
 /** Decodo is used once its proxy user is set in Railway (DECODO_USERNAME, DECODO_PASSWORD). */

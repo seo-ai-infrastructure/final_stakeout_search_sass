@@ -18,8 +18,9 @@ import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
-import { isProxyProblem, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
+import { isProxyProblem, outageKey, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
 import { proxyProviders } from '@stakeout/core/decodo';
+import { mobileProvider, voidmobUsage } from '@stakeout/core/voidmob';
 import { claimProxyProbe, clearProxyOutage, noteProxyOutage, proxyOutageSince } from './proxyOutage';
 
 function formatErr(e: unknown) {
@@ -61,12 +62,13 @@ async function execute(job: Job, token?: string) {
     }
     // While this state's proxies are all down, one point at a time checks whether they are back;
     // the rest wait here, without taking a phone or calling DuoPlus.
-    const region = pin.scan.proxyRegion;
+    const region = outageKey(pin.scan);
     if (region && Date.now() - job.timestamp < PROXY_WAIT_MS && (await proxyOutageSince(region)) && !(await claimProxyProbe(region, pin.id))) {
       await job.moveToDelayed(Date.now() + 60000 + Math.floor(Math.random() * 30000), token);
       throw new DelayedError();
     }
-    const preferred = region ?(await listsForPin(pin.scan, pin))[0]?.id : null;
+    // A phone already on this point's Proxy-Seller list is preferred (home internet only).
+    const preferred = pin.scan.proxyRegion && pin.scan.network !== 'mobile' ? (await listsForPin(pin.scan, pin))[0]?.id : null;
     const lease = await acquireDeviceLease(pin.id, pin.scan.phoneModel, preferred);
     if (!('device' in lease)) {
       const waited = Date.now() - job.timestamp;
@@ -150,12 +152,13 @@ async function execute(job: Job, token?: string) {
       if (Date.now() - since < PROXY_WAIT_MS) {
         const waits = (Number(job.data.proxyWaits) || 0) + 1;
         const outage = msg.startsWith('PROXY_SUPPLY_DOWN');
-        if (outage && pin.scan.proxyRegion) {
-          const down = await noteProxyOutage(pin.scan.proxyRegion);
-          console.warn('[proxy] every proxy in', pin.scan.proxyRegion, 'is refused or dead since', down, '- points wait for them (out of traffic?)');
-        } else if (pin.scan.proxyRegion && !msg.startsWith('PROXY_LIST_MISSING')) {
+        const key = outageKey(pin.scan);
+        if (outage && key) {
+          const down = await noteProxyOutage(key);
+          console.warn('[proxy] every proxy in', key, 'is refused or dead since', down, '- points wait for them (out of traffic?)');
+        } else if (key && !msg.startsWith('PROXY_LIST_MISSING')) {
           // Some port answered (wrong place, busy IP...): the proxies themselves are working.
-          await clearProxyOutage(pin.scan.proxyRegion);
+          await clearProxyOutage(key);
         }
         await job.updateData({ ...job.data, proxyWaitSince: since, proxyWaits: waits });
         console.warn('[proxy] point', pin.id, 'waits for a working proxy, try', waits + ':', msg.slice(0, 140));
@@ -341,18 +344,21 @@ async function noteCaptcha(imageId: string) {
 let templatesReadAt = Date.now(),
   templatesReloadSeen = 0,
   trafficAt = 0,
-  traffic: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null = null;
+  traffic: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null = null,
+  mobileTrafficAt = 0,
+  mobileTraffic: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null; at: string } | null = null;
 
 async function openProxyOutages() {
   const open = await db.gridScan.findMany({
-    where: { status: { in: ['QUEUED', 'RUNNING'] }, proxyRegion: { not: null } },
-    select: { proxyRegion: true },
-    distinct: ['proxyRegion'],
+    where: { status: { in: ['QUEUED', 'RUNNING'] } },
+    select: { proxyRegion: true, stateCode: true, network: true },
+    distinct: ['proxyRegion', 'stateCode', 'network'],
   });
+  const keys = [...new Set(open.map((s) => outageKey(s)).filter((k): k is string => Boolean(k)))];
   const down: { region: string; since: string }[] = [];
-  for (const { proxyRegion } of open) {
-    const since = proxyRegion ? await proxyOutageSince(proxyRegion) : null;
-    if (proxyRegion && since) down.push({ region: proxyRegion, since });
+  for (const key of keys) {
+    const since = await proxyOutageSince(key);
+    if (since) down.push({ region: key, since });
   }
   return down;
 }
@@ -368,6 +374,12 @@ async function reportHealth() {
   }
   // Proxy traffic, every 10 minutes (the API is rate-limited): the day's first reading is kept, so
   // "used today" is the difference.
+  // Mobile data left on the VoidMob package, every 10 minutes (VOIDMOB_API_KEY + VOIDMOB_PROXY_ID).
+  if (process.env.VOIDMOB_API_KEY && process.env.VOIDMOB_PROXY_ID && Date.now() - mobileTrafficAt > 10 * 60000) {
+    mobileTrafficAt = Date.now();
+    const u = await voidmobUsage().catch(() => null);
+    if (u) mobileTraffic = { ...u, at: new Date().toISOString() };
+  }
   if (process.env.PROXY_SELLER_API_KEY && Date.now() - trafficAt > 10 * 60000) {
     trafficAt = Date.now();
     const p = await residentPackage().catch(() => null);
@@ -395,6 +407,12 @@ async function reportHealth() {
     proxyDown: await openProxyOutages(),
     // The proxy providers in use, in the order they are tried (PROXY_PROVIDERS).
     proxyProviders: proxyProviders(),
+    // Mobile data scans need the Decodo mobile login on the worker.
+    mobileData: Boolean(mobileProvider()),
+    mobileProvider: mobileProvider(),
+    mobileTraffic,
+    // Under MOBILE_TRAFFIC_WARN_GB (half a GB unless set), or less than a day at today's pace.
+    mobileTrafficLow: trafficLow(mobileTraffic, Number(process.env.MOBILE_TRAFFIC_WARN_GB ?? 0.5)),
     templates: { chrome: await template('chrome'), maps: await template('maps'), google: await template('google') },
     // Throughput: phones ready at the last fleet check, and how many points run at once.
     phonesReady: readyPhoneCount(),

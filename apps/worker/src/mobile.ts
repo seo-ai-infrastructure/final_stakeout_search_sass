@@ -9,8 +9,9 @@ import { db, type GridPin, type GridScan } from '@stakeout/db';
 import { listsForPin, normPlace, locationVerified } from '@stakeout/core/proxyLists';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
-import { isProxyProblem, supplyDown } from '@stakeout/core/proxyWait';
-import { decodoEndpoint, decodoLadder, decodoServes, decodoUser, proxyProviders } from '@stakeout/core/decodo';
+import { isProxyProblem, outageKey, supplyDown } from '@stakeout/core/proxyWait';
+import { decodoEndpoint, decodoLadder, decodoMobileLadder, decodoServes, decodoUser, proxyProviders } from '@stakeout/core/decodo';
+import { mobileHubs, mobileProvider, voidmobEndpoint, voidmobUser } from '@stakeout/core/voidmob';
 import { clearProxyOutage } from './proxyOutage';
 import { OBSERVE_SH } from '@stakeout/core/observer';
 import type { RpaSurface } from '@stakeout/core/rpaRules';
@@ -229,7 +230,7 @@ async function googleProbe(d: LeasedDevice): Promise<string> {
 }
 
 /** Binds the proxy and GPS, then checks the exit through it: two geolocation services and Google itself. */
-async function preflightExit(d: LeasedDevice, p: Pin, isp: string) {
+async function preflightExit(d: LeasedDevice, p: Pin, isp: string, stateCode = p.stateCode) {
   await applyNetworkAndGps(d, p);
   await sleep(6000);
   const token = process.env.IPINFO_TOKEN ? '?token=' + encodeURIComponent(process.env.IPINFO_TOKEN) : '';
@@ -240,7 +241,7 @@ async function preflightExit(d: LeasedDevice, p: Pin, isp: string) {
       : parseIpapi(await deviceGet(d, 'http://ip-api.com/json/?fields=status,countryCode,region,regionName,city,isp,org,as,hosting,proxy,query'));
   // A scripted request to Google seconds before the search looks like a bot: off unless PROXY_GATE_GOOGLE=true.
   const google = process.env.PROXY_GATE_GOOGLE !== 'true' ? null : parseGoogleProbe(await googleProbe(d));
-  const verdict = judgeExit({ ipinfo, ipapi, google }, { stateCode: p.stateCode, isp, policy: gatePolicy(), extraAsns: extraAsns() });
+  const verdict = judgeExit({ ipinfo, ipapi, google }, { stateCode, isp, policy: gatePolicy(), extraAsns: extraAsns() });
   return { verdict, ipinfo, ipapi, google };
 }
 
@@ -319,24 +320,45 @@ async function ipCapReached(ip: string, imageId: string): Promise<'IP_HOURLY_CAP
   return ceiling > 0 && all > ceiling ? 'IP_HOURLY_CAP' : 'IP_HOURLY_CAP_THIS_PHONE';
 }
 
+/** One place to ask a username-targeted gateway (Decodo, VoidMob) for an exit, and how to log in for it. */
+type GatewayTarget = {
+  /** Shown on the receipt and in the tries: e.g. DECODO_ZIP, MOBILE_HUB. */
+  rung: string;
+  /** The username for one try; the session keeps one IP for the whole point. */
+  user: (session: string) => string;
+  /** The state the exit must be in (the point's own state unless said otherwise). */
+  state?: string;
+  /** For the receipt: the place asked for, e.g. "Tampa, FL". */
+  place?: string;
+};
+
 /**
- * Decodo (ADB phones): one sticky residential IP per point, asked for at the point's ZIP code,
- * then its town, the area around it, then anywhere in its state, and put through the same
- * pre-flight gatekeeper as Proxy-Seller's ports. A new session is a new IP.
+ * A gateway whose username says where the exit is (Decodo, VoidMob; ADB phones): one sticky IP
+ * per point, put through the same pre-flight gatekeeper as Proxy-Seller's ports. Each target is
+ * tried a few times (a new session is a new IP), in order.
  */
-async function provisionDecodo(device: LeasedDevice, p: Pin) {
-  const { host, port, protocol } = decodoEndpoint();
-  const username = process.env.DECODO_USERNAME!.trim(),
-    password = process.env.DECODO_PASSWORD!;
-  const tries = Math.max(1, Number(process.env.DECODO_TRIES_PER_TARGET ?? 2));
-  const minutes = Number(process.env.DECODO_SESSION_MINUTES ?? 30);
-  const isp = p.isp ?? '';
+async function provisionGateway(
+  device: LeasedDevice,
+  p: Pin,
+  g0: {
+    source: string;
+    network: 'residential' | 'mobile';
+    host: string;
+    port: number;
+    protocol: 'http' | 'socks5';
+    password: string;
+    tries: number;
+    minutes: number;
+    isp: string;
+    targets: GatewayTarget[];
+  },
+) {
   const tried: string[] = [];
-  for (const target of decodoLadder(p)) {
-    for (let t = 0; t < tries; t++) {
+  for (const target of g0.targets) {
+    for (let t = 0; t < g0.tries; t++) {
       await device.assertOwned();
       const session = randomBytes(6).toString('hex');
-      const rec: ProxyRecord = { host, port, user: decodoUser(username, target.params, session, minutes), password, protocol };
+      const rec: ProxyRecord = { host: g0.host, port: g0.port, user: target.user(session), password: g0.password, protocol: g0.protocol };
       let superseded: string | null = null;
       try {
         await duoplusPost('/api/v1/proxy/update', { id: device.proxyId, ...rec, ip_scan_channel: 'ip2location' });
@@ -345,13 +367,13 @@ async function provisionDecodo(device: LeasedDevice, p: Pin) {
           device.proxyListId = null;
         }
       } catch (err) {
-        // DuoPlus checks the proxy before saving it: a ZIP or town with no IP online right now is
+        // DuoPlus checks the proxy before saving it: a place with no IP online right now is
         // refused here, and the next target is tried.
-        console.warn('[duoplus] proxy/update refused for', device.imageId, 'record', device.proxyId, '(decodo ' + target.rung + ') -', errText(err));
+        console.warn('[duoplus] proxy/update refused for', device.imageId, 'record', device.proxyId, '(' + g0.source + ' ' + target.rung + ') -', errText(err));
         try {
           superseded = await replaceProxyRecord(device, rec, null);
         } catch (e2) {
-          console.warn('[duoplus] could not give', device.imageId, 'a fresh proxy record (decodo) -', errText(e2));
+          console.warn('[duoplus] could not give', device.imageId, 'a fresh proxy record (' + g0.source + ') -', errText(e2));
           tried.push(target.rung + ':' + session + ':UPDATE_FAILED');
           continue;
         }
@@ -359,7 +381,8 @@ async function provisionDecodo(device: LeasedDevice, p: Pin) {
       // The phone no longer points at a Proxy-Seller port: a later list point must bind it again.
       await redis().del(`stakeout:devport:${device.imageId}`).catch(() => {});
       // "Mix of ISPs": the ISP is a preference, so a residential IP in the right state will do.
-      const g = await preflightExit(device, p, p.scan.ispMode === 'mix' ? '' : isp);
+      // Mobile data: any carrier the gatekeeper knows as a real mobile network.
+      const g = await preflightExit(device, p, p.scan.ispMode === 'mix' ? '' : g0.isp, target.state ?? p.stateCode);
       if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
       if (!g.verdict.ok) {
         tried.push(target.rung + ':' + session + ':' + g.verdict.reasons.join('+'));
@@ -371,7 +394,7 @@ async function provisionDecodo(device: LeasedDevice, p: Pin) {
         tried.push(target.rung + ':' + session + ':' + capped);
         continue;
       }
-      await clearProxyOutage(p.scan.proxyRegion);
+      await clearProxyOutage(outageKey(p.scan));
       const city = g.ipinfo?.city || g.ipapi?.city || '';
       return {
         ip: v.ip ?? '',
@@ -380,17 +403,19 @@ async function provisionDecodo(device: LeasedDevice, p: Pin) {
         region: g.ipinfo?.region || g.ipapi?.regionName || '',
         country: g.ipinfo?.country || g.ipapi?.countryCode || '',
         timezone: '',
-        proxySource: 'decodo',
+        proxySource: g0.source,
+        network: g0.network,
         listId: null,
         rungUsed: target.rung,
-        rotation: 'sticky ' + minutes + 'm',
-        ispRequested: isp || 'ANY',
+        placeAsked: target.place ?? null,
+        rotation: 'sticky ' + g0.minutes + 'm',
+        ispRequested: g0.isp || 'ANY',
         ispRuleApplied: false,
         ispObserved: v.network || null,
-        ispMatched: isp ? ispMatches(isp, v.network) : null,
-        stateMatched: true,
+        ispMatched: g0.isp ? ispMatches(g0.isp, v.network) : null,
+        stateMatched: (target.state ?? p.stateCode).toUpperCase() === p.stateCode.toUpperCase(),
         cityMatched: cityMatches(city, p.city),
-        port,
+        port: g0.port,
         portReused: false,
         rungsTried: tried,
         gate: {
@@ -409,6 +434,58 @@ async function provisionDecodo(device: LeasedDevice, p: Pin) {
     }
   }
   throw new Error((supplyDown(tried) ? 'PROXY_SUPPLY_DOWN ' : 'PROXY_GATE_REJECTED ') + tried.join(',').slice(0, 300));
+}
+
+/**
+ * Decodo: home internet asks for the point's ZIP code, then its town, the area around it, then
+ * anywhere in its state. Mobile data (Decodo mobile) asks for any carrier in the point's state.
+ */
+function provisionDecodo(device: LeasedDevice, p: Pin, network: 'residential' | 'mobile' = 'residential') {
+  const mobile = network === 'mobile';
+  const { host, port, protocol } = decodoEndpoint();
+  const username = (mobile ? process.env.DECODO_MOBILE_USERNAME! : process.env.DECODO_USERNAME!).trim();
+  const minutes = Number(process.env.DECODO_SESSION_MINUTES ?? 30);
+  return provisionGateway(device, p, {
+    source: mobile ? 'decodo-mobile' : 'decodo',
+    network,
+    host,
+    port,
+    protocol,
+    password: mobile ? process.env.DECODO_MOBILE_PASSWORD! : process.env.DECODO_PASSWORD!,
+    tries: Math.max(1, Number((mobile ? process.env.DECODO_MOBILE_TRIES : process.env.DECODO_TRIES_PER_TARGET) ?? (mobile ? 6 : 2))),
+    minutes,
+    isp: mobile ? '' : (p.isp ?? ''),
+    targets: (mobile ? decodoMobileLadder(p) : decodoLadder(p)).map((t) => ({ rung: t.rung, user: (session: string) => decodoUser(username, t.params, session, minutes) })),
+  });
+}
+
+/**
+ * VoidMob (mobile data): the nearest big city in the point's state, then the state's other hub
+ * cities, then (MOBILE_CROSS_STATE, on unless "false") the nearest hubs over the state line.
+ * Mobile IPs are only located in hub cities, which is also what a real phone on 5G shows.
+ */
+function provisionVoidmob(device: LeasedDevice, p: Pin) {
+  const { host, port, protocol } = voidmobEndpoint();
+  const base = process.env.VOIDMOB_USERNAME!.trim();
+  const minutes = Number(process.env.VOIDMOB_SESSION_MINUTES ?? 30);
+  const hubs = mobileHubs(p, { crossState: process.env.MOBILE_CROSS_STATE !== 'false' });
+  return provisionGateway(device, p, {
+    source: 'voidmob',
+    network: 'mobile',
+    host,
+    port,
+    protocol,
+    password: process.env.VOIDMOB_PASSWORD!,
+    tries: Math.max(1, Number(process.env.VOIDMOB_TRIES_PER_CITY ?? 2)),
+    minutes,
+    isp: '',
+    targets: hubs.map((h) => ({
+      rung: h.inState ? 'MOBILE_HUB' : 'MOBILE_HUB_NEARBY_STATE',
+      user: (session: string) => voidmobUser(base, h.city, session, minutes),
+      state: h.state,
+      place: h.city + ', ' + h.state,
+    })),
+  });
 }
 
 async function provisionFromLists(device: LeasedDevice, p: Pin) {
@@ -504,7 +581,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
           continue;
         }
         await redis().set(stickyKey, String(lease.port), 'EX', 6 * 3600).catch(() => {});
-        await clearProxyOutage(p.scan.proxyRegion);
+        await clearProxyOutage(outageKey(p.scan));
         return {
           ip: v.ip ?? '',
           org: g.ipinfo?.org || g.ipapi?.as || '',
@@ -579,7 +656,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
       continue;
     }
     await db.proxyList.update({ where: { id: list.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
-    await clearProxyOutage(p.scan.proxyRegion);
+    await clearProxyOutage(outageKey(p.scan));
     const ispWord = normPlace(isp).split(' ')[0] ?? '';
     return {
       ...c,
@@ -610,6 +687,13 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
  */
 export async function provision(device: LeasedDevice, p: Pin) {
   await device.assertOwned();
+  // Mobile data scans run only on mobile carrier IPs (Decodo mobile), never on home internet.
+  if (p.scan.network === 'mobile') {
+    const provider = mobileProvider();
+    if (!provider) throw new Error('MOBILE_DATA_NOT_CONFIGURED set VOIDMOB_USERNAME and VOIDMOB_PASSWORD (or the Decodo mobile login) on the worker');
+    if (transportFor(device) !== 'adb') throw new Error('PROXY_MOBILE_NEEDS_ADB_PHONE');
+    return provider === 'voidmob' ? provisionVoidmob(device, p) : provisionDecodo(device, p, 'mobile');
+  }
   const failures: string[] = [];
   let usedProxySeller = false;
   for (const provider of proxyProviders()) {

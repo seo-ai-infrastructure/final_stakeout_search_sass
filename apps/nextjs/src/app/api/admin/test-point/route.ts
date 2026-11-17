@@ -5,6 +5,7 @@ import { parseSpec, market, buildGrid, InputError } from '@stakeout/core/grid';
 import { listsEnabled, prepareGridProxies } from '@stakeout/core/proxyLists';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
+import { redis } from '@stakeout/core/redis';
 
 export const maxDuration = 300;
 
@@ -29,7 +30,12 @@ export async function POST(req: Request) {
       isps: [],
       trackAiOverviews: true,
       scheduleType: 'once',
+      network: b.network === 'mobile' ? 'mobile' : 'residential',
     });
+    if (s.network === 'mobile') {
+      const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
+      if (!health?.mobileData) throw new InputError('Mobile data is not set up: add VOIDMOB_USERNAME and VOIDMOB_PASSWORD to the worker.');
+    }
     const phone = typeof b.imageId === 'string' && /^[A-Za-z0-9]{3,20}$/.test(b.imageId) ? b.imageId : '';
     if (phone) {
       if (!(await db.devicePool.findUnique({ where: { imageId: phone } }))) throw new InputError('That phone is not in the fleet.', 404);

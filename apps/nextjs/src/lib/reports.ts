@@ -64,6 +64,7 @@ export const reportSelect = {
   gridSize: true,
   spacingKm: true,
   targetType: true,
+  network: true,
   phoneBrand: true,
   phoneModel: true,
   trackAiOverviews: true,

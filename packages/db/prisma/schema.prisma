@@ -92,6 +92,8 @@ model GridScan {
   /// Proxy-Seller market the scan's lists were prepared for (region "" = not using lists).
   proxyRegion      String?
   proxyCity        String?
+  /// "residential" (home internet) or "mobile" (mobile data: a carrier IP in the point's state).
+  network          String    @default("residential")
   gridSize         Int       @default(11)
   spacingKm        Float     @default(1.60934)
   totalPins        Int

@@ -53,6 +53,9 @@ export function NewScanWizard() {
   const [detectedCity, setDetectedCity] = useState('Lakeland');
   const [detectedState, setDetectedState] = useState('FL');
   const [ispMode, setIspMode] = useState<IspMode>('any');
+  // Home internet (residential IPs) or mobile data (a carrier IP in each point's state).
+  const [network, setNetwork] = useState<'residential' | 'mobile'>('residential');
+  const [mobileData, setMobileData] = useState<{ available: boolean; ready: boolean; creditsPerPoint: number } | null>(null);
   const [ispSelected, setIspSelected] = useState<string[]>([]);
   const [ispOptions, setIspOptions] = useState<IspOption[]>([]);
   const [ispLoading, setIspLoading] = useState(false);
@@ -205,6 +208,7 @@ export function NewScanWizard() {
           if (typeof data.creditBalance === 'number') {
             setCreditBalance(data.creditBalance);
           }
+          if (data.mobileData?.available) setMobileData(data.mobileData);
         }
       } catch {}
     }
@@ -280,7 +284,7 @@ export function NewScanWizard() {
   const creditSummary = useMemo(() => {
     const totalPins = shape === 'wealth' ? previewPoints.filter((p) => !p.skipped).length : gridSize * gridSize - allSkipped.length;
     const isDesktop = targetType.startsWith('desktop_');
-    const costPerPin = isDesktop ? 2 : 1;
+    const costPerPin = isDesktop ? 2 : network === 'mobile' && mobileData ? mobileData.creditsPerPoint : 1;
     const totalCost = totalPins * costPerPin;
     const spanMiles = ((gridSize - 1) * spacingKm * 0.621371).toFixed(1);
     return {
@@ -290,7 +294,7 @@ export function NewScanWizard() {
       spanMiles,
       hasEnoughCredits: creditBalance >= totalCost,
     };
-  }, [gridSize, spacingKm, targetType, creditBalance, allSkipped, shape, previewPoints]);
+  }, [gridSize, spacingKm, targetType, creditBalance, allSkipped, shape, previewPoints, network, mobileData]);
   // 5. MapLibre Initialization
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -657,7 +661,7 @@ export function NewScanWizard() {
       setErrorMsg('Enter the business name and at least one keyword.');
       return;
     }
-    if ((ispMode === 'single' && ispSelected.length !== 1) || (ispMode === 'mix' && ispSelected.length < 2)) {
+    if (network !== 'mobile' && ((ispMode === 'single' && ispSelected.length !== 1) || (ispMode === 'mix' && ispSelected.length < 2))) {
       setErrorMsg(ispMode === 'single' ? 'Choose an ISP, or switch to Any ISP.' : 'Choose at least 2 ISPs for a mix.');
       return;
     }
@@ -682,8 +686,10 @@ export function NewScanWizard() {
           targetBusiness: targetBusiness.trim(),
           centerLat,
           centerLng,
-          ispMode,
-          isps: ispMode === 'any' ? [] : ispSelected,
+          // Mobile data uses any carrier, so it has no ISP choice.
+          ispMode: network === 'mobile' ? 'any' : ispMode,
+          isps: network === 'mobile' || ispMode === 'any' ? [] : ispSelected,
+          network,
           gridSize,
           spacingKm,
           targetType,
@@ -853,7 +859,7 @@ export function NewScanWizard() {
                   className={`flex flex-col items-center gap-1 rounded-lg border py-2 ${gridSize === n ? 'border-emerald-400 bg-emerald-400/15' : 'border-slate-700 hover:border-slate-500'}`}>
                   <span aria-hidden className="h-7 w-7" style={{ backgroundImage: `radial-gradient(circle, ${gridSize === n ? '#34d399' : '#7c8ba5'} ${n > 6 ? 1 : 1.5}px, transparent ${n > 6 ? 1.4 : 2}px)`, backgroundSize: `${28 / n}px ${28 / n}px` }} />
                   <span className="text-sm font-bold text-white">{n}×{n}</span>
-                  <span className="text-[11px] text-slate-400">{n * n} credits</span>
+                  <span className="text-[11px] text-slate-400">{n * n * creditSummary.costPerPin} credits</span>
                 </button>
               ))}
             </div>
@@ -904,20 +910,39 @@ export function NewScanWizard() {
                 <button type="button" onClick={() => setSkipped([])} className="font-semibold underline">Restore</button>
               </p>
             )}
-            <IspSelectorDropdown
-              stateCode={detectedState}
-              city={detectedCity}
-              zip={detectedZip}
-              mode={ispMode}
-              selected={ispSelected}
-              options={ispOptions}
-              loading={ispLoading}
-              source={proxySource}
-              onChange={(mode, selected) => {
-                setIspMode(mode);
-                setIspSelected(selected);
-              }}
-            />
+            {mobileData && (
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Network">
+                  <button type="button" role="radio" aria-checked={network === 'residential'} onClick={() => setNetwork('residential')} className={pill(network === 'residential')}>
+                    Home internet · 1 credit/point
+                  </button>
+                  <button type="button" role="radio" aria-checked={network === 'mobile'} disabled={!mobileData.ready} onClick={() => setNetwork('mobile')} className={pill(network === 'mobile') + ' disabled:opacity-40'}>
+                    Mobile data · {mobileData.creditsPerPoint} credits/point
+                  </button>
+                </div>
+                {!mobileData.ready && <p className="text-xs text-amber-300">Mobile data is not set up yet: add the VoidMob login to the worker.</p>}
+              </div>
+            )}
+            {network === 'mobile' ? (
+              <p className="rounded-xl border border-slate-700 bg-slate-950/40 p-3.5 text-xs leading-relaxed text-slate-300">
+                Every point searches over a mobile carrier’s network (Verizon, AT&amp;T, T-Mobile or a regional carrier) in its own state, the way a phone on 5G would.
+              </p>
+            ) : (
+              <IspSelectorDropdown
+                stateCode={detectedState}
+                city={detectedCity}
+                zip={detectedZip}
+                mode={ispMode}
+                selected={ispSelected}
+                options={ispOptions}
+                loading={ispLoading}
+                source={proxySource}
+                onChange={(mode, selected) => {
+                  setIspMode(mode);
+                  setIspSelected(selected);
+                }}
+              />
+            )}
             <details className="text-xs text-slate-400">
               <summary className="cursor-pointer py-1">Centre coordinates ({detectedCity}, {detectedState})</summary>
               <span className="mt-1 flex gap-2">

@@ -30,6 +30,15 @@ export function proxyRetryDelay(waits: number, outage: boolean, random: () => nu
   return base + Math.floor(random() * (outage ? 30000 : 10000));
 }
 
+/**
+ * What an outage is tracked by: a scan's state for home internet (as before), and the state plus
+ * "mobile data" for mobile scans, so one network being down never holds up the other.
+ */
+export function outageKey(scan: { proxyRegion?: string | null; stateCode?: string | null; network?: string | null }) {
+  if (scan.network === 'mobile') return (scan.proxyRegion || scan.stateCode || 'US') + ' (mobile data)';
+  return scan.proxyRegion || null;
+}
+
 /** The traffic left is low: under PROXY_TRAFFIC_WARN_GB, or less than a day at today's pace. */
 export function trafficLow(t: { leftBytes: number | null; todayBytes: number | null } | null, warnGb = Number(process.env.PROXY_TRAFFIC_WARN_GB ?? 2)) {
   if (!t || t.leftBytes === null) return false;

@@ -67,6 +67,10 @@ export function parseSpec(input: Record<string, unknown>) {
   )
     throw new InputError('Choose any ISP, one ISP, or a mix of 2–6 ISPs.');
   const ispId = ispMode === 'single' ? isps[0] : ispMode === 'mix' ? 'MIX' : 'ANY';
+  // Where the searches come from: home internet (residential IPs) or mobile data (a mobile
+  // carrier's IPs). A mobile scan uses whichever carrier has an IP in the point's state.
+  const network = input.network === 'mobile' ? 'mobile' : 'residential';
+  if (network === 'mobile' && ispMode !== 'any') throw new InputError('Mobile data scans use any carrier: choose "Any ISP".');
   const proxyRegion = typeof input.proxyRegion === 'string' ? input.proxyRegion : null;
   const proxyCity = typeof input.proxyCity === 'string' ? input.proxyCity : null;
   if (
@@ -99,6 +103,7 @@ export function parseSpec(input: Record<string, unknown>) {
     isps,
     proxyRegion,
     proxyCity,
+    network,
   };
 }
 export type ScanSpec = ReturnType<typeof parseSpec>;
@@ -196,6 +201,8 @@ export function campaignId(userId: string, s: ScanSpec) {
         s.ispMode,
         [...s.isps].sort(),
         s.trackAiOverviews,
+        // Mobile runs are their own campaign; home-internet ids stay exactly as they were.
+        ...(s.network === 'mobile' ? ['mobile'] : []),
       ]),
     )
     .digest('hex');
