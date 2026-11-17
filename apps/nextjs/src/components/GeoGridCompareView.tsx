@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { declutterBasemap } from '../lib/censusLayer';
+import { rankColor, rankTextColor } from '../lib/gridColumns';
 import {
   TrendingUp,
   TrendingDown,
@@ -50,32 +51,11 @@ export interface PairedPinDelta {
   rankDelta: number; // Positive = improved (e.g. rankA 12 - rankB 4 = +8)
   aiStatus: 'GAINED' | 'LOST' | 'RETAINED' | 'NONE';
 }
-function getStandardRankStyle(rankFound: number | null | undefined) {
-  if (rankFound != null && rankFound >= 1 && rankFound <= 3) {
-    return {
-      bg: '#10b981',
-      border: '#a7f3d0',
-      text: '#022c22',
-      label: String(rankFound),
-    };
-  }
-  if (rankFound != null && rankFound >= 4 && rankFound <= 10) {
-    return {
-      bg: '#f59e0b',
-      border: '#fde68a',
-      text: '#451a03',
-      label: String(rankFound),
-    };
-  }
-  if (rankFound != null && rankFound >= 11 && rankFound <= 20) {
-    return {
-      bg: '#ef4444',
-      border: '#fecaca',
-      text: '#ffffff',
-      label: String(rankFound),
-    };
-  }
-  return { bg: '#334155', border: '#64748b', text: '#cbd5e1', label: '20+' };
+/** A point's rank in the report's own colours (the same scale as the scan report's map). */
+function getStandardRankStyle(rankFound: number | null | undefined, status = 'COMPLETED') {
+  const bg = rankColor(status, rankFound);
+  const label = status !== 'COMPLETED' ? 'N/A' : rankFound != null && rankFound >= 1 && rankFound <= 20 ? String(rankFound) : '20+';
+  return { bg, border: '#ffffff', text: rankTextColor(bg), label };
 }
 function getAfterPinStyle(
   pair: PairedPinDelta,
@@ -379,8 +359,7 @@ export function GeoGridCompareView({
       bounds.extend([pair.lng, pair.lat]);
       const isSelected = selectedKey === pair.key;
       // ---- Marker A (Baseline / Before) ----
-      const styleA = getStandardRankStyle(pair.pinA?.rankFound);
-      if (pair.pinA?.status !== 'COMPLETED') styleA.label = 'N/A';
+      const styleA = getStandardRankStyle(pair.pinA?.rankFound, pair.pinA?.status ?? 'PENDING');
       const elA = document.createElement('button');
       elA.type = 'button';
       elA.className =

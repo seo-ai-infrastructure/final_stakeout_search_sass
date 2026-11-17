@@ -14,8 +14,8 @@ import type { PinInsights } from '@stakeout/core/pinInsights';
 import { ReportVerdict, RankDistributionCard, AiCoverageCard, ProofStrip } from './ReportSummary';
 import { bandOf, reportSummary, type RankBucket, type FindingKind } from '../lib/reportSummary';
 import { groundOwners, aiPosition, winningRadius } from '../lib/marketInsights';
-import { combinedReading, combinedTotals, COMBINED_LEGEND } from '../lib/combinedMap';
-import { paintCombinedPin, paintSplitPin } from '../lib/combinedPin';
+import { combinedReading, combinedStyle, combinedTotals, COMBINED_LEGEND } from '../lib/combinedMap';
+import { paintSplitPin } from '../lib/combinedPin';
 import { PinEvidenceCard } from './PinEvidenceCard';
 import { MarketInsights } from './MarketInsights';
 import { buyingPower, nearWins, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
@@ -217,8 +217,8 @@ export function GeoGridDashboard({
     // What the pins show: the local rank, the business's place in the AI Overview's list, or the
     // number of sponsored results above it.
     [mapMode, setMapMode] = useState<'combined' | 'rank' | 'ai' | 'ads'>('combined'),
-    // Combined view: show only the points the AI Overview rescues (named there, missing from the local results).
-    [rescuedOnly, setRescuedOnly] = useState(false),
+    // Combined view: show only the points the AI Overview recommends while the local results leave them out.
+    [recommendedOnly, setRecommendedOnly] = useState(false),
     // Combined view: one headline per pin, or each pin split in two (AI Overview over local results).
     [pinStyle, setPinStyle] = useState<'best' | 'split'>('best'),
     // A band picked in the map's legend: pins outside it are dimmed. And whether the purple ring
@@ -488,8 +488,10 @@ export function GeoGridDashboard({
         if (!p.hasAiOverview) quiet = true;
         else if (cited) standout = true;
       } else if (p.status === 'COMPLETED' && mapMode === 'combined') {
+        // The same pin as the other views: its colour says where the business shows, the label its best placement.
         combined = readCombined(p);
-        text = combined.hero;
+        fill = combinedStyle(combined).swatch;
+        text = combined.label;
       } else if (p.status === 'COMPLETED' && mapMode === 'ads') {
         const ads = ins?.adsAboveYou ?? null;
         fill = adsColor(ads);
@@ -498,9 +500,8 @@ export function GeoGridDashboard({
       el.style.backgroundColor = fill;
       el.style.color = quiet ? '#64748b' : rankTextColor(fill);
       el.textContent = text;
-      // Combined view: the pin leads with the best placement and names where it is; on grids with
-      // room for it, a small label under it gives the other reading.
-      if (combined) (pinStyle === 'split' ? paintSplitPin : paintCombinedPin)(el, combined, scan.gridSize <= 7);
+      // Combined view, 50/50 split: the top half is the AI Overview, the bottom half the local results.
+      if (combined && pinStyle === 'split') paintSplitPin(el, combined);
       if (quiet) {
         el.style.width = el.style.height = '22px';
         el.style.border = '1px solid #475569';
@@ -511,9 +512,9 @@ export function GeoGridDashboard({
       const solo = p.proxyMeta?.rankFrom === 'single_business' && mapMode === 'rank';
       el.style.outline = solo ? '2px solid #fde047' : '';
       el.style.outlineOffset = solo ? '3px' : '';
-      el.style.opacity = pinPasses(p, rank, { bpFilters, rankBand, legendBand, focusIds, id: p.id }) && !(mapMode === 'combined' && rescuedOnly && combined?.kind !== 'ai') ? '1' : '0.25';
+      el.style.opacity = pinPasses(p, rank, { bpFilters, rankBand, legendBand, focusIds, id: p.id }) && !(mapMode === 'combined' && recommendedOnly && combined?.kind !== 'ai') ? '1' : '0.25';
       el.title =
-        'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + p.status + (combined ? ' · ' + combined.hero + ' · ' + combined.sub : '');
+        'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + (combined ? combined.detail : p.status);
       el.onclick = () => select(p.id);
       return new maplibregl.Marker({ element: el })
         .setLngLat([p.lng, p.lat])
@@ -529,7 +530,7 @@ export function GeoGridDashboard({
     return () => {
       markers.forEach((v) => v.remove());
     };
-  }, [scan, projected, bpFilters, rankBand, view3d, style3d, mapMode, legendBand, aiRing, focusIds, rescuedOnly, pinStyle]);
+  }, [scan, projected, bpFilters, rankBand, view3d, style3d, mapMode, legendBand, aiRing, focusIds, recommendedOnly, pinStyle]);
   // The winning radius, drawn around the business: how far out it holds the top 3.
   const radiusMiles = scan ? (winningRadius(scan.pins, { lat: scan.centerLat, lng: scan.centerLng })?.radius ?? null) : null;
   // Points where Google answered with one business and no map pack, and who holds them.
@@ -749,17 +750,17 @@ export function GeoGridDashboard({
           </div>
           <button
             type="button"
-            aria-pressed={rescuedOnly}
-            disabled={combinedStats.rescued === 0}
-            onClick={() => setRescuedOnly(!rescuedOnly)}
+            aria-pressed={recommendedOnly}
+            disabled={combinedStats.recommended === 0}
+            onClick={() => setRecommendedOnly(!recommendedOnly)}
             title="Show only these points on the map"
-            className={'rounded-xl border p-4 text-left ' + (rescuedOnly ? 'border-violet-300 bg-violet-900/50' : 'border-violet-500/40 bg-violet-950/30 hover:border-violet-400')}
+            className={'rounded-xl border p-4 text-left ' + (recommendedOnly ? 'border-violet-300 bg-violet-900/50' : 'border-violet-500/40 bg-violet-950/30 hover:border-violet-400')}
           >
-            <p className="text-[11px] font-bold uppercase tracking-wider text-violet-300">Rescued by the AI Overview</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-violet-300">Recommended by AI Overview</p>
             <p className="mt-1 text-2xl font-bold text-violet-300">
-              {combinedStats.rescued} <span className="text-sm font-medium text-slate-300">of {combinedStats.notInLocal} points not in the local results</span>
+              {combinedStats.recommended} <span className="text-sm font-medium text-slate-300">of {combinedStats.notInLocal} points not in the local results</span>
             </p>
-            <p className="mt-1 text-xs text-slate-300">{rescuedOnly ? 'Showing only these on the map. Click to show all.' : 'Named in the AI Overview above the local results. Click to spotlight.'}</p>
+            <p className="mt-1 text-xs text-slate-300">{recommendedOnly ? 'Showing only these on the map. Click to show all.' : 'Named in the AI Overview above the local results. Click to spotlight.'}</p>
           </button>
           <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">In both places</p>
@@ -821,7 +822,7 @@ export function GeoGridDashboard({
                     onClick={() => {
                       setMapMode(key);
                       if (key !== 'rank') setLegendBand(null);
-                      if (key !== 'combined') setRescuedOnly(false);
+                      if (key !== 'combined') setRecommendedOnly(false);
                     }}
                     className={'px-3 py-1.5 transition ' + (mapMode === key ? 'bg-slate-200 text-slate-950' : 'text-slate-200 hover:bg-slate-800')}
                   >
@@ -887,7 +888,7 @@ export function GeoGridDashboard({
                   ))}
                 {mapMode === 'combined' && (
                   <>
-                    {pinStyle === 'split' && <span className="px-1.5 py-1"><span className="font-bold text-violet-300">Top half</span> AI Overview · <span className="font-bold text-emerald-300">bottom half</span> local results · <span className="font-bold">No LP</span> no local results on the page</span>}
+                    {pinStyle === 'split' && <span className="px-1.5 py-1"><span className="font-bold text-violet-300">Top half</span> AI Overview · <span className="font-bold text-emerald-300">bottom half</span> local results · <span className="font-bold">20+</span> not in the local results · <span className="font-bold">–</span> none on the page</span>}
                     {pinStyle === 'best' && COMBINED_LEGEND.map((l) => (
                       <span key={l.label} className="inline-flex items-center gap-1 px-1.5 py-1">
                         <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: l.swatch }} />

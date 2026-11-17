@@ -15,7 +15,7 @@ test('3D grid: the most valuable point is the tallest column, coloured by the ra
   const by = Object.fromEntries(fc.features.map((f) => [f.id, f.properties]));
   assert.ok(by.b.h > by.c.h && by.c.h > by.a.h && by.a.h > by.d.h);
   assert.equal(by.b.h, 700, 'tallest = 35% of the grid span: a 2x2 grid at 2 km spacing spans 2 km');
-  assert.deepEqual([by.a.color, by.b.color, by.c.color, by.d.color], [COLUMN_COLORS.top, COLUMN_COLORS.late, COLUMN_COLORS.low, COLUMN_COLORS.pending]);
+  assert.deepEqual([by.a.color, by.b.color, by.c.color, by.d.color], [COLUMN_COLORS.top, COLUMN_COLORS.eight, COLUMN_COLORS.low, COLUMN_COLORS.pending]);
   const ring = fc.features[0].geometry.coordinates[0];
   assert.equal(ring.length, 5);
   assert.deepEqual(ring[0], ring[4], 'closed square');
@@ -28,34 +28,40 @@ test('3D grid: faded points (outside the filters) go dark, and a competitor view
   assert.equal(by.c.color, COLUMN_COLORS.top);
 });
 
-test('rank colours: #4 light green, #5-7 yellow, red only for 20+ or not found', async () => {
-  const { rankColor, rankTextColor, RANK_SCALE } = await import('../apps/nextjs/src/lib/gridColumns');
+test('rank colours: #1–3 Gucci green, a step each for #4 to #8, #9–20 red, 20+ the darkest red', async () => {
+  const { rankColor, rankTextColor, rankKey, RANK_SCALE, RANK_KEYS } = await import('../apps/nextjs/src/lib/gridColumns');
   const c = (r: number | null) => rankColor('COMPLETED', r);
-  assert.deepEqual([1, 2, 3].map(c), Array(3).fill(RANK_COLORS.top));
-  assert.equal(c(4), RANK_COLORS.four);
-  assert.deepEqual([5, 6, 7].map(c), Array(3).fill(RANK_COLORS.mid));
-  assert.deepEqual([8, 9, 10].map(c), Array(3).fill(RANK_COLORS.late));
-  assert.deepEqual([11, 20].map(c), Array(2).fill(RANK_COLORS.low));
-  assert.deepEqual([21, null, 0].map(c), Array(3).fill(RANK_COLORS.none), 'beyond 20, or not found');
+  assert.deepEqual([1, 2, 3].map(c), Array(3).fill('#2a6600'));
+  assert.deepEqual([4, 5, 6, 7, 8].map(c), ['#c6b100', '#f7c701', '#e59c00', '#d26e00', '#c03f00']);
+  assert.deepEqual([9, 10, 15, 20].map(c), Array(4).fill('#af0a00'));
+  assert.deepEqual([21, null, 0].map(c), Array(3).fill('#7f1d1d'), 'beyond 20, or not found');
   assert.equal(rankColor('PENDING', 1), RANK_COLORS.pending);
   assert.equal(rankColor('FAILED', null), RANK_COLORS.pending, 'a failed point is not shown as "not found"');
   const used = Object.values(RANK_COLORS);
   assert.equal(new Set(used).size, used.length, 'every band has its own colour');
-  assert.equal(used.filter((x) => x === RANK_COLORS.none).length, 1, 'red is used by nothing else');
-  assert.deepEqual([RANK_COLORS.four, RANK_COLORS.mid, RANK_COLORS.late].map(rankTextColor), ['#0f172a', '#0f172a', '#0f172a']);
-  assert.deepEqual([RANK_COLORS.top, RANK_COLORS.low, RANK_COLORS.none, RANK_COLORS.pending].map(rankTextColor), Array(4).fill('#ffffff'));
-  assert.equal(RANK_SCALE.length, 6);
+  // The legend: the bands in order, each with the colour its ranks get, and the key a legend filters by.
+  assert.deepEqual(RANK_SCALE.map(([l]) => l), ['#1–3', '#4', '#5', '#6', '#7', '#8', '#9–20', '20+ / not found']);
+  const sample = [2, 4, 5, 6, 7, 8, 12, null];
+  assert.deepEqual(RANK_SCALE.map(([, col]) => col), sample.map(c));
+  assert.deepEqual(sample.map((r) => rankKey('COMPLETED', r)), [...RANK_KEYS]);
+  assert.equal(rankKey('RUNNING', 3), null);
+  // Readable labels: dark on the yellows and oranges (#4–7), white on the green and the reds.
+  assert.deepEqual([4, 5, 6, 7].map((r) => rankTextColor(c(r))), Array(4).fill('#0f172a'));
+  assert.deepEqual([1, 8, 9, null].map((r) => rankTextColor(c(r))), Array(4).fill('#ffffff'));
+  assert.equal(rankTextColor(RANK_COLORS.pending), '#ffffff');
+  // Colours used elsewhere keep the label colour they had.
+  assert.deepEqual(['#a855f7', '#0d9488', '#7c3aed', '#e11d48', '#0e7490'].map(rankTextColor), Array(5).fill('#ffffff'));
+  assert.deepEqual(['#fb923c', '#10b981', '#34d399'].map(rankTextColor), Array(3).fill('#0f172a'));
 });
 
-test('3D columns: the same six bands as the pins, in brighter shades, with readable labels', async () => {
-  const { columnColor, rankColor, rankTextColor, COLUMN_SCALE, RANK_SCALE } = await import('../apps/nextjs/src/lib/gridColumns');
-  const bandOfFlat = (c: string) => Object.entries(RANK_COLORS).find(([, v]) => v === c)![0];
+test('3D columns: the same bands as the pins, in brighter shades, with readable labels', async () => {
+  const { columnColor, rankKey, rankTextColor, COLUMN_SCALE, RANK_SCALE } = await import('../apps/nextjs/src/lib/gridColumns');
   const bandOfCol = (c: string) => Object.entries(COLUMN_COLORS).find(([, v]) => v === c)![0];
-  for (const r of [1, 3, 4, 5, 7, 8, 10, 11, 20, 21, null]) assert.equal(bandOfCol(columnColor('COMPLETED', r)), bandOfFlat(rankColor('COMPLETED', r)), 'rank ' + r);
+  for (const r of [1, 3, 4, 5, 6, 7, 8, 9, 20, 21, null]) assert.equal(bandOfCol(columnColor('COMPLETED', r)), rankKey('COMPLETED', r), 'rank ' + r);
   assert.equal(columnColor('PENDING', 1), COLUMN_COLORS.pending);
   assert.deepEqual(COLUMN_SCALE.map(([l]) => l), RANK_SCALE.map(([l]) => l), 'the legend has the same bands in the same order');
-  assert.equal(new Set(Object.values(COLUMN_COLORS)).size, 7, 'every band is its own colour');
+  assert.equal(new Set(Object.values(COLUMN_COLORS)).size, Object.keys(COLUMN_COLORS).length, 'every band is its own colour');
   // Dark numbers on the light columns, white on the dark ones.
-  assert.deepEqual([COLUMN_COLORS.top, COLUMN_COLORS.four, COLUMN_COLORS.mid, COLUMN_COLORS.late].map(rankTextColor), Array(4).fill('#0f172a'));
-  assert.deepEqual([COLUMN_COLORS.low, COLUMN_COLORS.none, COLUMN_COLORS.pending].map(rankTextColor), Array(3).fill('#ffffff'));
+  assert.deepEqual([COLUMN_COLORS.top, COLUMN_COLORS.four, COLUMN_COLORS.five, COLUMN_COLORS.six, COLUMN_COLORS.seven].map(rankTextColor), Array(5).fill('#0f172a'));
+  assert.deepEqual([COLUMN_COLORS.eight, COLUMN_COLORS.low, COLUMN_COLORS.none, COLUMN_COLORS.pending].map(rankTextColor), Array(4).fill('#ffffff'));
 });

@@ -2,9 +2,10 @@
 import type { GridScanData } from './GeoGridDashboard';
 import type { SiteKind } from '@/lib/marketInsights';
 import { bandOf, reportSummary, verdictFor, type RankBucket, type FindingKind } from '@/lib/reportSummary';
+import { RANK_COLORS, rankTextColor } from '@/lib/gridColumns';
 
-/** One colour language across the report: green is the business, gold is buying power, grey is competitors. */
-const TONE: Record<RankBucket['key'], string> = { first: 'bg-emerald-300', top3: 'bg-emerald-500', top10: 'bg-amber-400', beyond: 'bg-orange-500', absent: 'bg-rose-500' };
+/** The rank bands in the map's own colours: the top 3 in green, #4–10 amber, #11 and lower red, not found the darkest red. */
+const TONE: Record<RankBucket['key'], string> = { first: RANK_COLORS.top, top3: RANK_COLORS.top, top10: RANK_COLORS.six, beyond: RANK_COLORS.low, absent: RANK_COLORS.none };
 const box = 'rounded-2xl border border-slate-800 bg-slate-900/70 p-5';
 const num = (n: number | null | undefined, unit = '', digits = 0) => (n == null ? '—' : n.toFixed(digits) + unit);
 const VERDICT = {
@@ -154,8 +155,8 @@ export function RankDistributionCard({
               aria-pressed={band === b.key}
               aria-label={`${b.label}: ${b.count} points`}
               title={`${b.label}: ${b.count} points`}
-              className={TONE[b.key] + ' min-w-[2.75rem] rounded-lg text-base font-extrabold text-slate-950 ' + (band === b.key ? 'ring-2 ring-amber-300 ring-offset-2 ring-offset-slate-900' : band ? 'opacity-40' : '')}
-              style={{ width: b.pct + '%' }}
+              className={'min-w-[2.75rem] rounded-lg text-base font-extrabold ' + (band === b.key ? 'ring-2 ring-amber-300 ring-offset-2 ring-offset-slate-900' : band ? 'opacity-40' : '')}
+              style={{ width: b.pct + '%', backgroundColor: TONE[b.key], color: rankTextColor(TONE[b.key]) }}
             >
               {b.count}
             </button>
@@ -164,7 +165,7 @@ export function RankDistributionCard({
       <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-slate-300">
         {s.distribution.buckets.map((b) => (
           <li key={b.key} className={'flex items-center gap-2 ' + (b.count ? '' : 'opacity-40')}>
-            <span className={'h-2.5 w-2.5 shrink-0 rounded-sm ' + TONE[b.key]} />
+            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: TONE[b.key] }} />
             {b.label}: <strong className="text-white">{b.count}</strong>
           </li>
         ))}
