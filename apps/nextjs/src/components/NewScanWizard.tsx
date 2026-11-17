@@ -747,9 +747,13 @@ export function NewScanWizard() {
   // About four minutes a point plus the two-minute rest, one point at a time per phone.
   const minutes = phoneCount ? Math.ceil((points * Math.max(1, runKeywords.length)) / phoneCount) * 6 : 0;
   const eta = !minutes ? '' : minutes < 90 ? `about ${minutes} min` : `about ${(minutes / 60).toFixed(1)} hours`;
-  const phoneNames = phones
-    .filter((p) => p.model)
-    .map((p) => (!p.brand || p.model.toLowerCase().startsWith(p.brand.toLowerCase()) ? p.model : p.brand.charAt(0).toUpperCase() + p.brand.slice(1) + ' ' + p.model));
+  const phoneName = (p: { brand: string; model: string }) =>
+    !p.brand || p.model.toLowerCase().startsWith(p.brand.toLowerCase()) ? p.model : p.brand.charAt(0).toUpperCase() + p.brand.slice(1) + ' ' + p.model;
+  /** Each phone model once (a small scan only uses as many phones as it has points), A to Z. */
+  const phoneModels = (count: number) =>
+    [...new Map(phones.filter((p) => p.model).slice(0, count).map((p) => [phoneName(p).toLowerCase(), phoneName(p)])).values()].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+    );
   const enabledSurfaces = (process.env.NEXT_PUBLIC_ENABLED_SURFACES ?? 'mobile_chrome').split(',').map((x) => x.trim());
   const surfaces = [
     { id: 'mobile_maps', title: 'Maps app', sub: 'Local pack & Ask Maps', note: 'The Maps app list, as a customer sees it.', Icon: MapPin },
@@ -1106,16 +1110,18 @@ export function NewScanWizard() {
               <h2 className="text-xl font-extrabold text-white">{launched.ids.length > 1 ? `${launched.ids.length} scans queued` : 'Scan queued'}</h2>
               <p className="mt-1 text-sm text-slate-300">{launched.summary}</p>
             </div>
-            {phoneNames.length > 0 && (
-              <ul className="space-y-1.5">
-                {phoneNames.slice(0, Math.min(phoneNames.length, launched.points)).map((name, i) => (
-                  <li key={name + i} className="flex min-h-[40px] items-center gap-2.5 rounded-lg border border-slate-800 bg-slate-950 px-3 text-[13px]">
-                    <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-sky-300" />
-                    <span className="flex-1 font-semibold text-white">{name}</span>
-                    <span className="text-xs text-slate-400">real Android phone</span>
-                  </li>
-                ))}
-              </ul>
+            {phoneModels(launched.points).length > 0 && (
+              <div>
+                <p className="text-xs text-slate-400">Real Android phones running it</p>
+                <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                  {phoneModels(launched.points).map((name) => (
+                    <li key={name} className="flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950 px-2.5 py-1 text-[13px] font-semibold text-white">
+                      <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-300" />
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             <p className="text-[13px] text-slate-300">
               {launched.repeat ? 'This scan repeats on its schedule. ' : ''}First results in a few minutes{eta ? `; everything done in ${eta}` : ''}. Each point records its search, ads, AI Overview and a phone video.
