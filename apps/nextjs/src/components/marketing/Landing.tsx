@@ -128,7 +128,7 @@ const COMPARE: { row: string; typical: string; stakeout: string }[] = [
   { row: 'Location', typical: 'Coordinates passed into a query', stakeout: "The phone's GPS is moved to each grid point, and Google's own location line is captured as proof" },
   { row: 'Network', typical: 'Data-center or random IPs', stakeout: 'A residential connection, from the ISP you choose, one or a mix' },
   { row: 'Proof', typical: 'A colored dot on a map', stakeout: 'A full screen recording, the screen data and a SHA-256 fingerprint for every point' },
-  { row: 'AI answers', typical: 'Rarely tracked', stakeout: 'AI Overviews captured at every point, with the sources they cited: are you named? (Ask Maps coming soon)' },
+  { row: 'AI answers', typical: 'A yes or no flag, if tracked at all', stakeout: 'The full AI Overview as it appeared on the phone, with the sources it cited, on the same recording (Ask Maps coming soon)' },
   { row: 'Ads', typical: 'Often mixed into the ranks', stakeout: 'Listed separately and never counted as a rank' },
 ];
 
@@ -516,6 +516,42 @@ function Pricing() {
   );
 }
 
+/** What an agency does with a receipt: the four conversations it is used in. */
+const AGENCY_USES: [string, string, string][] = [
+  ['Prospecting', 'Make the gap concrete.', 'Show a prospect the neighborhood they know, the competitor who appeared there, and the recording that proves it.'],
+  ['Onboarding', 'Set a baseline nobody can dispute.', 'Day one, on video: where the client appeared and where they did not, before your work starts.'],
+  ['Monthly reviews', 'Explain what changed.', 'When a point moves, open it. The search, the time and the results are there to look at together.'],
+  ['Renewals', 'Let them inspect the work.', 'Send one link, no login. The client can click any point and watch the search behind it.'],
+];
+
+function AgencyUses() {
+  return (
+    <section className="border-y border-[#1b2431] bg-[#080b10]">
+      <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
+        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#f5c451]">For agencies</p>
+        <h2 className="mk-display mx-auto mt-3 max-w-4xl text-center text-4xl font-bold leading-tight sm:text-6xl">
+          Walk Into Your Next Pitch with the <span className="mk-gold-text">Search on Video.</span>
+        </h2>
+        <p className="mx-auto mt-5 max-w-2xl text-center text-lg leading-relaxed text-[#9aa7b8]">
+          “Where did that ranking come from?” Open the recording.
+        </p>
+        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {AGENCY_USES.map(([tag, title, text]) => (
+            <article key={tag} className="rounded-2xl border border-[#1b2431] bg-[#0c1118] p-7">
+              <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">{tag}</p>
+              <h3 className="mk-display mt-2 text-xl font-semibold">{title}</h3>
+              <p className="mt-3 leading-relaxed text-[#9aa7b8]">{text}</p>
+            </article>
+          ))}
+        </div>
+        <div className="mt-10 text-center">
+          <Link href="/pricing" className="mk-btn-primary inline-block rounded-xl px-6 py-3.5 font-semibold">Run your first scan for {usd(PACKS[0].cents)} →</Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Landing() {
   return (
     <div className="mk min-h-screen overflow-x-hidden">
@@ -536,9 +572,10 @@ export default function Landing() {
               <span className="mk-rec inline-block h-2 w-2 rounded-full bg-[#ff4d4d]" aria-hidden="true" />
               REC · real Android phone sessions · Google Maps & Chrome
             </p>
-            <h1 className="mk-display mt-6 text-[44px] font-bold leading-[1.02] sm:text-6xl lg:text-[76px]">
-              Every Data Point Comes with a <span className="mk-gold-text">Receipt!</span>
+            <h1 className="mk-display mt-6 text-[44px] font-bold leading-[1.02] sm:text-6xl lg:text-[68px]">
+              When a Client Questions the Ranking, <span className="mk-gold-text">Show Them the Search.</span>
             </h1>
+            <p className="mk-display mt-5 text-2xl font-semibold text-[#eef2f7] sm:text-3xl">Every data point comes with a <span className="mk-gold-text">receipt.</span></p>
             <p className="mt-6 max-w-xl text-lg font-medium leading-relaxed text-[#eef2f7] sm:text-xl">
               The <span className="text-[#f5c451]">ONLY</span> local SEO tool on the market measuring <span className="underline decoration-[#f5c451] decoration-2 underline-offset-4">REAL</span> results for real people on real mobile devices.
             </p>
@@ -546,9 +583,10 @@ export default function Landing() {
               At every point of your grid, a real Android phone moves its GPS to that spot, searches on a residential connection, and records the whole search. You get the rank, plus the video, the screen data and a fingerprint that proves it.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link href="/demo" className="mk-btn-primary rounded-xl px-6 py-3.5 text-base font-semibold">See the live demo map →</Link>
-              <JoinLink className="rounded-xl border border-[#2a3442] bg-[#0c1118] px-6 py-3.5 text-base font-semibold hover:border-[#3a4658]" />
+              <Link href="/pricing" className="mk-btn-primary rounded-xl px-6 py-3.5 text-base font-semibold">Run your first scan for {usd(PACKS[0].cents)} →</Link>
+              <Link href="/demo" className="rounded-xl border border-[#2a3442] bg-[#0c1118] px-6 py-3.5 text-base font-semibold hover:border-[#3a4658]">Watch a recorded search</Link>
             </div>
+            <p className="mt-3 text-sm text-[#9aa7b8]">Credits never expire. Failed points are credited back.</p>
             <ul className="mt-9 grid max-w-xl grid-cols-1 gap-x-6 gap-y-3 text-sm text-[#c9d3df] sm:grid-cols-2">
               {['Video receipt for every grid point', 'GPS set on the phone itself', 'Residential ISP you choose', 'AI Overviews tracked · Ask Maps soon'].map((t) => (
                 <li key={t} className="flex items-center gap-2.5"><Check className="text-[#3ddc97]" />{t}</li>
@@ -571,6 +609,8 @@ export default function Landing() {
 
       <RealProof />
 
+      <AgencyUses />
+
       {/* A PHONE AT EVERY POINT */}
       <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
         <div className="grid items-center gap-12 lg:grid-cols-[1fr_1.15fr]">
@@ -578,7 +618,7 @@ export default function Landing() {
             <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">One grid. 25 phone sessions. 25 recordings.</p>
             <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">See Through Your <span className="mk-gold-text">Customers&apos; Eyes.</span></h2>
             <p className="mt-5 max-w-xl text-lg leading-relaxed text-[#9aa7b8]">
-              Other trackers color a dot. Stakeout runs a separate phone session at each point of your grid and keeps the recording. In a live report, click any square to watch exactly what a searcher there would have seen.
+              Other trackers color a dot. Stakeout runs a separate phone session at each point of your grid and keeps the recording. In a live report, click any square to watch exactly what the phone saw from that spot.
             </p>
             <dl className="mt-8 grid max-w-xl grid-cols-3 gap-4">
               {[['25', 'phone sessions'], ['25', 'screen recordings'], ['25', 'fingerprinted receipts']].map(([n, l]) => (

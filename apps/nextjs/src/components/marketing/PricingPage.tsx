@@ -124,6 +124,7 @@ export default function PricingPage() {
                 <li>A share link your client can open</li>
                 <li>AI Overview tracking included</li>
                 <li>Credits never expire</li>
+                <li>Failed pins credited back</li>
               </ul>
               <AccessButton label={'Get ' + p.credits + ' credits'} className={'mt-8 block rounded-xl px-6 py-3.5 text-center font-semibold ' + (p.featured ? 'mk-btn-primary' : 'border border-[#2a3442] text-[#eef2f7] hover:bg-[#111823]')} />
             </div>
