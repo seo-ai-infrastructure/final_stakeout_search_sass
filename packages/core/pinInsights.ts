@@ -1,5 +1,6 @@
 import { isGoogleSource } from './googleSource';
 import { readAiParts, type AiParts } from './aiParts';
+import type { AiPage } from './aiPage';
 import { isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder, readMapsList, readResultsPage, sameBusiness, uiLabels } from './serpEvidence';
 
 /**
@@ -28,7 +29,7 @@ export type PinInsights = {
    * read from its copied text: null when no copy of this run's answer could be read, absent on
    * points read before it existed.
    */
-  ai: { shown: boolean; sources: string[]; named: string[]; parts?: AiParts | null };
+  ai: { shown: boolean; sources: string[]; named: string[]; parts?: AiParts | null; page?: AiPage | null };
 };
 
 /**

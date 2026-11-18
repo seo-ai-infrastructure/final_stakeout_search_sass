@@ -60,6 +60,11 @@ export async function GET(
         },
       });
     }
+    // A saved page's address itself, for a frame that then moves between its #anchors in place.
+    if (page && p.get('as') === 'json')
+      return new Response(JSON.stringify({ url: await signedRead(objectKey) }), {
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' },
+      });
     return new Response(null, {
       status: 307,
       headers: {

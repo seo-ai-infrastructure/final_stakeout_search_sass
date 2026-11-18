@@ -1,6 +1,9 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
-import { r2, bucket } from '@stakeout/core/r2';
+import { r2, bucket, put } from '@stakeout/core/r2';
+import { gunzipSync } from 'node:zlib';
+import { markAiPage, mergeAiPages, readAiPage, type AiPage } from '@stakeout/core/aiPage';
+import { mhtmlToReplayHtml } from '@stakeout/core/mhtml';
 import { untarGz, rankWithoutFinder } from '@stakeout/core/serpEvidence';
 import { metrics } from '@stakeout/core/grid';
 import { buildPinInsights, verifiedAiParts } from '@stakeout/core/pinInsights';
@@ -177,3 +180,55 @@ export async function backfillAiParts(limit = 300) {
   }
   console.log(`[insights] AI answers split into three parts: ${read} of ${pins.length}` + (unreadable ? ` · ${unreadable} without a readable copy` : '') + (failed ? ` · ${failed} failed, retried next time` : ''));
 }
+
+/**
+ * Points whose real pages were saved before the worker read them (worker v156 to v158): each page's
+ * AI Overview is read from its saved HTML (cards, Website buttons, which cards were above "Show
+ * more"), and the page shown in the report is rebuilt from its snapshot with its parts marked for
+ * the outlines. Once per point; a page that cannot be fetched is retried next time.
+ */
+export async function backfillAiPages(limit = 40) {
+  const pins = await db.$queryRaw<{ id: string; pages: Record<string, PageRecord | null> }[]>`
+    SELECT p.id, p."proxyMeta"->'pages' AS pages FROM "GridPin" p
+    WHERE p.status = 'COMPLETED' AND p."proxyMeta" ? 'pages' AND p.insights IS NOT NULL
+      AND p.insights->'ai'->>'shown' = 'true' AND NOT (p.insights->'ai' ? 'page')
+    ORDER BY p."updatedAt" DESC
+    LIMIT ${limit}`;
+  if (!pins.length) return;
+  const text = async (key: string) => {
+    const obj = await r2().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    return gunzipSync(Buffer.from(await obj.Body!.transformToByteArray())).toString('utf8');
+  };
+  let read = 0,
+    failed = 0;
+  for (const p of pins) {
+    try {
+      const pages = { ...p.pages };
+      for (const label of ['pre', 'post']) {
+        const snap = pages[label];
+        if (!snap?.replay) continue;
+        if (snap.html && snap.ai === undefined) snap.ai = readAiPage(await text(snap.html));
+        if (snap.mhtml && !snap.marked) {
+          const shown = mhtmlToReplayHtml(await text(snap.mhtml));
+          if (shown) {
+            const marked = markAiPage(shown);
+            await put(snap.replay, marked, 'text/html; charset=utf-8');
+            snap.marked = true;
+            snap.bytes = Buffer.byteLength(marked);
+          }
+        }
+      }
+      const page = mergeAiPages(pages.pre?.ai, pages.post?.ai);
+      await db.$executeRaw`UPDATE "GridPin" SET
+        "proxyMeta" = jsonb_set("proxyMeta", '{pages}', ${JSON.stringify(pages)}::jsonb),
+        insights = jsonb_set(insights, '{ai,page}', ${JSON.stringify(page)}::jsonb)
+        WHERE id = ${p.id}`;
+      read++;
+    } catch (e) {
+      failed++;
+      console.error('[insights] saved page', p.id, (e as Error).message);
+    }
+  }
+  console.log(`[insights] AI Overviews read from saved pages: ${read} of ${pins.length}` + (failed ? ` · ${failed} failed, retried next time` : ''));
+}
+type PageRecord = { replay?: string | null; html?: string | null; mhtml?: string | null; ai?: AiPage | null; marked?: boolean; bytes?: number };

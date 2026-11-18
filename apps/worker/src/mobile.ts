@@ -15,6 +15,7 @@ import { decodoEndpoint, decodoLadder, decodoMobileLadder, decodoServes, decodoU
 import { mobileHubs, mobileProvider, voidmobEndpoint, voidmobUser } from '@stakeout/core/voidmob';
 import { voidmobLogin } from './voidmobLogin';
 import { watchPageSnapshots } from './pageCapture';
+import { mergeAiPages, type AiPage } from '@stakeout/core/aiPage';
 import { clearProxyOutage } from './proxyOutage';
 import { OBSERVE_SH } from '@stakeout/core/observer';
 import type { RpaSurface } from '@stakeout/core/rpaRules';
@@ -1314,6 +1315,11 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     } catch (e) {
       console.error('[insights]', (e as Error).message);
     }
+    // What the saved pages said about the AI Overview: each card's website and phone, and which
+    // cards were above "Show more" when the page loaded.
+    const savedPages = (proof as { pages?: Record<string, { ai?: AiPage | null } | undefined> }).pages;
+    const page = mergeAiPages(savedPages?.pre?.ai, savedPages?.post?.ai);
+    if (pinInsights?.ai.shown && page) pinInsights.ai.page = page;
     run.marks.saved = Date.now();
     return {
       assignedDeviceId: d.imageId,

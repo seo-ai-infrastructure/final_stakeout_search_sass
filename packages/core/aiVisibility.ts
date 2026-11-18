@@ -6,7 +6,8 @@
  *    usually with its phone) or its website cited there. 1st 1.0, 2nd 0.75, later 0.5; a mention
  *    with neither a link, a phone nor a citation 0.85 of that.
  * 2. Business card, up to 35: its card in the AI Overview's own list of businesses. Slot 1.0, 0.75,
- *    0.55, then 0.35; 0.6 of that when the card sits behind "Show more" (not measured yet: in full).
+ *    0.55, then 0.35; 0.6 of that when the card sat behind "Show more" (read from the real page the
+ *    point saved; counted in full where no page was saved).
  * 3. Website, up to 15: its website cited anywhere else in the answer (not the opening answer, not
  *    its own card). First citation 1.0, later 0.6; in the answer's own text 1.0, inside another
  *    business's card 0.5. Summed, at most 15.
@@ -21,6 +22,7 @@
  * Pure, no Node imports: the report computes it in the browser.
  */
 import type { AiParts } from './aiParts';
+import type { AiPage } from './aiPage';
 import { kgmidOf, siteDomain } from './businessIds';
 import { isGoogleSource } from './googleSource';
 import { isDirectory } from './directories';
@@ -31,7 +33,7 @@ export type AiVisPin = {
   rankFound: number | null;
   topCompetitors: string[] | null;
   hasAiOverview?: boolean;
-  insights?: { v: number; ai?: { shown: boolean; parts?: AiParts | null } } | null;
+  insights?: { v: number; ai?: { shown: boolean; parts?: AiParts | null; page?: AiPage | null } } | null;
 };
 export type AiVisTarget = { name: string; kgmid?: string | null; domain?: string | null };
 
@@ -60,6 +62,9 @@ export type AiVisRow = {
   cardPins: number;
   cardFirst: number;
   cardAvgSlot: number | null;
+  /** Of its cards: those above "Show more" and those behind it, where the point's page told (the rest not known). */
+  cardAbove: number;
+  cardBehind: number;
   /** Of N: points where its website was cited elsewhere in the answer. */
   webPins: number;
   /** Points where the AI Overview recommended it (opening answer or card), and of those, the ones where it was not in that point's local top 10. */
@@ -97,7 +102,8 @@ export type AiVisibility = {
   leaders: { p0: AiVisRow | null; card: AiVisRow | null; web: AiVisSite | null };
   /** Businesses the AI Overview recommends at points where they are not in the local top 10 (at least 2 such points). */
   beyondLocal: AiVisRow[];
-  /** Whether cards were placed above or behind "Show more" (not measured yet). */
+  /** Points whose saved page told which cards were above "Show more" (the fold counts only there). */
+  foldPins: number;
   foldMeasured: boolean;
 };
 
@@ -251,12 +257,28 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
     for (const c of parts.cards) resolve(c.name, c.kgmid);
     for (const m of parts.mentions) resolve(m.name, m.kgmid);
   }
-  // A business's own website: a site its card cites that looks like its name, then any cited site
-  // that looks like exactly one business's name. Others stay unattributed.
+  // A business's own website: its card's Website button on the saved page first, then a site its
+  // card cites that looks like its name, then any cited site that looks like exactly one business's
+  // name. Others stay unattributed.
   const merchantSite = (s: string) => {
     const d = rootDomain(s);
     return d && !isGoogleSource(d) && !isDirectory(d) ? d : '';
   };
+  /** The page's card for one of the answer's cards: the same name (or loosely the same). */
+  const pageCard = (page: AiPage | null | undefined, name: string) =>
+    page?.cards.find((c) => normName(c.name) === normName(name)) ?? page?.cards.find((c) => sameBusinessName(c.name, name)) ?? null;
+  for (const { pin, parts } of read) {
+    const page = pin.insights?.ai?.page;
+    if (!page) continue;
+    for (const c of parts.cards) {
+      const site = pageCard(page, c.name)?.website;
+      const d = site ? merchantSite(site) : '';
+      if (!d || byDomain.has(d)) continue;
+      const e = resolve(c.name, c.kgmid);
+      byDomain.set(d, e.key);
+      e.domains.add(d);
+    }
+  }
   for (const { parts } of read)
     for (const c of parts.cards) {
       const e = resolve(c.name, c.kgmid);
@@ -285,16 +307,17 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
   };
 
   // --- Scoring, point by point ----------------------------------------------------------------
-  type Tally = { p0: number; card: number; web: number; p0First: boolean; p0Phone: boolean; cardSlot: number | null };
+  type Tally = { p0: number; card: number; web: number; p0First: boolean; p0Phone: boolean; cardSlot: number | null; cardAbove: boolean | null };
   const tallies = new Map<string, Map<string, Tally>>();
   const tally = (key: string, pinId: string): Tally => {
     let m = tallies.get(key);
     if (!m) tallies.set(key, (m = new Map()));
     let t = m.get(pinId);
-    if (!t) m.set(pinId, (t = { p0: 0, card: 0, web: 0, p0First: false, p0Phone: false, cardSlot: null }));
+    if (!t) m.set(pinId, (t = { p0: 0, card: 0, web: 0, p0First: false, p0Phone: false, cardSlot: null, cardAbove: null }));
     return t;
   };
   const sites = new Map<string, { domain: string; owner: Entity | null; pins: Set<string>; points: number }>();
+  let foldPins = 0;
   const dirs = new Map<string, Set<string>>();
   const seeDirectory = (s: string, pinId: string) => {
     const d = rootDomain(s);
@@ -324,12 +347,18 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
       t.p0 = Math.max(t.p0, P0_MAX * p0Decay(order));
       if (order === 1) t.p0First = true;
     }
-    // 2. Business cards, in their order.
+    // 2. Business cards, in their order; 0.6 of that for a card the saved page shows behind "Show more".
+    const page = pin.insights?.ai?.page;
+    if (page?.cards.some((c) => c.above != null)) foldPins++;
     parts.cards.forEach((c, i) => {
       const e = resolve(c.name, c.kgmid);
       const t = tally(e.key, pin.id);
-      const pts = CARD_MAX * cardDecay(i + 1);
-      if (pts > t.card) t.card = pts;
+      const above = pageCard(page, c.name)?.above ?? null;
+      const pts = CARD_MAX * cardDecay(i + 1) * (above === false ? 0.6 : 1);
+      if (pts > t.card) {
+        t.card = pts;
+        t.cardAbove = above;
+      }
       if (t.cardSlot == null || i + 1 < t.cardSlot) t.cardSlot = i + 1;
     });
     // 3. Websites cited elsewhere: in the answer's own text first, then inside other businesses' cards.
@@ -424,6 +453,8 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
       p0Phone = 0,
       cardPins = 0,
       cardFirst = 0,
+      cardAbove = 0,
+      cardBehind = 0,
       slotSum = 0,
       webPins = 0,
       aiPins = 0,
@@ -451,6 +482,8 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
           cardPins++;
           slotSum += t.cardSlot;
           if (t.cardSlot === 1) cardFirst++;
+          if (t.cardAbove === true) cardAbove++;
+          if (t.cardAbove === false) cardBehind++;
         }
         if (t.web > 0) webPins++;
       }
@@ -490,6 +523,8 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
       cardPins,
       cardFirst,
       cardAvgSlot: cardPins ? round(slotSum / cardPins, 1) : null,
+      cardAbove,
+      cardBehind,
       webPins,
       aiPins,
       beyondLocal: beyond,
@@ -517,6 +552,7 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
     directories: [...dirs.entries()].map(([domain, s]) => ({ domain, pins: s.size })).sort((a, b) => b.pins - a.pins || a.domain.localeCompare(b.domain)),
     leaders: { p0: top((r) => r.p0), card: top((r) => r.card), web: websites[0] ?? null },
     beyondLocal: scored.filter((r) => !r.you && r.beyondLocal >= 2).sort((a, b) => b.beyondLocal - a.beyondLocal || b.score - a.score),
-    foldMeasured: false,
+    foldPins,
+    foldMeasured: foldPins > 0,
   };
 }

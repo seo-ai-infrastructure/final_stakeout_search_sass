@@ -1,6 +1,6 @@
 import { failureCode } from '@stakeout/core/fleetHealth';
 import { evidenceOf, failureKind, parseEntries, refusedRun, refusedSummary, stageSeconds, timingLine, timingSummary, REFUSED_KEEP, REFUSED_KEY, TIMINGS_KEEP, TIMINGS_KEY, type Marks, type RefusedRun, type RunTiming } from '@stakeout/core/runLog';
-import { backfillAiParts, backfillInsights, backfillPackRanks } from './insightsBackfill';
+import { backfillAiPages, backfillAiParts, backfillInsights, backfillPackRanks } from './insightsBackfill';
 import 'dotenv/config';
 import { Queue, Worker, DelayedError, UnrecoverableError, type Job } from 'bullmq';
 import { db } from '@stakeout/db';
@@ -621,6 +621,7 @@ async function tick() {
       lastInsightsBackfill = Date.now();
       void backfillInsights()
         .then(() => backfillAiParts())
+        .then(() => backfillAiPages())
         .catch((e) => console.warn('[insights] backfill skipped:', (e as Error).message));
       void backfillPackRanks().catch((e) => console.warn('[rank] re-read skipped:', (e as Error).message));
     }
@@ -685,6 +686,7 @@ console.info(
 setTimeout(() => {
   backfillInsights()
     .then(() => backfillAiParts())
+        .then(() => backfillAiPages())
     .catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));
   backfillPackRanks().catch((e) => console.error('[rank] re-read skipped:', (e as Error).message));
 }, 60_000);

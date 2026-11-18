@@ -142,7 +142,14 @@ export function AiVisibilitySection({ scan, shareToken }: { scan: GridScanData; 
               what="A business card in the AI Overview's own list: name, rating, Call, Directions and Website. The higher the card, the more it is worth."
               lines={[
                 ['Your average card', you.cardAvgSlot != null ? '#' + f1(you.cardAvgSlot).replace(/\.0$/, '') : 'none'],
-                ['Above or behind “Show more”', v.foldMeasured ? '' : 'not measured for this scan'],
+                [
+                  'Above “Show more”',
+                  !v.foldMeasured
+                    ? 'not measured for this scan'
+                    : you.cardAbove + you.cardBehind
+                      ? `${you.cardAbove} of ${you.cardAbove + you.cardBehind} of your cards`
+                      : `measured at ${v.foldPins} of ${N} points`,
+                ],
                 ['Leader', v.leaders.card ? `${v.leaders.card.name}${v.leaders.card.you ? ' (you)' : ''} · ${v.leaders.card.cardPins} of ${N}` : 'No cards here'],
               ]}
             />
@@ -468,8 +475,8 @@ function Explainer({ N, unread }: { N: number; unread: number }) {
         <div>
           <p className="font-semibold text-violet-300">Business cards · up to 35</p>
           <p className="mt-1">
-            A card in the AI Overview&apos;s own list. First card: 35; second: 26.25; third: 19.25; any later card: 12.25. Cards behind &ldquo;Show more&rdquo; will count 0.6 of that
-            once the fold is measured.
+            A card in the AI Overview&apos;s own list. First card: 35; second: 26.25; third: 19.25; any later card: 12.25. A card hidden behind &ldquo;Show more&rdquo; when the page
+            loaded counts 0.6 of that (read from the real page the point saved; counted in full where no page was saved).
           </p>
         </div>
         <div>
@@ -490,18 +497,35 @@ function Explainer({ N, unread }: { N: number; unread: number }) {
   );
 }
 
-/** The real page Google served at the point where a business scored most (the rebuilt answer when none was saved). */
+/** The real page Google served at the point where a business scored most (the rebuilt answer when none was saved), its parts outlined. */
 function Snapshot({ row, scan, shareToken, onClose }: { row: AiVisRow; scan: GridScanData; shareToken?: string; onClose: () => void }) {
   const pin = scan.pins.find((p) => p.id === row.bestPin) as GridPinData | undefined;
   const pages = pin?.proxyMeta?.pages;
   const kind = pages?.post ? 'page_post' : pages?.pre ? 'page_pre' : null;
   const evidence = usePinEvidence(pin?.id, Boolean(pin && !kind), shareToken);
   const isYou = (n: string) => n.trim().toLowerCase() === scan.targetBusiness.trim().toLowerCase();
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [show, setShow] = useState<'all' | 'p0' | 'card' | 'web' | 'none'>('all');
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  // The page's own address, once: the outlines then switch by its #anchor, in place.
+  useEffect(() => {
+    if (!pin || !kind) return;
+    let live = true;
+    setUrl(null);
+    setFailed(false);
+    fetch('/api/proof/' + pin.id + '?kind=' + kind + '&as=json' + (shareToken ? '&share=' + encodeURIComponent(shareToken) : ''), { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((j: { url?: string }) => live && (j.url ? setUrl(j.url) : setFailed(true)))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [pin?.id, kind, shareToken]);
   if (!pin) return null;
   const parts = pin.insights?.ai?.parts;
   const at: string[] = [];
@@ -510,10 +534,20 @@ function Snapshot({ row, scan, shareToken, onClose }: { row: AiVisRow; scan: Gri
     const p0 = parts.p0.brands.findIndex(same);
     if (p0 >= 0) at.push(`named ${p0 === 0 ? 'first' : '#' + (p0 + 1)} in the opening answer${parts.p0.brands[p0].phone ? ' with its phone' : ''}`);
     const c = parts.cards.findIndex(same);
-    if (c >= 0) at.push(`card #${c + 1}`);
+    if (c >= 0) {
+      const above = pin.insights?.ai?.page?.cards.find((x) => normName(x.name) === normName(parts.cards[c].name))?.above;
+      at.push(`card #${c + 1}${above === false ? ', behind “Show more”' : above === true ? ', in view before “Show more”' : ''}`);
+    }
     const w = [...parts.p0.sites, ...parts.other].filter((s) => row.domains.some((d) => s.includes(d)));
     if (w.length) at.push('its website cited');
   }
+  const outlines: [typeof show, string, string][] = [
+    ['all', 'All three', 'border-slate-500'],
+    ['p0', 'Position 0', 'border-amber-400'],
+    ['card', 'Cards', 'border-violet-500'],
+    ['web', 'Websites', 'border-cyan-400'],
+    ['none', 'None', 'border-slate-700'],
+  ];
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/70" role="dialog" aria-modal="true" aria-label={'Snapshot: ' + row.name} onClick={onClose}>
       <div className="flex h-full w-full max-w-xl flex-col border-l border-slate-800 bg-slate-950" onClick={(e) => e.stopPropagation()}>
@@ -526,20 +560,40 @@ function Snapshot({ row, scan, shareToken, onClose }: { row: AiVisRow; scan: Gri
               {at.length ? ' · ' + at.join(', ') : ''}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="min-h-[36px] rounded-lg border border-slate-700 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-800">
+          <button type="button" onClick={onClose} className="min-h-[36px] shrink-0 rounded-lg border border-slate-700 px-3 text-xs font-semibold text-slate-200 hover:bg-slate-800">
             Close
           </button>
         </div>
+        {kind && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 px-4 py-2.5" role="group" aria-label="Outline on the page">
+            <span className="mr-1 text-xs text-slate-400">Outline</span>
+            {outlines.map(([k, label, border]) => (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={show === k}
+                onClick={() => setShow(k)}
+                className={'min-h-[30px] rounded-lg border-2 px-2.5 text-[11px] font-semibold ' + border + (show === k ? ' bg-slate-800 text-white' : ' text-slate-400 hover:text-slate-200')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto bg-slate-900 p-3">
           {kind ? (
-            <iframe
-              key={pin.id + kind}
-              title={'The page Google served at this point'}
-              sandbox=""
-              referrerPolicy="no-referrer"
-              src={'/api/proof/' + pin.id + '?kind=' + kind + (shareToken ? '&share=' + encodeURIComponent(shareToken) : '')}
-              className="h-full min-h-[600px] w-full rounded-xl border-0 bg-white"
-            />
+            url ? (
+              <iframe
+                key={pin.id + kind}
+                title="The page Google served at this point"
+                sandbox=""
+                referrerPolicy="no-referrer"
+                src={url + (show === 'none' ? '#top' : '#sk-' + show)}
+                className="h-full min-h-[600px] w-full rounded-xl border-0 bg-white"
+              />
+            ) : (
+              <p className="p-4 text-sm text-slate-400">{failed ? 'This point’s saved page could not be opened.' : 'Opening the saved page…'}</p>
+            )
           ) : evidence.ev ? (
             <div className="rounded-xl bg-white">
               <AiView ev={evidence.ev} isTarget={isYou} target={scan.targetBusiness} />
@@ -549,7 +603,9 @@ function Snapshot({ row, scan, shareToken, onClose }: { row: AiVisRow; scan: Gri
           )}
         </div>
         <p className="border-t border-slate-800 p-3 text-[11px] text-slate-500">
-          {kind ? 'The page exactly as Google served it to the phone at this point, saved at that moment. Nothing on it runs.' : 'Rebuilt from this point’s evidence: the real page is saved for scans from 18 Nov 2026 on.'}
+          {kind
+            ? 'The page exactly as Google served it to the phone at this point, saved at that moment, with the opening answer, the business cards and the cited websites outlined. Nothing on it runs.'
+            : 'Rebuilt from this point’s evidence: the real page is saved for scans from 18 Nov 2026 on.'}
         </p>
       </div>
     </div>

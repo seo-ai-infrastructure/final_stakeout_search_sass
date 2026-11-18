@@ -16,6 +16,7 @@ import { gzipSync } from 'node:zlib';
 import { put } from '@stakeout/core/r2';
 import { shellQuote } from '@stakeout/core/runner';
 import { htmlToReplayHtml, mhtmlToReplayHtml, readMhtml } from '@stakeout/core/mhtml';
+import { markAiPage, readAiPage, type AiPage } from '@stakeout/core/aiPage';
 import { forwardDevtools, shell, unforwardDevtools, type ShellTarget } from './deviceShell';
 
 export const SNAP_LABELS = ['pre', 'post'] as const;
@@ -37,6 +38,9 @@ export type PageSnap = {
   mhtmlBytes?: number;
   htmlBytes?: number;
   steps?: Record<string, number>;
+  /** The AI Overview read from this page (cards, their buttons, above or behind Show more), and whether its parts are marked on the page shown. */
+  ai?: AiPage | null;
+  marked?: boolean;
   tries?: number;
   late?: boolean;
   error?: string;
@@ -256,6 +260,14 @@ export function watchPageSnapshots(
               // A snapshot that cannot be unpacked: the page's own HTML, its images left at their addresses.
               console.warn('[pages]', o.tag, label, 'snapshot not unpacked:', errText(e));
               shown = htmlToReplayHtml(p.html, p.url);
+            }
+            // Read the AI Overview from the page itself, and mark its parts for the report's outlines.
+            try {
+              snap.ai = readAiPage(p.html);
+              shown = markAiPage(shown);
+              snap.marked = true;
+            } catch (e) {
+              console.warn('[pages]', o.tag, label, 'AI Overview not read from the page:', errText(e));
             }
             snap.bytes = Buffer.byteLength(shown);
             await io.put(key('.html'), shown, 'text/html; charset=utf-8');

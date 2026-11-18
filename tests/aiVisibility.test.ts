@@ -130,3 +130,24 @@ test('a local listing with extra words is the same business as the AI names', as
   assert.equal(sameBusinessName('Morgan & Morgan', 'Dennis Hernandez Injury Attorneys'), false);
   assert.equal(sameBusinessName('1 Time Plumbing', '1-Tom-Plumber Lakeland'), false);
 });
+
+test('the saved page: a card behind "Show more" counts 0.6, and its Website button names its website', () => {
+  const page = {
+    expanded: false,
+    sites: [],
+    cards: [
+      { name: '1-Tom-Plumber Lakeland', website: '1tomplumber.com', phone: null, above: true },
+      { name: 'Richard C Fox Plumbing', website: 'richardfoxplumbing.com', phone: null, above: false },
+    ],
+  };
+  const p = pin('a', parts({ cards: [card('1-Tom-Plumber Lakeland', '/g/11lf92nyhd'), card('Richard C Fox Plumbing', '/g/11dxl5n6mc')], other: ['richardfoxplumbing.com'] }), []);
+  (p.insights!.ai as { page?: unknown }).page = page;
+  const v = aiVisibility([p, pin('b', parts({ cards: [card('Richard C Fox Plumbing', '/g/11dxl5n6mc')] }), [])], { name: 'Richard C Fox Plumbing' });
+  // Richard: a = card 2 behind Show more (26.25 × 0.6 = 15.75) + its website cited (15) ; b = card 1 (no page: in full, 35).
+  assert.equal(v.you.card, 25.4);
+  assert.equal(v.you.web, 7.5);
+  assert.deepEqual([v.you.cardAbove, v.you.cardBehind, v.foldPins, v.foldMeasured], [0, 1, 1, true]);
+  assert.deepEqual(v.you.domains, ['richardfoxplumbing.com'], 'from its Website button, not guessed from the name');
+  const tom = v.rows.find((r) => r.name.startsWith('1-Tom'))!;
+  assert.deepEqual([tom.card, tom.cardAbove, tom.domains], [17.5, 1, ['1tomplumber.com']]);
+});
