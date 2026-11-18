@@ -1041,7 +1041,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         timeoutMs: rpaSecs * 1000,
         onAdded: () => void (run.marks.added = Date.now()),
         onStarted: () => void (run.marks.started = Date.now()),
-        doneCheck: async () => (await shell(d, `test -f /sdcard/stakeout/${tag}.done && echo y`).catch(() => '')).trim() === 'y',
+        doneCheck: async () => (await shell(d, `[ -f /sdcard/stakeout/${tag}.done ] && echo y; true`).catch(() => '')).trim() === 'y',
         // A stopped scan settles its points at once; looked up at most every 12 s while the phone works.
         stopCheck: async () => {
           if (Date.now() - stopLooked < 12000) return false;

@@ -51,6 +51,24 @@ async function ensureConnected(addr: string) {
   connected.add(addr);
 }
 
+/**
+ * Whether a failed adb call means the phone could not be reached (reconnect and try again), rather
+ * than a shell command that ran on the phone and ended with a non-zero status, as `test -f` or
+ * `cat` of a missing file do. Reconnecting for those drops every other ADB stream open to that
+ * phone (a forwarded DevTools socket, another shell): they are reported as a plain failure instead.
+ */
+export function adbUnreachable(e: unknown, args: string[]): boolean {
+  const x = e as { code?: unknown; killed?: boolean; signal?: unknown; stderr?: unknown };
+  if (args[0] !== 'shell') return true;
+  // Timed out or killed: the link may be dead. No exit status, or adb's own 255: adb itself failed.
+  if (x?.killed || x?.signal || typeof x?.code !== 'number' || x.code === 255) return true;
+  return /(^|\n)\s*(adb: )?error: |device (offline|not found|unauthorized|still authorizing)|no devices\/emulators|protocol fault|connection (reset|refused)|broken pipe/i.test(
+    String(x?.stderr ?? ''),
+  );
+}
+
+const reconnectLogged = new Map<string, number>();
+
 async function adb(addr: string, args: string[], timeoutMs: number) {
   let last = '';
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -63,7 +81,13 @@ async function adb(addr: string, args: string[], timeoutMs: number) {
       return stdout;
     } catch (e) {
       last = errText(e);
+      // The command ran and ended with an error status: the phone is fine, nothing to reconnect.
+      if (!adbUnreachable(e, args)) break;
       // Dropped connection: reconnect once, then give up.
+      if (Date.now() - (reconnectLogged.get(addr) ?? 0) > 60000) {
+        reconnectLogged.set(addr, Date.now());
+        console.warn('[adb] reconnecting', addr, 'after', (args[0] === 'shell' ? 'shell ' + String(args[1] ?? '').split(' ')[0] : args[0]) + ':', last.slice(0, 120));
+      }
       connected.delete(addr);
       await run('adb', ['disconnect', addr], { timeout: 5000 }).catch(() => {});
     }
@@ -153,6 +177,10 @@ export async function forwardDevtools(d: ShellTarget): Promise<number> {
   return Number(out);
 }
 
+/**
+ * Removes that forward. Never reconnects the phone on failure (a forward a dropped link already
+ * removed is not worth dropping the phone's other streams for).
+ */
 export async function unforwardDevtools(d: ShellTarget, port: number) {
-  if (transportFor(d) === 'adb') await adb(d.adbAddr!, ['forward', '--remove', 'tcp:' + port], 10000);
+  if (transportFor(d) === 'adb') await run('adb', ['-s', d.adbAddr!, 'forward', '--remove', 'tcp:' + port], { timeout: 10000 });
 }

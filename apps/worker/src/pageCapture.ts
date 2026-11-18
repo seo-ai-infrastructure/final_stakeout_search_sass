@@ -25,14 +25,19 @@ export type SnapLabel = (typeof SNAP_LABELS)[number];
  * read outlasted the template's wait, so the template may have moved on while it ran and the page
  * may not be the moment it asked for (kept, but not shown as that moment).
  */
-export type PageSnap = { at: string; ms: number; url: string; replay: string | null; html: string | null; mhtml: string | null; bytes: number; late?: boolean; error?: string };
+export type PageSnap = { at: string; ms: number; url: string; replay: string | null; html: string | null; mhtml: string | null; bytes: number; tries?: number; late?: boolean; error?: string };
 
 /** The template waits 10 s for its answer; a read longer than this may have missed its moment. */
 const LATE_MS = 9000;
 
 const DIR = '/sdcard/stakeout';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).replace(/\s+/g, ' ').slice(0, 160);
+/** An error as one line, with its cause when it has one ("fetch failed (ECONNREFUSED)"). */
+const errText = (e: unknown) => {
+  const x = e as { message?: unknown; cause?: { code?: unknown; message?: unknown } } | null;
+  const cause = x?.cause ? String(x.cause.code ?? x.cause.message ?? '') : '';
+  return ((e instanceof Error ? e.message : String(e)) + (cause ? ' (' + cause + ')' : '')).replace(/\s+/g, ' ').slice(0, 200);
+};
 
 /** CDP calls over one socket, matched by id; events and other replies are ignored. */
 function cdpCaller(ws: WebSocket) {
@@ -52,10 +57,11 @@ function cdpCaller(ws: WebSocket) {
     if (msg.error) w.reject(new Error('CDP ' + (msg.error.message ?? 'error')));
     else w.resolve(msg.result);
   });
-  ws.addEventListener('close', () => {
+  ws.addEventListener('close', (ev) => {
+    const why = 'CDP socket closed (' + ev.code + (ev.reason ? ' ' + ev.reason : '') + ')';
     for (const [id, w] of waiting) {
       clearTimeout(w.timer);
-      w.reject(new Error('CDP socket closed'));
+      w.reject(new Error(why));
       waiting.delete(id);
     }
   });
@@ -76,9 +82,14 @@ function cdpCaller(ws: WebSocket) {
  * images (Page.captureSnapshot, MHTML). Read-only: no script is run in the page.
  */
 export async function readChromePage(d: ShellTarget): Promise<{ url: string; html: string; mhtml: string | null }> {
-  const port = await forwardDevtools(d);
+  // Each failure says the step it happened at: "forward", "list", "connect" or the DevTools call.
+  let step = 'forward';
+  const port = await forwardDevtools(d).catch((e) => {
+    throw new Error(step + ': ' + errText(e));
+  });
   let ws: WebSocket | null = null;
   try {
+    step = 'list';
     const tabs = (await (await fetch('http://127.0.0.1:' + port + '/json/list', { signal: AbortSignal.timeout(5000) })).json()) as {
       type?: string;
       url?: string;
@@ -87,22 +98,29 @@ export async function readChromePage(d: ShellTarget): Promise<{ url: string; htm
     const pages = tabs.filter((t) => t.type === 'page' && t.webSocketDebuggerUrl);
     const tab = pages.find((t) => /^https:\/\/www\.google\.[a-z.]+\/search\?/.test(t.url ?? '')) ?? pages[0];
     if (!tab) throw new Error('no open page in Chrome');
+    step = 'connect';
     const socket = new WebSocket(tab.webSocketDebuggerUrl!);
     ws = socket;
     await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error('CDP connect timed out')), 5000);
+      const t = setTimeout(() => reject(new Error('timed out')), 5000);
       socket.addEventListener('open', () => (clearTimeout(t), resolve()), { once: true });
-      socket.addEventListener('error', () => (clearTimeout(t), reject(new Error('CDP connect failed'))), { once: true });
+      socket.addEventListener('error', (ev) => (clearTimeout(t), reject(new Error('failed' + ((ev as { message?: string }).message ? ': ' + (ev as { message?: string }).message : '')))), { once: true });
+      socket.addEventListener('close', (ev) => (clearTimeout(t), reject(new Error('closed (' + ev.code + ')'))), { once: true });
     });
     const call = cdpCaller(socket);
+    step = 'DOM.getDocument';
     const doc = await call('DOM.getDocument', { depth: 1 });
     const root = ((doc?.root?.children ?? []) as { nodeName?: string; nodeId: number }[]).find((c) => c.nodeName === 'HTML') ?? doc.root;
+    step = 'DOM.getOuterHTML';
     const { outerHTML } = await call('DOM.getOuterHTML', { nodeId: root.nodeId });
+    step = 'Page.captureSnapshot';
     const mhtml = await call('Page.captureSnapshot', { format: 'mhtml' }, 30000).then(
       (r) => (typeof r?.data === 'string' && r.data ? r.data : null),
-      () => null,
+      (e) => (console.warn('[pages] snapshot not taken, HTML kept:', errText(e)), null),
     );
     return { url: tab.url ?? '', html: '<!DOCTYPE html>' + String(outerHTML ?? ''), mhtml };
+  } catch (e) {
+    throw new Error(step + ': ' + errText(e));
   } finally {
     // The socket first: an older Chrome can keep the page locked if the socket drops uncleanly.
     try {
@@ -150,10 +168,19 @@ export function watchPageSnapshots(
       let page: Awaited<ReturnType<typeof readChromePage>> | null = null,
         error = '';
       capturing = true;
-      try {
-        page = await io.read(o.d);
-      } catch (e) {
-        error = errText(e);
+      // One more try when the first fails fast: the template waits up to 10 s for its answer.
+      let tries = 0;
+      for (;;) {
+        tries++;
+        try {
+          page = await io.read(o.d);
+          error = '';
+          break;
+        } catch (e) {
+          error = errText(e);
+          if (tries >= 2 || Date.now() - t0 > 5000) break;
+          await sleep(400);
+        }
       }
       // The template goes on as soon as it reads its own text back: before anything is uploaded.
       await io.shell(o.d, `echo ${shellQuote(nonce)} > ${shellQuote(F + '.snapack_' + label)}`, 15000).catch(() => {});
@@ -162,7 +189,7 @@ export function watchPageSnapshots(
       // Read too late: the point was already settled without it.
       if (closed) break;
       if (!page) {
-        snaps[label] = { at: new Date(t0).toISOString(), ms, url: '', replay: null, html: null, mhtml: null, bytes: 0, ...(ms > LATE_MS ? { late: true } : {}), error };
+        snaps[label] = { at: new Date(t0).toISOString(), ms, url: '', replay: null, html: null, mhtml: null, bytes: 0, tries, ...(ms > LATE_MS ? { late: true } : {}), error };
         console.warn('[pages]', o.tag, label, 'not saved:', error);
         continue;
       }
@@ -170,7 +197,7 @@ export function watchPageSnapshots(
       uploads.push(
         (async () => {
           const key = (name: string) => o.prefix + '/page_' + label + name;
-          const snap: PageSnap = { at: new Date(t0).toISOString(), ms, url: p.url, replay: null, html: null, mhtml: null, bytes: 0, ...(ms > LATE_MS ? { late: true } : {}) };
+          const snap: PageSnap = { at: new Date(t0).toISOString(), ms, url: p.url, replay: null, html: null, mhtml: null, bytes: 0, tries, ...(ms > LATE_MS ? { late: true } : {}) };
           try {
             let shown: string;
             try {
