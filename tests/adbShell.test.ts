@@ -24,3 +24,10 @@ test('a phone that cannot be reached is reconnected', () => {
   assert.equal(adbUnreachable(exited(1), ['forward', 'tcp:0', 'localabstract:chrome_devtools_remote']), true);
   assert.equal(adbUnreachable(exited(1), ['push', 'a', 'b']), true);
 });
+
+test("the template's wait comes from its request: 25 s from template 3.47, 10 s before", async () => {
+  const { templateWaitMs } = await import('../apps/worker/src/pageCapture');
+  assert.equal(templateWaitMs('abc123def456_1_2:pre:25:5512771'), 25000);
+  assert.equal(templateWaitMs('abc123def456_1_2:post:5512771'), 10000, 'template 3.46');
+  assert.equal(templateWaitMs('abc123def456_1_2:pre:999:1'), 10000, 'out of range');
+});

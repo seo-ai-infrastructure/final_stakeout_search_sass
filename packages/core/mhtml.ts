@@ -58,7 +58,7 @@ const cssUrl = (u: string) => 'url(' + u.replace(/[()'"\\\s]/g, (c) => (/\s/.tes
  * How many bytes of images the page's own tags may repeat. The first use of an image is always
  * inlined; past this, a big image used yet again keeps its address (it loads from where it was).
  */
-const REPEAT_BUDGET = 8_000_000;
+const REPEAT_BUDGET = 1_000_000;
 
 /** The snapshot as one self-contained, script-free HTML page; null when it holds no page. */
 export function mhtmlToReplayHtml(mhtml: string, o: { repeatBudget?: number } = {}): string | null {

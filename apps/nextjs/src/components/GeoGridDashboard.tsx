@@ -11,7 +11,8 @@ import {
 import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
 import type { PinInsights } from '@stakeout/core/pinInsights';
-import { ReportVerdict, RankDistributionCard, AiCoverageCard } from './ReportSummary';
+import { ReportVerdict, RankDistributionCard } from './ReportSummary';
+import { AiVisibilitySection } from './AiVisibilitySection';
 import { bandOf, reportSummary, type RankBucket, type FindingKind } from '../lib/reportSummary';
 import { groundOwners, aiPosition, winningRadius } from '../lib/marketInsights';
 import { combinedReading, combinedStyle, combinedTotals, COMBINED_LEGEND } from '../lib/combinedMap';
@@ -160,6 +161,8 @@ export type GridPinData = {
     isp: string | null;
     finderShown: boolean | null;
     rankFrom: string | null;
+    /** The point's real pages that were saved: as it loaded, and with its AI Overview open. */
+    pages?: { pre: boolean; post: boolean };
   } | null;
   census?: PinCensus | null;
   insights?: PinInsights | null;
@@ -1214,7 +1217,7 @@ export function GeoGridDashboard({
         )}
       />
       </div>
-      <AiCoverageCard scan={scan} />
+      <AiVisibilitySection scan={scan} shareToken={shared ? identifier : undefined} />
       <MarketInsights scan={scan} />
       </div>
     </div>

@@ -55,6 +55,12 @@ export const pinSelect = {
   census: true,
   insights: true,
 } as const;
+/** Which real pages a point saved and can show (a page read too late to be its moment is left out). */
+export function savedPages(m: Record<string, unknown> | null | undefined): { pre: boolean; post: boolean } {
+  const pages = (m?.pages ?? null) as Record<string, { replay?: string | null; late?: boolean } | undefined> | null;
+  const ok = (s?: { replay?: string | null; late?: boolean }) => Boolean(s?.replay && !s.late);
+  return { pre: ok(pages?.pre), post: ok(pages?.post) };
+}
 export const reportSelect = {
   id: true,
   keyword: true,
@@ -115,6 +121,8 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
               isp: ispLabel(m),
               finderShown: typeof m.finderShown === 'boolean' ? m.finderShown : null,
               rankFrom: typeof m.rankFrom === 'string' ? m.rankFrom : null,
+              // Which of the point's real pages were saved (worker v156+): yes or no only.
+              pages: savedPages(m),
             }
           : null,
       };

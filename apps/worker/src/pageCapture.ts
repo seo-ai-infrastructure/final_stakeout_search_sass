@@ -15,7 +15,7 @@
 import { gzipSync } from 'node:zlib';
 import { put } from '@stakeout/core/r2';
 import { shellQuote } from '@stakeout/core/runner';
-import { htmlToReplayHtml, mhtmlToReplayHtml } from '@stakeout/core/mhtml';
+import { htmlToReplayHtml, mhtmlToReplayHtml, readMhtml } from '@stakeout/core/mhtml';
 import { forwardDevtools, shell, unforwardDevtools, type ShellTarget } from './deviceShell';
 
 export const SNAP_LABELS = ['pre', 'post'] as const;
@@ -25,10 +25,33 @@ export type SnapLabel = (typeof SNAP_LABELS)[number];
  * read outlasted the template's wait, so the template may have moved on while it ran and the page
  * may not be the moment it asked for (kept, but not shown as that moment).
  */
-export type PageSnap = { at: string; ms: number; url: string; replay: string | null; html: string | null; mhtml: string | null; bytes: number; tries?: number; late?: boolean; error?: string };
+export type PageSnap = {
+  at: string;
+  ms: number;
+  url: string;
+  replay: string | null;
+  html: string | null;
+  mhtml: string | null;
+  bytes: number;
+  /** Sizes read from Chrome, and the time (ms from the start of the read) each step ended at. */
+  mhtmlBytes?: number;
+  htmlBytes?: number;
+  steps?: Record<string, number>;
+  tries?: number;
+  late?: boolean;
+  error?: string;
+};
 
-/** The template waits 10 s for its answer; a read longer than this may have missed its moment. */
-const LATE_MS = 9000;
+/**
+ * How long the template waits for its answer, from its request: "<pin>:<label>:<seconds>:<n>"
+ * (template 3.47+), or 10 s for the older "<pin>:<label>:<n>". A read that ends less than a second
+ * before that may have missed its moment.
+ */
+export function templateWaitMs(nonce: string): number {
+  const f = nonce.split(':');
+  const s = f.length >= 4 ? Number(f[2]) : NaN;
+  return (Number.isFinite(s) && s >= 5 && s <= 120 ? s : 10) * 1000;
+}
 
 const DIR = '/sdcard/stakeout';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -81,12 +104,16 @@ function cdpCaller(ws: WebSocket) {
  * The page Chrome shows now: its HTML (DOM.getOuterHTML) and a full snapshot with its styles and
  * images (Page.captureSnapshot, MHTML). Read-only: no script is run in the page.
  */
-export async function readChromePage(d: ShellTarget): Promise<{ url: string; html: string; mhtml: string | null }> {
+export async function readChromePage(d: ShellTarget): Promise<{ url: string; html: string; mhtml: string | null; steps: Record<string, number> }> {
   // Each failure says the step it happened at: "forward", "list", "connect" or the DevTools call.
   let step = 'forward';
+  const t0 = Date.now(),
+    steps: Record<string, number> = {};
+  const mark = (k: string) => (steps[k] = Date.now() - t0);
   const port = await forwardDevtools(d).catch((e) => {
     throw new Error(step + ': ' + errText(e));
   });
+  mark('forward');
   let ws: WebSocket | null = null;
   try {
     step = 'list';
@@ -98,6 +125,7 @@ export async function readChromePage(d: ShellTarget): Promise<{ url: string; htm
     const pages = tabs.filter((t) => t.type === 'page' && t.webSocketDebuggerUrl);
     const tab = pages.find((t) => /^https:\/\/www\.google\.[a-z.]+\/search\?/.test(t.url ?? '')) ?? pages[0];
     if (!tab) throw new Error('no open page in Chrome');
+    mark('list');
     step = 'connect';
     const socket = new WebSocket(tab.webSocketDebuggerUrl!);
     ws = socket;
@@ -108,17 +136,24 @@ export async function readChromePage(d: ShellTarget): Promise<{ url: string; htm
       socket.addEventListener('close', (ev) => (clearTimeout(t), reject(new Error('closed (' + ev.code + ')'))), { once: true });
     });
     const call = cdpCaller(socket);
+    mark('connect');
+    // One read: the snapshot holds the page's HTML too, so the HTML is read on its own only when
+    // the snapshot fails (every byte comes over the phone's ADB link while the template waits).
+    step = 'Page.captureSnapshot';
+    const mhtml = await call('Page.captureSnapshot', { format: 'mhtml' }, 30000).then(
+      (r) => (typeof r?.data === 'string' && r.data ? r.data : null),
+      (e) => (console.warn('[pages] snapshot not taken, reading the HTML alone:', errText(e)), null),
+    );
+    mark('snapshot');
+    const inSnapshot = mhtml ? readMhtml(mhtml).find((p) => p.type === 'text/html')?.body.toString('utf8') : undefined;
+    if (inSnapshot) return { url: tab.url ?? '', html: inSnapshot, mhtml, steps };
     step = 'DOM.getDocument';
     const doc = await call('DOM.getDocument', { depth: 1 });
     const root = ((doc?.root?.children ?? []) as { nodeName?: string; nodeId: number }[]).find((c) => c.nodeName === 'HTML') ?? doc.root;
     step = 'DOM.getOuterHTML';
     const { outerHTML } = await call('DOM.getOuterHTML', { nodeId: root.nodeId });
-    step = 'Page.captureSnapshot';
-    const mhtml = await call('Page.captureSnapshot', { format: 'mhtml' }, 30000).then(
-      (r) => (typeof r?.data === 'string' && r.data ? r.data : null),
-      (e) => (console.warn('[pages] snapshot not taken, HTML kept:', errText(e)), null),
-    );
-    return { url: tab.url ?? '', html: '<!DOCTYPE html>' + String(outerHTML ?? ''), mhtml };
+    mark('html');
+    return { url: tab.url ?? '', html: '<!DOCTYPE html>' + String(outerHTML ?? ''), mhtml, steps };
   } catch (e) {
     throw new Error(step + ': ' + errText(e));
   } finally {
@@ -164,11 +199,13 @@ export function watchPageSnapshots(
         continue;
       }
       const label = m[1] as SnapLabel, nonce = m[2];
+      const waitMs = templateWaitMs(nonce),
+        lateMs = waitMs - 1000;
       const t0 = Date.now();
       let page: Awaited<ReturnType<typeof readChromePage>> | null = null,
         error = '';
       capturing = true;
-      // One more try when the first fails fast: the template waits up to 10 s for its answer.
+      // One more try when the first fails fast, within the first half of the template's wait.
       let tries = 0;
       for (;;) {
         tries++;
@@ -178,7 +215,7 @@ export function watchPageSnapshots(
           break;
         } catch (e) {
           error = errText(e);
-          if (tries >= 2 || Date.now() - t0 > 5000) break;
+          if (tries >= 2 || Date.now() - t0 > waitMs / 2) break;
           await sleep(400);
         }
       }
@@ -189,7 +226,7 @@ export function watchPageSnapshots(
       // Read too late: the point was already settled without it.
       if (closed) break;
       if (!page) {
-        snaps[label] = { at: new Date(t0).toISOString(), ms, url: '', replay: null, html: null, mhtml: null, bytes: 0, tries, ...(ms > LATE_MS ? { late: true } : {}), error };
+        snaps[label] = { at: new Date(t0).toISOString(), ms, url: '', replay: null, html: null, mhtml: null, bytes: 0, tries, ...(ms > lateMs ? { late: true } : {}), error };
         console.warn('[pages]', o.tag, label, 'not saved:', error);
         continue;
       }
@@ -197,7 +234,20 @@ export function watchPageSnapshots(
       uploads.push(
         (async () => {
           const key = (name: string) => o.prefix + '/page_' + label + name;
-          const snap: PageSnap = { at: new Date(t0).toISOString(), ms, url: p.url, replay: null, html: null, mhtml: null, bytes: 0, tries, ...(ms > LATE_MS ? { late: true } : {}) };
+          const snap: PageSnap = {
+            at: new Date(t0).toISOString(),
+            ms,
+            url: p.url,
+            replay: null,
+            html: null,
+            mhtml: null,
+            bytes: 0,
+            mhtmlBytes: p.mhtml ? p.mhtml.length : 0,
+            htmlBytes: p.html.length,
+            steps: p.steps,
+            tries,
+            ...(ms > lateMs ? { late: true } : {}),
+          };
           try {
             let shown: string;
             try {

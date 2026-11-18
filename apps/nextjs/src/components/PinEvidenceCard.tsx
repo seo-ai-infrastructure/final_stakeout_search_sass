@@ -58,9 +58,11 @@ export function PinEvidenceCard({
   shareToken?: string;
 }) {
   const [tab, setTab] = useState<'results' | 'ai'>('results');
+  // The real page Google served, when the point saved it (worker v156+): shown in place of the rebuilt answer.
+  const realPage = pin?.proxyMeta?.pages?.post ? 'page_post' : pin?.proxyMeta?.pages?.pre ? 'page_pre' : null;
   // The AI Overview as rebuilt from the point's evidence (the same as the Evidence tab shows),
-  // loaded only when the AI tab is opened on a point that had one.
-  const evidence = usePinEvidence(pin?.id, tab === 'ai' && pin?.status === 'COMPLETED' && Boolean(pin?.hasAiOverview), shareToken);
+  // loaded only when the AI tab is opened on a point that had one and saved no real page.
+  const evidence = usePinEvidence(pin?.id, tab === 'ai' && !realPage && pin?.status === 'COMPLETED' && Boolean(pin?.hasAiOverview), shareToken);
   const rebuilt = evidence.ev && (evidence.ev.aiCopy?.businesses.length || evidence.ev.aiLayout || evidence.ev.aiOverview) ? evidence.ev : null;
   const size = scan.gridSize;
   const ordered = [...scan.pins].sort((a, b) => a.rowIdx - b.rowIdx || a.colIdx - b.colIdx);
@@ -183,7 +185,7 @@ export function PinEvidenceCard({
               {(
                 [
                   ['results', 'Observed results and ads'],
-                  ['ai', 'AI Overview text'],
+                  ['ai', realPage ? 'AI Overview' : 'AI Overview text'],
                 ] as const
               ).map(([k, label]) => (
                 <button key={k} type="button" aria-pressed={tab === k} onClick={() => setTab(k)} className={'px-3 py-2 ' + (tab === k ? 'bg-slate-200 text-slate-950' : 'text-slate-200 hover:bg-slate-800')}>
@@ -236,7 +238,21 @@ export function PinEvidenceCard({
             )}
             {tab === 'ai' && (
               <div className="mt-3 space-y-3">
-                {rebuilt ? (
+                {realPage ? (
+                  <>
+                    <iframe
+                      key={pin.id + realPage}
+                      title="The page Google served at this point"
+                      sandbox=""
+                      referrerPolicy="no-referrer"
+                      src={'/api/proof/' + pin.id + '?kind=' + realPage + (shareToken ? '&share=' + encodeURIComponent(shareToken) : '')}
+                      className="h-[640px] w-full rounded-xl border-0 bg-white"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      {realPage === 'page_post' ? 'With its AI Overview open, ' : 'As it loaded, '}exactly as Google served it to the phone at this point, saved at that moment. Nothing on it runs.
+                    </p>
+                  </>
+                ) : rebuilt ? (
                   // The answer as Google laid it out, on a light panel like the page it came from.
                   <div className="max-h-[640px] overflow-y-auto rounded-xl bg-white">
                     <AiView ev={rebuilt} isTarget={isYou} target={scan.targetBusiness} />
