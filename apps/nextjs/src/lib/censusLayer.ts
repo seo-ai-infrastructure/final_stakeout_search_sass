@@ -213,7 +213,7 @@ export const BASE_GROUND = '#0b1220';
  * story (rank against wealth), so it stays readable; in AI place and Ads above it is only
  * context and fades back. Behind 3D columns it is dimmer still.
  */
-export function shadeStrength(mode: 'combined' | 'rank' | 'ai' | 'parts' | 'ads', behindColumns: boolean) {
+export function shadeStrength(mode: 'combined' | 'rank' | 'ai' | 'ads', behindColumns: boolean) {
   return behindColumns ? 0.3 : mode === 'rank' ? 0.4 : 0.2;
 }
 

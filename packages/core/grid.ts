@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import zipcodes from 'zipcodes';
 import { ANY_PHONE } from './hardware';
 import { normPlace } from './proxyGeo';
-import { kgmidOf, siteDomain } from './businessIds';
 
 export class InputError extends Error {
   constructor(
@@ -86,14 +85,6 @@ export function parseSpec(input: Record<string, unknown>) {
     throw new InputError('Choose a supported Android surface.');
   if (!['once', 'daily', 'weekly'].includes(scheduleType))
     throw new InputError('Invalid schedule.');
-  // Optional: the business's Google ID and website, so AI answers are matched exactly (two offices
-  // with the same name have different IDs). Anything typed must be readable as one.
-  const typedId = typeof input.targetKgmid === 'string' ? input.targetKgmid.trim() : '';
-  const targetKgmid = kgmidOf(typedId) || null;
-  if (typedId && !targetKgmid) throw new InputError('The Google business ID looks like /g/11cs6bzst7 (a Google link with kgmid= in it works too).');
-  const typedSite = typeof input.targetDomain === 'string' ? input.targetDomain.trim() : '';
-  const targetDomain = siteDomain(typedSite) || null;
-  if (typedSite && !targetDomain) throw new InputError('Enter the website as a domain, such as mcintyrepainting.com.');
   return {
     keyword: keyword.trim(),
     targetBusiness: targetBusiness.trim(),
@@ -114,8 +105,6 @@ export function parseSpec(input: Record<string, unknown>) {
     proxyRegion,
     proxyCity,
     network,
-    targetKgmid,
-    targetDomain,
   };
 }
 export type ScanSpec = ReturnType<typeof parseSpec>;

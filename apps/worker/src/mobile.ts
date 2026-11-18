@@ -14,8 +14,6 @@ import { pinNetwork } from '@stakeout/core/network';
 import { decodoEndpoint, decodoLadder, decodoMobileLadder, decodoServes, decodoUser, proxyProviders } from '@stakeout/core/decodo';
 import { mobileHubs, mobileProvider, voidmobEndpoint, voidmobUser } from '@stakeout/core/voidmob';
 import { voidmobLogin } from './voidmobLogin';
-import { watchPageSnapshots } from './pageCapture';
-import { mergeAiPages, type AiPage } from '@stakeout/core/aiPage';
 import { clearProxyOutage } from './proxyOutage';
 import { OBSERVE_SH } from '@stakeout/core/observer';
 import type { RpaSurface } from '@stakeout/core/rpaRules';
@@ -1026,9 +1024,6 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         ).catch(() => '')
       ).replace(/\s+/g, ' ').trim();
     let rpaError: unknown = null;
-    // Chrome points: the worker saves the results page at the moments the template asks for
-    // (template v3.46+), reading it over the phone's ADB connection. PAGE_SNAPSHOTS=false turns it off.
-    const pages = surface === 'chrome' && process.env.PAGE_SNAPSHOTS !== 'false' && transportFor(d) === 'adb' ? watchPageSnapshots({ d, tag, prefix }) : null;
     try {
       let stopLooked = Date.now();
       const r = await runRpaSearch({
@@ -1042,7 +1037,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         timeoutMs: rpaSecs * 1000,
         onAdded: () => void (run.marks.added = Date.now()),
         onStarted: () => void (run.marks.started = Date.now()),
-        doneCheck: async () => (await shell(d, `[ -f /sdcard/stakeout/${tag}.done ] && echo y; true`).catch(() => '')).trim() === 'y',
+        doneCheck: async () => (await shell(d, `test -f /sdcard/stakeout/${tag}.done && echo y`).catch(() => '')).trim() === 'y',
         // A stopped scan settles its points at once; looked up at most every 12 s while the phone works.
         stopCheck: async () => {
           if (Date.now() - stopLooked < 12000) return false;
@@ -1066,9 +1061,6 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       // the recorder keeps only the screen as it is now (abort), so the run can be looked at.
       const failed = rpaError !== null && !/^CANCELLED/.test(errMsg(rpaError));
       await shell(d, (failed ? `touch ${shellQuote(folder + '/abort')}; ` : '') + `touch ${shellQuote(folder + '/stop')}`).catch(() => {});
-      // The saved pages go on the receipt, with what could not be saved and why.
-      const saved = pages ? await pages.stop().catch(() => null) : null;
-      if (saved && Object.keys(saved).length) Object.assign(proof, { pages: saved });
     }
     if (rpaError) {
       if (!/^CANCELLED/.test(errMsg(rpaError)))
@@ -1308,18 +1300,12 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         finder: b.final,
         aiExpanded: b.ai.reduce<string | null>((a, x) => (x.length > (a?.length ?? 0) ? x : a), null),
         aiCopy: b.aiCopy,
-        aiSnapshots: b.ai,
         mapsScreens: surface === 'maps' ? [...b.scroll, b.final] : undefined,
         target: scan.targetBusiness,
       });
     } catch (e) {
       console.error('[insights]', (e as Error).message);
     }
-    // What the saved pages said about the AI Overview: each card's website and phone, and which
-    // cards were above "Show more" when the page loaded.
-    const savedPages = (proof as { pages?: Record<string, { ai?: AiPage | null } | undefined> }).pages;
-    const page = mergeAiPages(savedPages?.pre?.ai, savedPages?.post?.ai);
-    if (pinInsights?.ai.shown && page) pinInsights.ai.page = page;
     run.marks.saved = Date.now();
     return {
       assignedDeviceId: d.imageId,

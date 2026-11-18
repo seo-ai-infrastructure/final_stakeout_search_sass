@@ -21,7 +21,6 @@ import {
 } from 'lucide-react';
 import { type IspMode, type IspOption } from '@/components/IspSelectorDropdown';
 import { NETWORK_LABELS, pinNetwork, placedLayout, type ScanNetwork } from '@stakeout/core/network';
-import { kgmidOf, siteDomain } from '@stakeout/core/businessIds';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';
@@ -42,11 +41,6 @@ export function NewScanWizard() {
   // The keyword being typed; chosen keywords live in `picked`.
   const [keyword, setKeyword] = useState('');
   const [targetBusiness, setTargetBusiness] = useState('');
-  // Optional: the business's Google ID ("/g/…") and website, for exact matching in AI answers.
-  const [targetKgmid, setTargetKgmid] = useState('');
-  const [targetDomain, setTargetDomain] = useState('');
-  const kgmidProblem = targetKgmid.trim() && !kgmidOf(targetKgmid) ? 'Looks like /g/11cs6bzst7, or paste a Google link with kgmid= in it.' : '';
-  const domainProblem = targetDomain.trim() && !siteDomain(targetDomain) ? 'Enter a domain, such as mcintyrepainting.com.' : '';
   const [centerLat, setCenterLat] = useState<number>(28.039465);
   const [centerLng, setCenterLng] = useState<number>(-81.949804);
   const [gridSize, setGridSize] = useState<number>(5);
@@ -81,7 +75,6 @@ export function NewScanWizard() {
     id: string; name: string; centerLabel: string; centerLat: number; centerLng: number; keywords: string[];
     targetType: TargetType; gridSize: number; spacingKm: number; ispMode: IspMode; isps: string[];
     trackAiOverviews: boolean; scheduleType: 'once' | 'daily' | 'weekly';
-    kgmid?: string | null; domain?: string | null;
   };
   const [saved, setSaved] = useState<SavedBusiness[]>([]);
   const [businessId, setBusinessId] = useState('');
@@ -113,8 +106,6 @@ export function NewScanWizard() {
   function applyBusiness(b: SavedBusiness) {
     setBusinessId(b.id);
     setTargetBusiness(b.name);
-    setTargetKgmid(b.kgmid ?? '');
-    setTargetDomain(b.domain ?? '');
     setCenterLat(b.centerLat);
     setCenterLng(b.centerLng);
     setAddressQuery(b.centerLabel);
@@ -153,8 +144,6 @@ export function NewScanWizard() {
         const sc = scan?.scan ?? scan;
         if (!live || !sc?.keyword) return;
         setTargetBusiness(sc.targetBusiness);
-        setTargetKgmid(sc.targetKgmid ?? '');
-        setTargetDomain(sc.targetDomain ?? '');
         setCenterLat(sc.centerLat);
         setCenterLng(sc.centerLng);
         if (sc.targetType) setTargetType(sc.targetType);
@@ -177,7 +166,7 @@ export function NewScanWizard() {
     const body = {
       name: targetBusiness, centerLabel: addressQuery || [detectedCity, detectedState, detectedZip].filter(Boolean).join(' '),
       centerLat, centerLng, keywords, targetType, gridSize, spacingKm, ispMode: 'any', isps: [],
-      trackAiOverviews, scheduleType, kgmid: targetKgmid.trim(), domain: targetDomain.trim(),
+      trackAiOverviews, scheduleType,
     };
     const res = await fetch(businessId ? '/api/businesses/' + businessId : '/api/businesses', {
       method: businessId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -681,10 +670,6 @@ export function NewScanWizard() {
       setErrorMsg('Enter the business name and at least one keyword.');
       return;
     }
-    if (kgmidProblem || domainProblem) {
-      setErrorMsg(kgmidProblem ? 'Google business ID: ' + kgmidProblem : 'Website: ' + domainProblem);
-      return;
-    }
     if (creditBalance < creditSummary.totalCost * runKeywords.length) {
       setIsTopUpOpen(true);
       return;
@@ -704,8 +689,6 @@ export function NewScanWizard() {
         body: JSON.stringify({
           keyword: kw,
           targetBusiness: targetBusiness.trim(),
-          targetKgmid: targetKgmid.trim(),
-          targetDomain: targetDomain.trim(),
           centerLat,
           centerLng,
           // No ISP targeting: the network choice replaces it.
@@ -805,7 +788,7 @@ export function NewScanWizard() {
                 onChange={(e) => {
                   const b = saved.find((x) => x.id === e.target.value);
                   if (b) applyBusiness(b);
-                  else { setBusinessId(''); setTargetBusiness(''); setTargetKgmid(''); setTargetDomain(''); setKeywordList([]); setPicked([]); }
+                  else { setBusinessId(''); setTargetBusiness(''); setKeywordList([]); setPicked([]); }
                 }}
                 className={field + ' font-semibold'}
               >
@@ -822,36 +805,6 @@ export function NewScanWizard() {
                 onChange={(e) => setTargetBusiness(e.target.value)}
                 className={field}
               />
-              {/* Optional: matches the business exactly in AI answers (two offices with one name have different IDs). */}
-              <div className="grid gap-2 sm:grid-cols-2">
-                <div>
-                  <input
-                    type="text"
-                    aria-label="Google business ID (optional)"
-                    aria-invalid={Boolean(kgmidProblem)}
-                    placeholder="Google business ID, e.g. /g/11cs6bzst7 (optional)"
-                    value={targetKgmid}
-                    onChange={(e) => setTargetKgmid(e.target.value)}
-                    onBlur={() => kgmidOf(targetKgmid) && setTargetKgmid(kgmidOf(targetKgmid))}
-                    className={field + (kgmidProblem ? ' border-rose-500' : '')}
-                  />
-                  {kgmidProblem && <p className="mt-1 text-xs text-rose-300">{kgmidProblem}</p>}
-                </div>
-                <div>
-                  <input
-                    type="text"
-                    inputMode="url"
-                    aria-label="Website (optional)"
-                    aria-invalid={Boolean(domainProblem)}
-                    placeholder="Website, e.g. mcintyrepainting.com (optional)"
-                    value={targetDomain}
-                    onChange={(e) => setTargetDomain(e.target.value)}
-                    onBlur={() => siteDomain(targetDomain) && setTargetDomain(siteDomain(targetDomain))}
-                    className={field + (domainProblem ? ' border-rose-500' : '')}
-                  />
-                  {domainProblem && <p className="mt-1 text-xs text-rose-300">{domainProblem}</p>}
-                </div>
-              </div>
               {shownKeywords.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {shownKeywords.map((k) => (

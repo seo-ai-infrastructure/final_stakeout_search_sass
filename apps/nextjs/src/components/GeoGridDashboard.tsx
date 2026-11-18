@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EvidencePanel } from './EvidencePanel';
 import Link from 'next/link';
 import maplibregl from 'maplibre-gl';
@@ -11,11 +11,7 @@ import {
 import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
 import type { PinInsights } from '@stakeout/core/pinInsights';
-import { ReportVerdict, RankDistributionCard } from './ReportSummary';
-import { AiVisibilitySection } from './AiVisibilitySection';
-import type { AiTrendSummary } from '@/lib/reports';
-import { aiVisibility, sameBusinessName } from '@stakeout/core/aiVisibility';
-import { partsAt, partLook, partCounts, PART_COLORS, PART_FILTERS, P0_HALO, type PartFilter } from '../lib/aiPartsMap';
+import { ReportVerdict, RankDistributionCard, AiCoverageCard } from './ReportSummary';
 import { bandOf, reportSummary, type RankBucket, type FindingKind } from '../lib/reportSummary';
 import { groundOwners, aiPosition, winningRadius } from '../lib/marketInsights';
 import { combinedReading, combinedStyle, combinedTotals, COMBINED_LEGEND } from '../lib/combinedMap';
@@ -164,8 +160,6 @@ export type GridPinData = {
     isp: string | null;
     finderShown: boolean | null;
     rankFrom: string | null;
-    /** The point's real pages that were saved: as it loaded, and with its AI Overview open. */
-    pages?: { pre: boolean; post: boolean };
   } | null;
   census?: PinCensus | null;
   insights?: PinInsights | null;
@@ -177,9 +171,6 @@ export type GridScanData = {
   viewingFor?: string;
   id: string;
   targetBusiness: string;
-  /** Google's ID for the business ("/g/…") and its website, when given at launch. */
-  targetKgmid?: string | null;
-  targetDomain?: string | null;
   keyword: string;
   status: string;
   createdAt: string;
@@ -201,8 +192,6 @@ export type GridScanData = {
   targetType: string;
   trackAiOverviews: boolean;
   pins: GridPinData[];
-  /** Each business's change in the AI Overview since the last scan of this search (null: none to compare). */
-  aiTrend?: AiTrendSummary | null;
 };
 export function GeoGridDashboard({
   identifier,
@@ -227,9 +216,7 @@ export function GeoGridDashboard({
     [view3d, setView3d] = useState(false),
     // What the pins show: the local rank, the business's place in the AI Overview's list, or the
     // number of sponsored results above it.
-    [mapMode, setMapMode] = useState<'combined' | 'rank' | 'ai' | 'parts' | 'ads'>('combined'),
-    // AI parts view, filtered to one part: the points holding it show that part, the rest are dimmed.
-    [partFilter, setPartFilter] = useState<PartFilter | null>(null),
+    [mapMode, setMapMode] = useState<'combined' | 'rank' | 'ai' | 'ads'>('combined'),
     // Combined view: show only the points the AI Overview recommends while the local results leave them out.
     [recommendedOnly, setRecommendedOnly] = useState(false),
     // Combined view: one headline per pin, or each pin split in two (AI Overview over local results).
@@ -252,14 +239,6 @@ export function GeoGridDashboard({
     [rerunNote, setRerunNote] = useState('');
   const container = useRef<HTMLDivElement>(null),
     map = useRef<maplibregl.Map | null>(null);
-  // The AI Overview in three parts at each point, for the AI parts view (the same reading as the report's section).
-  const vis = useMemo(
-    () => (scan ? aiVisibility(scan.pins, { name: scan.targetBusiness, kgmid: scan.targetKgmid ?? null, domain: scan.targetDomain ?? null }) : null),
-    [scan],
-  );
-  const visRow = !vis ? null : projected ? (vis.rows.find((r) => sameBusinessName(r.name, projected.businessName)) ?? null) : vis.you;
-  // The AI parts view's counts: points holding each part, of the points the report counts.
-  const partTally = useMemo(() => (scan && vis ? partCounts(scan.pins, vis, visRow) : null), [scan, vis, visRow]);
   useEffect(() => {
     let alive = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -498,8 +477,6 @@ export function GeoGridDashboard({
       // In AI place: a point with no AI Overview is a small muted dot; one that names the business stands out.
       let quiet = false, standout = false;
       let combined: ReturnType<typeof combinedReading> | null = null;
-      // AI parts view: what the business holds at this point, in words.
-      let partTitle: string | null = null;
       const ins = p.insights?.v === 1 ? p.insights : null;
       if (p.status === 'COMPLETED' && mapMode === 'ai') {
         // The business's place in this point's AI Overview: its place in the AI's list, "yes" when it
@@ -515,17 +492,6 @@ export function GeoGridDashboard({
         combined = readCombined(p);
         fill = combinedStyle(combined).swatch;
         text = combined.label;
-      } else if (p.status === 'COMPLETED' && mapMode === 'parts') {
-        // Its card's slot, else P0, else its website; a gold ring wherever the opening answer names it.
-        const look = partLook(partsAt(p, vis, visRow), partFilter);
-        fill = look.fill;
-        text = look.text;
-        quiet = look.quiet;
-        partTitle = look.title;
-        if (look.halo) el.dataset.halo = '1';
-        if (look.dashed) el.style.border = '2px dashed #f8fafc';
-        if (look.dim) el.dataset.dim = '1';
-        if (text.length > 3) el.style.fontSize = '10px';
       } else if (p.status === 'COMPLETED' && mapMode === 'ads') {
         const ads = ins?.adsAboveYou ?? null;
         fill = adsColor(ads);
@@ -541,21 +507,14 @@ export function GeoGridDashboard({
         el.style.border = '1px solid #475569';
         el.style.fontSize = '11px';
       } else if (standout) el.style.width = el.style.height = '38px';
-      if (!combined)
-        el.style.boxShadow = el.dataset.halo
-          ? P0_HALO
-          : standout
-            ? '0 0 0 4px rgba(168,85,247,0.28)'
-            : cited && aiRing && (mapMode === 'rank' || mapMode === 'ads')
-              ? '0 0 0 4px #c084fc'
-              : '';
+      if (!combined) el.style.boxShadow = standout ? '0 0 0 4px rgba(168,85,247,0.28)' : cited && aiRing && (mapMode === 'rank' || mapMode === 'ads') ? '0 0 0 4px #c084fc' : '';
       // A point where Google showed one business only: a gold outline, whoever holds it.
       const solo = p.proxyMeta?.rankFrom === 'single_business' && mapMode === 'rank';
       el.style.outline = solo ? '2px solid #fde047' : '';
       el.style.outlineOffset = solo ? '3px' : '';
-      el.style.opacity = pinPasses(p, rank, { bpFilters, rankBand, legendBand, focusIds, id: p.id }) && !(mapMode === 'combined' && recommendedOnly && combined?.kind !== 'ai') && !el.dataset.dim ? '1' : '0.25';
+      el.style.opacity = pinPasses(p, rank, { bpFilters, rankBand, legendBand, focusIds, id: p.id }) && !(mapMode === 'combined' && recommendedOnly && combined?.kind !== 'ai') ? '1' : '0.25';
       el.title =
-        'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + (combined ? combined.detail : (partTitle ?? p.status));
+        'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + (combined ? combined.detail : p.status);
       el.onclick = () => select(p.id);
       return new maplibregl.Marker({ element: el })
         .setLngLat([p.lng, p.lat])
@@ -571,7 +530,7 @@ export function GeoGridDashboard({
     return () => {
       markers.forEach((v) => v.remove());
     };
-  }, [scan, projected, bpFilters, rankBand, view3d, style3d, mapMode, legendBand, aiRing, focusIds, recommendedOnly, pinStyle, vis, visRow, partFilter]);
+  }, [scan, projected, bpFilters, rankBand, view3d, style3d, mapMode, legendBand, aiRing, focusIds, recommendedOnly, pinStyle]);
   // The winning radius, drawn around the business: how far out it holds the top 3.
   const radiusMiles = scan ? (winningRadius(scan.pins, { lat: scan.centerLat, lng: scan.centerLng })?.radius ?? null) : null;
   // Points where Google answered with one business and no map pack, and who holds them.
@@ -827,14 +786,6 @@ export function GeoGridDashboard({
               ? 'its best placement at each point, in the AI Overview or the local results'
               : mapMode === 'ai'
               ? 'its place in each point’s AI Overview'
-              : mapMode === 'parts'
-              ? partFilter === 'p0'
-                ? 'the points where the AI Overview’s opening answer (Position 0) names it: P0 when named first, P0·2 when second, …; the rest dimmed'
-                : partFilter === 'card'
-                  ? 'the points where it has a business card in the AI Overview, by slot (#1 is the first card; dashed: behind “Show more”); the rest dimmed'
-                  : partFilter === 'web'
-                    ? 'the points where the AI Overview cites its website, by its place among the business websites cited (#1 is the first); the rest dimmed'
-                    : 'its parts of each point’s AI Overview: its business card’s slot (dashed: behind “Show more”), else P0 when the opening answer names it, else its website cited; a gold ring wherever it holds Position 0'
               : mapMode === 'ads'
                 ? 'sponsored results above it at each point'
                 : 'purple ring = named in that point’s AI Overview'}
@@ -861,7 +812,6 @@ export function GeoGridDashboard({
                     ['combined', 'Combined'],
                     ['rank', 'Pack rank'],
                     ['ai', 'AI place'],
-                    ['parts', 'AI parts'],
                     ['ads', 'Ads above'],
                   ] as const
                 ).map(([key, label]) => (
@@ -873,7 +823,6 @@ export function GeoGridDashboard({
                       setMapMode(key);
                       if (key !== 'rank') setLegendBand(null);
                       if (key !== 'combined') setRecommendedOnly(false);
-                      if (key !== 'parts') setPartFilter(null);
                     }}
                     className={'px-3 py-1.5 transition ' + (mapMode === key ? 'bg-slate-200 text-slate-950' : 'text-slate-200 hover:bg-slate-800')}
                   >
@@ -893,28 +842,6 @@ export function GeoGridDashboard({
                       {label}
                     </button>
                   ))}
-                </div>
-              )}
-              {mapMode === 'parts' && partTally && (
-                // One part of the AI Overview at a time; every point stays on the map, the rest dimmed.
-                <div className="inline-flex max-w-full flex-wrap overflow-hidden rounded-lg border border-slate-700 bg-slate-950/85 text-xs font-semibold shadow-lg backdrop-blur" role="group" aria-label="Which part of the AI Overview">
-                  {PART_FILTERS.map(({ key, label, dot }) => {
-                    const count = key === null ? `${partTally.any}/${partTally.points}` : String(partTally[key]);
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        aria-pressed={partFilter === key}
-                        onClick={() => setPartFilter(key)}
-                        title={key === null ? `It holds a part of the AI Overview at ${partTally.any} of the ${partTally.points} points counted` : undefined}
-                        className={'inline-flex items-center gap-1.5 px-3 py-1.5 transition ' + (partFilter === key ? 'bg-slate-200 text-slate-950' : 'text-slate-200 hover:bg-slate-800')}
-                      >
-                        <span className="inline-block h-2 w-2 rounded-full" style={{ background: dot }} />
-                        {label}
-                        <span className={'rounded px-1 text-[11px] tabular-nums ' + (partFilter === key ? 'bg-slate-950/10 text-slate-700' : 'bg-slate-800 text-slate-400')}>{count}</span>
-                      </button>
-                    );
-                  })}
                 </div>
               )}
               {view3d && (
@@ -977,29 +904,6 @@ export function GeoGridDashboard({
                       {label}
                     </span>
                   ))}
-                {mapMode === 'parts' && partTally && (
-                  <>
-                    <span className="inline-flex items-center gap-1.5 px-1.5 py-1">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: PART_COLORS.p0, boxShadow: '0 0 0 2px rgba(250,204,21,0.6), 0 0 6px 2px rgba(250,204,21,0.45)' }} />
-                      gold ring: Position 0
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-1">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: PART_COLORS.card }} />
-                      <b>#2</b> its card’s slot
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-1">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full border border-dashed border-slate-100" style={{ background: PART_COLORS.cardBehind }} />
-                      dashed: behind “Show more”{partTally.behind ? ` (${partTally.behind})` : ''}
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-1">
-                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: PART_COLORS.web }} />
-                      <b>web</b> its website cited
-                    </span>
-                    <span className="px-1.5 py-1"><b className="text-violet-300">no</b> not in it · {partTally.none}</span>
-                    <span className="px-1.5 py-1"><b>–</b> no AI Overview · {partTally.noai}</span>
-                    {partTally.unread > 0 && <span className="px-1.5 py-1" title="Left out of the count, as in the report"><b>?</b> not read in parts · {partTally.unread}</span>}
-                  </>
-                )}
                 {mapMode === 'ai' && (
                   <span className="px-1.5 py-1">
                     <span className="font-bold text-violet-300">#1</span> your place in the AI&apos;s list · <span className="font-bold text-violet-300">yes</span> named · <span className="font-bold text-violet-300">no</span> not named · <span className="font-bold">–</span> no AI Overview
@@ -1294,7 +1198,6 @@ export function GeoGridDashboard({
         rerunBusy={rerunBusy}
         onOpenEvidence={() => setTab('evidence')}
         shareToken={shared ? identifier : undefined}
-        outline={mapMode === 'parts' ? (partFilter ?? 'all') : null}
       />
       {/* Full width: its seven columns need the room. */}
       <div id="competitor-leaderboard" className="scroll-mt-4">
@@ -1308,7 +1211,7 @@ export function GeoGridDashboard({
         )}
       />
       </div>
-      <AiVisibilitySection scan={scan} shareToken={shared ? identifier : undefined} />
+      <AiCoverageCard scan={scan} />
       <MarketInsights scan={scan} />
       </div>
     </div>

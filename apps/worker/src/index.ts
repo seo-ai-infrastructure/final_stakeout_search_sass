@@ -1,6 +1,6 @@
 import { failureCode } from '@stakeout/core/fleetHealth';
 import { evidenceOf, failureKind, parseEntries, refusedRun, refusedSummary, stageSeconds, timingLine, timingSummary, REFUSED_KEEP, REFUSED_KEY, TIMINGS_KEEP, TIMINGS_KEY, type Marks, type RefusedRun, type RunTiming } from '@stakeout/core/runLog';
-import { backfillAiPages, backfillAiParts, backfillInsights, backfillPackRanks } from './insightsBackfill';
+import { backfillInsights, backfillPackRanks } from './insightsBackfill';
 import 'dotenv/config';
 import { Queue, Worker, DelayedError, UnrecoverableError, type Job } from 'bullmq';
 import { db } from '@stakeout/db';
@@ -21,8 +21,6 @@ import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
 import { idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
-import { adbLinkInfo, devtoolsProbe } from './deviceShell';
-import { r2DryRunDaily } from './r2Report';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
@@ -620,10 +618,7 @@ async function tick() {
     // Every 30 minutes: points still without insights get them from their stored bundles.
     if (Date.now() - lastInsightsBackfill > 30 * 60000) {
       lastInsightsBackfill = Date.now();
-      void backfillInsights()
-        .then(() => backfillAiParts())
-        .then(() => backfillAiPages())
-        .catch((e) => console.warn('[insights] backfill skipped:', (e as Error).message));
+      void backfillInsights().catch((e) => console.warn('[insights] backfill skipped:', (e as Error).message));
       void backfillPackRanks().catch((e) => console.warn('[rank] re-read skipped:', (e as Error).message));
     }
     // Once a minute: with no scan queued or running, proxy lists are deleted (idle phones still use bandwidth).
@@ -685,36 +680,10 @@ console.info(
 );
 // Points finished before per-point insights existed get them once, from their stored bundles.
 setTimeout(() => {
-  backfillInsights()
-    .then(() => backfillAiParts())
-        .then(() => backfillAiPages())
-    .catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));
+  backfillInsights().catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));
   backfillPackRanks().catch((e) => console.error('[rank] re-read skipped:', (e as Error).message));
 }, 60_000);
 void loadRunLog().catch((e) => console.warn('[runs] history not loaded:', (e as Error).message));
-// Once, two minutes after start: can the worker read Chrome's pages over the DevTools socket?
-// (Read-only; decides whether results pages can be saved as HTML.) DEVTOOLS_PROBE=false turns it off.
-if (process.env.DEVTOOLS_PROBE !== 'false')
-  setTimeout(async () => {
-    const phones = await db.devicePool
-      .findMany({ where: { isEnabled: true, offlineAt: null, bootstrappedAt: { not: null }, adbAddr: { not: null } }, select: { imageId: true, adbAddr: true }, orderBy: { slotIndex: 'asc' }, take: 2 })
-      .catch(() => []);
-    for (const p of phones) {
-      const r = await devtoolsProbe(p).catch((e) => ({ ok: false, sockets: '', browser: null, tabs: null, error: (e as Error).message }));
-      console.log(
-        '[devtools]',
-        p.imageId + ':',
-        r.ok ? 'Chrome answers on its DevTools socket (' + r.browser + ', ' + r.tabs + ' tab(s) open)' : 'no answer from Chrome DevTools' + (r.error ? ' (' + r.error + ')' : ''),
-        '· sockets:',
-        r.sockets || 'none',
-      );
-      // How fast pages can come over this phone's link (saved pages travel over it while the template waits).
-      const link = await adbLinkInfo(p).catch(() => null);
-      if (link) console.log('[adb]', p.imageId + ':', link.client || 'adb version unknown', '· Android', link.android || '?', '· delayed_ack', link.delayedAck ? 'yes' : 'no', '· features:', link.features.slice(0, 300) || 'none listed');
-    }
-  }, 120_000);
-// Once a day at most, four minutes after start: what R2 holds and what a clean-up would free (nothing deleted).
-setTimeout(() => void r2DryRunDaily(), 240_000);
 if ((process.env.SEARCH_MODE ?? '').toLowerCase() === 'rpa') {
   console.info('[rpa] SEARCH_MODE=rpa: the search step runs your DuoPlus RPA template');
   void describeRpaTemplates();

@@ -51,24 +51,6 @@ async function ensureConnected(addr: string) {
   connected.add(addr);
 }
 
-/**
- * Whether a failed adb call means the phone could not be reached (reconnect and try again), rather
- * than a shell command that ran on the phone and ended with a non-zero status, as `test -f` or
- * `cat` of a missing file do. Reconnecting for those drops every other ADB stream open to that
- * phone (a forwarded DevTools socket, another shell): they are reported as a plain failure instead.
- */
-export function adbUnreachable(e: unknown, args: string[]): boolean {
-  const x = e as { code?: unknown; killed?: boolean; signal?: unknown; stderr?: unknown };
-  if (args[0] !== 'shell') return true;
-  // Timed out or killed: the link may be dead. No exit status, or adb's own 255: adb itself failed.
-  if (x?.killed || x?.signal || typeof x?.code !== 'number' || x.code === 255) return true;
-  return /(^|\n)\s*(adb: )?error: |device (offline|not found|unauthorized|still authorizing)|no devices\/emulators|protocol fault|connection (reset|refused)|broken pipe/i.test(
-    String(x?.stderr ?? ''),
-  );
-}
-
-const reconnectLogged = new Map<string, number>();
-
 async function adb(addr: string, args: string[], timeoutMs: number) {
   let last = '';
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -81,13 +63,7 @@ async function adb(addr: string, args: string[], timeoutMs: number) {
       return stdout;
     } catch (e) {
       last = errText(e);
-      // The command ran and ended with an error status: the phone is fine, nothing to reconnect.
-      if (!adbUnreachable(e, args)) break;
       // Dropped connection: reconnect once, then give up.
-      if (Date.now() - (reconnectLogged.get(addr) ?? 0) > 60000) {
-        reconnectLogged.set(addr, Date.now());
-        console.warn('[adb] reconnecting', addr, 'after', (args[0] === 'shell' ? 'shell ' + String(args[1] ?? '').split(' ')[0] : args[0]) + ':', last.slice(0, 120));
-      }
       connected.delete(addr);
       await run('adb', ['disconnect', addr], { timeout: 5000 }).catch(() => {});
     }
@@ -133,67 +109,4 @@ export async function push(d: ShellTarget, path: string, content: string, mode =
 export async function pull(d: ShellTarget, remotePath: string, localPath: string, timeoutMs = 120000) {
   if (transportFor(d) !== 'adb') throw new Error('PULL_NEEDS_ADB');
   await adb(d.adbAddr!, ['pull', remotePath, localPath], timeoutMs);
-}
-
-/**
- * Read-only check: does Chrome on the phone answer on its DevTools socket through our ADB
- * connection? (Needed to save each results page's HTML.) Lists the phone's DevTools sockets,
- * forwards a free local port to Chrome's, and reads only its version and how many tabs are open.
- * Nothing on the page is touched; no tab addresses are kept.
- */
-export async function devtoolsProbe(d: ShellTarget): Promise<{ ok: boolean; sockets: string; browser: string | null; tabs: number | null; error: string | null }> {
-  if (transportFor(d) !== 'adb') return { ok: false, sockets: '', browser: null, tabs: null, error: 'no ADB address' };
-  const sockets = (
-    await adb(d.adbAddr!, ['shell', 'grep -o "@[A-Za-z0-9_.]*devtools[A-Za-z0-9_.]*" /proc/net/unix | sort -u'], 15000).catch((e) => 'error: ' + errText(e))
-  )
-    .replace(/\s+/g, ' ')
-    .trim();
-  let port = '';
-  try {
-    port = (await adb(d.adbAddr!, ['forward', 'tcp:0', 'localabstract:chrome_devtools_remote'], 15000)).trim();
-    if (!/^\d+$/.test(port)) return { ok: false, sockets, browser: null, tabs: null, error: 'forward gave "' + port.slice(0, 60) + '"' };
-    const get = (path: string) => fetch('http://127.0.0.1:' + port + path, { signal: AbortSignal.timeout(6000) }).then((r) => r.json() as Promise<unknown>);
-    const version = (await get('/json/version')) as { Browser?: string };
-    const list = (await get('/json/list').catch(() => null)) as { type?: string }[] | null;
-    return {
-      ok: Boolean(version?.Browser),
-      sockets,
-      browser: version?.Browser ?? null,
-      tabs: Array.isArray(list) ? list.filter((t) => t?.type === 'page').length : null,
-      error: null,
-    };
-  } catch (e) {
-    return { ok: false, sockets, browser: null, tabs: null, error: errText(e) };
-  } finally {
-    if (/^\d+$/.test(port)) await adb(d.adbAddr!, ['forward', '--remove', 'tcp:' + port], 10000).catch(() => {});
-  }
-}
-
-/** Forwards a free local port to Chrome's DevTools socket on the phone, over the ADB connection; returns the port. */
-export async function forwardDevtools(d: ShellTarget): Promise<number> {
-  if (transportFor(d) !== 'adb') throw new Error('DEVTOOLS_NEEDS_ADB');
-  const out = (await adb(d.adbAddr!, ['forward', 'tcp:0', 'localabstract:chrome_devtools_remote'], 15000)).trim();
-  if (!/^\d+$/.test(out)) throw new Error('DEVTOOLS_FORWARD ' + out.slice(0, 60));
-  return Number(out);
-}
-
-/**
- * Removes that forward. Never reconnects the phone on failure (a forward a dropped link already
- * removed is not worth dropping the phone's other streams for).
- */
-export async function unforwardDevtools(d: ShellTarget, port: number) {
-  if (transportFor(d) === 'adb') await run('adb', ['-s', d.adbAddr!, 'forward', '--remove', 'tcp:' + port], { timeout: 10000 });
-}
-
-/**
- * How fast a page can come over a phone's ADB link, and why: the worker's adb version, the phone's
- * Android version and the ADB features both sides speak ("delayed_ack" lets several packets travel
- * at once; without it each one waits for the last, which caps a far-away phone near 1 MB/s).
- */
-export async function adbLinkInfo(d: ShellTarget): Promise<{ client: string; android: string; features: string; delayedAck: boolean }> {
-  const client = (await run('adb', ['version'], { timeout: 5000 }).then((r) => r.stdout, () => '')).split('\n').find((l) => /version/i.test(l))?.trim() ?? '';
-  if (transportFor(d) !== 'adb') return { client, android: '', features: '', delayedAck: false };
-  const android = (await shell(d, 'getprop ro.build.version.release; true', 10000).catch(() => '')).trim();
-  const features = (await adb(d.adbAddr!, ['features'], 10000).catch(() => '')).replace(/\s+/g, ' ').trim();
-  return { client, android, features, delayedAck: /\bdelayed_ack\b/.test(features) };
 }

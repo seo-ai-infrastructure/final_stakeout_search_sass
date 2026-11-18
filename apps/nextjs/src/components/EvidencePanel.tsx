@@ -35,14 +35,12 @@ type Evidence = {
   } | null;
   /** The AI Overview was captured before it was expanded: only its first part is in the evidence. */
   aiCollapsed?: boolean;
-  /** Saved pages exactly as Google served them: before Show more, and with the AI Overview expanded. */
-  pages?: { pre: boolean; post: boolean };
   maps?: MapsCard[] | null;
   mapsAdsAbove?: number | null;
   ranks: {
     maps?: number | null; pack: number | null; finder: number | null; ai: number | null };
 };
-type View = 'video' | 'real_pre' | 'real_post' | 'first' | 'page' | 'finder' | 'ai' | 'maps';
+type View = 'video' | 'first' | 'page' | 'finder' | 'ai' | 'maps';
 type MapsCard = { name: string; ad: boolean; adKind: 'local_services' | 'sponsored' | null; pos: number | null; listPos: number; rating: string | null; reviews: string | null; lines: string[]; quote: string | null; distance: string | null };
 
 const norm = (s: string) =>
@@ -161,10 +159,6 @@ export function EvidencePanel({
     ? [['video', 'Video'], ['maps', 'Maps results']]
     : [['video', 'Video'], ['page', 'Results page'], ['finder', 'Local Finder']];
   if (!isMaps && ev?.firstScreen) tabs.splice(1, 0, ['first', 'First screen']);
-  // The real pages come right after the video, in the order they were saved: what Google actually
-  // served, not a rebuild.
-  if (!isMaps && ev?.pages?.post) tabs.splice(1, 0, ['real_post', 'Real AI Overview']);
-  if (!isMaps && ev?.pages?.pre) tabs.splice(1, 0, ['real_pre', 'Real page']);
   if (!isMaps && (ev?.aiCopy || ev?.aiOverview || ev?.resultsPage?.aiPreview)) tabs.push(['ai', 'AI Overview']);
 
   return (
@@ -251,15 +245,6 @@ export function EvidencePanel({
               <Empty text="Rebuilding the page from this point’s snapshot…" />
             ) : !ev ? (
               <Empty text="The snapshot for this point isn’t available." />
-            ) : view === 'real_pre' || view === 'real_post' ? (
-              <iframe
-                key={pin.id + view}
-                title={view === 'real_post' ? 'The AI Overview as Google served it' : 'The results page as Google served it'}
-                sandbox=""
-                referrerPolicy="no-referrer"
-                src={'/api/proof/' + pin.id + '?kind=' + (view === 'real_post' ? 'page_post' : 'page_pre') + (shareToken ? '&share=' + encodeURIComponent(shareToken) : '')}
-                className="h-full w-full border-0 bg-white"
-              />
             ) : view === 'maps' ? (
               ev.maps?.length ? (
                 <MapsView cards={ev.maps} isTarget={isTarget} keyword={scan.keyword} />
@@ -295,8 +280,6 @@ export function EvidencePanel({
         <p className="max-w-[360px] text-center text-xs leading-relaxed text-slate-400">
           {view === 'video'
             ? 'The real screen recording from this point’s phone.'
-            : view === 'real_pre' || view === 'real_post'
-              ? (view === 'real_post' ? 'The page with its AI Overview fully shown' : 'The results page as it loaded') + ', exactly as Google served it to this phone, saved at that moment. Nothing on it runs.'
             : view === 'first'
               ? 'The page exactly as it first loaded, before any scrolling: what a searcher sees first.'
               : 'Rebuilt from this point’s captured snapshot, in Google’s order. Ads are labelled and never ranked.'}

@@ -324,11 +324,8 @@ export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
     blank = false;
     // A business starts its own line; a bullet (detail) that links a kgmid is not a new business.
     const b = line.startsWith('•') ? null : BIZ_LINE.exec(line);
-    // Google writes kgmid=FAILED_OR_SKIPPED when it could not tie a business to a listing: several
-    // businesses can carry it, so it never makes one the same business as another.
-    const id = b ? decodeURIComponent(b[3]) : '';
-    if (b && !(id !== 'FAILED_OR_SKIPPED' && businesses.some((x) => x.kgmid === id))) {
-      cur = { pos: businesses.length + 1, name: b[1].trim(), kgmid: id, url: b[2], rating: null, reviews: null, category: null, lines: [] };
+    if (b && !businesses.some((x) => x.kgmid === decodeURIComponent(b[3]))) {
+      cur = { pos: businesses.length + 1, name: b[1].trim(), kgmid: decodeURIComponent(b[3]), url: b[2], rating: null, reviews: null, category: null, lines: [] };
       businesses.push(cur);
       blocks.push({ kind: 'business', business: businesses.length - 1 });
       bulleted = false;

@@ -13,11 +13,9 @@ export async function GET(
     const p = new URL(req.url).searchParams,
       share = p.get('share'),
       kind = p.get('kind') ?? 'video';
-    // page_pre / page_post: the results page as Google served it, saved by the worker (v156+).
-    const page = kind === 'page_pre' || kind === 'page_post';
     if (
-      !['video', 'meta', 'bundle', 'page_pre', 'page_post'].includes(kind) ||
-      (share && kind !== 'video' && !page)
+      !['video', 'meta', 'bundle'].includes(kind) ||
+      (share && kind !== 'video')
     )
       throw new InputError('Unavailable proof.', 404);
     const me = share ? null : await getAuthenticatedUser();
@@ -29,16 +27,13 @@ export async function GET(
       where: { id: (await c.params).pinId, scan: scope },
       include: { scan: { select: { keyword: true, targetBusiness: true } } },
     });
-    const pages = (pin?.proxyMeta as { pages?: Record<string, { replay?: string | null }> } | null)?.pages;
     const key =
       pin &&
-      (page
-        ? (pages?.[kind.slice(5)]?.replay ?? null)
-        : kind === 'video'
-          ? pin.videoUrl
-          : kind === 'meta'
-            ? pin.metaJsonUrl
-            : pin.dumpsTarUrl);
+      (kind === 'video'
+        ? pin.videoUrl
+        : kind === 'meta'
+          ? pin.metaJsonUrl
+          : pin.dumpsTarUrl);
     if (!pin || !key) throw new InputError('Proof unavailable.', 404);
     let objectKey = key;
     if (key.startsWith('https://')) {
@@ -60,11 +55,6 @@ export async function GET(
         },
       });
     }
-    // A saved page's address itself, for a frame that then moves between its #anchors in place.
-    if (page && p.get('as') === 'json')
-      return new Response(JSON.stringify({ url: await signedRead(objectKey) }), {
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' },
-      });
     return new Response(null, {
       status: 307,
       headers: {

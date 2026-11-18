@@ -1,12 +1,9 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
-import { r2, bucket, put } from '@stakeout/core/r2';
-import { gunzipSync } from 'node:zlib';
-import { markAiPage, mergeAiPages, readAiPage, type AiPage } from '@stakeout/core/aiPage';
-import { mhtmlToReplayHtml } from '@stakeout/core/mhtml';
+import { r2, bucket } from '@stakeout/core/r2';
 import { untarGz, rankWithoutFinder } from '@stakeout/core/serpEvidence';
 import { metrics } from '@stakeout/core/grid';
-import { buildPinInsights, verifiedAiParts } from '@stakeout/core/pinInsights';
+import { buildPinInsights } from '@stakeout/core/pinInsights';
 
 /**
  * Points finished before insights existed get them once, read from their stored evidence bundle.
@@ -53,7 +50,6 @@ export async function backfillInsights(limit = 500) {
         finder: read('final.xml'),
         aiExpanded: read('aio_expanded.xml'),
         aiCopy: read('aio_copy.txt'),
-        aiSnapshots: [read('aio_initial.xml')],
         mapsScreens: [...dumps, read('final.xml')],
         target: p.target,
       });
@@ -135,100 +131,3 @@ export async function backfillPackRanks(limit = 200) {
   }
   console.log(`[rank] re-read ${pins.length} point(s) saved as "no local results": ${fixed} had a map pack or AI list and were corrected` + (scans.size ? ` · ${scans.size} scan(s) recomputed` : ''));
 }
-
-/**
- * Points with an AI Overview read before answers were split into three parts (opening answer,
- * business cards, other citations) get the parts once, from their stored bundle. Only the parts
- * are written (null when no copy of that run's answer could be read); the rest of the point's
- * insights stay as they are.
- */
-export async function backfillAiParts(limit = 300) {
-  const pins = await db.$queryRaw<{ id: string; dumpsTarUrl: string }[]>`
-    SELECT p.id, p."dumpsTarUrl" FROM "GridPin" p
-    WHERE p.status = 'COMPLETED' AND p."dumpsTarUrl" IS NOT NULL AND p.insights IS NOT NULL
-      AND p.insights->'ai'->>'shown' = 'true' AND NOT (p.insights->'ai' ? 'parts')
-    ORDER BY p."updatedAt" DESC
-    LIMIT ${limit}`;
-  if (!pins.length) return;
-  let read = 0,
-    unreadable = 0,
-    failed = 0;
-  for (const p of pins) {
-    let parts: ReturnType<typeof verifiedAiParts> = null;
-    try {
-      let key = p.dumpsTarUrl;
-      if (key.startsWith('https://')) key = decodeURIComponent(new URL(key).pathname.slice(1));
-      const obj = await r2().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-      const files = untarGz(await obj.Body!.transformToByteArray());
-      const file = (name: string) => {
-        for (const [path, data] of files) if (path === name || path.endsWith('/' + name)) return data.toString('utf8');
-        return null;
-      };
-      parts = verifiedAiParts(file('aio_copy.txt'), [file('serp.xml'), file('aio_expanded.xml'), file('aio_initial.xml')]);
-    } catch (e) {
-      const err = e as Error & { name?: string };
-      // A bundle that is gone cannot be read: recorded as unreadable. Anything else is retried next time.
-      if (!(err.name === 'NoSuchKey' || /specified key does not exist/i.test(err.message))) {
-        failed++;
-        console.error('[insights] AI parts', p.id, err.message);
-        continue;
-      }
-    }
-    await db.$executeRaw`UPDATE "GridPin" SET insights = jsonb_set(insights, '{ai,parts}', ${JSON.stringify(parts)}::jsonb) WHERE id = ${p.id}`;
-    if (parts) read++;
-    else unreadable++;
-  }
-  console.log(`[insights] AI answers split into three parts: ${read} of ${pins.length}` + (unreadable ? ` · ${unreadable} without a readable copy` : '') + (failed ? ` · ${failed} failed, retried next time` : ''));
-}
-
-/**
- * Points whose real pages were saved before the worker read them (worker v156 to v158): each page's
- * AI Overview is read from its saved HTML (cards, Website buttons, which cards were above "Show
- * more"), and the page shown in the report is rebuilt from its snapshot with its parts marked for
- * the outlines. Once per point; a page that cannot be fetched is retried next time.
- */
-export async function backfillAiPages(limit = 40) {
-  const pins = await db.$queryRaw<{ id: string; pages: Record<string, PageRecord | null> }[]>`
-    SELECT p.id, p."proxyMeta"->'pages' AS pages FROM "GridPin" p
-    WHERE p.status = 'COMPLETED' AND p."proxyMeta" ? 'pages' AND p.insights IS NOT NULL
-      AND p.insights->'ai'->>'shown' = 'true' AND NOT (p.insights->'ai' ? 'page')
-    ORDER BY p."updatedAt" DESC
-    LIMIT ${limit}`;
-  if (!pins.length) return;
-  const text = async (key: string) => {
-    const obj = await r2().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-    return gunzipSync(Buffer.from(await obj.Body!.transformToByteArray())).toString('utf8');
-  };
-  let read = 0,
-    failed = 0;
-  for (const p of pins) {
-    try {
-      const pages = { ...p.pages };
-      for (const label of ['pre', 'post']) {
-        const snap = pages[label];
-        if (!snap?.replay) continue;
-        if (snap.html && snap.ai === undefined) snap.ai = readAiPage(await text(snap.html));
-        if (snap.mhtml && !snap.marked) {
-          const shown = mhtmlToReplayHtml(await text(snap.mhtml));
-          if (shown) {
-            const marked = markAiPage(shown);
-            await put(snap.replay, marked, 'text/html; charset=utf-8');
-            snap.marked = true;
-            snap.bytes = Buffer.byteLength(marked);
-          }
-        }
-      }
-      const page = mergeAiPages(pages.pre?.ai, pages.post?.ai);
-      await db.$executeRaw`UPDATE "GridPin" SET
-        "proxyMeta" = jsonb_set("proxyMeta", '{pages}', ${JSON.stringify(pages)}::jsonb),
-        insights = jsonb_set(insights, '{ai,page}', ${JSON.stringify(page)}::jsonb)
-        WHERE id = ${p.id}`;
-      read++;
-    } catch (e) {
-      failed++;
-      console.error('[insights] saved page', p.id, (e as Error).message);
-    }
-  }
-  console.log(`[insights] AI Overviews read from saved pages: ${read} of ${pins.length}` + (failed ? ` · ${failed} failed, retried next time` : ''));
-}
-type PageRecord = { replay?: string | null; html?: string | null; mhtml?: string | null; ai?: AiPage | null; marked?: boolean; bytes?: number };
