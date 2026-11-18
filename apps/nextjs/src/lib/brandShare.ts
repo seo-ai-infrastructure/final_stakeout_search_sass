@@ -2,7 +2,7 @@ import { db } from '@stakeout/db';
 import { brandForHost, brandForUser, type Brand } from '@stakeout/core/brands';
 import { isPrimaryHost } from '@stakeout/core/brandHost';
 
-export type ReportBrand = { name: string; accent: string | null; logo: string | null };
+type ReportBrand = { name: string; accent: string | null; logo: string | null };
 
 /**
  * The brand a shared report is shown under, and whether this host may show it at all.

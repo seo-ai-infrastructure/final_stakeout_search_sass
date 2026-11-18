@@ -20,7 +20,7 @@ export function proxyCredentials(env: Settings = process.env) {
 }
 
 const readPaths = ['resident/package', 'resident/lists', 'proxy/lists'] as const;
-export type ProxySellerReadPath = (typeof readPaths)[number];
+type ProxySellerReadPath = (typeof readPaths)[number];
 
 /** Management reads only. Never include request URLs, payloads, or causes in errors. */
 export async function proxySellerRead(
@@ -137,7 +137,7 @@ export type TargetRung =
   | 'STATE'
   | 'STATIC_DEVICE_PROXY';
 
-export type TargetCandidate = {
+type TargetCandidate = {
   rung: TargetRung;
   ispApplied: boolean;
   /** Login suffix without the base credential and without the session part. */

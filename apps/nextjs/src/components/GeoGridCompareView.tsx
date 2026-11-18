@@ -2,26 +2,20 @@
 'use client';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import '@/lib/mapWorker';
 import { declutterBasemap } from '../lib/censusLayer';
 import { rankColor, rankTextColor } from '../lib/gridColumns';
 import {
   TrendingUp,
   TrendingDown,
-  Minus,
-  Sparkles,
   Video,
-  Calendar,
   ArrowRight,
   Share2,
   Check,
   X,
   RefreshCw,
-  Layers,
-  Trophy,
-  Activity,
-  BarChart3,
   Lock,
   Unlock,
 } from 'lucide-react';
@@ -36,7 +30,7 @@ interface CampaignHistoryItem {
   aioCitationRate: number | null;
   gridSize: number;
 }
-export interface PairedPinDelta {
+interface PairedPinDelta {
   key: string; // "${rowIdx}_${colIdx}"
   rowIdx: number;
   colIdx: number;

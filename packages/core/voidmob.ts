@@ -160,7 +160,7 @@ const km = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) =>
   return 12742 * Math.asin(Math.sqrt(h));
 };
 
-export type MobileHub = { city: string; state: string; km: number | null; inState: boolean };
+type MobileHub = { city: string; state: string; km: number | null; inState: boolean };
 
 /**
  * The hub cities to ask for a mobile point, nearest first: every hub in its own state, then (unless

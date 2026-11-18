@@ -12,6 +12,9 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 function createNeonPrismaClient() {
   if (process.env.DB_TRANSPORT === 'tcp') return new PrismaClient();
   const pool = new Pool({ connectionString });
+  // The database goes to sleep when nothing asks it anything; a connection it closes meanwhile is
+  // replaced on the next query and must never take the process down.
+  pool.on('error', (e: Error) => console.warn('[db] idle connection closed:', e.message));
   const adapter = new PrismaNeon(pool);
   return new PrismaClient({
     adapter,

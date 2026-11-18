@@ -11,6 +11,8 @@ import {
   redactRedisUrl,
   duoplusSlotStats,
 } from '@stakeout/core/redis';
+import { WAKE_CHANNEL, mayRest } from '@stakeout/core/wake';
+import { r2DryRunDaily } from './r2Report';
 import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
 import { listsForPin, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
@@ -248,6 +250,7 @@ async function execute(job: Job, token?: string) {
 async function repeat(job: Job) {
   if (!job.id) throw new Error('Scheduled job ID required.');
   await cloneScheduledRun(job.data.templateScanId, job.id);
+  lastBusy = Date.now();
 }
 
 const deviceWorker = new Worker('stakeout-pins', execute, {
@@ -287,6 +290,7 @@ async function dispatch() {
     orderBy: { createdAt: 'asc' },
     take: 10,
   });
+  if (queued.length) lastBusy = Date.now();
   for (const s of queued) {
     if (s.scheduleType !== 'once' && s.scheduleCron) {
       await registerStakeoutSchedule(
@@ -556,7 +560,15 @@ async function reportHealth() {
       (await db.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM "GridPin" WHERE status = 'COMPLETED' AND insights IS NULL AND "dumpsTarUrl" IS NOT NULL`)[0]?.n ?? 0,
     ),
   };
+  lastHealth = health;
+  // Work in sight (a scan open, a proxy list still rented): the worker stays fully awake.
+  if (health.openScans || health.proxyLists) lastBusy = Date.now();
   await redis().set('stakeout:health', JSON.stringify(health), 'EX', 900);
+}
+
+/** Resting: the last report again with the time now, read from memory (the database is left asleep). */
+async function reportResting() {
+  if (lastHealth) await redis().set('stakeout:health', JSON.stringify({ ...lastHealth, at: new Date().toISOString(), resting: true }), 'EX', 900);
 }
 
 /**
@@ -573,6 +585,15 @@ function followFleet() {
 }
 
 let lastWhitelistFix = 0;
+let lastHealth: Record<string, unknown> | null = null;
+// Resting (see @stakeout/core/wake): after IDLE_AFTER_MINUTES with nothing open, the database is
+// asked only every IDLE_DB_MINUTES, until a wake-up call or a look-in finds work.
+let lastBusy = Date.now(),
+  lastFull = 0,
+  lastRestReport = 0,
+  resting = false;
+const IDLE_AFTER_MS = Number(process.env.IDLE_AFTER_MINUTES ?? 15) * 60000,
+  IDLE_EVERY_MS = Number(process.env.IDLE_DB_MINUTES ?? 20) * 60000;
 let busy = false,
   lastRepair = Date.now(),
   lastProxyRelease = 0,
@@ -605,6 +626,7 @@ async function startReruns() {
     }
     await pins.add('measure', { pinId: p.id }, { ...jobOptions, jobId: p.id, lifo: true });
     await db.gridPin.updateMany({ where: { id: p.id, status: 'PENDING', lastError: RERUN_MARKER }, data: { lastError: null } });
+    lastBusy = Date.now();
     console.log('[rerun] queued point', p.id);
   }
 }
@@ -613,6 +635,18 @@ async function tick() {
   if (busy) return;
   busy = true;
   try {
+    if (mayRest(Date.now(), lastBusy, lastFull, IDLE_AFTER_MS, IDLE_EVERY_MS)) {
+      if (!resting) console.log(`[rest] nothing open for ${Math.round(IDLE_AFTER_MS / 60000)} min: the database is left alone, looked at every ${Math.round(IDLE_EVERY_MS / 60000)} min or on a wake-up call`);
+      resting = true;
+      if (Date.now() - lastRestReport > 60000) {
+        lastRestReport = Date.now();
+        await reportResting().catch(() => {});
+      }
+      return;
+    }
+    if (resting && Date.now() - lastBusy <= IDLE_AFTER_MS) console.log('[rest] awake again');
+    if (Date.now() - lastBusy <= IDLE_AFTER_MS) resting = false;
+    lastFull = Date.now();
     await dispatch();
     await startReruns();
     // Every 30 minutes: points still without insights get them from their stored bundles.
@@ -660,6 +694,14 @@ async function tick() {
 
 const timer = setInterval(tick, 10000);
 void tick();
+// A wake-up call from the website (new scan, re-run, admin action): awake at once.
+const wakeConnection = createRedisClient('wake');
+void wakeConnection.subscribe(WAKE_CHANNEL).catch((e) => console.warn('[rest] wake-up calls not heard:', (e as Error).message));
+wakeConnection.on('message', (_channel, reason) => {
+  if (resting) console.log('[rest] wake-up call:', reason);
+  lastBusy = Date.now();
+  void tick();
+});
 
 async function close() {
   clearInterval(timer);
@@ -667,6 +709,7 @@ async function close() {
   await Promise.all([pins.close(), schedules.close()]);
   await Promise.allSettled([
     queueConnection.quit(),
+    wakeConnection.quit(),
     deviceWorkerConnection.quit(),
     cronWorkerConnection.quit(),
   ]);
@@ -683,6 +726,10 @@ setTimeout(() => {
   backfillInsights().catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));
   backfillPackRanks().catch((e) => console.error('[rank] re-read skipped:', (e as Error).message));
 }, 60_000);
+// Stored files: what R2 holds and what nothing points at any more, once in 20 hours (looked at
+// hourly). Report only, unless R2_CLEANUP=delete.
+setTimeout(() => void r2DryRunDaily(), 240_000);
+setInterval(() => void r2DryRunDaily(), 3600_000);
 void loadRunLog().catch((e) => console.warn('[runs] history not loaded:', (e as Error).message));
 if ((process.env.SEARCH_MODE ?? '').toLowerCase() === 'rpa') {
   console.info('[rpa] SEARCH_MODE=rpa: the search step runs your DuoPlus RPA template');

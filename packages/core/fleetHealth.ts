@@ -4,7 +4,7 @@
  */
 
 /** Window of recent outcomes kept per phone: "S" success, "F" failure, newest last. */
-export const OUTCOME_WINDOW = 20;
+const OUTCOME_WINDOW = 20;
 
 /**
  * Failures that say something about the PHONE. Proxy, location and fleet-capacity
@@ -135,7 +135,7 @@ export function stateTimezone(stateCode: string) {
 // ---------------------------------------------------------------------------
 
 /** DuoPlus phone status codes (cloudPhone/list and cloudPhone/status). */
-export const PHONE_STATUS: Record<number, string> = {
+const PHONE_STATUS: Record<number, string> = {
   0: 'not configured',
   1: 'powered on',
   2: 'powered off',

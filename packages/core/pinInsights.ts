@@ -43,7 +43,7 @@ export function toCount(r: string | null | undefined): number | null {
 
 export { isGoogleSource };
 
-export function domainOf(url: string): string | null {
+function domainOf(url: string): string | null {
   try {
     return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
   } catch {

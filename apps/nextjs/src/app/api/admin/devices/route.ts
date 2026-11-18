@@ -1,3 +1,4 @@
+import { wakeWorker } from '@stakeout/core/wake';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { db } from '@stakeout/db';
@@ -170,6 +171,7 @@ export async function POST(req: Request) {
   try {
     await admin();
     const { action, devices, imageId, isEnabled } = await req.json();
+    await wakeWorker('admin');
     if (action === 'ADD_DEVICES') {
       if (
         !Array.isArray(devices) ||

@@ -5,13 +5,11 @@ import { appUrl, mailerConfigured, sendLinkEmail } from './mailer';
 /** Turn off only on disposable test instances: it hands starter credits to unverified signups. */
 export const verificationRequired = () => process.env.EMAIL_VERIFICATION_REQUIRED !== 'false';
 
-/** New accounts are closed unless SIGNUPS_OPEN=true: the product is invitation-only for now. */
-export const signupsOpen = () => process.env.SIGNUPS_OPEN === 'true';
 /** An account with this role cannot sign in, confirm its email or use a session. */
 export const BLOCKED_ROLE = 'BLOCKED';
 
 /** No free credits unless WELCOME_CREDITS says otherwise: free credits invite throwaway accounts. */
-export const welcomeCredits = () => {
+const welcomeCredits = () => {
   const n = Number(process.env.WELCOME_CREDITS ?? 0);
   return Number.isSafeInteger(n) && n >= 0 && n <= 10000 ? n : 0;
 };

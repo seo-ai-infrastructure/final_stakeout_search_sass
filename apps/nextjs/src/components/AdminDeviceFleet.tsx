@@ -1,17 +1,16 @@
 // apps/nextjs/src/app/(dashboard)/admin/devices/page.tsx
 'use client';
 import { AdminOps } from './AdminOps';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { usePolling } from '@/lib/usePolling';
 import Link from 'next/link';
 import {
-  Smartphone,
   Terminal,
   RefreshCw,
   Plus,
   Trash2,
   ShieldAlert,
   Server,
-  Lock,
   Unlock,
   AlertTriangle,
 } from 'lucide-react';
@@ -202,13 +201,8 @@ export default function AdminDeviceFleetPage() {
       setLoading(false);
     }
   }
-  useEffect(() => {
-    checkRoleAndFetchFleet();
-    const interval = setInterval(() => {
-      if (isAdmin) checkRoleAndFetchFleet();
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [isAdmin]);
+  // A visitor found not to be an admin is not asked about again.
+  usePolling(() => (isAdmin === false ? undefined : checkRoleAndFetchFleet()), 4000);
   async function dispatchAdminAction(
     payload: Record<string, any>,
     label: string,

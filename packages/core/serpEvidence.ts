@@ -50,7 +50,7 @@ export function uiLabels(xml: string): { cls: string; label: string }[] {
   return out;
 }
 
-export type Listing = {
+type Listing = {
   name: string;
   rating: string | null;
   reviews: string | null;
@@ -106,8 +106,8 @@ function finish(items: Omit<Listing, 'pos'>[]): Listing[] {
   return out;
 }
 
-export type WebResult = { site: string; url: string; title: string; ad: boolean };
-export type ResultsPage = {
+type WebResult = { site: string; url: string; title: string; ad: boolean };
+type ResultsPage = {
   location: string | null;
   googleLocation: string | null;
   localServicesAds: { title: string | null; listings: Listing[] };
@@ -242,7 +242,7 @@ export function readLocalFinder(xml: string): Listing[] {
   return finish(items);
 }
 
-export type AiOverview = { paragraphs: string[]; businesses: Listing[]; related: Listing[] };
+type AiOverview = { paragraphs: string[]; businesses: Listing[]; related: Listing[] };
 /** The expanded AI Overview: its text and the businesses it names, in order. */
 export function readAiOverview(xml: string): AiOverview | null {
   const L = uiLabels(xml);
@@ -268,7 +268,7 @@ export function readAiOverview(xml: string): AiOverview | null {
 /** Organic position of the tracked business in a section, or null if absent. */
 export const rankIn = (list: Listing[], business: string) => list.find((l) => !l.ad && sameBusiness(l.name, business))?.pos ?? null;
 
-export type AiCopyBusiness = {
+type AiCopyBusiness = {
   pos: number;
   name: string;
   /** Google's own business id (Knowledge Graph MID), e.g. "/g/11z8421vy4". */
@@ -281,8 +281,8 @@ export type AiCopyBusiness = {
   lines: string[];
 };
 /** One piece of the copied answer, in the order Google wrote it. `business` is an index into `businesses`. */
-export type AiCopyBlock = { kind: 'heading' | 'text' | 'bullet'; text: string } | { kind: 'business'; business: number };
-export type AiCopy = {
+type AiCopyBlock = { kind: 'heading' | 'text' | 'bullet'; text: string } | { kind: 'business'; business: number };
+type AiCopy = {
   intro: string[];
   businesses: AiCopyBusiness[];
   citations: { n: number; url: string }[];
@@ -373,7 +373,7 @@ export function searchLocationLine(fromFinal: string | null | undefined, serpXml
 }
 
 /** One result card from the native Google Maps app, rebuilt from its list snapshots. */
-export type MapsCard = {
+type MapsCard = {
   name: string;
   /** Paid placement: "Sponsored" (Local Services Ads also say "Google Verified"). */
   ad: boolean;
@@ -483,8 +483,8 @@ export function readMapsList(screens: (string | null | undefined)[]): MapsCard[]
   return out;
 }
 
-export type AiSource = { title: string; site: string; date: string | null; snippet: string };
-export type AiLayout = { answer: { kind: 'p' | 'h'; text: string }[]; sources: AiSource[] };
+type AiSource = { title: string; site: string; date: string | null; snippet: string };
+type AiLayout = { answer: { kind: 'p' | 'h'; text: string }[]; sources: AiSource[] };
 
 const AI_END = /^(Show less|Web results|People also search for|People also ask|Page Navigation|Footer Links|Copy text|Good response|Bad response|Show more AI Overview|Ads)$/;
 const joinText = (a: string, b: string) => (!a ? b : /^[,.;:!?)%]/.test(b) ? a + b : a + ' ' + b);
@@ -536,7 +536,7 @@ export function readAiOverviewLayout(xml: string | null | undefined): AiLayout |
  * more on Google" instead of "More businesses"); failing that, the businesses an AI Overview
  * listed. Ads are never counted. A business outside the pack is "not in the pack", not "#5".
  */
-export type SoloPanel = { name: string; rating: string | null; reviews: string | null; category: string | null };
+type SoloPanel = { name: string; rating: string | null; reviews: string | null; category: string | null };
 
 /**
  * A results page where Google answers a local search with ONE business: a panel with the

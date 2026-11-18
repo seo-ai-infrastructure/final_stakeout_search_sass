@@ -1,3 +1,4 @@
+import { wakeWorker } from '@stakeout/core/wake';
 import { randomBytes } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
@@ -120,6 +121,8 @@ export async function POST(req: Request) {
   try {
     const me = await admin();
     const b = await req.json();
+    // Settings, templates, stops: the worker picks them up at once, even from rest.
+    await wakeWorker('admin');
     const email = String(b.email ?? '').trim().toLowerCase();
 
     if (b.action === 'save_settings') {

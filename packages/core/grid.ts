@@ -13,7 +13,6 @@ export class InputError extends Error {
   }
 }
 
-export { phoneModels } from './hardware';
 export { OFFERED_GRID_SIZES } from './gridSizes';
 
 export function parseSpec(input: Record<string, unknown>) {

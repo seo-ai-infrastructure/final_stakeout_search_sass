@@ -14,7 +14,6 @@ import {
   extractGeoRows,
   listRotation,
   matchMarket,
-  normPlace,
   parseProxyLines,
   type GeoRow,
   type Market,
@@ -107,7 +106,7 @@ export async function resolveMarket(city: string, stateCode: string): Promise<Ma
  * Returns the stored list for (market, ISP, rotation), creating it at Proxy-Seller
  * the first time. isp = '' means any ISP in the market.
  */
-export async function ensureList(m: Pick<Market, 'region' | 'city'>, isp: string, rotation = listRotation()) {
+async function ensureList(m: Pick<Market, 'region' | 'city'>, isp: string, rotation = listRotation()) {
   const where = { region_city_isp_rotation: { region: m.region, city: m.city, isp, rotation } };
   const existing = await db.proxyList.findUnique({ where });
   // Marked as just used, so the idle clean-up never deletes a list a scan is being prepared with.
@@ -154,7 +153,7 @@ export async function ensureList(m: Pick<Market, 'region' | 'city'>, isp: string
  * Prepares every list a scan needs BEFORE its grid runs: one per chosen ISP, plus
  * an any-ISP list for the city as the fallback when an ISP has no IPs available.
  */
-export async function prepareScanProxies(city: string, stateCode: string, isps: string[]) {
+async function prepareScanProxies(city: string, stateCode: string, isps: string[]) {
   const m = await resolveMarket(city, stateCode);
   const unknown = isps.filter((i) => !m.isps.includes(i));
   if (unknown.length)

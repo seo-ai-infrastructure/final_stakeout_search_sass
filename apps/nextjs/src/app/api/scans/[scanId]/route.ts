@@ -1,3 +1,4 @@
+import { wakeWorker } from '@stakeout/core/wake';
 import { brandForUser } from '@stakeout/core/brands';
 import { randomBytes } from 'node:crypto';
 import { db } from '@stakeout/db';
@@ -37,10 +38,11 @@ export async function POST(req: Request, c: C) {
     }
     const s = await db.gridScan.findFirst({ where: { id, userId } });
     if (!s) throw new InputError('Scan unavailable.', 404);
-    if (action === 'rerun')
-      return Response.json(
-        await requestRerun(id, userId, Array.isArray(pinIds) ? pinIds.filter((x: unknown) => typeof x === 'string') : undefined),
-      );
+    if (action === 'rerun') {
+      const rerun = await requestRerun(id, userId, Array.isArray(pinIds) ? pinIds.filter((x: unknown) => typeof x === 'string') : undefined);
+      await wakeWorker('re-run');
+      return Response.json(rerun);
+    }
     if (action === 'share') {
       await db.gridScan.updateMany({
         where: { id, userId, shareToken: null },

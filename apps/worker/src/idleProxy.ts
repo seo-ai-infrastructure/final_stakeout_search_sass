@@ -15,7 +15,7 @@ import { assignIdleProxies, groupProxyIds, IDLE_MAP_KEY, idleBoundKey } from '@s
 import { pinOutageKey } from '@stakeout/core/proxyWait';
 import { proxyOutageSince } from './proxyOutage';
 
-export const idleProxyGroup = () => (process.env.IDLE_PROXY_GROUP ?? '').trim();
+const idleProxyGroup = () => (process.env.IDLE_PROXY_GROUP ?? '').trim();
 const afterMs = () => Math.max(30, Number(process.env.IDLE_PROXY_AFTER_SECONDS ?? 90)) * 1000;
 
 let listed: { group: string; at: number; ids: string[] } | null = null;

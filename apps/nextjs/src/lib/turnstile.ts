@@ -1,8 +1,6 @@
 import { InputError } from '@stakeout/core/grid';
 import { expectedHostnames, turnstileVerdict, type SiteverifyResult } from '@stakeout/core/turnstileVerdict';
 
-export const turnstileConfigured = () => Boolean(process.env.TURNSTILE_SECRET_KEY);
-
 /**
  * Verifies a Cloudflare Turnstile token server-side before the protected handler runs.
  * Requires success, the expected action for this form, and one of this site's hostnames.

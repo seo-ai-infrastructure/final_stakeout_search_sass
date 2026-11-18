@@ -25,6 +25,8 @@ export function allowedOnCustomDomain(pathname: string): boolean {
     /^\/share\/[^/]+\/?$/.test(pathname) ||
     /^\/api\/(share|evidence|proof|brand|census)\//.test(pathname) ||
     pathname.startsWith('/_next/') ||
+    // The map's worker script (copied from the map library at build time).
+    pathname === '/maplibre-gl-worker.mjs' ||
     pathname === '/favicon.ico'
   );
 }

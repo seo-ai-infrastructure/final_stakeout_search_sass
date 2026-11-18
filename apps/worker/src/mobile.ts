@@ -1,6 +1,6 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/core/pinInsights';
-import { searchLocationLine, isLocalFinder, readAiOverview, readLocalFinder, readResultsPage, sameBusiness, rankWithoutFinder, otherSearch } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -39,7 +39,7 @@ import {
   type TargetRung,
 } from '@stakeout/core/proxySeller';
 
-export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 type Pin = GridPin & { scan: GridScan };
 
 const bootstrappedInMemory = new Set<string>();
@@ -689,7 +689,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
  * it a proxy problem (and the point waits; see the worker), and only when all of them are down is
  * it an outage.
  */
-export async function provision(device: LeasedDevice, p: Pin) {
+async function provision(device: LeasedDevice, p: Pin) {
   await device.assertOwned();
   // Mobile points (a mobile scan, or the mobile half of a mix) run only on mobile carrier IPs, never on home internet.
   if (pinNetwork(p.scan.network, p.rowIdx, p.colIdx) === 'mobile') {
@@ -795,10 +795,10 @@ async function provisionProxySeller(device: LeasedDevice, p: Pin) {
   throw new Error('PROXY_LADDER_EXHAUSTED ' + tried.join(','));
 }
 
-export { readBundle, readBundleFile } from './bundle';
+export { readBundleFile } from './bundle';
 
 /** What execute() hands a point: where to note its moments, and how to give the phone back early. */
-export type RunContext = {
+type RunContext = {
   marks: Marks;
   /**
    * The phone is no longer needed (its evidence is ready on it and the exit was checked): its rest
@@ -808,7 +808,7 @@ export type RunContext = {
 };
 
 /** How each phone's Chrome lets the template refresh Google's location (see skipFooterHunt). */
-export async function locationRuns(imageId: string): Promise<LocationRun[]> {
+async function locationRuns(imageId: string): Promise<LocationRun[]> {
   const raw = await redis().get(locationKey(imageId)).catch(() => null);
   try {
     const v = raw ? JSON.parse(raw) : null;
@@ -1037,7 +1037,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         timeoutMs: rpaSecs * 1000,
         onAdded: () => void (run.marks.added = Date.now()),
         onStarted: () => void (run.marks.started = Date.now()),
-        doneCheck: async () => (await shell(d, `test -f /sdcard/stakeout/${tag}.done && echo y`).catch(() => '')).trim() === 'y',
+        doneCheck: async () => (await shell(d, `[ -f /sdcard/stakeout/${tag}.done ] && echo y; true`).catch(() => '')).trim() === 'y',
         // A stopped scan settles its points at once; looked up at most every 12 s while the phone works.
         stopCheck: async () => {
           if (Date.now() - stopLooked < 12000) return false;

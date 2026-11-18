@@ -10,7 +10,7 @@ export type BuyingPowerFilters = { minOwnerPct: number; minIncome: number };
 export type BuyingPowerPin = { id: string; status: string; rankFound: number | null; census?: PinCensus | null };
 export const NO_FILTERS: BuyingPowerFilters = { minOwnerPct: 0, minIncome: 0 };
 
-export const weightArea = (c?: PinCensus | null): AreaEstimate | undefined => c?.tract;
+const weightArea = (c?: PinCensus | null): AreaEstimate | undefined => c?.tract;
 
 export function passesFilters(c: PinCensus | null | undefined, f: BuyingPowerFilters) {
   if (f.minOwnerPct <= 0 && f.minIncome <= 0) return true;

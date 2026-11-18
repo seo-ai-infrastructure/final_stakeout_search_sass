@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { usePolling } from '@/lib/usePolling';
 import { clientKey } from '@stakeout/core/clientNames';
 
 type Run = {
@@ -53,11 +54,7 @@ export default function ScanList() {
       setLoaded(true);
     }
   }
-  useEffect(() => {
-    void load();
-    const t = setInterval(load, 7000);
-    return () => clearInterval(t);
-  }, []);
+  usePolling(load, 7000);
   async function schedule(s: Run) {
     const r = await fetch('/api/scans/' + s.id, {
       method: 'POST',

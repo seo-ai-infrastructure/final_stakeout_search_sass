@@ -3,8 +3,9 @@
 import { OFFERED_GRID_SIZES, shapeSkips, type GridShape } from '@stakeout/core/gridSizes';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import maplibregl from 'maplibre-gl';
+import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import '@/lib/mapWorker';
 import { Protocol } from 'pmtiles';
 import { declutterBasemap, quietBasemap, fillColor, legend, CENSUS_VINTAGE } from '../lib/censusLayer';
 import {
@@ -17,15 +18,12 @@ import {
   MapPin,
   Search,
   Globe,
-  Lock,
 } from 'lucide-react';
 import { type IspMode, type IspOption } from '@/components/IspSelectorDropdown';
 import { NETWORK_LABELS, pinNetwork, placedLayout, type ScanNetwork } from '@stakeout/core/network';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';
-// Only the sizes on offer right now (see OFFERED_GRID_SIZES).
-const GRID_SIZES = OFFERED_GRID_SIZES.map((size) => ({ size, label: `${size}×${size} (${size * size} Pins)` }));
 /** A size carried over from an older scan or a saved business that is no longer offered falls back to 5×5. */
 const offeredSize = (n: number) => (OFFERED_GRID_SIZES.includes(n) ? n : 5);
 const SPACING_OPTIONS = [

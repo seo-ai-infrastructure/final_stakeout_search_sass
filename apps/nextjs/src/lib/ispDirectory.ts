@@ -13,4 +13,3 @@ export const ispDirectory = [
   { key: 'att', label: 'AT&T', code: 'ATT Services' },
   { key: 'verizon', label: 'Verizon', code: 'Verizon Communications' },
 ] as const;
-export type IspPreset = (typeof ispDirectory)[number];

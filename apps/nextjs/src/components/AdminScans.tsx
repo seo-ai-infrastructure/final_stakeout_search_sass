@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
+import { usePolling } from '@/lib/usePolling';
 
 type Failed = { id: string; row: number; col: number; city: string; error: string; refunded: boolean; at: string; phone: string | null; phoneModel: string | null };
 type Scan = {
@@ -10,7 +11,7 @@ type Scan = {
 };
 
 /** The short code at the front of a failure ("RPA_SURFACE_ERROR no_scroll: ..." -> "RPA_SURFACE_ERROR no_scroll"). */
-export function failureCode(error: string): string {
+function failureCode(error: string): string {
   const head = error.split(':')[0].trim();
   if (/^[A-Z0-9_]+( [a-z_]+)?$/.test(head)) return head;
   const first = error.trim().split(/\s+/)[0] ?? '';
@@ -45,20 +46,20 @@ export default function AdminScans() {
     [open, setOpen] = useState<string | null>(null),
     [error, setError] = useState(''),
     [loaded, setLoaded] = useState(false);
-  useEffect(() => {
-    let live = true;
-    const load = () =>
+  usePolling(
+    () =>
       fetch('/api/admin/scans?days=' + days, { cache: 'no-store' })
         .then(async (r) => {
           const d = await r.json();
           if (!r.ok) throw new Error(d.error || 'Could not load scans.');
-          if (live) { setScans(d.scans); setError(''); setLoaded(true); }
+          setScans(d.scans);
+          setError('');
+          setLoaded(true);
         })
-        .catch((e) => live && setError((e as Error).message));
-    void load();
-    const t = setInterval(load, 30000);
-    return () => { live = false; clearInterval(t); };
-  }, [days]);
+        .catch((e) => setError((e as Error).message)),
+    30000,
+    [days],
+  );
 
   const real = (s: Scan) => s.failed.filter((f) => !deliberate(f.error));
   const shown = useMemo(() => {

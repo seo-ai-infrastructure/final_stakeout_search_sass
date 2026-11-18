@@ -1,7 +1,7 @@
 'use client';
 import { rankColor, rankTextColor, RANK_SCALE } from '../lib/gridColumns';
 import { useEffect, useMemo, useState } from 'react';
-import type { GridPinData, GridScanData } from './GeoGridDashboard';
+import type { GridScanData } from './GeoGridDashboard';
 import { describeArea, LEVEL_LABEL } from '../lib/censusLayer';
 import { opportunityOrder, pointShares } from '../lib/buyingPower';
 
@@ -770,4 +770,3 @@ export function AiView({ ev, isTarget, target }: { ev: Evidence; isTarget: (n: s
   );
 }
 
-export type { GridPinData };

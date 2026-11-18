@@ -17,7 +17,7 @@ export function signSessionToken(id: string) {
   const payload = id + '.' + (Math.floor(Date.now() / 1000) + lifetime);
   return payload + '.' + signature(payload);
 }
-export function verifySessionToken(value?: string) {
+function verifySessionToken(value?: string) {
   if (!value) return null;
   const parts = value.split('.');
   if (

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { db } from '@stakeout/db';
 
-export type TokenPurpose = 'VERIFY_EMAIL' | 'TEASER' | 'SET_PASSWORD';
+type TokenPurpose = 'VERIFY_EMAIL' | 'TEASER' | 'SET_PASSWORD';
 const hash = (t: string) => createHash('sha256').update(t).digest('hex');
 
 export async function issueToken(

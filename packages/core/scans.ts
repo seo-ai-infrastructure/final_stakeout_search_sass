@@ -248,7 +248,7 @@ export async function stopScan(scanId: string, reason: string) {
   return pending.length;
 }
 
-export { RERUN_MARKER, rerunCharge } from './rerun';
+export { RERUN_MARKER } from './rerun';
 
 /**
  * Puts a scan's failed points (or the chosen ones) back in line. Points that had been refunded are

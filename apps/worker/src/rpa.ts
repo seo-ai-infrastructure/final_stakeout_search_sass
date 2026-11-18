@@ -162,7 +162,7 @@ async function failureDetail(taskId: string) {
   return bad ? String(bad.result_info.action ?? '') + ': ' + String(bad.result_info.error_message ?? '') : '';
 }
 
-export async function cancelRpaTask(taskId: string) {
+async function cancelRpaTask(taskId: string) {
   await duoplusPost('/api/v1/automation/setTaskStatus', { ids: [taskId], status: 5 }).catch(() => {});
 }
 

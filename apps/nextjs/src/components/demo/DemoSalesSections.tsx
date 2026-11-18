@@ -1,7 +1,7 @@
 // The Done-For-You sprint offer lives on the agency page (/agency).
 export const SPRINT_URL = '/agency#apply';
 // Self-serve: create an account and run live grids.
-export const PLANS_URL = '/login?mode=register';
+const PLANS_URL = '/login?mode=register';
 
 export default function DemoSalesSections() {
   return <>

@@ -45,7 +45,7 @@ async function listPhones(): Promise<any[] | null> {
 }
 
 /** IPv4 addresses DuoPlus says are "not allowed to access". */
-export const refusedIps = (text: string) =>
+const refusedIps = (text: string) =>
   /not allowed to access/i.test(text) ? [...new Set(text.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) ?? [])] : [];
 
 const chunks = <T,>(a: T[], n: number) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));

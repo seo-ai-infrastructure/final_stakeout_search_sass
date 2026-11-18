@@ -4,7 +4,7 @@
  * a business's run-together line becomes a name with its details, and a label is joined to the
  * value on the line after it ("Phone:" + "(615) 509-5290").
  */
-export type AiTextBlock = { kind: 'heading' | 'business' | 'text'; text: string; meta?: string };
+type AiTextBlock = { kind: 'heading' | 'business' | 'text'; text: string; meta?: string };
 
 const NOISE = /^(call|directions|website|share|text message|reviews|services|menu|order|book|book online|get quote|message|about this result|•|·|-)$/i;
 const BUSINESS = /^(.+?)\s+Rated ([0-5](?:\.\d)?) out of 5,?\s*\(?([\d.,]+K?)\)?\s*(?:user )?reviews?\.?\s*(.*)$/i;

@@ -48,7 +48,7 @@ export const PALETTE = PALETTES.income;
 const paletteFor = (metric: Exclude<CensusMetric, 'off'>) =>
   METRICS[metric].reversed ? [...PALETTES[metric]].reverse() : PALETTES[metric];
 
-export function formatValue(unit: MetricDef['unit'], v: number) {
+function formatValue(unit: MetricDef['unit'], v: number) {
   if (unit === 'money') return '$' + Math.round(v).toLocaleString('en-US');
   if (unit === 'percent') return `${v.toFixed(1)}%`;
   return String(Math.round(v));
@@ -144,16 +144,21 @@ export function quantileBreaks(metric: Exclude<CensusMetric, 'off'>, values: num
 }
 
 /** 3D neighborhoods: height from owner-occupied homes, scaled per level so all three read alike. */
-export const METERS_PER_HOME: Record<CensusLayer, number> = { bg: 1.6, tract: 0.5, zcta: 0.07 };
+const METERS_PER_HOME: Record<CensusLayer, number> = { bg: 1.6, tract: 0.5, zcta: 0.07 };
 export function extrusionHeight(layer: CensusLayer) {
   return ['*', ['coalesce', ['to-number', ['get', 'own']], 0], METERS_PER_HOME[layer]];
 }
+
+/** The few map methods the basemap helpers use, loosely typed: the map library types each property name. */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type StyleMap = { getStyle: () => { layers?: any[] }; setLayoutProperty: (...a: any[]) => unknown; setPaintProperty: (...a: any[]) => unknown };
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 /**
  * Basemap clean-up for every Stakeout map: shop and restaurant icons are hidden, since a basemap
  * POI can be mistaken for a tracked business. Roads, places and street names stay.
  */
-export function declutterBasemap(m: { getStyle: () => { layers?: { id: string; [k: string]: unknown }[] }; setLayoutProperty: (id: string, p: string, v: unknown) => void }) {
+export function declutterBasemap(m: Pick<StyleMap, 'getStyle' | 'setLayoutProperty'>) {
   for (const l of m.getStyle().layers ?? [])
     if (l['source-layer'] === 'poi') m.setLayoutProperty(l.id, 'visibility', 'none');
 }
@@ -165,11 +170,7 @@ export function declutterBasemap(m: { getStyle: () => { layers?: { id: string; [
  * grid. Works by the map schema's layer names, so each change is tried on its own and skipped if
  * a style lacks that layer or property.
  */
-export function quietBasemap(m: {
-  getStyle: () => { layers?: { id: string; [k: string]: unknown }[] };
-  setLayoutProperty: (id: string, p: string, v: unknown) => void;
-  setPaintProperty: (id: string, p: string, v: unknown) => void;
-}) {
+export function quietBasemap(m: StyleMap) {
   const attempt = (fn: () => void) => {
     try {
       fn();

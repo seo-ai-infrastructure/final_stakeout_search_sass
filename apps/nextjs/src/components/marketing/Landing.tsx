@@ -27,13 +27,6 @@ function Cross() {
 
 /* ------------------------------------------------------------------ hero visual */
 
-const LISTINGS = [
-  { name: 'Harbor Plumbing Co.', rating: '4.9', reviews: '412' },
-  { name: 'Your Business', rating: '4.8', reviews: '318', you: true },
-  { name: 'Northside Drain & Sewer', rating: '4.6', reviews: '95' },
-  { name: 'Ace Rooter Service', rating: '4.4', reviews: '1,021' },
-];
-
 /** The hero phone: a real recording from a real scan, not a mock-up (point 1,3 of a 5×5 grid, Mt. Juliet, TN). */
 function PhoneCapture() {
   return (

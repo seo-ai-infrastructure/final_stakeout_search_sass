@@ -12,7 +12,7 @@ export type PowerPhone = {
   canStart: boolean;
 };
 
-export type PowerPlan = { on: string[]; off: string[]; active: number; want: number };
+type PowerPlan = { on: string[]; off: string[]; active: number; want: number };
 
 const ACTIVE = new Set([1, 10, 11]);
 

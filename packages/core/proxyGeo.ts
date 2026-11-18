@@ -87,7 +87,7 @@ export const normPlace = (s: string) =>
  */
 export type Market = { country: string; region: string; city: string; level: 'city' | 'nearby' | 'region'; isps: string[]; km?: number };
 /** A city's position, or null when it cannot be placed. Injected, so the matching stays testable. */
-export type CityCoords = (city: string, stateCode: string) => { lat: number; lng: number } | null;
+type CityCoords = (city: string, stateCode: string) => { lat: number; lng: number } | null;
 
 const kmBetween = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
   const rad = Math.PI / 180,
@@ -152,7 +152,7 @@ function keyedRows(node: unknown, path: string[] = [], out: GeoRow[] = []) {
   return out;
 }
 
-export type ProxyEndpoint = { host: string; port: number; login: string; password: string };
+type ProxyEndpoint = { host: string; port: number; login: string; password: string };
 
 /** Parses Proxy-Seller download lines in either IP:PORT:login:password or login:password@host:port. */
 export function parseProxyLines(text: string): ProxyEndpoint[] {

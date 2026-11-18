@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { usePolling } from '@/lib/usePolling';
 import Link from 'next/link';
 import { AdminRuns } from './AdminRuns';
 
@@ -74,11 +75,7 @@ export function AdminOps() {
       setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 2), mobileCustomers: Boolean(d.settings.mobileForCustomers) });
     }
   }, []);
-  useEffect(() => {
-    void load();
-    const t = setInterval(() => void load(), 15000);
-    return () => clearInterval(t);
-  }, [load]);
+  usePolling(load, 15000);
 
   /** Runs one admin action, shows its result, and refreshes the panels. */
   async function run(key: string, body: Record<string, unknown>, done: (d: any) => string) {

@@ -1,5 +1,6 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { usePolling } from '@/lib/usePolling';
 import Link from 'next/link';
 import { kindLabel, STAGE_LABEL, STAGES, type RefusedRun, type Stage } from '@stakeout/core/runLog';
 
@@ -45,11 +46,7 @@ export function AdminRuns() {
     const r = await fetch('/api/admin/runs', { cache: 'no-store' }).catch(() => null);
     if (r?.ok) setRuns(await r.json());
   }, []);
-  useEffect(() => {
-    void load();
-    const t = setInterval(() => void load(), 60000);
-    return () => clearInterval(t);
-  }, [load]);
+  usePolling(load, 60000);
 
   const list = useMemo(
     () => (runs?.refused ?? []).filter((r) => (!kind || r.kind === kind) && (!phone || r.phone === phone)),

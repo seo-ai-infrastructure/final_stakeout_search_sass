@@ -12,7 +12,7 @@ export function JoinLink({ className }: { className: string }) {
   );
 }
 
-export function Logo() {
+function Logo() {
   return (
     <Link href="/" className="flex items-center gap-2.5" aria-label="Stakeout Search home">
       <svg width="30" height="30" viewBox="0 0 48 48" aria-hidden="true">

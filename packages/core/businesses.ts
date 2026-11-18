@@ -1,8 +1,8 @@
 /** Validation for saved businesses (a client with its keywords and scan defaults). */
 import { InputError } from './grid';
 
-export const TARGET_TYPES = ['mobile_chrome', 'mobile_maps', 'mobile_google', 'desktop_aimode'] as const;
-export type BusinessInput = {
+const TARGET_TYPES = ['mobile_chrome', 'mobile_maps', 'mobile_google', 'desktop_aimode'] as const;
+type BusinessInput = {
   name: string;
   centerLabel: string;
   centerLat: number;

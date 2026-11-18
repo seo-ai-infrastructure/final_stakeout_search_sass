@@ -10,7 +10,7 @@ const key = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z
 const btn = 'rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40';
 
 /** Where a point sits on the grid, in words a client understands ("North east", "Centre"). */
-export function gridSide(rowIdx: number, colIdx: number, size: number): string {
+function gridSide(rowIdx: number, colIdx: number, size: number): string {
   const third = (i: number) => (size < 3 ? 1 : i < size / 3 ? 0 : i >= size - size / 3 ? 2 : 1);
   const ns = ['North', '', 'South'][third(rowIdx)], ew = ['west', '', 'east'][third(colIdx)];
   if (!ns && !ew) return 'Centre';

@@ -10,7 +10,7 @@ export type SiteverifyResult = {
   'error-codes'?: string[];
 };
 
-export type TurnstileVerdict = 'ok' | 'failed' | 'wrong_action' | 'wrong_hostname' | 'misconfigured';
+type TurnstileVerdict = 'ok' | 'failed' | 'wrong_action' | 'wrong_hostname' | 'misconfigured';
 
 /** Allowed frontend hostnames: TURNSTILE_HOSTNAMES, else APP_URL's host and its www twin. */
 export function expectedHostnames(env: Record<string, string | undefined> = process.env): Set<string> {

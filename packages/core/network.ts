@@ -8,7 +8,7 @@
  */
 
 export type ScanNetwork = 'residential' | 'mobile' | 'mix';
-export type PointNetwork = 'residential' | 'mobile';
+type PointNetwork = 'residential' | 'mobile';
 
 export const NETWORK_LABELS: Record<ScanNetwork, string> = {
   residential: 'Residential Network',

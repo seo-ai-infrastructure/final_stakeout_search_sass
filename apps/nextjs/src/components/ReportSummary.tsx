@@ -1,7 +1,7 @@
 'use client';
 import type { GridScanData } from './GeoGridDashboard';
 import type { SiteKind } from '@/lib/marketInsights';
-import { bandOf, reportSummary, verdictFor, type RankBucket, type FindingKind } from '@/lib/reportSummary';
+import { reportSummary, verdictFor, type RankBucket, type FindingKind } from '@/lib/reportSummary';
 import { RANK_COLORS, rankTextColor } from '@/lib/gridColumns';
 
 /** The rank bands in the map's own colours: the top 3 in green, #4–10 amber, #11 and lower red, not found the darkest red. */
@@ -298,4 +298,3 @@ export function AiCoverageCard({ scan }: { scan: GridScanData }) {
   );
 }
 
-export { bandOf };

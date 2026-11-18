@@ -17,7 +17,7 @@ export function redactRedisUrl(raw = process.env.REDIS_URL): string {
   }
 }
 
-export function buildRedisOptions(raw = process.env.REDIS_URL): RedisOptions {
+function buildRedisOptions(raw = process.env.REDIS_URL): RedisOptions {
   const url = cleanRedisUrl(raw);
   const parsed = new URL(url);
   const isTls =

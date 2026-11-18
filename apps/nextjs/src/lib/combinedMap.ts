@@ -64,7 +64,7 @@ export function combinedReading(p: {
  * How a best-placement pin is coloured, and its legend entry. The pin itself is the same 34 px
  * circle as in every other view: a white border, this flat colour and one short label.
  */
-export type CombinedStyle = { label: string; swatch: string };
+type CombinedStyle = { label: string; swatch: string };
 export const COMBINED_STYLES: Record<'both' | 'bothLow' | 'ai' | 'aiLow' | 'local' | 'miss', CombinedStyle> = {
   both: { label: 'Top 3 in both', swatch: '#10b981' },
   bothLow: { label: 'In both, 4th or lower', swatch: '#0d9488' },

@@ -180,14 +180,14 @@ export async function syncDuoPlusDevicePool() {
 }
 
 const RT_DIR = '/data/local/tmp/rt';
-export const RUNNER_SHA = createHash('sha256').update(RUN_PIN_SH_V2).digest('hex');
+const RUNNER_SHA = createHash('sha256').update(RUN_PIN_SH_V2).digest('hex');
 
 /**
  * Prepares a phone and records its real hardware: turns off animations, skips
  * Chrome's first-run screens, installs the capture script, then reads the Android
  * model so the phone can be leased for matching hardware profiles.
  */
-export async function bootstrapDevice(d: { imageId: string; adbAddr: string | null }) {
+async function bootstrapDevice(d: { imageId: string; adbAddr: string | null }) {
   await shell(
     d,
     [
@@ -435,7 +435,7 @@ async function leaseCandidates(phoneModel: string) {
   return devices;
 }
 
-export type LeaseResult =
+type LeaseResult =
   | { device: LeasedDevice }
   | { reason: 'BUSY' | 'NO_COMPATIBLE_DEVICE' };
 

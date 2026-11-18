@@ -6,10 +6,10 @@ export const BUILDING_LAYER_ID = 'demo-3d-buildings';
 export const GRID_BOUNDS: [[number, number], [number, number]] = [[-82.011, 27.9855], [-81.8886, 28.0935]];
 export const BUILDING_ZOOM = 15.8;
 export const BUILDING_PITCH = 55;
-export const BUILDING_BEARING = -25;
+const BUILDING_BEARING = -25;
 
-export const buildingHeight: ExpressionSpecification = ['max', 0, ['to-number', ['get', 'render_height'], 0]];
-export const buildingBase: ExpressionSpecification = ['min', buildingHeight, ['max', 0, ['to-number', ['get', 'render_min_height'], 0]]];
+const buildingHeight: ExpressionSpecification = ['max', 0, ['to-number', ['get', 'render_height'], 0]];
+const buildingBase: ExpressionSpecification = ['min', buildingHeight, ['max', 0, ['to-number', ['get', 'render_min_height'], 0]]];
 
 /** Use provider-supplied approximate heights; never invent height for a missing footprint attribute. */
 export function buildingLayer(source = BUILDING_SOURCE_ID): FillExtrusionLayerSpecification {

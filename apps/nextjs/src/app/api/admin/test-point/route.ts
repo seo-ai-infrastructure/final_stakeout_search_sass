@@ -1,3 +1,4 @@
+import { wakeWorker } from '@stakeout/core/wake';
 import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { createScan } from '@stakeout/core/scans';
@@ -49,6 +50,7 @@ export async function POST(req: Request) {
       s.proxyCity = m.city;
     }
     const scan = await createScan(u.id, s, u.id + ':test:' + randomUUID(), undefined, [centre], { free: true });
+    await wakeWorker('test point');
     return Response.json({ scanId: scan.id }, { status: 202 });
   } catch (e) {
     return errorResponse(e);

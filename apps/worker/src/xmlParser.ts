@@ -58,7 +58,7 @@ function aiPanels(n: Node): Node[] {
  * Services Ads). Off-screen cards are not in a native snapshot, so every screen is read.
  * Returns null when the screen has no results list.
  */
-export function mapsListCards(root: Node): { name: string; ad: boolean; kind: 'sponsored' | 'local_services' }[] | null {
+function mapsListCards(root: Node): { name: string; ad: boolean; kind: 'sponsored' | 'local_services' }[] | null {
   const list = walk(root).find((n) => rid(n) === 'search_list_layout');
   if (!list) return null;
   const cards: { name: string; ad: boolean; kind: 'sponsored' | 'local_services' }[] = [];
@@ -189,7 +189,7 @@ function parseAiPanels(ai: string[], target: string) {
 // accessibility label reads "<name> [About this result] Rated 4.8 out of 5 …".
 const webCard = /^(.*?)\s+(About this result\s+)?Rated ([0-5](?:[.,]\d)?) out of 5(,?)/;
 
-export type WebAd = { name: string; kind: 'local_services' | 'sponsored'; position: number };
+type WebAd = { name: string; kind: 'local_services' | 'sponsored'; position: number };
 
 /**
  * Parses Chrome / Google-app results. Chrome's UI dump holds the entire loaded

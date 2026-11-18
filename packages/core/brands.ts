@@ -11,8 +11,8 @@ export type Brand = { domain: string; userId: string; name: string; accent: stri
 const KEY = 'stakeout:brands';
 const LOGO = 'stakeout:brand-logo:';
 /** Logos are small images shown in a report header. No SVG: it can carry scripts. */
-export const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
-export const LOGO_MAX_BYTES = 300 * 1024;
+const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const LOGO_MAX_BYTES = 300 * 1024;
 
 let cache: { at: number; list: Brand[] } | null = null;
 

@@ -8,6 +8,7 @@ import demo from '@/data/demographics-demo.json';
 import { type DemoPin, type Tract, type MetricKey, type Scenario, visibilityMetrics, pinRank, formatMoney, formatPercent, formatCount, validNumber } from '@/lib/demographics';
 import { type MapViewMode, BUILDING_LAYER_ID, BUILDING_SOURCE_ID, BUILDING_ZOOM, BUILDING_PITCH, GRID_BOUNDS, buildingLayer, neighborhoodCamera } from '@/lib/demographic-map-view';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { MAP_WORKER_URL } from '@/lib/mapWorker';
 import './demographic-demo.css';
 import DemoSalesSections, { SPRINT_URL } from './DemoSalesSections';
 
@@ -68,8 +69,9 @@ export default function DemographicDemo() {
     let observer: ResizeObserver | undefined;
     async function init() {
       try {
-        const [{ default: gl }, pm] = await Promise.all([import('maplibre-gl'), import('pmtiles')]);
+        const [gl, pm] = await Promise.all([import('maplibre-gl'), import('pmtiles')]);
         if (disposed || !container.current) return;
+        gl.setWorkerUrl(MAP_WORKER_URL);
         if (protocolUsers++ === 0) gl.addProtocol('pmtiles', new pm.Protocol().tile);
         releaseProtocol = () => { if (--protocolUsers === 0) gl.removeProtocol('pmtiles'); };
         const map = new gl.Map({ container: container.current, style: 'https://tiles.openfreemap.org/styles/dark', ...neighborhoodCamera(CENTER), minZoom: 8, maxZoom: 18, maxPitch: 65, cooperativeGestures: true, attributionControl: { compact: true } });

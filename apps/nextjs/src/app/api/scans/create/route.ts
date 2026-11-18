@@ -1,3 +1,4 @@
+import { wakeWorker } from '@stakeout/core/wake';
 import { randomUUID } from 'node:crypto';
 import { createScan } from '@stakeout/core/scans';
 import { parseSpec, market, buildGrid, placedPins, InputError, OFFERED_GRID_SIZES } from '@stakeout/core/grid';
@@ -61,6 +62,7 @@ export async function POST(req: Request) {
     const skip = skippedPoints(body.skip, s.gridSize);
     const pins = placed ? placed.pins : skip.size ? buildGrid(s).filter((p) => !skip.has(p.rowIdx + '_' + p.colIdx)) : undefined;
     const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins);
+    await wakeWorker('new scan');
     return Response.json(
       { scanId: scan.id, creditsCharged: scan.creditsCharged },
       { status: 202 },

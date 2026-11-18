@@ -5,7 +5,7 @@ import { redis } from './redis';
  * Stored in Redis (the website and the worker both read it); anything not set there falls back to
  * its environment variable, so nothing changes until an admin saves a value.
  */
-export type Settings = {
+type Settings = {
   /** Rest after every search on a phone, in seconds (SEARCH_GAP_SECONDS). */
   searchGapSeconds: number;
   /** ISPs never offered or accepted (ISP_EXCLUDE). */

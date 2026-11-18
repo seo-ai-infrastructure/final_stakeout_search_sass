@@ -11,7 +11,7 @@
  */
 type Settings = Record<string, string | undefined>;
 
-export const hardwareCatalog: Record<string, Record<string, string[]>> = {
+const hardwareCatalog: Record<string, Record<string, string[]>> = {
   Samsung: {
     'Galaxy S23 Ultra': ['SM-S918U', 'SM-S918U1', 'SM-S918B', 'SM-S918W'],
     'Galaxy S24+': ['SM-S926U', 'SM-S926U1', 'SM-S926B', 'SM-S926W'],
@@ -59,7 +59,7 @@ function aliases(env: Settings): Record<string, string[]> {
 }
 
 /** Accepted Android model strings for a profile, normalized. */
-export function acceptedModels(profileModel: string, env: Settings = process.env) {
+function acceptedModels(profileModel: string, env: Settings = process.env) {
   for (const models of Object.values(hardwareCatalog)) {
     const codes = models[profileModel];
     if (codes)

@@ -1,3 +1,4 @@
+import { wakeWorker } from '@stakeout/core/wake';
 import { db } from '@stakeout/db';
 import { consumeToken } from '@/lib/emailTokens';
 import { completeVerification } from '@/lib/verification';
@@ -24,6 +25,7 @@ export async function GET(req: Request) {
         where: { id: t.scanId, status: 'AWAITING_EMAIL' },
         data: { status: 'QUEUED' },
       });
+      await wakeWorker('scan released');
       const scan = await db.gridScan.findUnique({
         where: { id: t.scanId },
         select: { shareToken: true },

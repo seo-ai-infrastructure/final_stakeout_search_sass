@@ -32,7 +32,7 @@ async function fillCensus(pins: { id: string; lat: number; lng: number; stateCod
     console.error('[census] lookup skipped:', (e as Error).message);
   }
 }
-export const pinSelect = {
+const pinSelect = {
   id: true,
   rowIdx: true,
   colIdx: true,
@@ -55,7 +55,7 @@ export const pinSelect = {
   census: true,
   insights: true,
 } as const;
-export const reportSelect = {
+const reportSelect = {
   id: true,
   keyword: true,
   targetBusiness: true,

@@ -7,8 +7,8 @@
  */
 import { US_STATE_NAMES } from './proxySeller';
 
-export type IpinfoExit = { ip: string; country: string; region: string; city: string; org: string };
-export type IpapiExit = {
+type IpinfoExit = { ip: string; country: string; region: string; city: string; org: string };
+type IpapiExit = {
   ip: string;
   countryCode: string;
   region: string; // state code, e.g. "TN"
@@ -20,12 +20,12 @@ export type IpapiExit = {
   hosting: boolean;
   proxy: boolean;
 };
-export type GoogleProbe = { host: string | null; lang: string | null; usFooter: boolean | null };
-export type ExitEvidence = { ipinfo: IpinfoExit | null; ipapi: IpapiExit | null; google: GoogleProbe | null };
+type GoogleProbe = { host: string | null; lang: string | null; usFooter: boolean | null };
+type ExitEvidence = { ipinfo: IpinfoExit | null; ipapi: IpapiExit | null; google: GoogleProbe | null };
 export type GatePolicy = 'strict' | 'deny' | 'off';
 
 /** Major US residential and mobile access networks (ASNs). Extend with PROXY_ASN_ALLOW. */
-export const RESIDENTIAL_ASNS = new Set<number>([
+const RESIDENTIAL_ASNS = new Set<number>([
   7922, // Comcast
   7018, 20057, // AT&T, AT&T Mobility
   20115, 11427, 11426, 10796, 11351, 12271, 33363, 7843, // Charter / Spectrum (incl. former TWC)
@@ -96,7 +96,7 @@ function stateMatches(region: string, regionCode: string | null, stateCode: stri
   return Boolean(region) && (squash(region) === squash(name) || region.toUpperCase() === code);
 }
 
-export type GateVerdict = {
+type GateVerdict = {
   ok: boolean;
   reasons: string[];
   ip: string | null;
