@@ -14,10 +14,8 @@ export default async function DashboardLayout({
     <div className="min-h-screen">
       <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-5 py-3">
         <nav className="flex flex-wrap items-center gap-5 text-sm">
-          <Link
-            href="/scans"
-            className="font-black tracking-widest text-emerald-400"
-          >
+          <Link href="/scans" className="flex items-center gap-2 font-black tracking-widest text-emerald-400" aria-label="Stakeout Search: scans">
+            <img src="/brand/stakeout-mark.png" alt="" width={34} height={34} className="h-[34px] w-[34px]" />
             STAKEOUT
           </Link>
           <Link href="/new-scan">New scan</Link>

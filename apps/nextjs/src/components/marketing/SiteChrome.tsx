@@ -15,11 +15,7 @@ export function JoinLink({ className }: { className: string }) {
 function Logo() {
   return (
     <Link href="/" className="flex items-center gap-2.5" aria-label="Stakeout Search home">
-      <svg width="30" height="30" viewBox="0 0 48 48" aria-hidden="true">
-        <path d="M24 3.5c-8.9 0-16.2 7.1-16.2 15.9C7.8 31.6 24 44.5 24 44.5s16.2-12.9 16.2-25.1C40.2 10.6 32.9 3.5 24 3.5z" fill="#f5c451" />
-        <circle cx="24" cy="19.4" r="7.2" fill="#06080c" />
-        <circle cx="24" cy="19.4" r="3" fill="#f5c451" />
-      </svg>
+      <img src="/brand/stakeout-mark.png" alt="" width={44} height={44} className="h-11 w-11" />
       <span className="mk-display text-lg font-semibold tracking-wide">Stakeout Search</span>
     </Link>
   );
@@ -54,10 +50,12 @@ export function SiteFooter({ note }: { note?: string }) {
           <Link href="/pricing" className="hover:text-white">Pricing</Link>
           <Link href="/agency" className="hover:text-white">Done for you</Link>
           <Link href="/login" className="hover:text-white">Sign in</Link>
-          <a href="mailto:sass@stakeoutsearch.com" className="hover:text-white">sass@stakeoutsearch.com</a>
+          <Link href="/privacy" className="hover:text-white">Privacy</Link>
+          <Link href="/terms" className="hover:text-white">Terms</Link>
+          <a href="mailto:support@stakeoutsearch.com" className="hover:text-white">support@stakeoutsearch.com</a>
         </nav>
         <p className="w-full text-xs text-[#6b7686]">
-          © 2026 Stakeout Search. Not affiliated with Google. Google Maps is a trademark of Google LLC.{note ? ' ' + note : ''}
+          © 2026 Marketing Divine LLC d/b/a Stakeout Search. Not affiliated with Google. Google Maps is a trademark of Google LLC.{note ? ' ' + note : ''}
         </p>
       </div>
     </footer>
