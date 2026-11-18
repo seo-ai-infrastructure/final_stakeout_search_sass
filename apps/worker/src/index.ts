@@ -21,6 +21,7 @@ import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
 import { idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
+import { devtoolsProbe } from './deviceShell';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
@@ -688,6 +689,24 @@ setTimeout(() => {
   backfillPackRanks().catch((e) => console.error('[rank] re-read skipped:', (e as Error).message));
 }, 60_000);
 void loadRunLog().catch((e) => console.warn('[runs] history not loaded:', (e as Error).message));
+// Once, two minutes after start: can the worker read Chrome's pages over the DevTools socket?
+// (Read-only; decides whether results pages can be saved as HTML.) DEVTOOLS_PROBE=false turns it off.
+if (process.env.DEVTOOLS_PROBE !== 'false')
+  setTimeout(async () => {
+    const phones = await db.devicePool
+      .findMany({ where: { isEnabled: true, offlineAt: null, bootstrappedAt: { not: null }, adbAddr: { not: null } }, select: { imageId: true, adbAddr: true }, orderBy: { slotIndex: 'asc' }, take: 2 })
+      .catch(() => []);
+    for (const p of phones) {
+      const r = await devtoolsProbe(p).catch((e) => ({ ok: false, sockets: '', browser: null, tabs: null, error: (e as Error).message }));
+      console.log(
+        '[devtools]',
+        p.imageId + ':',
+        r.ok ? 'Chrome answers on its DevTools socket (' + r.browser + ', ' + r.tabs + ' tab(s) open)' : 'no answer from Chrome DevTools' + (r.error ? ' (' + r.error + ')' : ''),
+        '· sockets:',
+        r.sockets || 'none',
+      );
+    }
+  }, 120_000);
 if ((process.env.SEARCH_MODE ?? '').toLowerCase() === 'rpa') {
   console.info('[rpa] SEARCH_MODE=rpa: the search step runs your DuoPlus RPA template');
   void describeRpaTemplates();

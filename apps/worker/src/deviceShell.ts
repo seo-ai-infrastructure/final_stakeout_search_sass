@@ -110,3 +110,37 @@ export async function pull(d: ShellTarget, remotePath: string, localPath: string
   if (transportFor(d) !== 'adb') throw new Error('PULL_NEEDS_ADB');
   await adb(d.adbAddr!, ['pull', remotePath, localPath], timeoutMs);
 }
+
+/**
+ * Read-only check: does Chrome on the phone answer on its DevTools socket through our ADB
+ * connection? (Needed to save each results page's HTML.) Lists the phone's DevTools sockets,
+ * forwards a free local port to Chrome's, and reads only its version and how many tabs are open.
+ * Nothing on the page is touched; no tab addresses are kept.
+ */
+export async function devtoolsProbe(d: ShellTarget): Promise<{ ok: boolean; sockets: string; browser: string | null; tabs: number | null; error: string | null }> {
+  if (transportFor(d) !== 'adb') return { ok: false, sockets: '', browser: null, tabs: null, error: 'no ADB address' };
+  const sockets = (
+    await adb(d.adbAddr!, ['shell', 'grep -o "@[A-Za-z0-9_.]*devtools[A-Za-z0-9_.]*" /proc/net/unix | sort -u'], 15000).catch((e) => 'error: ' + errText(e))
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+  let port = '';
+  try {
+    port = (await adb(d.adbAddr!, ['forward', 'tcp:0', 'localabstract:chrome_devtools_remote'], 15000)).trim();
+    if (!/^\d+$/.test(port)) return { ok: false, sockets, browser: null, tabs: null, error: 'forward gave "' + port.slice(0, 60) + '"' };
+    const get = (path: string) => fetch('http://127.0.0.1:' + port + path, { signal: AbortSignal.timeout(6000) }).then((r) => r.json() as Promise<unknown>);
+    const version = (await get('/json/version')) as { Browser?: string };
+    const list = (await get('/json/list').catch(() => null)) as { type?: string }[] | null;
+    return {
+      ok: Boolean(version?.Browser),
+      sockets,
+      browser: version?.Browser ?? null,
+      tabs: Array.isArray(list) ? list.filter((t) => t?.type === 'page').length : null,
+      error: null,
+    };
+  } catch (e) {
+    return { ok: false, sockets, browser: null, tabs: null, error: errText(e) };
+  } finally {
+    if (/^\d+$/.test(port)) await adb(d.adbAddr!, ['forward', '--remove', 'tcp:' + port], 10000).catch(() => {});
+  }
+}
