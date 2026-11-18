@@ -65,6 +65,12 @@ export default function ScanList() {
     if (r.ok) await load();
     else setError('Schedule update failed.');
   }
+  async function remove(s: Run) {
+    if (!window.confirm(`Delete this scan for good?\n\n“${s.keyword}” · ${s.client}\n\nIts report, videos and evidence are removed and cannot be brought back.${s.scheduleType !== 'once' ? ' Its repeat schedule ends too.' : ''} Credits are not affected.`)) return;
+    const r = await fetch('/api/scans/' + s.id, { method: 'DELETE' });
+    if (!r.ok) return setError((await r.json().catch(() => ({}))).error || 'That scan could not be deleted.');
+    await load();
+  }
   async function merge(from: string, into: string) {
     const r = await fetch('/api/clients', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from, into }) });
     if (!r.ok) return setError((await r.json().catch(() => ({}))).error || 'Those clients could not be merged.');
@@ -244,6 +250,9 @@ export default function ScanList() {
                         <Link className="text-emerald-300" href={'/scans/' + s.id}>View</Link>
                         {s.prevScanId && DONE.includes(s.status) && (
                           <Link className="ml-3 text-emerald-300" href={'/scans/compare?a=' + s.prevScanId + '&b=' + s.id}>Compare</Link>
+                        )}
+                        {!['QUEUED', 'RUNNING', 'AWAITING_EMAIL'].includes(s.status) && (
+                          <button type="button" className="ml-3 font-normal text-slate-500 hover:text-rose-300" onClick={() => remove(s)}>Delete</button>
                         )}
                       </td>
                     </tr>

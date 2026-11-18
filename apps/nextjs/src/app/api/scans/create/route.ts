@@ -1,3 +1,4 @@
+import { flushAlerts } from '@/lib/alerts';
 import { wakeWorker } from '@stakeout/core/wake';
 import { randomUUID } from 'node:crypto';
 import { createScan } from '@stakeout/core/scans';
@@ -63,6 +64,8 @@ export async function POST(req: Request) {
     const pins = placed ? placed.pins : skip.size ? buildGrid(s).filter((p) => !skip.has(p.rowIdx + '_' + p.colIdx)) : undefined;
     const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins);
     await wakeWorker('new scan');
+    // A customer just started a scan: if the worker has gone quiet, the admins hear about it now.
+    await flushAlerts().catch(() => {});
     return Response.json(
       { scanId: scan.id, creditsCharged: scan.creditsCharged },
       { status: 202 },

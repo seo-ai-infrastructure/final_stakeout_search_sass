@@ -1,4 +1,5 @@
-import type { Queue } from 'bullmq';
+import { Queue } from 'bullmq';
+import { redis } from './redis';
 export async function registerStakeoutSchedule(
   queue: Queue,
   templateScanId: string,
@@ -18,4 +19,10 @@ export async function registerStakeoutSchedule(
       },
     },
   );
+}
+
+/** Ends a repeating scan's schedule (its scan was deleted). */
+export async function removeStakeoutSchedule(templateScanId: string) {
+  const queue = new Queue('stakeout-recurring-schedules', { connection: redis() });
+  await queue.removeJobScheduler('schedule-' + templateScanId);
 }

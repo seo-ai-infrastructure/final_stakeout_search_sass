@@ -7,6 +7,8 @@ import { getAuthenticatedUser, readScope } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { InputError, scheduleCron } from '@stakeout/core/grid';
 import { requestRerun, stopScan } from '@stakeout/core/scans';
+import { deleteScanFiles } from '@stakeout/core/r2';
+import { removeStakeoutSchedule } from '@stakeout/core/scheduleHelper';
 type C = { params: Promise<{ scanId: string }> };
 export async function GET(_: Request, c: C) {
   try {
@@ -69,6 +71,30 @@ export async function POST(req: Request, c: C) {
       data: { scheduleCron: action === 'pause' ? 'PAUSED:' + cron : cron },
     });
     return Response.json({ ok: true });
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
+
+/**
+ * Deletes a finished scan for good: its report, its points and their stored videos and evidence.
+ * The owner, or an admin for any scan. A scan still running must be stopped first; a repeating
+ * scan's schedule ends with it. Credits already charged or refunded stay as they are.
+ */
+export async function DELETE(_: Request, c: C) {
+  try {
+    const id = (await c.params).scanId,
+      me = await getAuthenticatedUser();
+    const s = await db.gridScan.findFirst({ where: { id, ...(me.role === 'ADMIN' ? {} : { userId: me.id }) }, select: { id: true, status: true, scheduleType: true } });
+    if (!s) throw new InputError('Scan unavailable.', 404);
+    if (['QUEUED', 'RUNNING', 'AWAITING_EMAIL'].includes(s.status)) throw new InputError('This scan is still running. Stop it first, then delete it.', 409);
+    if (s.scheduleType !== 'once') {
+      await removeStakeoutSchedule(id).catch((e) => console.warn('[delete] schedule not removed:', (e as Error).message));
+    }
+    await db.gridScan.delete({ where: { id } });
+    // The files go last: if this fails they are only left over, never a report without its proof.
+    const files = await deleteScanFiles(id).catch((e) => (console.warn('[delete] files of', id, 'not deleted:', (e as Error).message), null));
+    return Response.json({ ok: true, files });
   } catch (e) {
     return errorResponse(e);
   }

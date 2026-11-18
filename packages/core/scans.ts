@@ -11,6 +11,7 @@ import {
 } from './grid';
 import { ispForPin } from './proxyGeo';
 import { RERUN_MARKER, rerunCharge, rerunIsp } from './rerun';
+import { nudgeAlerts, pushAlert, scanAlert } from './alerts';
 import { creditsPerPoint, getSettings } from './settings';
 import { pointPrice, scanCost } from './network';
 
@@ -114,6 +115,8 @@ export async function settlePin(
   pinId: string,
   result: { data: Prisma.GridPinUpdateManyMutationInput } | { error: string },
 ) {
+  // Set when this point was the scan's last: the scan it finished.
+  let finished: string | null = null;
   await db.$transaction(
     async (tx) => {
       const pin = await tx.gridPin.findUniqueOrThrow({
@@ -183,10 +186,23 @@ export async function settlePin(
                 : 'COMPLETED',
           },
         });
+        finished = scan.id;
       }
     },
     { timeout: 20000 },
   );
+  if (finished) await alertIfScanWentBadly(finished).catch((e) => console.warn('[alert] scan not checked:', (e as Error).message));
+}
+
+/** A scan that finished with many points failed (not stopped by its owner): one email to the admins. */
+async function alertIfScanWentBadly(scanId: string) {
+  const s = await db.gridScan.findUnique({ where: { id: scanId }, select: { id: true, keyword: true, targetBusiness: true, totalPins: true, failedPins: true, status: true } });
+  if (!s || !s.failedPins) return;
+  const reasons = await db.$queryRaw<{ code: string; n: number }[]>`
+    SELECT COALESCE(substring("lastError" from '^[A-Z][A-Z_0-9]+'), 'OTHER') AS code, count(*)::int AS n
+    FROM "GridPin" WHERE "scanId" = ${scanId} AND status = 'FAILED' GROUP BY 1`;
+  const alert = scanAlert(s, reasons);
+  if (alert && (await pushAlert('scan:' + scanId, alert, 6 * 3600))) await nudgeAlerts();
 }
 
 /** A delivered BullMQ schedule occurrence is a single billable scan, even on replay. */

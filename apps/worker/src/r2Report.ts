@@ -17,6 +17,7 @@ import { db } from '@stakeout/db';
 import { r2, bucket, put } from '@stakeout/core/r2';
 import { redis } from '@stakeout/core/redis';
 import { kindOf, keyOf } from '@stakeout/core/storageKeys';
+import { HERO_VIDEO_KEY } from '@stakeout/core/heroVideo';
 import { parseEntries, REFUSED_KEY } from '@stakeout/core/runLog';
 
 type Tally = { objects: number; bytes: number };
@@ -32,7 +33,8 @@ async function r2DryRun() {
   const scans = new Set((await db.gridScan.findMany({ select: { id: true } })).map((s) => s.id));
   const pins = await db.$queryRaw<{ videoUrl: string | null; metaJsonUrl: string | null; dumpsTarUrl: string | null }[]>`
     SELECT "videoUrl", "metaJsonUrl", "dumpsTarUrl" FROM "GridPin"`;
-  const kept = new Set<string>();
+  // The home page's recording is kept whatever happens to its scan.
+  const kept = new Set<string>([HERO_VIDEO_KEY]);
   for (const p of pins) {
     for (const k of [p.videoUrl, p.metaJsonUrl, p.dumpsTarUrl].map(keyOf)) if (k) kept.add(k);
   }

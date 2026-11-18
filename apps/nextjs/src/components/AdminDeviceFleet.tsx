@@ -110,10 +110,10 @@ function SystemHealthCard({ system }: { system: SystemHealth | null }) {
         // that has sat unused for ten minutes with no scan open means the clean-up is not working.
         [
           'Proxy lists',
-          system.openScans > 0 || system.proxyLists === 0 || (system.proxyListIdleSeconds ?? 0) < 600,
+          system.openScans > 0 || system.proxyLists === 0 || (system.proxyListIdleSeconds ?? 0) < 900,
           `${system.proxyLists} list(s) · ${system.openScans} scan(s) open` +
             (system.openScans === 0 && system.proxyLists > 0
-              ? (system.proxyListIdleSeconds ?? 0) >= 600
+              ? (system.proxyListIdleSeconds ?? 0) >= 900
                 ? `: idle for ${Math.round((system.proxyListIdleSeconds ?? 0) / 60)} minutes and not deleted`
                 : ': just finished, deleted after 2 idle minutes'
               : ''),

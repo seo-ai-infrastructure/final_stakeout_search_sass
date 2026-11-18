@@ -550,7 +550,7 @@ async function reportHealth() {
     idleProxies: idleProxyReport(),
     concurrencyCeiling: targetConcurrency(readyPhoneCount(), process.env.MOBILE_CONCURRENCY).capped ? Number(process.env.MOBILE_CONCURRENCY) : null,
     proxyLists: await db.proxyList.count(),
-    // How long the longest-idle list has gone unused. Idle lists are deleted after two minutes
+    // How long the longest-idle list has gone unused. Idle lists are deleted after 12 minutes
     // with no scan open, so only a list idle for much longer than that is a problem.
     proxyListIdleSeconds: await db.proxyList
       .aggregate({ _min: { lastUsedAt: true } })

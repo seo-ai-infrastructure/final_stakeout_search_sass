@@ -3,6 +3,7 @@ import { ONBOARDING, PLANS, usd } from '@/lib/pricing';
 import { SiteHeader, SiteFooter, JoinLink } from './SiteChrome';
 import { WALL, AI_NAMED, rankStyle } from './demoData';
 import ReceiptPrinter from './ReceiptPrinter';
+import HeroVideo from './HeroVideo';
 import './marketing.css';
 
 /* ------------------------------------------------------------------ shared bits */
@@ -27,7 +28,7 @@ function Cross() {
 
 /* ------------------------------------------------------------------ hero visual */
 
-/** The hero phone: a real recording from a real scan, not a mock-up (point 1,3 of a 5×5 grid, Mt. Juliet, TN). */
+/** The hero phone: a real recording from a real scan, not a mock-up (point 5,5 of a 5×5 grid near Lakeland, FL). */
 function PhoneCapture() {
   return (
     <figure className="relative mx-auto w-[280px] sm:w-[300px]">
@@ -39,35 +40,25 @@ function PhoneCapture() {
             </span>
             <span className="mk-mono text-[#9aa7b8]">Android · Chrome</span>
           </div>
-          <video
-            className="block aspect-[9/16] w-full bg-black object-cover"
-            src="/media/real-run-mt-juliet.mp4"
-            poster="/media/real-run-mt-juliet-poster.jpg"
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            aria-label="Screen recording of a real search for exterior painting contractors near me, at grid point 1,3 in Mt. Juliet, Tennessee"
-          />
+          <HeroVideo label="Screen recording of a real search for emergency plumber near me, at grid point 5,5 near Lakeland, Florida" />
         </div>
       </div>
       <figcaption className="mt-3 text-center text-[11.5px] leading-snug text-[#9aa7b8]">
-        Real recording, not a mock-up: &ldquo;exterior painting contractors near me&rdquo;, point 1,3 of a 5×5 grid in Mt. Juliet, TN, 9 Nov 2026 at 3:47 PM CST.
+        Real recording, not a mock-up: &ldquo;emergency plumber near me&rdquo;, point 5,5 of a 5×5 grid near Lakeland, FL, 17 Nov 2026 at 8:29 AM EST.
       </figcaption>
     </figure>
   );
 }
 
-/** A real receipt: the run in the hero recording (9 Nov 2026, Mt. Juliet, TN). */
+/** A real receipt: the run in the hero recording (17 Nov 2026, near Lakeland, FL). */
 const RECEIPT_ROWS: [string, string, boolean?][] = [
-  ['Keyword', 'exterior painting contractors near me'],
-  ['Grid point', '1,3 · 36.228862, −86.525138'],
-  ['Captured', '2026-11-09 15:47 CST'],
+  ['Keyword', 'emergency plumber near me'],
+  ['Grid point', '5,5 · 27.992210, −81.912650'],
+  ['Captured', '2026-11-17 08:29 EST'],
   ['Device', 'Android phone · Chrome'],
   ['Network', 'Residential connection'],
-  ['Google located', 'Mt. Juliet, Tennessee – From your device', true],
-  ['Result', '#2 in the map pack and Local Finder', true],
+  ['Google located', '33812, Florida – From your device', true],
+  ['Result', 'Named first in Google’s AI Overview', true],
 ];
 
 function Receipt({ className = '' }: { className?: string }) {
@@ -77,7 +68,7 @@ function Receipt({ className = '' }: { className?: string }) {
       <div className="px-5 pb-5 pt-2">
         <div className="flex items-baseline justify-between border-b border-dashed border-[#2a3442] pb-2">
           <span className="mk-display text-sm font-semibold tracking-[0.18em] text-[#f5c451]">RECEIPT</span>
-          <span className="mk-mono text-[11px] text-[#9aa7b8]">#cmw9rplww000b</span>
+          <span className="mk-mono text-[11px] text-[#9aa7b8]">#cmwkpqpk40010</span>
         </div>
         <dl className="mt-3 space-y-1.5 text-[11.5px]">
           {RECEIPT_ROWS.map(([k, v, ok]) => (
@@ -89,11 +80,11 @@ function Receipt({ className = '' }: { className?: string }) {
         </dl>
         <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#2a3442] bg-[#0b0f15] px-3 py-2">
           <span className="mk-rec inline-block h-2 w-2 rounded-full bg-[#ff4d4d]" aria-hidden="true" />
-          <span className="text-[11.5px]">Screen recording · 0:37</span>
-          <a href="/media/real-run-mt-juliet.mp4" className="ml-auto text-[11px] text-[#7aa7ff] hover:underline">▶ Watch</a>
+          <span className="text-[11.5px]">Screen recording</span>
+          <a href="/api/media/hero" className="ml-auto text-[11px] text-[#7aa7ff] hover:underline">▶ Watch</a>
         </div>
         <p className="mk-mono mt-3 break-all text-[10.5px] leading-relaxed text-[#6b7686]">
-          SHA-256 7de5f245cf107de8f10a4ef5d7ebeb985358cfb4662a623a8841c046f5b4bf70
+          SHA-256 177788ca4a4b57db7dc69b7d00b5c8b8cbee3a3ceb358601b7f56c9a85e55c56
         </p>
       </div>
     </div>
@@ -762,7 +753,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <SiteFooter note="The hero recording, its frames, the receipt beside it and the 3D report are real (Mt. Juliet, TN, 9 Nov 2026). The grids, the territory map, the interactive receipt printer and the AI answer examples are illustrative." />
+      <SiteFooter note="The hero recording and the receipt beside it are real (near Lakeland, FL, 17 Nov 2026), as are the proof frames and the 3D report (Mt. Juliet, TN, 9 Nov 2026). The grids, the territory map, the interactive receipt printer and the AI answer examples are illustrative." />
     </div>
   );
 }

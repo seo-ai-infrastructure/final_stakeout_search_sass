@@ -267,11 +267,13 @@ export async function listsForPin(
 
 /**
  * Proxy-Seller bills bandwidth whenever a phone still points at a list, even while idle. So when
- * no scan is queued or running, every list not used in the last two minutes is deleted, in
+ * no scan is queued or running, every list not used in the last 12 minutes (PROXY_LIST_KEEP_MINUTES;
+ * a scan started soon after another finds its lists ready instead of waiting over a minute for new
+ * ones, and idle phones are on their own proxy by then) is deleted, in
  * Proxy-Seller and here; the next scan creates fresh lists (ensureList, or listsForPin above).
  * Returns how many were deleted.
  */
-export async function releaseIdleProxyLists(minIdleMs = 2 * 60000) {
+export async function releaseIdleProxyLists(minIdleMs = Number(process.env.PROXY_LIST_KEEP_MINUTES ?? 12) * 60000) {
   const open = () => db.gridScan.count({ where: { status: { in: ['QUEUED', 'RUNNING'] } } });
   if (await open()) return 0;
   const lists = await db.proxyList.findMany({
