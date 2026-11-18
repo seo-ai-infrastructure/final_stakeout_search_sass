@@ -51,6 +51,35 @@ export async function idleProxyTick() {
     report = { group: '', proxies: 0, phones: 0, assigned: 0, bound: 0, note: '' };
     return;
   }
+  // Every check fills in the real counts (the admin page shows them while scans run too): the
+  // phones, the group's proxies, which proxy is each phone's, and how many phones are on it now.
+  const phones = await db.devicePool.findMany({
+    where: { isEnabled: true, offlineAt: null, bootstrappedAt: { not: null } },
+    select: { imageId: true, proxyId: true },
+    orderBy: { slotIndex: 'asc' },
+  });
+  let ids: string[];
+  try {
+    ids = await idleGroupProxyIds();
+  } catch (e) {
+    // DuoPlus did not list the proxies this time: keep the last counts and try again on the next check.
+    report = { ...report, group, note: 'could not list group ' + group + ' just now: ' + (e instanceof Error ? e.message : String(e)).slice(0, 120) };
+    return;
+  }
+  const all = await db.devicePool.findMany({ select: { proxyId: true } });
+  const previous = (await redis().hgetall(IDLE_MAP_KEY).catch(() => ({}))) as Record<string, string>;
+  const { map, without } = assignIdleProxies(phones.map((p) => p.imageId), ids, previous, new Set(all.map((d) => d.proxyId)));
+  const changed = Object.entries(map).filter(([phone, id]) => previous[phone] !== id);
+  if (changed.length) await redis().hset(IDLE_MAP_KEY, Object.fromEntries(changed)).catch(() => 0);
+  const boundNow = phones.length ? ((await redis().mget(...phones.map((p) => idleBoundKey(p.imageId))).catch(() => [])) as (string | null)[]) : [];
+  const counts = (bound: number, note: string) => ({ group, proxies: ids.length, phones: phones.length, assigned: Object.keys(map).length, bound, note });
+  const onIdle = phones.filter((p, i) => map[p.imageId] && boundNow[i] === map[p.imageId]).length;
+  const shortNote = !ids.length
+    ? 'no proxies found in group ' + group
+    : without.length
+      ? without.length + ' phone(s) have no idle proxy (the group has ' + ids.length + ')'
+      : '';
+
   // Points that can run (or are running): phones keep their search proxies. Points waiting for a
   // network that is down are left out: they retry one at a time and may wait for hours.
   const pending = await db.gridPin.findMany({
@@ -68,22 +97,13 @@ export async function idleProxyTick() {
   const now = Date.now();
   if (runnable > 0) {
     lastDemandAt = now;
-    report = { ...report, group, note: runnable + ' point(s) to run: phones keep their search proxies' };
+    report = counts(onIdle, shortNote || runnable + ' point(s) to run: phones keep their search proxies');
     return;
   }
-  if (now - lastDemandAt < afterMs()) return;
-
-  const phones = await db.devicePool.findMany({
-    where: { isEnabled: true, offlineAt: null, bootstrappedAt: { not: null } },
-    select: { imageId: true, proxyId: true },
-    orderBy: { slotIndex: 'asc' },
-  });
-  const ids = await idleGroupProxyIds();
-  const all = await db.devicePool.findMany({ select: { proxyId: true } });
-  const previous = (await redis().hgetall(IDLE_MAP_KEY).catch(() => ({}))) as Record<string, string>;
-  const { map, without } = assignIdleProxies(phones.map((p) => p.imageId), ids, previous, new Set(all.map((d) => d.proxyId)));
-  const changed = Object.entries(map).filter(([phone, id]) => previous[phone] !== id);
-  if (changed.length) await redis().hset(IDLE_MAP_KEY, Object.fromEntries(changed)).catch(() => 0);
+  if (now - lastDemandAt < afterMs()) {
+    report = counts(onIdle, shortNote || 'nothing to run: phones move to their idle proxies in ' + Math.ceil((afterMs() - (now - lastDemandAt)) / 1000) + 's');
+    return;
+  }
 
   // Bind the phones not on their idle proxy yet, each held (like a point holds it) while it switches.
   const due: { imageId: string; idle: string; lock: string; token: string }[] = [];
@@ -127,19 +147,6 @@ export async function idleProxyTick() {
         .eval("if redis.call('get',KEYS[1])==ARGV[1] then return redis.call('del',KEYS[1]) end return 0", 1, x.lock, x.token)
         .catch(() => 0);
   }
-  report = {
-    group,
-    proxies: ids.length,
-    phones: phones.length,
-    assigned: Object.keys(map).length,
-    bound,
-    note: !ids.length
-      ? 'no proxies found in group ' + group
-      : without.length
-        ? without.length + ' phone(s) have no idle proxy (the group has ' + ids.length + ')'
-        : pending.length
-          ? pending.length + ' point(s) waiting for proxies that are down'
-          : '',
-  };
+  report = counts(bound, shortNote || (pending.length ? pending.length + ' point(s) waiting for proxies that are down' : ''));
   if (without.length && changed.length) console.warn('[idle] group', group, 'has', ids.length, 'proxies for', phones.length, 'phones: no idle proxy for', without.join(', '));
 }
