@@ -76,6 +76,7 @@ export default function GbpEditor() {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [ready, setReady] = useState(true);
   const [pick, setPick] = useState<{ profile: string; location: string } | null>(null);
+  const [find, setFind] = useState('');
   const [live, setLive] = useState<GbpLocation | null>(null);
   const [edits, setEdits] = useState<Edit[]>([]);
   const [form, setForm] = useState<Form | null>(null);
@@ -190,14 +191,30 @@ export default function GbpEditor() {
           {profiles === null ? <p className="mt-2 text-sm text-slate-400">Loading connected accounts…</p> : profiles.length === 0 ? (
             <p className="mt-2 text-sm text-slate-400">No Google Business account is connected in Postproxy yet. Connect one there (Profiles → Connect account), then reload this page.</p>
           ) : (
-            <select className={input + ' mt-2'} value={pick ? pick.profile + '|' + pick.location : ''} onChange={(e) => { const [profile, location] = e.target.value.split('|'); setPick(profile && location ? { profile, location } : null); }}>
-              <option value="">Choose a location…</option>
-              {profiles.map((p) => (
-                <optgroup key={p.id} label={p.name + (p.status !== 'active' ? ' (needs reconnecting)' : '') + (p.problem ? ' · ' + p.problem : '')}>
-                  {p.locations.map((l) => <option key={l.id} value={p.id + '|' + l.id}>{l.name}</option>)}
-                </optgroup>
+            <>
+              <input className={input + ' mt-2'} placeholder={'Search ' + profiles.reduce((n, p) => n + p.locations.length, 0) + ' locations by name'} value={find} onChange={(e) => setFind(e.target.value)} />
+              <ul className="mt-2 max-h-72 divide-y divide-slate-800 overflow-y-auto rounded-lg border border-slate-800">
+                {profiles.flatMap((p) =>
+                  p.locations
+                    .filter((l) => l.name.toLowerCase().includes(find.trim().toLowerCase()))
+                    .map((l) => {
+                      const on = pick?.profile === p.id && pick.location === l.id;
+                      return (
+                        <li key={p.id + l.id}>
+                          <button type="button" onClick={() => setPick({ profile: p.id, location: l.id })} className={'flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-800 ' + (on ? 'bg-emerald-500/10 text-emerald-300' : '')}>
+                            <span className="min-w-0 truncate">{l.name}</span>
+                            {/* Several locations share a name, and one can sit under two Google accounts: the ids tell them apart. */}
+                            <span className="shrink-0 font-mono text-[11px] text-slate-500">account …{l.id.split('/')[1].slice(-4)} · location …{l.id.split('/')[3].slice(-5)}</span>
+                          </button>
+                        </li>
+                      );
+                    }),
+                )}
+              </ul>
+              {profiles.filter((p) => p.status !== 'active' || p.problem).map((p) => (
+                <p key={p.id} className="mt-2 text-xs text-amber-300">{p.name}: {p.problem ?? 'needs reconnecting in Postproxy'}</p>
               ))}
-            </select>
+            </>
           )}
         </div>
       )}
@@ -209,7 +226,7 @@ export default function GbpEditor() {
           <div className={card}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="text-lg font-semibold">{live.title}</h2>
-              <span className="text-xs text-slate-500">{[live.storefrontAddress?.addressLines?.join(' '), live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(', ') || 'Service-area business'}</span>
+              <span className="text-xs text-slate-500">{[live.storefrontAddress?.addressLines?.join(' '), live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(', ') || 'Service-area business'}{typeof live.metadata?.mapsUri === 'string' && <> · <a href={live.metadata.mapsUri} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">Open on Google Maps</a></>}</span>
             </div>
             <p className="mt-1 text-xs text-slate-500">Address, map pin, service area and open/closed status are not editable here.</p>
           </div>
