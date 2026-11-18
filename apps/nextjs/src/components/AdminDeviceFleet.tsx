@@ -73,6 +73,8 @@ type SystemHealth = {
   pointsWithoutInsights: number;
   /** Auto-paused phones are resumed on probation after this many minutes, at most this many times a day. */
   autoResume?: { minutes: number; max: number };
+  /** Idle proxies (IDLE_PROXY_GROUP on the worker): one proxy per phone while nothing is waiting. */
+  idleProxies?: { group: string; proxies: number; phones: number; assigned: number; bound: number; note: string };
 };
 
 /** The worker's own status, so a missing key or template is visible here instead of only in the logs. */
@@ -118,6 +120,17 @@ function SystemHealthCard({ system }: { system: SystemHealth | null }) {
               : ''),
         ],
         ['Insights', system.pointsWithoutInsights < 25, `${system.pointsWithoutInsights} point(s) waiting for insights`],
+        // While nothing is waiting, each phone sits on its own proxy from the idle group.
+        ...(system.idleProxies?.group
+          ? ([
+              [
+                'Idle proxies',
+                system.idleProxies.proxies > 0 && system.idleProxies.assigned >= system.idleProxies.phones,
+                `group ${system.idleProxies.group}: ${system.idleProxies.proxies} proxies for ${system.idleProxies.phones} phones · ${system.idleProxies.bound} on their idle proxy now` +
+                  (system.idleProxies.note ? ' · ' + system.idleProxies.note : ''),
+              ],
+            ] as [string, boolean, string][])
+          : []),
       ]
     : [['Worker', false, 'no status report: the worker is not running, or has not reported yet']];
   const failing = rows.filter(([, ok]) => !ok).map(([label]) => label);

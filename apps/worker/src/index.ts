@@ -20,6 +20,7 @@ import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
+import { idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
@@ -95,6 +96,8 @@ async function execute(job: Job, token?: string) {
       throw new DelayedError();
     }
     const d = lease.device;
+    // Its idle proxy (if it had one) is over: this point binds the phone's own search proxy.
+    await leftIdle(d.imageId);
     // A phone handed back early may still have its last point's evidence being pulled (only when
     // its rest is shorter than that): wait for it, then make sure that point did not end in a
     // captcha cooldown or a pause meanwhile.
@@ -536,6 +539,8 @@ async function reportHealth() {
     concurrency: deviceWorker.concurrency,
     // Power saving: phones on, points waiting, and when the phones will be switched off.
     power: powerReport(),
+    // Idle proxies (IDLE_PROXY_GROUP): how many phones have one and are on it now.
+    idleProxies: idleProxyReport(),
     concurrencyCeiling: targetConcurrency(readyPhoneCount(), process.env.MOBILE_CONCURRENCY).capped ? Number(process.env.MOBILE_CONCURRENCY) : null,
     proxyLists: await db.proxyList.count(),
     // How long the longest-idle list has gone unused. Idle lists are deleted after two minutes
@@ -630,6 +635,8 @@ async function tick() {
       lastPowerLook = Date.now();
       const changed = await powerTick().catch((e) => (console.warn('[power] skipped:', (e as Error).message), false));
       if (changed) lastFleetSync = 0;
+      // Nothing waiting: idle phones move to their own cheap proxy (IDLE_PROXY_GROUP).
+      await idleProxyTick().catch((e) => console.warn('[idle] skipped:', (e as Error).message));
     }
     // Picks up newly rented phones (and bootstraps them) without an admin click.
     // Runs in the background so bootstrapping new phones never delays dispatch.

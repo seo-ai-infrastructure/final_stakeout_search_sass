@@ -7,6 +7,7 @@ import { setAdbPassword } from './deviceShell';
 import { autoResumeDecision, autoResumeKey, fleetWideFailure, isDeviceAttributable, nextOutcomes, pauseReason, probationKey, probationReason } from '@stakeout/core/fleetHealth';
 import { RUN_PIN_SH_V2 } from '@stakeout/core/runner';
 import { push, shell } from './deviceShell';
+import { idleGroupProxyIds } from './idleProxy';
 export { duoplusPost } from '@stakeout/core/redis';
 
 let lastAutoSyncAt = 0;
@@ -150,6 +151,9 @@ export async function syncDuoPlusDevicePool() {
       // New phone: register it only with its real DuoPlus proxy binding, and
       // leave it un-bootstrapped so it cannot be leased until an admin bootstraps it.
       let proxyId = item.proxy_id ? String(item.proxy_id) : '';
+      // A phone found on one of the idle proxies must never take it as its own search record
+      // (the worker rewrites that record for every point).
+      if (proxyId && (await idleGroupProxyIds().catch(() => [] as string[])).includes(proxyId)) proxyId = '';
       if (!proxyId || usedProxies.has(proxyId)) {
         // Give the phone its own DuoPlus proxy record instead of waiting for someone to bind one.
         const created = autoSetup ? await createOwnProxy(imageId, usedProxies) : null;
