@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { change, comparePeriods, latestSnapshot, scannable, topKeywords } from '../packages/core/gbpInsights';
+import { brandWord, change, comparePeriods, latestSnapshot, scannable, topKeywords } from '../packages/core/gbpInsights';
 
 test('daily records add up into the last 30 days and the 30 before, wherever the numbers sit', () => {
   const day = (d: string, o: object) => ({ date: d, ...o });
@@ -48,11 +48,23 @@ test('searches are merged across months; "fewer than 15" is shown as such and so
   assert.equal(t.rows[2].keyword, 'washing');
 });
 
-test('brand, job and one-word searches are not offered as scan keywords', () => {
-  assert.equal(scannable('security guard company tampa fl', 'Ranger Guard of Tampa Bay'), true);
-  assert.equal(scannable('ranger security services', 'Ranger Guard of Tampa Bay'), false);
-  assert.equal(scannable('armed security jobs near me', 'Ranger Guard of Tampa Bay'), false);
-  assert.equal(scannable('guard', 'Ranger Guard of Tampa Bay'), false);
-  assert.equal(scannable('pressure washing san antonio', '210 Pressure Washing'), true);
-  assert.equal(scannable('pressure washer phone number', '210 Pressure Washing'), false);
+test('searches for the business by name and job searches are not offered as scan keywords', () => {
+  const ranger = ['ranger security services', 'ranger', 'guard', 'security guard company tampa fl', 'security guards tampa', 'security companies near me', 'armed security jobs near me', 'firewatch guards', 'security guard tampa', 'tampa security officer', 'tampa guard', 'security company tampa', 'unarmed security company tampa', 'security guard companies', 'guards tampa bay', 'security jobs near me', 'security guard', 'security guards', 'security companies', 'day zero security tampa fl'];
+  // "Tampa" is in half the searches and is the city: the brand is "ranger".
+  const brand = brandWord('Ranger Guard of Tampa Bay', ranger, 'Tampa FL');
+  assert.equal(brand, 'ranger');
+  assert.equal(scannable('security guard company tampa fl', brand), true);
+  assert.equal(scannable('ranger security services', brand), false);
+  assert.equal(scannable('armed security jobs near me', brand), false);
+  // One-word service searches are real keywords.
+  assert.equal(scannable('guard', brand), true);
+
+  // The trade is not the brand: "botox" and "denver" are what customers search for.
+  const spa = ['botox denver', 'botox near me', 'botox', 'masseter botox', 'lip filler', 'lip filler denver', 'ultherapy', 'kybella', 'ultherapy denver', 'sculptra', 'botox cherry creek', 'denver botox'];
+  assert.equal(brandWord('Denver Botox: GATTONI Medical Aesthetics', spa, 'Denver CO'), '');
+  assert.equal(scannable('botox denver', ''), true);
+  assert.equal(brandWord('Denver Botox: GATTONI Medical Aesthetics', [...spa, 'gattoni medical aesthetics'], 'Denver CO'), 'gattoni');
+  // Nothing distinctive in the name: nothing is flagged.
+  assert.equal(brandWord('210 Pressure Washing', ['pressure washer', 'pressure washing san antonio'], 'San Antonio TX'), '');
+  assert.equal(scannable('pressure washer phone number', ''), false);
 });

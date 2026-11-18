@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { METRICS, change, scannable, type KeywordRow, type MetricKey, type Totals } from '@stakeout/core/gbpInsights';
+import { METRICS, brandWord, change, scannable, type KeywordRow, type MetricKey, type Totals } from '@stakeout/core/gbpInsights';
 
 type Performance =
   | { kind: 'daily'; to: string; recent: Totals; before: Totals; known: MetricKey[]; daysWithData: number; daysBefore: number; days: number }
@@ -14,7 +14,7 @@ const monthName = (m: string) => new Date(m + '-15T00:00:00Z').toLocaleString('e
 const MAX_PICK = 10;
 
 /** The listing's numbers from Google and the searches that showed it, with a way to scan those searches. */
-export default function GbpInsights({ profile, location, businessName }: { profile: string; location: string; businessName: string }) {
+export default function GbpInsights({ profile, location, businessName, place }: { profile: string; location: string; businessName: string; place: string }) {
   const [data, setData] = useState<Insights | null>(null);
   const [error, setError] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
@@ -31,7 +31,8 @@ export default function GbpInsights({ profile, location, businessName }: { profi
   }, [profile, location]);
 
   const rows = data?.keywords.rows ?? [];
-  const good = useMemo(() => rows.filter((r) => scannable(r.keyword, businessName)), [rows, businessName]);
+  const brand = useMemo(() => brandWord(businessName, rows.map((r) => r.keyword), place), [rows, businessName, place]);
+  const good = useMemo(() => rows.filter((r) => scannable(r.keyword, brand)), [rows, brand]);
   const shown = all ? rows : rows.slice(0, 12);
   const toggle = (k: string) => setPicked((p) => (p.includes(k) ? p.filter((x) => x !== k) : p.length < MAX_PICK ? [...p, k] : p));
   const scanUrl = '/new-scan?' + new URLSearchParams([['name', businessName], ...picked.map((k) => ['kw', k] as [string, string])]).toString();
@@ -89,14 +90,14 @@ export default function GbpInsights({ profile, location, businessName }: { profi
             <>
               <ul className="mt-2 divide-y divide-slate-800 rounded-lg border border-slate-800">
                 {shown.map((r) => {
-                  const ok = scannable(r.keyword, businessName);
+                  const ok = scannable(r.keyword, brand);
                   const on = picked.includes(r.keyword);
                   return (
                     <li key={r.keyword}>
                       <label className={'flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-slate-800/60 ' + (on ? 'bg-emerald-500/5' : '')}>
                         <input type="checkbox" checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.keyword)} />
                         <span className={'min-w-0 flex-1 truncate ' + (ok ? 'text-slate-200' : 'text-slate-500')}>{r.keyword}</span>
-                        {!ok && <span className="shrink-0 text-[11px] text-slate-600">brand, job or one-word search</span>}
+                        {!ok && <span className="shrink-0 text-[11px] text-slate-600">search for the business by name, or a job search</span>}
                         <span className="w-24 shrink-0 text-right text-xs tabular-nums text-slate-400" title="Times shown in the latest month it appeared">{r.latest} <span className="text-slate-600">latest</span></span>
                         <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-300" title="Total times shown across the months listed; searches Google only reports as fewer than 15 count as 0">{r.exact ? r.total.toLocaleString('en-US') + ' total' : ''}</span>
                       </label>

@@ -116,3 +116,49 @@ test('Postproxy failures are explained in words an admin can act on', () => {
   assert.equal(postproxyProblem(422, { error: 'Location is not eligible: canModifyServiceList' }, null), 'Location is not eligible: canModifyServiceList');
   assert.match(postproxyProblem(404, null, null), /not reachable/);
 });
+
+test('holiday hours: read, changed and sent as whole dates, with past dates dropped', async () => {
+  const { specialOf, specialPeriodsOf, upcomingHolidays } = await import('../packages/core/gbp');
+  const at = (y: number, m: number, d: number) => ({ year: y, month: m, day: d });
+  const loc: GbpLocation = {
+    ...live,
+    specialHours: {
+      specialHourPeriods: [
+        { startDate: at(2022, 12, 25), endDate: at(2022, 12, 25), closed: true },
+        { startDate: at(2026, 12, 25), endDate: at(2026, 12, 25), closed: true },
+        { startDate: at(2026, 11, 26), endDate: at(2026, 11, 26), openTime: { hours: 9 }, closeTime: { hours: 13 } },
+      ],
+    },
+  };
+  const today = '2026-11-18';
+  const now = specialOf(loc, today)!;
+  assert.equal(now.past, 1);
+  assert.deepEqual(now.days, [{ date: '2026-11-26', closed: false, open: '09:00', close: '13:00' }, { date: '2026-12-25', closed: true, open: '09:00', close: '17:00' }]);
+  // Unchanged dates are not a change.
+  assert.deepEqual(diff(loc, { specialHours: now.days }, today), []);
+  // A date spanning several days cannot be edited here.
+  assert.equal(specialOf({ specialHours: { specialHourPeriods: [{ startDate: at(2026, 12, 24), endDate: at(2026, 12, 26), openTime: '09:00', closeTime: '12:00' }] } }, today), null);
+
+  const next = [...now.days, { date: '2027-01-01', closed: true, open: '09:00', close: '17:00' }];
+  const d = diff(loc, { specialHours: next }, today);
+  assert.equal(d[0].key, 'specialHours');
+  assert.equal(d[0].tier, 'green');
+  assert.match(d[0].note!, /1 past date/);
+  const patch = buildPatch(loc, { specialHours: next }, d);
+  assert.equal(patch.location, null);
+  assert.deepEqual(patch.hours!.fields, ['specialHours']);
+  const sent = (patch.hours as any).specialHours.specialHourPeriods;
+  assert.equal(sent.length, 3); // the 2022 date is gone
+  assert.deepEqual(sent[0], { startDate: at(2026, 11, 26), endDate: at(2026, 11, 26), openTime: '09:00', closeTime: '13:00' });
+  assert.deepEqual(sent[2], { startDate: at(2027, 1, 1), endDate: at(2027, 1, 1), closed: true });
+  assert.deepEqual(specialPeriodsOf([]), []);
+
+  assert.match(problemWith(loc, { specialHours: [{ date: '2026-11-01', closed: true, open: '', close: '' }] }, today)!, /in the past/);
+  assert.match(problemWith(loc, { specialHours: [...now.days, now.days[0]] }, today)!, /listed twice/);
+  assert.match(problemWith(loc, { specialHours: [{ date: '', closed: true, open: '', close: '' }] }, today)!, /not a date/);
+  assert.match(problemWith(loc, { specialHours: [{ date: '2026-12-01', closed: false, open: '17:00', close: '09:00' }] }, today)!, /closing time/);
+  assert.equal(problemWith(loc, { specialHours: next }, today), null);
+
+  // Thanksgiving 2026 is the fourth Thursday of November: the 26th.
+  assert.deepEqual(upcomingHolidays(today).map((h) => h.date), ['2026-11-26', '2026-12-24', '2026-12-25', '2026-12-31', '2027-01-01']);
+});

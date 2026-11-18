@@ -50,7 +50,8 @@ export default function GoogleSitePanel({ website, businessName }: { website: st
   const [analyticsError, setAnalyticsError] = useState('');
 
   const host = (() => { try { return new URL(website).hostname.replace(/^www\./, ''); } catch { return ''; } })();
-  const remember = 'stakeout.ga4.' + host;
+  // A new key name: an earlier version could save one site's property under another site.
+  const remember = 'stakeout.ga4site.' + host;
 
   const loadStatus = useCallback(() => get<Status>('/api/admin/google').then(setStatus).catch(() => setStatus({ configured: false, connected: false, email: null, searchConsole: false, analytics: false })), []);
   useEffect(() => {
@@ -58,7 +59,7 @@ export default function GoogleSitePanel({ website, businessName }: { website: st
   }, [loadStatus]);
 
   useEffect(() => {
-    setSite(null); setSiteError(''); setPicked([]); setAnalytics(null); setAnalyticsError('');
+    setSite(null); setSiteError(''); setPicked([]); setAnalytics(null); setAnalyticsError(''); setProperty('');
     if (!status?.connected || !host) return;
     let live = true;
     if (status.searchConsole) get<Site>('/api/admin/google/site?website=' + encodeURIComponent(website)).then((s) => live && setSite(s)).catch((e) => live && setSiteError(e.message));
@@ -70,7 +71,7 @@ export default function GoogleSitePanel({ website, businessName }: { website: st
           let saved = '';
           try { saved = window.localStorage.getItem(remember) ?? ''; } catch { /* storage unavailable */ }
           // A remembered choice for this site, else a property whose name contains the site's name.
-          const guess = r.properties.find((p) => p.id === saved) ?? r.properties.find((p) => p.name.toLowerCase().includes(host.split('.')[0]));
+          const guess = r.properties.find((p) => p.id === saved) ?? r.properties.find((p) => p.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(host.split('.')[0].replace(/[^a-z0-9]/g, '')));
           setProperty(guess?.id ?? '');
         })
         .catch((e) => live && setAnalyticsError(e.message));
@@ -82,11 +83,15 @@ export default function GoogleSitePanel({ website, businessName }: { website: st
     setAnalytics(null); setAnalyticsError('');
     if (!property) return;
     let live = true;
-    try { window.localStorage.setItem(remember, property); } catch { /* storage unavailable */ }
     get<Analytics>('/api/admin/google/analytics?property=' + encodeURIComponent(property)).then((a) => live && setAnalytics(a)).catch((e) => live && setAnalyticsError(e.message));
     return () => { live = false; };
-  }, [property, remember]);
+  }, [property]);
 
+  // Only a choice made by hand is remembered for this site; a guess is not.
+  const choose = (id: string) => {
+    setProperty(id);
+    try { if (id) window.localStorage.setItem(remember, id); else window.localStorage.removeItem(remember); } catch { /* storage unavailable */ }
+  };
   const disconnect = async () => {
     await fetch('/api/admin/google', { method: 'DELETE' }).catch(() => {});
     setNotice('Google disconnected.');
@@ -170,7 +175,7 @@ export default function GoogleSitePanel({ website, businessName }: { website: st
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <h4 className="text-sm font-semibold">Analytics</h4>
                     {properties && properties.length > 0 && (
-                      <select className={input + ' max-w-full'} value={property} onChange={(e) => setProperty(e.target.value)} aria-label="Analytics property">
+                      <select className={input + ' max-w-full'} value={property} onChange={(e) => choose(e.target.value)} aria-label="Analytics property">
                         <option value="">Choose the Analytics property for this site…</option>
                         {properties.map((p) => <option key={p.id} value={p.id}>{p.name}{p.account ? ' · ' + p.account : ''}</option>)}
                       </select>

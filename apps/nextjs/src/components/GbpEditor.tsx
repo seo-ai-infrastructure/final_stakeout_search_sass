@@ -3,14 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import GbpInsights from '@/components/GbpInsights';
 import GoogleSitePanel from '@/components/GoogleSitePanel';
 import {
-  DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, diff, problemWith, redBlock, siteOf, worst,
-  type DayHours, type FieldChange, type GbpChange, type GbpLocation, type Tier,
+  DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, diff, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
+  type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
 } from '@stakeout/core/gbp';
 
 type Cat = { name: string; displayName?: string };
 type Profile = { id: string; name: string; status: string; problem: string | null; locations: { id: string; name: string; placeId: string | null }[] };
 type Edit = { id: string; tier: Tier; changes: FieldChange[]; status: string; error: string | null; checkedAt: string | null; createdAt: string };
-type Form = { description: string; websiteUri: string; additionalCategories: Cat[]; additionalPhones: string; regularHours: DayHours[] | null; title: string; primaryCategory: Cat | null; primaryPhone: string };
+type Form = { description: string; websiteUri: string; additionalCategories: Cat[]; additionalPhones: string; regularHours: DayHours[] | null; specialHours: SpecialDay[] | null; pastSpecial: number; title: string; primaryCategory: Cat | null; primaryPhone: string };
 
 const TIER: Record<Tier, { text: string; chip: string }> = {
   green: { text: 'Safe', chip: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' },
@@ -29,12 +29,17 @@ const GOOGLE_RESULT: Record<string, string> = {
   failed: 'Google sign-in did not complete. Try again from a listing’s website panel.',
 };
 
+/** Today's date where the admin is, as YYYY-MM-DD. */
+const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+
 const formOf = (l: GbpLocation, week: DayHours[] | null): Form => ({
   description: l.profile?.description ?? '',
   websiteUri: l.websiteUri ?? '',
   additionalCategories: l.categories?.additionalCategories ?? [],
   additionalPhones: (l.phoneNumbers?.additionalPhones ?? []).join(', '),
   regularHours: week,
+  specialHours: specialOf(l, today())?.days ?? null,
+  pastSpecial: specialOf(l, today())?.past ?? 0,
   title: l.title ?? '',
   primaryCategory: l.categories?.primaryCategory ?? null,
   primaryPhone: l.phoneNumbers?.primaryPhone ?? '',
@@ -135,6 +140,7 @@ export default function GbpEditor() {
       additionalPhones: form.additionalPhones.split(',').map((x) => x.trim()).filter(Boolean),
     };
     if (form.regularHours) c.regularHours = form.regularHours;
+    if (form.specialHours) c.specialHours = form.specialHours;
     if (unlocked) {
       c.title = form.title;
       c.primaryPhone = form.primaryPhone;
@@ -252,7 +258,7 @@ export default function GbpEditor() {
             <p className="mt-1 text-xs text-slate-500">Address, map pin, service area and open/closed status are not editable here.</p>
           </div>
 
-          <GbpInsights profile={pick.profile} location={pick.location} businessName={live.title ?? ''} />
+          <GbpInsights profile={pick.profile} location={pick.location} businessName={live.title ?? ''} place={[live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(' ')} />
           <GoogleSitePanel website={live.websiteUri ?? ''} businessName={live.title ?? ''} />
 
           <section className={card + ' space-y-5'}>
@@ -310,6 +316,38 @@ export default function GbpEditor() {
                     );
                   })}
                 </div>
+              )}
+            </div>
+            <div>
+              <label className="text-sm font-medium">Holiday hours <span className="ml-1 text-xs text-slate-500">dates with their own hours</span></label>
+              {!form.specialHours ? (
+                <p className="mt-1.5 text-sm text-slate-400">This profile has holiday hours that span several days or are split in two. They are left untouched: this editor handles one period a date.</p>
+              ) : (
+                <>
+                  <div className="mt-1.5 space-y-1.5">
+                    {form.specialHours.length === 0 && <p className="text-xs text-slate-500">No upcoming dates set.</p>}
+                    {form.specialHours.map((d, i) => {
+                      const upd = (patch: Partial<SpecialDay>) => set('specialHours', form.specialHours!.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                      return (
+                        <div key={i} className="flex flex-wrap items-center gap-3 text-sm">
+                          <input type="date" className={input.replace('w-full ', '') + ' w-40'} value={d.date} min={today()} onChange={(e) => upd({ date: e.target.value })} aria-label="Date" />
+                          <label className="flex items-center gap-1.5 text-xs text-slate-400"><input type="checkbox" checked={d.closed} onChange={(e) => upd({ closed: e.target.checked })} /> Closed</label>
+                          <input type="time" className={input.replace('w-full ', '') + ' w-32'} value={d.open} disabled={d.closed} onChange={(e) => upd({ open: e.target.value })} aria-label="Opens" />
+                          <span className="text-slate-500">to</span>
+                          <input type="time" className={input.replace('w-full ', '') + ' w-32'} value={d.close === '24:00' ? '23:59' : d.close} disabled={d.closed} onChange={(e) => upd({ close: e.target.value })} aria-label="Closes" />
+                          <button type="button" onClick={() => set('specialHours', form.specialHours!.filter((_, j) => j !== i))} className="text-xs text-slate-500 hover:text-rose-300">Remove</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {upcomingHolidays(today()).filter((h) => !form.specialHours!.some((d) => d.date === h.date)).map((h) => (
+                      <button key={h.date} type="button" onClick={() => set('specialHours', [...form.specialHours!, { date: h.date, closed: true, open: '09:00', close: '17:00' }].sort((a, b) => a.date.localeCompare(b.date)))} className="rounded-full border border-slate-700 px-2.5 py-1 text-xs hover:border-emerald-500 hover:text-emerald-300">+ {h.name} ({h.date.slice(5)})</button>
+                    ))}
+                    <button type="button" onClick={() => set('specialHours', [...form.specialHours!, { date: '', closed: true, open: '09:00', close: '17:00' }])} className="rounded-full border border-slate-700 px-2.5 py-1 text-xs hover:border-slate-500">+ Another date</button>
+                  </div>
+                  <p className="mt-1.5 text-xs text-slate-500">A holiday button adds the date as closed; untick Closed to give it hours.{form.pastSpecial > 0 && ` Google still holds ${form.pastSpecial} past date${form.pastSpecial === 1 ? '' : 's'} for this profile; they are cleared the next time holiday hours are saved.`}</p>
+                </>
               )}
             </div>
           </section>

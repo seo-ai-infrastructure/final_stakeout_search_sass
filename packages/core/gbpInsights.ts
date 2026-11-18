@@ -119,16 +119,37 @@ export function topKeywords(months: Month[]): { rows: KeywordRow[]; months: stri
 }
 
 /**
- * Whether a search is worth scanning as a local keyword: the business's own name, job hunting and
- * one-word searches say nothing about how it ranks for customers looking for the service.
+ * The word in a business's name that marks a search as being for that business by name, or '' when
+ * none stands out. A name is brand plus trade plus place ("Denver Botox: GATTONI Medical Aesthetics",
+ * "Ranger Guard of Tampa Bay"), and customers search the trade and the place too. So the place
+ * (`place`: the listing's city and state) is set aside, and of the name words left, the brand is
+ * the one found in the fewest of the listing's searches, provided it is in some and in no more than
+ * 15% of them: a word in more than that is the trade ("botox"), not the brand.
  */
-export function scannable(keyword: string, businessName: string): boolean {
+export function brandWord(businessName: string, keywords: string[], place = ''): string {
+  const split = (t: string) => t.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const places = new Set(split(place));
+  const words = [...new Set(split(businessName).filter((w) => w.length > 3 && !GENERIC.has(w) && !places.has(w)))];
+  const sets = keywords.map((k) => new Set(split(k)));
+  let best = '';
+  let fewest = Infinity;
+  for (const w of words) {
+    const n = sets.filter((x) => x.has(w)).length;
+    if (n > 0 && n < fewest && n <= Math.max(1, sets.length * 0.15)) {
+      best = w;
+      fewest = n;
+    }
+  }
+  return best;
+}
+
+/**
+ * Whether a search is worth scanning as a local keyword: searches for the business by name and job
+ * hunting say nothing about how it ranks for customers looking for the service.
+ */
+export function scannable(keyword: string, brand: string): boolean {
   const k = keyword.toLowerCase();
-  if (k.split(/\s+/).length < 2) return false;
   if (/\b(jobs?|hiring|careers?|salary|class|training|phone number)\b/.test(k)) return false;
-  // The brand is taken to be the first distinctive word of the name ("Ranger" in "Ranger Guard of Tampa Bay"):
-  // later words are usually the trade or the city, which customers also search for.
-  const brand = businessName.toLowerCase().split(/[^a-z0-9]+/).find((w) => w.length > 3 && !GENERIC.has(w));
   return !brand || !k.split(/[^a-z0-9]+/).includes(brand);
 }
 const GENERIC = new Set(['plumbing', 'plumber', 'plumbers', 'roofing', 'pressure', 'washing', 'cleaning', 'service', 'services', 'security', 'guard', 'attorney', 'attorneys', 'injury', 'accident', 'personal', 'criminal', 'defense', 'lawyer', 'dental', 'painting', 'garage', 'floors', 'drain', 'exteriors', 'premium', 'rentals', 'house', 'bail', 'bonds', 'medical', 'botox', 'city', 'county', 'south', 'north', 'east', 'west', 'beach']);

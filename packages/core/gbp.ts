@@ -11,6 +11,8 @@ export type Tier = 'green' | 'amber' | 'red';
 
 type Category = { name: string; displayName?: string };
 type Time = { hours?: number; minutes?: number } | string;
+type GDate = { year?: number; month?: number; day?: number };
+type SpecialPeriod = { startDate?: GDate; endDate?: GDate; openTime?: Time; closeTime?: Time; closed?: boolean };
 type Period = { openDay: string; openTime?: Time; closeDay: string; closeTime?: Time };
 
 /** A location as Google returns it (only the parts used here; everything else is passed through untouched). */
@@ -22,12 +24,16 @@ export type GbpLocation = {
   categories?: { primaryCategory?: Category; additionalCategories?: Category[] };
   profile?: { description?: string } & Record<string, unknown>;
   regularHours?: { periods?: Period[] };
+  specialHours?: { specialHourPeriods?: SpecialPeriod[] };
   storefrontAddress?: { addressLines?: string[]; locality?: string; administrativeArea?: string; postalCode?: string; regionCode?: string };
   metadata?: Record<string, unknown>;
 } & Record<string, unknown>;
 
 /** One day of the week in the editor: closed, open all day, or one opening period. */
 export type DayHours = { day: string; closed: boolean; allDay: boolean; open: string; close: string };
+
+/** One date with its own hours (a holiday): closed all day, or one opening period. `date` is YYYY-MM-DD. */
+export type SpecialDay = { date: string; closed: boolean; open: string; close: string };
 
 /** What the editor may ask to change. A key that is absent is left alone. */
 export type GbpChange = {
@@ -36,6 +42,7 @@ export type GbpChange = {
   additionalCategories?: Category[];
   additionalPhones?: string[];
   regularHours?: DayHours[];
+  specialHours?: SpecialDay[];
   title?: string;
   primaryCategory?: Category;
   primaryPhone?: string;
@@ -53,6 +60,7 @@ const LABELS: Record<keyof GbpChange, string> = {
   additionalCategories: 'Additional categories',
   additionalPhones: 'Additional phone numbers',
   regularHours: 'Opening hours',
+  specialHours: 'Holiday hours',
   title: 'Business name',
   primaryCategory: 'Primary category',
   primaryPhone: 'Primary phone',
@@ -106,6 +114,51 @@ export function weekOf(loc: GbpLocation): DayHours[] | null {
   return week;
 }
 
+const iso = (d: GDate | undefined) => (d?.year && d.month && d.day ? `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}` : '');
+
+/**
+ * The dates with their own hours, from `today` (YYYY-MM-DD) onwards, oldest first; `past` counts the
+ * older ones Google still holds, which have no effect any more. Null when a date has more than one
+ * period or a period covers several days: those cannot be shown as one row a date, so holiday
+ * hours are then read-only.
+ */
+export function specialOf(loc: GbpLocation, today: string): { days: SpecialDay[]; past: number } | null {
+  const days: SpecialDay[] = [];
+  let past = 0;
+  for (const p of loc.specialHours?.specialHourPeriods ?? []) {
+    const date = iso(p.startDate);
+    if (!date) return null;
+    const end = iso(p.endDate) || date;
+    if (date < today) {
+      past++;
+      continue;
+    }
+    const open = hhmm(p.openTime);
+    const close = hhmm(p.closeTime);
+    // An open day ends the same date; "24 hours" is written as midnight to midnight of the next date.
+    const allDay = !p.closed && open === '00:00' && (close === '24:00' || close === '00:00');
+    if (end !== date && !allDay) return null;
+    if (days.some((d) => d.date === date)) return null;
+    days.push({ date, closed: Boolean(p.closed), open: p.closed ? '09:00' : open, close: p.closed ? '17:00' : allDay ? '24:00' : close });
+  }
+  return { days: days.sort((a, b) => a.date.localeCompare(b.date)), past };
+}
+
+/** Google's special-hour periods for the editor's dates. */
+export function specialPeriodsOf(days: SpecialDay[]): SpecialPeriod[] {
+  return [...days]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((d) => {
+      const [year, month, day] = d.date.split('-').map(Number);
+      const on = { year, month, day };
+      return d.closed ? { startDate: on, endDate: on, closed: true } : { startDate: on, endDate: on, openTime: d.open, closeTime: d.close };
+    });
+}
+
+const specialKey = (days: SpecialDay[]) => [...days].sort((a, b) => a.date.localeCompare(b.date)).map((d) => d.date + ':' + (d.closed ? 'closed' : d.open + '-' + d.close)).join('|');
+const specialText = (days: SpecialDay[] | undefined) =>
+  days?.length ? [...days].sort((a, b) => a.date.localeCompare(b.date)).map((d) => d.date + ' ' + (d.closed ? 'closed' : d.open + '–' + d.close)).join(', ') : 'none';
+
 /** Google's periods for a week from the editor. */
 export function periodsOf(week: DayHours[]): Period[] {
   return week
@@ -126,13 +179,14 @@ const weekText = (week: DayHours[] | null) =>
     : 'split or overnight hours';
 
 /** Each editable field of a profile in the words the edit history uses for it. */
-export function describe(loc: GbpLocation): Record<keyof GbpChange, string> {
+export function describe(loc: GbpLocation, today = new Date().toISOString().slice(0, 10)): Record<keyof GbpChange, string> {
   return {
     description: clean(loc.profile?.description) || 'none',
     websiteUri: clean(loc.websiteUri) || 'none',
     additionalCategories: catText(loc.categories?.additionalCategories),
     additionalPhones: (loc.phoneNumbers?.additionalPhones ?? []).join(', ') || 'none',
     regularHours: weekText(weekOf(loc)),
+    specialHours: (() => { const sp = specialOf(loc, today); return sp ? specialText(sp.days) : 'dates this editor cannot show'; })(),
     title: clean(loc.title),
     primaryCategory: loc.categories?.primaryCategory?.displayName || loc.categories?.primaryCategory?.name || 'none',
     primaryPhone: clean(loc.phoneNumbers?.primaryPhone) || 'none',
@@ -140,7 +194,7 @@ export function describe(loc: GbpLocation): Record<keyof GbpChange, string> {
 }
 
 /** Why a requested change cannot be sent at all, or null. Checked before anything is sent to Google. */
-export function problemWith(live: GbpLocation, change: GbpChange): string | null {
+export function problemWith(live: GbpLocation, change: GbpChange, today = new Date().toISOString().slice(0, 10)): string | null {
   if (change.description !== undefined) {
     const d = clean(change.description);
     if (d.length > DESCRIPTION_MAX) return `The description is ${d.length} characters; Google allows ${DESCRIPTION_MAX}.`;
@@ -170,6 +224,20 @@ export function problemWith(live: GbpLocation, change: GbpChange): string | null
       if (!d.closed && !d.allDay && !(/^\d{2}:\d{2}$/.test(d.open) && /^\d{2}:\d{2}$/.test(d.close) && d.open < d.close))
         return `On ${d.day.toLowerCase()} the closing time must be after the opening time.`;
   }
+  if (change.specialHours !== undefined) {
+    if (!specialOf(live, today)) return 'This profile has holiday hours spanning several days or split in two, which this editor cannot change yet.';
+    if (change.specialHours.length > 60) return 'That is more holiday dates than Google accepts in one go.';
+    const seen = new Set<string>();
+    for (const d of change.specialHours) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date) || Number.isNaN(Date.parse(d.date + 'T00:00:00Z'))) return 'One of the holiday dates is not a date.';
+      if (d.date < today) return `${d.date} is in the past.`;
+      if (seen.has(d.date)) return `${d.date} is listed twice.`;
+      seen.add(d.date);
+      const all = d.open === '00:00' && d.close === '24:00';
+      if (!d.closed && !all && !(/^\d{2}:\d{2}$/.test(d.open) && /^\d{2}:\d{2}$/.test(d.close) && d.open < d.close))
+        return `On ${d.date} the closing time must be after the opening time.`;
+    }
+  }
   return null;
 }
 
@@ -187,7 +255,7 @@ function safeProtocol(url: string) {
  * video re-verification or a suspension. A website moved to a different site is red; the same
  * site with a different path or tracking tag is green.
  */
-export function diff(live: GbpLocation, change: GbpChange): FieldChange[] {
+export function diff(live: GbpLocation, change: GbpChange, today = new Date().toISOString().slice(0, 10)): FieldChange[] {
   const out: FieldChange[] = [];
   const add = (key: keyof GbpChange, tier: Tier, from: string, to: string, note?: string) => out.push({ key, label: LABELS[key], tier, from, to, note });
 
@@ -215,6 +283,12 @@ export function diff(live: GbpLocation, change: GbpChange): FieldChange[] {
   if (change.regularHours !== undefined && weekKey(change.regularHours) !== weekKey(weekOf(live)))
     add('regularHours', 'green', weekText(weekOf(live)), weekText(change.regularHours));
 
+  if (change.specialHours !== undefined) {
+    const now = specialOf(live, today);
+    if (now && specialKey(change.specialHours) !== specialKey(now.days))
+      add('specialHours', 'green', specialText(now.days), specialText(change.specialHours), now.past ? `${now.past} past date${now.past === 1 ? '' : 's'} Google still holds will be cleared.` : undefined);
+  }
+
   if (change.title !== undefined && clean(change.title) !== clean(live.title)) add('title', 'red', clean(live.title), clean(change.title));
 
   if (change.primaryCategory !== undefined && change.primaryCategory.name !== live.categories?.primaryCategory?.name)
@@ -229,6 +303,27 @@ export function diff(live: GbpLocation, change: GbpChange): FieldChange[] {
     add('primaryPhone', 'red', clean(live.phoneNumbers?.primaryPhone) || 'none', clean(change.primaryPhone));
 
   return out;
+}
+
+/** The usual U.S. closing days from `today` to the end of next January, for one-click adding. */
+export function upcomingHolidays(today: string): { name: string; date: string }[] {
+  const y = Number(today.slice(0, 4));
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const out: { name: string; date: string }[] = [];
+  for (const year of [y, y + 1]) {
+    // Thanksgiving: the fourth Thursday of November.
+    const first = new Date(Date.UTC(year, 10, 1)).getUTCDay();
+    const thanksgiving = 1 + ((4 - first + 7) % 7) + 21;
+    out.push(
+      { name: 'New Year’s Day', date: `${year}-01-01` },
+      { name: 'Thanksgiving', date: `${year}-11-${pad(thanksgiving)}` },
+      { name: 'Christmas Eve', date: `${year}-12-24` },
+      { name: 'Christmas Day', date: `${year}-12-25` },
+      { name: 'New Year’s Eve', date: `${year}-12-31` },
+    );
+  }
+  const until = `${y + 1}-01-31`;
+  return out.filter((h) => h.date >= today && h.date <= until).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 /** The highest risk among the changes. */
@@ -291,7 +386,15 @@ export function buildPatch(live: GbpLocation, change: GbpChange, changes: FieldC
 
   return {
     location: fields.length ? { fields, ...location } : null,
-    hours: has('regularHours') ? { fields: ['regularHours'], regularHours: { periods: periodsOf(change.regularHours!) } } : null,
+    hours:
+      has('regularHours') || has('specialHours')
+        ? {
+            fields: [...(has('regularHours') ? ['regularHours'] : []), ...(has('specialHours') ? ['specialHours'] : [])],
+            ...(has('regularHours') ? { regularHours: { periods: periodsOf(change.regularHours!) } } : {}),
+            // Past dates are left out: they no longer do anything, and only dates from today on are sent.
+            ...(has('specialHours') ? { specialHours: { specialHourPeriods: specialPeriodsOf(change.specialHours!) } } : {}),
+          }
+        : null,
   };
 }
 
