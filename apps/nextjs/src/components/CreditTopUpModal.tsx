@@ -1,6 +1,15 @@
 'use client';
-import { PayPalScriptProvider, PayPalButtons } from '@paypal/react-paypal-js';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
+
+/** The price list in groups, each under its own heading. */
+const groupOf = (key?: string) => (!key ? '' : key.startsWith('pack') ? 'pack' : key.endsWith('-3') ? 'offer' : key === 'onboarding' ? 'onboarding' : key === 'admin-test' ? 'test' : 'plan');
+const GROUPS: Record<string, string> = {
+  pack: 'Credit packs · one time',
+  plan: 'Monthly plans · about half the price per credit',
+  offer: 'Black Friday · 3 months paid once',
+  onboarding: 'Done for you · optional',
+  test: 'Admin',
+};
 type Props = {
   isOpen: boolean;
   onClose: () => void;
@@ -10,35 +19,46 @@ type Props = {
 };
 export function CreditTopUpModal(p: Props) {
   const [packs, setPacks] = useState<{ key: string; name: string; credits: number; cents: number; blurb: string }[]>([]),
-    [credits, choose] = useState(500),
+    [credits, choose] = useState(100),
+    [ready, setReady] = useState(true),
+    [going, setGoing] = useState(false),
     [error, setError] = useState('');
   useEffect(() => {
     if (p.isOpen)
-      fetch('/api/paypal/order')
+      fetch('/api/billing/checkout')
         .then((r) => r.json())
         .then((d) => {
-          // Someone opening this wants more credits now, so the top-up comes first and is preselected.
+          // Packs first (the Starter Pack preselected), then the plans, the offer and onboarding.
           const list: { key: string; name: string; credits: number; cents: number; blurb: string }[] = d.packs ?? [];
-          const sorted = [...list.filter((k) => k.key.startsWith('extra')), ...list.filter((k) => !k.key.startsWith('extra'))];
-          setPacks(sorted);
-          choose(sorted[0]?.credits ?? 500);
+          setPacks(list);
+          setReady(d.ready !== false);
+          choose((list.find((k) => k.key === 'pack-100') ?? list[0])?.credits ?? 100);
         })
         .catch(() => setError('Unable to load the price list.'));
   }, [p.isOpen]);
   if (!p.isOpen) return null;
-  async function post(path: string, payload: unknown) {
-    const res = await fetch('/api/paypal/' + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const d = await res.json();
-    if (!res.ok) throw new Error(d.error);
-    return d;
+  /** To Stripe's payment page for the chosen item; the buyer comes back to this page afterwards. */
+  async function pay() {
+    setError('');
+    setGoing(true);
+    try {
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credits, returnTo: window.location.pathname }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.url) throw new Error(d.error || 'Checkout could not start.');
+      window.location.assign(d.url);
+    } catch (e) {
+      // The server's own reason (a setting, an unavailable item), not a generic failure.
+      setError((e as Error).message || 'Checkout could not start.');
+      setGoing(false);
+    }
   }
-  const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+  const chosen = packs.find((k) => k.credits === credits);
   return (
-    // The overlay scrolls: PayPal's card form is taller than most screens once it opens.
+    // The overlay scrolls: the price list is taller than a small screen.
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75">
       <div className="flex min-h-full items-center justify-center p-4">
       <section
@@ -48,7 +68,7 @@ export function CreditTopUpModal(p: Props) {
         className="w-full max-w-md space-y-5 rounded-xl bg-slate-900 p-6"
       >
         <div className="flex justify-between">
-          <h2 className="text-lg font-bold">{packs.length === 1 && packs[0].key === 'onboarding' ? 'Start with onboarding' : 'Buy scan credits'}</h2>
+          <h2 className="text-lg font-bold">Buy scan credits</h2>
           <button type="button" onClick={p.onClose} className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Close</button>
         </div>
         <p>Current balance · {p.currentBalance.toLocaleString()} credits</p>
@@ -56,12 +76,15 @@ export function CreditTopUpModal(p: Props) {
           One credit is one grid point.{' '}
           <a href="/pricing" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">Full price list</a>
         </p>
-        {clientId && packs.length > 0 ? (
+        {ready && packs.length > 0 ? (
           <>
             <div role="radiogroup" aria-label="What to buy" className="space-y-2">
-              {packs.map((k) => (
+              {packs.map((k, i) => (
+                <Fragment key={k.credits}>
+                {groupOf(k.key) !== groupOf(packs[i - 1]?.key) && (
+                  <p className="pt-2 text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400">{GROUPS[groupOf(k.key)]}</p>
+                )}
                 <label
-                  key={k.credits}
                   className={'flex cursor-pointer items-start gap-3 rounded-lg border p-3 ' + (credits === k.credits ? 'border-emerald-400 bg-emerald-500/10' : 'border-slate-700 hover:bg-slate-800')}
                 >
                   <input type="radio" name="pack" className="mt-1" checked={credits === k.credits} onChange={() => choose(k.credits)} />
@@ -73,34 +96,18 @@ export function CreditTopUpModal(p: Props) {
                     <span className="block text-sm text-slate-400">{k.blurb} ${(k.cents / 100 / k.credits).toFixed(2)} per credit.</span>
                   </span>
                 </label>
+                </Fragment>
               ))}
             </div>
-            <PayPalScriptProvider
-              options={{ clientId, currency: 'USD', intent: 'capture' }}
+            <button
+              type="button"
+              onClick={pay}
+              disabled={going || !chosen}
+              className="min-h-[48px] w-full rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950 disabled:opacity-60"
             >
-              <PayPalButtons
-                forceReRender={[credits]}
-                createOrder={async () => {
-                  setError('');
-                  try {
-                    return (await post('order', { credits })).orderID;
-                  } catch (e) {
-                    // The server's own reason (a setting, an unavailable item), not a generic failure.
-                    setError((e as Error).message || 'Checkout could not start.');
-                    throw e;
-                  }
-                }}
-                onApprove={async ({ orderID }) => {
-                  const d = await post('capture', { orderID });
-                  p.onBalanceUpdated(d.creditBalance);
-                  window.dispatchEvent(new Event('balance-change'));
-                  p.onClose();
-                }}
-                onError={() =>
-                  setError((cur) => cur || 'Checkout could not finish. Check your balance before trying again.')
-                }
-              />
-            </PayPalScriptProvider>
+              {going ? 'Opening secure checkout…' : chosen ? `Pay USD ${(chosen.cents / 100).toFixed(2)}` : 'Choose what to buy'}
+            </button>
+            <p className="text-center text-xs text-slate-500">Card payment on Stripe’s secure page. You come straight back here.</p>
           </>
         ) : (
           <p>Checkout is being set up. Email sass@stakeoutsearch.com and we will sort it out.</p>

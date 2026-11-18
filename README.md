@@ -6,7 +6,7 @@ Stakeout measures where a business appears across a US search grid. An agency ch
 
 | Directory | Contents |
 | --- | --- |
-| `apps/nextjs` | Agency authentication, scan wizard, reports, synchronized comparison maps, fleet admin, free teaser and PayPal checkout |
+| `apps/nextjs` | Agency authentication, scan wizard, reports, synchronized comparison maps, fleet admin, free teaser and Stripe checkout |
 | `apps/worker` | BullMQ consumers, device leasing, proxy checks, XML parsing, private R2 evidence and optional desktop AI Mode capture |
 | `packages/core` | Grid geometry, pricing and scan transactions, scheduling, R2 access and the on-device shell script |
 | `packages/db` | Prisma schema, migration and shared Neon client |

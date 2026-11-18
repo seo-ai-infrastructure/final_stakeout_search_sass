@@ -315,7 +315,7 @@ export function AdminOps() {
                             className={btn + ' border border-slate-600 py-1 text-slate-200 hover:bg-slate-800'}
                             onClick={() =>
                               run('onb:' + u.id, { action: 'set_onboarded', userId: u.id, on: u.onboarding === 'no' }, (d) =>
-                                d.on ? `${d.email} can now buy plans without paying for onboarding.` : `${d.email} must buy onboarding before a plan again.`,
+                                d.on ? `${d.email} is marked as onboarded (onboarding is no longer offered to them).` : `${d.email} is offered onboarding again (it is optional).`,
                               )
                             }
                           >

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ONBOARDING, PLANS, usd } from '@/lib/pricing';
+import { PACKS, PLANS, PREPAID, PROMO, promoLive, usd } from '@/lib/pricing';
 import { SiteHeader, SiteFooter, JoinLink } from './SiteChrome';
 import { WALL, AI_NAMED, rankStyle } from './demoData';
 import ReceiptPrinter from './ReceiptPrinter';
@@ -493,7 +493,7 @@ function Pricing() {
             ))}
           </dl>
           <p className="mt-4 text-sm leading-relaxed text-[#9aa7b8]">
-            Onboarding is {usd(ONBOARDING.cents)} once, with {ONBOARDING.credits.toLocaleString('en-US')} credits. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 5×5 is 25, with AI Overview tracking included.{' '}
+            Try it with a credit pack from {usd(PACKS[0].cents)}: no onboarding fee. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 5×5 is 25, with AI Overview tracking included.{' '}
             <Link href="/pricing" className="font-semibold text-[#7aa7ff] hover:underline">See pricing</Link>
           </p>
         </div>
@@ -519,6 +519,11 @@ function Pricing() {
 export default function Landing() {
   return (
     <div className="mk min-h-screen overflow-x-hidden">
+      {promoLive() && (
+        <Link href="/pricing" className="block bg-[#f5c451] px-4 py-2.5 text-center text-sm font-semibold text-[#06080c] hover:bg-[#ffd76a]">
+          {PROMO.name}: no onboarding fee. Try a real scan from {usd(PACKS[0].cents)}, or take 3 months of any plan and save up to {usd(Math.max(...PREPAID.map((x) => x.saves)))}. Ends {PROMO.endsText} →
+        </Link>
+      )}
       <SiteHeader />
 
       {/* HERO */}

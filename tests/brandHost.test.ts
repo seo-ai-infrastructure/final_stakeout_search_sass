@@ -15,7 +15,7 @@ test('white label: which hosts are ours', () => {
 test('white label: a customer domain serves shared reports and nothing else', () => {
   for (const p of ['/share/abc123', '/share/abc123/', '/api/share/abc123', '/api/evidence/pin1', '/api/proof/pin1', '/api/brand/logo', '/api/census/acs2024.pmtiles', '/_next/static/chunks/x.js', '/maplibre-gl-worker.mjs', '/favicon.ico'])
     assert.equal(allowedOnCustomDomain(p), true, p);
-  for (const p of ['/', '/login', '/pricing', '/scans', '/new-scan', '/admin/devices', '/share', '/share/a/b', '/api/scans', '/api/scans/abc', '/api/auth/login', '/api/admin/ops', '/api/paypal/order', '/set-password', '/demo'])
+  for (const p of ['/', '/login', '/pricing', '/scans', '/new-scan', '/admin/devices', '/share', '/share/a/b', '/api/scans', '/api/scans/abc', '/api/auth/login', '/api/admin/ops', '/api/billing/checkout', '/set-password', '/demo'])
     assert.equal(allowedOnCustomDomain(p), false, p);
 });
 

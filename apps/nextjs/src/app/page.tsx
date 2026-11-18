@@ -6,6 +6,9 @@ import '@fontsource/ibm-plex-sans-condensed/latin-600.css';
 import '@fontsource/ibm-plex-sans-condensed/latin-700.css';
 import Landing from '@/components/marketing/Landing';
 
+// Rebuilt every hour, so a dated offer leaves the page when it ends.
+export const revalidate = 3600;
+
 export const metadata: Metadata = {
   title: 'Stakeout Search: Every Data Point Comes with a Receipt',
   description:

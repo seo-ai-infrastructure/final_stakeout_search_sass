@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { parseSpec } from '@stakeout/core/grid';
 import { cloneScheduledRun, createScan, settlePin } from '@stakeout/core/scans';
-import { fulfill } from '../apps/nextjs/src/lib/paypal';
+import { fulfill } from '../apps/nextjs/src/lib/billing';
 async function run() {
   if (process.env.TEST_DISPOSABLE_DB !== 'yes')
     throw Error('Use a disposable database and set TEST_DISPOSABLE_DB=yes.');
@@ -64,36 +64,13 @@ async function run() {
       data: { id: orderId, userId: u.id, credits: 500, cents: 1234 },
     });
     const original = globalThis.fetch;
-    let amount = '0.01';
-    process.env.PAYPAL_CLIENT_ID = 'fixture';
-    process.env.PAYPAL_CLIENT_SECRET = 'fixture';
-    process.env.PAYPAL_MERCHANT_ID = 'fixture';
-    globalThis.fetch = async (url) =>
-      Response.json(
-        String(url).includes('oauth2')
-          ? { access_token: 'offline' }
-          : {
-              status: 'COMPLETED',
-              purchase_units: [
-                {
-                  custom_id: u.id + ':PACK_500',
-                  payee: { merchant_id: 'fixture' },
-                  payments: {
-                    captures: [
-                      {
-                        id: 'capture-' + u.id,
-                        status: 'COMPLETED',
-                        amount: { currency_code: 'USD', value: amount },
-                      },
-                    ],
-                  },
-                },
-              ],
-            },
-      );
+    let amount = 1;
+    process.env.STRIPE_SECRET_KEY = 'sk_test_fixture';
+    globalThis.fetch = async () =>
+      Response.json({ id: orderId, status: 'complete', payment_status: 'paid', currency: 'usd', amount_total: amount, client_reference_id: u.id, metadata: { credits: '500' }, payment_intent: 'pi_' + u.id });
     try {
       await assert.rejects(fulfill(orderId), /matched/);
-      amount = '12.34';
+      amount = 1234;
       assert.equal((await fulfill(orderId)).creditBalance, 502);
       assert.equal((await fulfill(orderId)).creditBalance, 502);
     } finally {

@@ -7,7 +7,7 @@ import { redis } from '@stakeout/core/redis';
 import { getSettings, saveSettings } from '@stakeout/core/settings';
 import { getAuthenticatedUser, hashPassword } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
-import { ONBOARDING_WAIVED, onboardingOf } from '@/lib/paypal';
+import { ONBOARDING_WAIVED, onboardingOf } from '@/lib/billing';
 import { sendPasswordLink } from '@/lib/passwordLinks';
 import { BrandError, listBrands, removeBrand, saveBrand } from '@stakeout/core/brands';
 import { cleanDomain } from '@stakeout/core/brandHost';
