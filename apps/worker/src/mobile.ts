@@ -13,6 +13,7 @@ import { isProxyProblem, pinOutageKey, supplyDown } from '@stakeout/core/proxyWa
 import { pinNetwork } from '@stakeout/core/network';
 import { decodoEndpoint, decodoLadder, decodoMobileLadder, decodoServes, decodoUser, proxyProviders } from '@stakeout/core/decodo';
 import { mobileHubs, mobileProvider, voidmobEndpoint, voidmobUser } from '@stakeout/core/voidmob';
+import { voidmobLogin } from './voidmobLogin';
 import { clearProxyOutage } from './proxyOutage';
 import { OBSERVE_SH } from '@stakeout/core/observer';
 import type { RpaSurface } from '@stakeout/core/rpaRules';
@@ -466,9 +467,10 @@ function provisionDecodo(device: LeasedDevice, p: Pin, network: 'residential' | 
  * cities, then (MOBILE_CROSS_STATE, on unless "false") the nearest hubs over the state line.
  * Mobile IPs are only located in hub cities, which is also what a real phone on 5G shows.
  */
-function provisionVoidmob(device: LeasedDevice, p: Pin) {
-  const { host, port, protocol } = voidmobEndpoint();
-  const base = process.env.VOIDMOB_USERNAME!.trim();
+async function provisionVoidmob(device: LeasedDevice, p: Pin) {
+  const { protocol } = voidmobEndpoint();
+  // The package's own Flex login (read from VoidMob with VOIDMOB_API_KEY + VOIDMOB_PROXY_ID), or the fixed one.
+  const { host, port, username: base, password } = await voidmobLogin();
   const minutes = Number(process.env.VOIDMOB_SESSION_MINUTES ?? 30);
   const hubs = mobileHubs(p, { crossState: process.env.MOBILE_CROSS_STATE !== 'false' });
   return provisionGateway(device, p, {
@@ -477,7 +479,7 @@ function provisionVoidmob(device: LeasedDevice, p: Pin) {
     host,
     port,
     protocol,
-    password: process.env.VOIDMOB_PASSWORD!,
+    password,
     tries: Math.max(1, Number(process.env.VOIDMOB_TRIES_PER_CITY ?? 2)),
     minutes,
     isp: '',
@@ -692,7 +694,7 @@ export async function provision(device: LeasedDevice, p: Pin) {
   // Mobile points (a mobile scan, or the mobile half of a mix) run only on mobile carrier IPs, never on home internet.
   if (pinNetwork(p.scan.network, p.rowIdx, p.colIdx) === 'mobile') {
     const provider = mobileProvider();
-    if (!provider) throw new Error('MOBILE_DATA_NOT_CONFIGURED set VOIDMOB_USERNAME and VOIDMOB_PASSWORD (or the Decodo mobile login) on the worker');
+    if (!provider) throw new Error('MOBILE_DATA_NOT_CONFIGURED set VOIDMOB_API_KEY and VOIDMOB_PROXY_ID (or VOIDMOB_USERNAME and VOIDMOB_PASSWORD, or the Decodo mobile login) on the worker');
     if (transportFor(device) !== 'adb') throw new Error('PROXY_MOBILE_NEEDS_ADB_PHONE');
     return provider === 'voidmob' ? provisionVoidmob(device, p) : provisionDecodo(device, p, 'mobile');
   }

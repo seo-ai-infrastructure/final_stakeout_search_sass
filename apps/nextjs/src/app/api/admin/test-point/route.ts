@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     });
     if (s.network === 'mobile') {
       const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
-      if (!health?.mobileData) throw new InputError('Mobile data is not set up: add VOIDMOB_USERNAME and VOIDMOB_PASSWORD to the worker.');
+      if (!health?.mobileData) throw new InputError('Mobile data is not set up: add VOIDMOB_API_KEY and VOIDMOB_PROXY_ID to the worker.');
     }
     const phone = typeof b.imageId === 'string' && /^[A-Za-z0-9]{3,20}$/.test(b.imageId) ? b.imageId : '';
     if (phone) {

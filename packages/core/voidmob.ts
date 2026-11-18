@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { cityCoords } from './grid';
 import { decodoMobileConfigured } from './decodo';
 
@@ -15,8 +16,50 @@ import { decodoMobileConfigured } from './decodo';
 
 type Env = Record<string, string | undefined>;
 
+/**
+ * Mobile data through VoidMob is set up either way: the package's ID and an API key (the worker reads
+ * the package's own Flex login from VoidMob, so a new package only needs its ID), or a fixed login.
+ */
 export function voidmobConfigured(env: Env = process.env) {
-  return Boolean(env.VOIDMOB_USERNAME?.trim() && env.VOIDMOB_PASSWORD);
+  return Boolean((env.VOIDMOB_API_KEY?.trim() && env.VOIDMOB_PROXY_ID?.trim()) || (env.VOIDMOB_USERNAME?.trim() && env.VOIDMOB_PASSWORD));
+}
+
+/** A package's Flex gateway login: the base username (we add the place and session per point) and password. */
+export type FlexLogin = { proxyId: string; host: string; port: number; username: string; password: string };
+
+/**
+ * The Flex login in VoidMob's reply to POST /v1/proxies/:id/flex_credentials (or GET /v1/proxies/:id):
+ * { success, data: { proxy: { id, status, gateway: { host, port, username, password } } } }.
+ * Null when the reply holds no usable login (gateway not set up, package not active, an error).
+ */
+export function parseFlexLogin(body: unknown, proxyId: string): FlexLogin | null {
+  const proxy = (body as { data?: { proxy?: { gateway?: unknown } } } | null)?.data?.proxy;
+  const g = proxy?.gateway as { host?: unknown; port?: unknown; username?: unknown; password?: unknown } | null | undefined;
+  if (!g || typeof g.username !== 'string' || typeof g.password !== 'string') return null;
+  const username = g.username.trim();
+  if (!username || !g.password) return null;
+  const port = Number(g.port);
+  return {
+    proxyId,
+    host: typeof g.host === 'string' && g.host.trim() ? g.host.trim() : 'proxy.voidmob.com',
+    port: Number.isInteger(port) && port > 0 ? port : 10092,
+    username,
+    password: g.password,
+  };
+}
+
+/**
+ * Asks VoidMob for a package's Flex login. The call is idempotent and free: it returns the existing
+ * login, creating it only the first time (VoidMob API: POST /v1/proxies/:id/flex_credentials).
+ */
+export async function fetchFlexLogin(key: string, proxyId: string): Promise<{ login: FlexLogin | null; status: number; code: string | null }> {
+  const res = await fetch('https://dashboard.voidmob.com/api/v1/proxies/' + encodeURIComponent(proxyId) + '/flex_credentials', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + key, 'Idempotency-Key': randomUUID() },
+    signal: AbortSignal.timeout(15000),
+  });
+  const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null;
+  return { login: parseFlexLogin(body, proxyId), status: res.status, code: body?.error?.code ?? null };
 }
 
 export function voidmobEndpoint(env: Env = process.env) {

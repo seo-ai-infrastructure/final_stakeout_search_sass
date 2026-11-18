@@ -11,7 +11,7 @@ type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
   at: string;
   settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number; mobileCreditsPerPoint?: number; mobileForCustomers?: boolean };
-  system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[]; mobileData?: boolean; mobileProvider?: string | null; mobileTraffic?: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null } | null; mobileTrafficLow?: boolean } | null;
+  system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[]; mobileData?: boolean; mobileProvider?: string | null; mobileLogin?: string | null; mobileTraffic?: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null } | null; mobileTrafficLow?: boolean } | null;
   capacity: {
     completed24h: number; completedLastHour: number; started24h: number; timedPoints: number; medianSeconds: number | null; perPhoneHour: number | null;
     waiting: number; readyPhones: number; etaMinutes: number | null; cost24hUsd: number;
@@ -203,8 +203,8 @@ export function AdminOps() {
                   'Mobile data',
                   ops.system?.mobileData ? (ops.system.mobileProvider === 'decodo' ? 'Decodo mobile' : 'VoidMob') : 'Off',
                   ops.system?.mobileData
-                    ? `${ops.settings.mobileCreditsPerPoint ?? 2} credits a point · ${ops.settings.mobileForCustomers ? 'customers can choose it' : 'admins only'}${ops.system.mobileTraffic ? ' · ' + gb(ops.system.mobileTraffic.leftBytes) + ' left' : ''}`
-                    : 'set VOIDMOB_USERNAME and VOIDMOB_PASSWORD on the worker',
+                    ? `${ops.settings.mobileCreditsPerPoint ?? 2} credits a point · ${ops.settings.mobileForCustomers ? 'customers can choose it' : 'admins only'}${ops.system.mobileTraffic ? ' · ' + gb(ops.system.mobileTraffic.leftBytes) + ' left' : ''}${ops.system.mobileLogin ? ' · login: ' + ops.system.mobileLogin : ''}`
+                    : 'set VOIDMOB_API_KEY and VOIDMOB_PROXY_ID on the worker',
                 ],
                 ['Proxy-Seller traffic today', gb(ops.system?.traffic?.todayBytes), ops.system?.traffic ? `${gb(ops.system.traffic.leftBytes)} left of ${gb(ops.system.traffic.limitBytes)}${ops.system.traffic.expires ? ' · expires ' + ops.system.traffic.expires : ''}` : 'not reported by the worker yet'],
                 ['Captchas today', String(ops.captchas.today), `${ops.captchas.yesterday} yesterday`],

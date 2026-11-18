@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MOBILE_HUBS, mobileHubs, mobileProvider, voidmobCity, voidmobUser } from '../packages/core/voidmob';
+import { MOBILE_HUBS, mobileHubs, mobileProvider, voidmobCity, voidmobUser, parseFlexLogin, voidmobConfigured } from '../packages/core/voidmob';
 import { US_STATE_NAMES } from '../packages/core/proxySeller';
 
 test('every state has hub cities', () => {
@@ -39,4 +39,22 @@ test('mobile provider: VoidMob when set up, Decodo mobile as the alternative, no
   assert.equal(mobileProvider({ ...vm, ...dm }), 'voidmob');
   assert.equal(mobileProvider({ ...vm, ...dm, MOBILE_PROVIDER: 'decodo' }), 'decodo');
   assert.equal(mobileProvider({ ...vm, MOBILE_PROVIDER: 'decodo' }), 'voidmob');
+});
+
+test("VoidMob: the package's own Flex login, read from VoidMob's reply (a new package only needs its ID)", () => {
+  // The reply documented for POST /v1/proxies/:id/flex_credentials (values made up).
+  const reply = { success: true, data: { proxy: { id: 'prx_1', status: 'active', gateway: { host: 'proxy.voidmob.com', port: 10092, protocol: 'http', username: 'vm_base', password: 'pw' } } } };
+  assert.deepEqual(parseFlexLogin(reply, 'prx_1'), { proxyId: 'prx_1', host: 'proxy.voidmob.com', port: 10092, username: 'vm_base', password: 'pw' });
+  // Gateway not set up yet, an error reply, or a login missing a part: nothing usable.
+  assert.equal(parseFlexLogin({ success: true, data: { proxy: { id: 'prx_1', gateway: null } } }, 'prx_1'), null);
+  assert.equal(parseFlexLogin({ success: false, error: { code: 'PROXY_EXHAUSTED' } }, 'prx_1'), null);
+  assert.equal(parseFlexLogin({ data: { proxy: { gateway: { username: 'vm_base', password: '' } } } }, 'prx_1'), null);
+  assert.equal(parseFlexLogin(null, 'prx_1'), null);
+  // Host and port fall back to VoidMob's Flex gateway.
+  assert.deepEqual(parseFlexLogin({ data: { proxy: { gateway: { username: ' vm_base ', password: 'pw' } } } }, 'prx_2'), { proxyId: 'prx_2', host: 'proxy.voidmob.com', port: 10092, username: 'vm_base', password: 'pw' });
+  // Set up with the API key and package ID alone, or with a fixed login.
+  assert.equal(voidmobConfigured({ VOIDMOB_API_KEY: 'k', VOIDMOB_PROXY_ID: 'prx_1' }), true);
+  assert.equal(mobileProvider({ VOIDMOB_API_KEY: 'k', VOIDMOB_PROXY_ID: 'prx_1' }), 'voidmob');
+  assert.equal(voidmobConfigured({ VOIDMOB_API_KEY: 'k' }), false);
+  assert.equal(voidmobConfigured({ VOIDMOB_PROXY_ID: 'prx_1' }), false);
 });

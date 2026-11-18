@@ -25,6 +25,7 @@ import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficLow } 
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
 import { mobileProvider, voidmobUsage } from '@stakeout/core/voidmob';
+import { voidmobLogin, voidmobLoginNote } from './voidmobLogin';
 import { claimProxyProbe, clearProxyOutage, noteProxyOutage, proxyOutageSince } from './proxyOutage';
 
 function formatErr(e: unknown) {
@@ -516,9 +517,11 @@ async function reportHealth() {
     proxyDown: await openProxyOutages(),
     // The proxy providers in use, in the order they are tried (PROXY_PROVIDERS).
     proxyProviders: proxyProviders(),
-    // Mobile data scans need the Decodo mobile login on the worker.
+    // Mobile data scans need a VoidMob package (or the Decodo mobile login) on the worker.
     mobileData: Boolean(mobileProvider()),
     mobileProvider: mobileProvider(),
+    // Where the VoidMob login comes from: "package prx_..." (read from VoidMob) or "VOIDMOB_USERNAME".
+    mobileLogin: mobileProvider() === 'voidmob' ? voidmobLoginNote() || null : null,
     mobileTraffic,
     // Under MOBILE_TRAFFIC_WARN_GB (half a GB unless set), or less than a day at today's pace.
     mobileTrafficLow: trafficLow(mobileTraffic, Number(process.env.MOBILE_TRAFFIC_WARN_GB ?? 0.5)),
@@ -684,4 +687,9 @@ void loadRunLog().catch((e) => console.warn('[runs] history not loaded:', (e as 
 if ((process.env.SEARCH_MODE ?? '').toLowerCase() === 'rpa') {
   console.info('[rpa] SEARCH_MODE=rpa: the search step runs your DuoPlus RPA template');
   void describeRpaTemplates();
+  // Which VoidMob login mobile points will use (logged by voidmobLogin when read from VoidMob).
+  if (mobileProvider() === 'voidmob')
+    void voidmobLogin()
+      .then((l) => l.from === 'VOIDMOB_USERNAME' && console.log('[voidmob] mobile login: VOIDMOB_USERNAME (set VOIDMOB_API_KEY and VOIDMOB_PROXY_ID to use a package\'s own login)'))
+      .catch((e) => console.warn('[voidmob]', e instanceof Error ? e.message : String(e)));
 }
