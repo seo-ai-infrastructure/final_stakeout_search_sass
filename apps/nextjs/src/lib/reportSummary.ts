@@ -55,12 +55,6 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
   const aiVs = aiVersusPack(aiNamed.rows.map((r) => r.name), pack);
   const known = [...new Set([...pack, ...aiNamed.rows.map((r) => r.name)])];
   const aiSites = ai.sources.map((x) => ({ ...x, kind: siteKind(x.domain, scan.targetBusiness, known) }));
-  // The citation gap: the Google Business Profile is cited more often than the business's own
-  // website. Only stated when enough answers appeared to mean something.
-  const ownSite = aiSites.filter((x) => x.kind === 'you').reduce((m, x) => Math.max(m, x.points), 0);
-  const gbp = aiSites.find((x) => x.kind === 'gbp')?.points ?? 0;
-  const otherSites = aiSites.filter((x) => x.kind !== 'gbp' && x.kind !== 'you');
-  const aiGap = ai.shown >= 3 && gbp > ownSite ? { gbp, own: ownSite, answers: ai.shown, top: otherSites[0] ?? null, competitor: otherSites.find((x) => x.kind === 'competitor') ?? null } : null;
   const you = owners.rows.find((r) => r.isYou);
   const rival = owners.rows.filter((r) => !r.isYou).sort((a, b) => b.top3Points - a.top3Points)[0];
 
@@ -136,7 +130,6 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
     findingKinds,
     aiVs,
     aiSites,
-    aiGap,
     rivalName: rival?.name ?? null,
     findings,
   };

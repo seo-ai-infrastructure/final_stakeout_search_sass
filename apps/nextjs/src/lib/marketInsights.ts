@@ -1,4 +1,5 @@
 import type { PinInsights } from '@stakeout/core/pinInsights';
+import { isGoogleSource } from '@stakeout/core/googleSource';
 import { pointShares, type BuyingPowerPin } from './buyingPower';
 
 /** Grid-wide insights for the report, from what each point stored (ranks, Census weights, insights). */
@@ -107,7 +108,8 @@ export function aiSources(pins: InsightPin[], target: string) {
   const seen = done(pins).filter((p) => p.insights?.v === 1);
   const shown = seen.filter((p) => p.insights!.ai.shown);
   const counts = new Map<string, number>();
-  for (const p of shown) for (const d of new Set(p.insights!.ai.sources)) counts.set(d, (counts.get(d) ?? 0) + 1);
+  // Google itself (the businesses' Google profiles, Maps, Search) is never counted, in old scans too.
+  for (const p of shown) for (const d of new Set(p.insights!.ai.sources.filter((x) => !isGoogleSource(x)))) counts.set(d, (counts.get(d) ?? 0) + 1);
   return {
     points: seen.length,
     shown: shown.length,
@@ -115,7 +117,7 @@ export function aiSources(pins: InsightPin[], target: string) {
     // collapsed has no list, yet can plainly name the business.
     youNamed: shown.filter((p) => p.targetCitedInAi === true || p.insights!.ai.named.some((n) => norm(n) === norm(target))).length,
     sources: [...counts]
-      .map(([domain, points]) => ({ domain, points, label: domain === 'google.com' ? 'Google Business Profiles' : domain }))
+      .map(([domain, points]) => ({ domain, points, label: domain }))
       .sort((a, b) => b.points - a.points || a.domain.localeCompare(b.domain)),
   };
 }
@@ -160,7 +162,7 @@ export function aiBusinesses(pins: InsightPin[], target: string) {
 }
 
 /** What kind of website an AI Overview cited, so a list of sources reads as a story. */
-export type SiteKind = 'gbp' | 'you' | 'competitor' | 'directory' | 'forum' | 'site';
+export type SiteKind = 'you' | 'competitor' | 'directory' | 'forum' | 'site';
 const DIRECTORIES = /(^|\.)(yelp|angi|angieslist|houzz|thumbtack|homeadvisor|bbb|yellowpages|nextdoor|porch|expertise|bark|homeguide|trustpilot|mapquest|manta|superpages|birdeye|threebestrated|buildzoom|facebook|instagram|linkedin)\.(com|org|net|co\.uk|ca)$/;
 const FORUMS = /(^|\.)(reddit|quora|stackexchange|city-data)\.(com|org|net)$/;
 /** Letters and digits of a business name, without the words every business name has. */
@@ -173,7 +175,6 @@ const nameKey = (name: string) => norm(name).replace(/\b(the|and|of|llc|inc|co|c
  */
 export function siteKind(domain: string, target: string, businesses: string[] = []): SiteKind {
   const d = domain.toLowerCase().replace(/^www\./, '').replace(/^m\./, '');
-  if (d === 'google.com' || d.endsWith('.google.com')) return 'gbp';
   if (FORUMS.test(d)) return 'forum';
   if (DIRECTORIES.test(d)) return 'directory';
   const host = d.split('.')[0].replace(/[^a-z0-9]/g, '');

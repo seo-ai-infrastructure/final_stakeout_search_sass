@@ -3,7 +3,7 @@ import { db } from '@stakeout/db';
 import { r2, bucket } from '@stakeout/core/r2';
 import { untarGz, rankWithoutFinder } from '@stakeout/core/serpEvidence';
 import { metrics } from '@stakeout/core/grid';
-import { buildPinInsights } from '@stakeout/core/pinInsights';
+import { buildPinInsights, verifiedAiParts } from '@stakeout/core/pinInsights';
 
 /**
  * Points finished before insights existed get them once, read from their stored evidence bundle.
@@ -50,6 +50,7 @@ export async function backfillInsights(limit = 500) {
         finder: read('final.xml'),
         aiExpanded: read('aio_expanded.xml'),
         aiCopy: read('aio_copy.txt'),
+        aiSnapshots: [read('aio_initial.xml')],
         mapsScreens: [...dumps, read('final.xml')],
         target: p.target,
       });
@@ -130,4 +131,49 @@ export async function backfillPackRanks(limit = 200) {
     await db.gridScan.update({ where: { id: scanId }, data: metrics(completed) });
   }
   console.log(`[rank] re-read ${pins.length} point(s) saved as "no local results": ${fixed} had a map pack or AI list and were corrected` + (scans.size ? ` · ${scans.size} scan(s) recomputed` : ''));
+}
+
+/**
+ * Points with an AI Overview read before answers were split into three parts (opening answer,
+ * business cards, other citations) get the parts once, from their stored bundle. Only the parts
+ * are written (null when no copy of that run's answer could be read); the rest of the point's
+ * insights stay as they are.
+ */
+export async function backfillAiParts(limit = 300) {
+  const pins = await db.$queryRaw<{ id: string; dumpsTarUrl: string }[]>`
+    SELECT p.id, p."dumpsTarUrl" FROM "GridPin" p
+    WHERE p.status = 'COMPLETED' AND p."dumpsTarUrl" IS NOT NULL AND p.insights IS NOT NULL
+      AND p.insights->'ai'->>'shown' = 'true' AND NOT (p.insights->'ai' ? 'parts')
+    ORDER BY p."updatedAt" DESC
+    LIMIT ${limit}`;
+  if (!pins.length) return;
+  let read = 0,
+    unreadable = 0,
+    failed = 0;
+  for (const p of pins) {
+    let parts: ReturnType<typeof verifiedAiParts> = null;
+    try {
+      let key = p.dumpsTarUrl;
+      if (key.startsWith('https://')) key = decodeURIComponent(new URL(key).pathname.slice(1));
+      const obj = await r2().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+      const files = untarGz(await obj.Body!.transformToByteArray());
+      const file = (name: string) => {
+        for (const [path, data] of files) if (path === name || path.endsWith('/' + name)) return data.toString('utf8');
+        return null;
+      };
+      parts = verifiedAiParts(file('aio_copy.txt'), [file('serp.xml'), file('aio_expanded.xml'), file('aio_initial.xml')]);
+    } catch (e) {
+      const err = e as Error & { name?: string };
+      // A bundle that is gone cannot be read: recorded as unreadable. Anything else is retried next time.
+      if (!(err.name === 'NoSuchKey' || /specified key does not exist/i.test(err.message))) {
+        failed++;
+        console.error('[insights] AI parts', p.id, err.message);
+        continue;
+      }
+    }
+    await db.$executeRaw`UPDATE "GridPin" SET insights = jsonb_set(insights, '{ai,parts}', ${JSON.stringify(parts)}::jsonb) WHERE id = ${p.id}`;
+    if (parts) read++;
+    else unreadable++;
+  }
+  console.log(`[insights] AI answers split into three parts: ${read} of ${pins.length}` + (unreadable ? ` · ${unreadable} without a readable copy` : '') + (failed ? ` · ${failed} failed, retried next time` : ''));
 }

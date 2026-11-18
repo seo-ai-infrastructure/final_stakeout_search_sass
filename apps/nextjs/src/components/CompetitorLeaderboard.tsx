@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Search, ArrowUpDown, Download, Sparkles } from 'lucide-react';
 import type { GridPinData } from './GeoGridDashboard';
 import { aiBusinesses } from '@/lib/marketInsights';
+import { isGoogleSource } from '@stakeout/core/googleSource';
 export interface CompetitorMarketStat {
   businessName: string;
   normalizedKey: string;
@@ -142,7 +143,7 @@ export function CompetitorLeaderboard({
       const aioTextLower = String(pin.aiOverviewText ?? '').toLowerCase();
       // 2A. Match explicit AI citation pills against known businesses or create AI-cited entities
       for (const rawCite of rawCitations) {
-        if (!rawCite || typeof rawCite !== 'string') continue;
+        if (!rawCite || typeof rawCite !== 'string' || isGoogleSource(rawCite)) continue;
         const normCite = normalizeBizName(rawCite);
         if (!normCite || normCite.length < 3) continue;
         let matchedKnownKey: string | null = null;
@@ -491,7 +492,7 @@ export function CompetitorLeaderboard({
                         <>
                           {/* Of the points where an AI Overview appeared, not of the whole grid: the answers that
                               name the business in their list. A business can also appear only as a source (its
-                              Google profile or website cited), which is a mention, not a recommendation. */}
+                              website cited), which is a mention, not a recommendation. */}
                           <div className={'font-bold ' + (comp.aiNamedCount > 0 ? 'text-violet-300' : 'text-slate-400')}>
                             {((100 * comp.aiNamedCount) / Math.max(1, totalAiTriggeredPins)).toFixed(0)}%
                           </div>

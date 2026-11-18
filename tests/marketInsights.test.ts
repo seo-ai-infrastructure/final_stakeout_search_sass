@@ -57,7 +57,17 @@ test('paid pressure: advertisers by number of points, and ads above you on avera
 test('what AI cites: websites by number of points, and how often the business was named', () => {
   const a = aiSources(pins, 'You Painting');
   assert.deepEqual([a.points, a.shown, a.youNamed], [3, 2, 1]);
-  assert.deepEqual(a.sources.map((s) => [s.label, s.points]), [['yelp.com', 2], ['Google Business Profiles', 1]]);
+  // google.com (each business's Google profile) is the business itself: never counted, even in old scans.
+  assert.deepEqual(a.sources.map((s) => [s.label, s.points]), [['yelp.com', 2]]);
+});
+
+test('Google itself is never a cited website: its domains, short links and names', async () => {
+  const { isGoogleSource } = await import('../packages/core/googleSource');
+  for (const s of ['google.com', 'www.google.com', 'maps.google.com', 'https://www.google.com/search?kgmid=%2Fg%2F11&q=x', 'google.co.uk', 'google.com.au',
+    'g.page', 'https://g.page/r/abc', 'maps.app.goo.gl', 'g.co', 'share.google', 'Google', 'Google Maps', 'Google Business Profiles', ' google '])
+    assert.equal(isGoogleSource(s), true, s);
+  for (const s of ['rotorooter.com', 'm.yelp.com', 'Yelp', 'Benjamin Franklin Plumbing', 'googleplex.example.com', 'notgoogle.com', 'google.evil.example', 'Googleplex', '', null])
+    assert.equal(isGoogleSource(s as string), false, String(s));
 });
 
 test('re-run pricing: the normal price per point, only for points that were refunded', async () => {
@@ -107,7 +117,7 @@ test('cited sites are sorted into kinds, and a business\'s own site is recognise
   const { siteKind } = await import('../apps/nextjs/src/lib/marketInsights');
   const rivals = ['Those Guys Painting Co', 'Nash Painting', 'Mt. Juliet Painting Co.', 'Sharpton Painting', 'CertaPro Painters of Nashville'];
   const k = (d: string) => siteKind(d, 'McIntyre Painting', rivals);
-  assert.deepEqual(['google.com', 'm.yelp.com', 'www.houzz.com', 'reddit.com', 'quora.com'].map(k), ['gbp', 'directory', 'directory', 'forum', 'forum']);
+  assert.deepEqual(['m.yelp.com', 'www.houzz.com', 'reddit.com', 'quora.com'].map(k), ['directory', 'directory', 'forum', 'forum']);
   assert.equal(k('mcintyrepaintingtn.com'), 'you');
   assert.deepEqual(['thoseguyspaintingco.com', 'nashpainting.com', 'mtjulietpainting.com', 'sharptonpainting.com'].map(k), Array(4).fill('competitor'));
   assert.equal(k('nashvillepaintingcompany.com'), 'site', 'a site no named business owns is left unlabelled, not guessed');

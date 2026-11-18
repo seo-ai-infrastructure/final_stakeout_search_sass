@@ -59,6 +59,8 @@ export const reportSelect = {
   id: true,
   keyword: true,
   targetBusiness: true,
+  targetKgmid: true,
+  targetDomain: true,
   centerLat: true,
   centerLng: true,
   gridSize: true,

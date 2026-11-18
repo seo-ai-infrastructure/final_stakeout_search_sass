@@ -1,5 +1,6 @@
 /** Validation for saved businesses (a client with its keywords and scan defaults). */
 import { InputError } from './grid';
+import { kgmidOf, siteDomain } from './businessIds';
 
 export const TARGET_TYPES = ['mobile_chrome', 'mobile_maps', 'mobile_google', 'desktop_aimode'] as const;
 export type BusinessInput = {
@@ -15,6 +16,9 @@ export type BusinessInput = {
   isps: string[];
   trackAiOverviews: boolean;
   scheduleType: string;
+  /** Google's ID for the business ("/g/…") and its website, when known. */
+  kgmid: string | null;
+  domain: string | null;
 };
 
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
@@ -37,6 +41,10 @@ export function parseBusiness(raw: unknown): BusinessInput {
   const gridSize = Number(r.gridSize);
   const ispMode = ['any', 'single', 'mix'].includes(String(r.ispMode)) ? String(r.ispMode) : 'any';
   const isps = ispMode === 'any' ? [] : (Array.isArray(r.isps) ? r.isps : []).map((x) => text(x, 80)).filter(Boolean).slice(0, 10);
+  const typedId = text(r.kgmid, 300), typedSite = text(r.domain, 300);
+  const kgmid = kgmidOf(typedId) || null, domain = siteDomain(typedSite) || null;
+  if (typedId && !kgmid) throw new InputError('The Google business ID looks like /g/11cs6bzst7 (a Google link with kgmid= in it works too).');
+  if (typedSite && !domain) throw new InputError('Enter the website as a domain, such as mcintyrepainting.com.');
   return {
     name,
     centerLabel: text(r.centerLabel, 200),
@@ -50,5 +58,7 @@ export function parseBusiness(raw: unknown): BusinessInput {
     isps,
     trackAiOverviews: r.trackAiOverviews === true,
     scheduleType: ['once', 'daily', 'weekly'].includes(String(r.scheduleType)) ? String(r.scheduleType) : 'once',
+    kgmid,
+    domain,
   };
 }

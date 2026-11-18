@@ -72,6 +72,10 @@ model GridScan {
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   keyword          String
   targetBusiness   String
+  /// Google's ID for the business ("/g/…"), when given: AI answers are matched by it first.
+  targetKgmid      String?
+  /// The business's website (a bare domain), when given: cited sites are matched by it.
+  targetDomain     String?
   targetPlaceId    String?
   targetType       String    @default("mobile_maps")
   phoneBrand       String    @default("Samsung")
@@ -237,6 +241,9 @@ model SavedBusiness {
   isps             String[]
   trackAiOverviews Boolean  @default(false)
   scheduleType     String   @default("once")
+  /// Google's ID for the business ("/g/…") and its website, when known.
+  kgmid            String?
+  domain           String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

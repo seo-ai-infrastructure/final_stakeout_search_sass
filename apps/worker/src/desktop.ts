@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { put } from '@stakeout/core/r2';
+import { isGoogleSource } from '@stakeout/core/googleSource';
 import type { GridPin, GridScan } from '@stakeout/db';
 const run = promisify(execFile);
 export async function measureDesktop(p: GridPin & { scan: GridScan }) {
@@ -78,7 +79,7 @@ export async function measureDesktop(p: GridPin & { scan: GridScan }) {
         ' ' + target + ' ',
       ),
       aiOverviewText: r.aiOverviewText,
-      aiCitations: r.aiCitations,
+      aiCitations: r.aiCitations.filter((c) => !isGoogleSource(c)),
       videoUrl,
       dumpsTarUrl,
       metaJsonUrl,

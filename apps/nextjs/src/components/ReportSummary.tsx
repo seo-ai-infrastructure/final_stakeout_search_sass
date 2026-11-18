@@ -18,7 +18,6 @@ const VERDICT = {
 /** The headline: one large score with a one-word verdict, four supporting numbers, then what it means. */
 /** A tag before each cited site, so the list reads as who controls the sources (plain sites get none). */
 const SITE_TAG: Partial<Record<SiteKind, { label: string; cls: string }>> = {
-  gbp: { label: 'GBP', cls: 'bg-emerald-500/15 text-emerald-300' },
   you: { label: 'Your site', cls: 'bg-sky-500/15 text-sky-300' },
   competitor: { label: 'Competitor', cls: 'bg-rose-500/15 text-rose-300' },
   directory: { label: 'Directory', cls: 'bg-orange-500/15 text-orange-300' },
@@ -232,20 +231,6 @@ export function AiCoverageCard({ scan }: { scan: GridScanData }) {
           <p className="text-xs text-slate-400">different sources cited across the grid</p>
         </div>
       </div>
-      {s.aiGap && (
-        <div role="note" className="mt-5 rounded-xl border border-amber-500/50 bg-amber-950/30 p-4">
-          <p className="text-sm font-bold text-amber-200">Your Google Business Profile is carrying your AI visibility.</p>
-          <p className="mt-1 text-xs leading-relaxed text-amber-100/90">
-            {s.aiGap.own > 0
-              ? `Your own website is cited in ${s.aiGap.own} of ${s.aiGap.answers} answers`
-              : `Your own website is not cited in any of the ${s.aiGap.answers} answers`}
-            , against {s.aiGap.gbp} for your Google profile.
-            {s.aiGap.top && ` ${s.aiGap.top.label} is cited in ${s.aiGap.top.points}`}
-            {s.aiGap.competitor && s.aiGap.competitor.domain !== s.aiGap.top?.domain && `, and a competitor's website (${s.aiGap.competitor.domain}) in ${s.aiGap.competitor.points}`}
-            {s.aiGap.top && '.'}
-          </p>
-        </div>
-      )}
       {s.aiSites.length > 0 && (
         <h3 className="mt-5 text-xs font-semibold uppercase tracking-wider text-slate-400">Websites the AI cited</h3>
       )}

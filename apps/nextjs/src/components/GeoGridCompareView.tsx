@@ -26,6 +26,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import type { GridPinData, GridScanData } from './GeoGridDashboard';
+import { isGoogleSource } from '@stakeout/core/googleSource';
 interface CampaignHistoryItem {
   id: string;
   createdAt: string;
@@ -811,7 +812,7 @@ export function GeoGridCompareView({
                         <p className="whitespace-pre-wrap">
                           {col.pin.aiOverviewText}
                         </p>
-                        <p>{col.pin.aiCitations?.join(' · ')}</p>
+                        <p>{col.pin.aiCitations?.filter((c) => !isGoogleSource(c)).join(' · ')}</p>
                       </details>
                     )}
                     {col.pin?.videoUrl ? (

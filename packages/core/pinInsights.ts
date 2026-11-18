@@ -1,3 +1,5 @@
+import { isGoogleSource } from './googleSource';
+import { readAiParts, type AiParts } from './aiParts';
 import { isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder, readMapsList, readResultsPage, sameBusiness, uiLabels } from './serpEvidence';
 
 /**
@@ -20,9 +22,25 @@ export type PinInsights = {
   ads: { name: string; where: 'results' | 'local_services' | 'finder' | 'maps' }[];
   /** Ads shown before the business's own card in the Local Finder (null when it is not listed). */
   adsAboveYou: number | null;
-  /** The AI Overview: whether one was shown, the websites it cited (in order) and the businesses it named. */
-  ai: { shown: boolean; sources: string[]; named: string[] };
+  /**
+   * The AI Overview: whether one was shown, the websites it cited (in order) and the businesses it
+   * named. `parts` is the answer in three parts (opening answer, business cards, other citations),
+   * read from its copied text: null when no copy of this run's answer could be read, absent on
+   * points read before it existed.
+   */
+  ai: { shown: boolean; sources: string[]; named: string[]; parts?: AiParts | null };
 };
+
+/**
+ * The answer in three parts, only from a copy that belongs to this run: its businesses or opening
+ * lines must appear in the run's own snapshots of the AI Overview (a copy left on the clipboard by
+ * an earlier search never counts). Null otherwise.
+ */
+export function verifiedAiParts(copy: string | null | undefined, snapshots: (string | null | undefined)[]): AiParts | null {
+  if (!copy?.trim()) return null;
+  const labels = snapshots.filter((x): x is string => Boolean(x)).flatMap((x) => uiLabels(x).map((l) => l.label));
+  return readAiCopy(copy, labels).verified ? readAiParts(copy) : null;
+}
 
 /** "0.4 mi" / "850 ft" / "1.2 km" as miles. */
 export function toMiles(d: string | null | undefined): number | null {
@@ -39,6 +57,8 @@ export function toCount(r: string | null | undefined): number | null {
   const v = Number(m[1].replace(',', m[2] ? '.' : ''));
   return Math.round(m[2] ? v * 1000 : v);
 }
+
+export { isGoogleSource };
 
 export function domainOf(url: string): string | null {
   try {
@@ -84,6 +104,8 @@ export function buildPinInsights(input: {
   finder: string | null;
   aiExpanded?: string | null;
   aiCopy?: string | null;
+  /** Every snapshot of the AI Overview this run saved, to check its copied text belongs to it. */
+  aiSnapshots?: (string | null | undefined)[];
   /** Maps app points: every list snapshot in order (the final one included). */
   mapsScreens?: (string | null | undefined)[];
   target: string;
@@ -126,11 +148,14 @@ export function buildPinInsights(input: {
     const fromAi = aiSourcesFromSnapshot(input.aiExpanded);
     sources = fromAi.length ? fromAi : aiSourcesFromSnapshot(input.serp);
   }
+  // Google itself (the businesses' Google profiles, Maps, Search) is never a cited website.
+  sources = sources.filter((s) => !isGoogleSource(s));
   if (!named.length && input.serp) named = readAiOverview(input.serp)?.businesses.map((b) => b.name) ?? [];
   // An AI Overview was shown only if one was copied or a snapshot actually holds one: a saved
   // aio_ snapshot file on its own proves nothing (the template saves one on every page).
   const shown = Boolean(
     input.aiCopy?.trim() || (input.aiExpanded && readAiOverview(input.aiExpanded)) || page?.aiPreview || (input.serp && readAiOverview(input.serp)),
   );
-  return { v: 1, ...(maps ? { m: 2 } : {}), ...(shown ? { c: 2 } : {}), finder, you, ads, adsAboveYou, ai: { shown, sources, named } };
+  const parts = shown ? verifiedAiParts(input.aiCopy, [input.serp, input.aiExpanded, ...(input.aiSnapshots ?? [])]) : null;
+  return { v: 1, ...(maps ? { m: 2 } : {}), ...(shown ? { c: 2 } : {}), finder, you, ads, adsAboveYou, ai: { shown, sources, named, ...(shown ? { parts } : {}) } };
 }

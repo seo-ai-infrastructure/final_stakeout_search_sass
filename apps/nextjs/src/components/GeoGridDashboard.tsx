@@ -171,6 +171,9 @@ export type GridScanData = {
   viewingFor?: string;
   id: string;
   targetBusiness: string;
+  /** Google's ID for the business ("/g/…") and its website, when given at launch. */
+  targetKgmid?: string | null;
+  targetDomain?: string | null;
   keyword: string;
   status: string;
   createdAt: string;

@@ -1,6 +1,6 @@
 import { failureCode } from '@stakeout/core/fleetHealth';
 import { evidenceOf, failureKind, parseEntries, refusedRun, refusedSummary, stageSeconds, timingLine, timingSummary, REFUSED_KEEP, REFUSED_KEY, TIMINGS_KEEP, TIMINGS_KEY, type Marks, type RefusedRun, type RunTiming } from '@stakeout/core/runLog';
-import { backfillInsights, backfillPackRanks } from './insightsBackfill';
+import { backfillAiParts, backfillInsights, backfillPackRanks } from './insightsBackfill';
 import 'dotenv/config';
 import { Queue, Worker, DelayedError, UnrecoverableError, type Job } from 'bullmq';
 import { db } from '@stakeout/db';
@@ -618,7 +618,9 @@ async function tick() {
     // Every 30 minutes: points still without insights get them from their stored bundles.
     if (Date.now() - lastInsightsBackfill > 30 * 60000) {
       lastInsightsBackfill = Date.now();
-      void backfillInsights().catch((e) => console.warn('[insights] backfill skipped:', (e as Error).message));
+      void backfillInsights()
+        .then(() => backfillAiParts())
+        .catch((e) => console.warn('[insights] backfill skipped:', (e as Error).message));
       void backfillPackRanks().catch((e) => console.warn('[rank] re-read skipped:', (e as Error).message));
     }
     // Once a minute: with no scan queued or running, proxy lists are deleted (idle phones still use bandwidth).
@@ -680,7 +682,9 @@ console.info(
 );
 // Points finished before per-point insights existed get them once, from their stored bundles.
 setTimeout(() => {
-  backfillInsights().catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));
+  backfillInsights()
+    .then(() => backfillAiParts())
+    .catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));
   backfillPackRanks().catch((e) => console.error('[rank] re-read skipped:', (e as Error).message));
 }, 60_000);
 void loadRunLog().catch((e) => console.warn('[runs] history not loaded:', (e as Error).message));
