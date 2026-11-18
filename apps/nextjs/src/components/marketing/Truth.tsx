@@ -76,7 +76,7 @@ function PriceBars() {
 const QUESTIONS = [
   { q: 'Where does the search actually run?', good: 'On a real phone, in the real Google Maps app or browser.', bad: 'On a server, or through a search-data API.' },
   { q: 'How is the location set?', good: "The phone's GPS is moved to the exact point, and you can see Google's own location line.", bad: 'A city name, a coordinate with a wide radius, or a map position written into a web address.' },
-  { q: 'What network does it search on?', good: 'A residential connection, from an internet provider people in that area actually use.', bad: 'Data-center IPs, or "we don\u2019t share that".' },
+  { q: 'What network does it search on?', good: 'A real residential or mobile connection: residential inside the ZIP code, mobile from the nearest major city in the state.', bad: 'Data-center IPs, or "we don\u2019t share that".' },
   { q: 'Can I see what the searcher saw?', good: 'A recording of the screen, with the time it was captured.', bad: 'A colored dot, and nothing behind it.' },
   { q: 'Are the colors between the points measured?', good: 'Only the points carry data, and failed points are marked as failed.', bad: 'A smooth heat map with no failed points, ever.' },
 ];
@@ -227,7 +227,7 @@ export default function Truth() {
           <div className="mk-glow pointer-events-none absolute inset-0" aria-hidden="true" />
           <div className="relative">
             <h2 className="mk-display text-4xl font-bold leading-tight sm:text-6xl">Every Data Point Comes with a <span className="mk-gold-text">Receipt.</span></h2>
-            <p className="mx-auto mt-5 max-w-2xl text-lg text-[#9aa7b8]">Real phones. Real GPS. Real residential networks. A recording behind every square, including the ones that failed.</p>
+            <p className="mx-auto mt-5 max-w-2xl text-lg text-[#9aa7b8]">Real phones. Real GPS. Real residential and mobile networks. A recording behind every square, including the ones that failed.</p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <Link href="/demo" className="mk-btn-primary rounded-xl px-6 py-3.5 font-semibold">See the live demo map →</Link>
               <JoinLink className="rounded-xl border border-[#2a3442] px-6 py-3.5 font-semibold hover:border-[#3a4658]" />

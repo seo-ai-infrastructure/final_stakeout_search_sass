@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import { OFFERED_GRID_SIZES } from '@stakeout/core/gridSizes';
 import { SiteHeader, SiteFooter, SIGNUPS_OPEN } from './SiteChrome';
-import { ONBOARDING, PACKS, PLANS, PREPAID, PROMO, perCredit, promoLive, usd } from '@/lib/pricing';
+import { ONBOARDING, PACKS, PLANS, PREPAID, PROMO, WHITE_LABEL, perCredit, promoLive, usd } from '@/lib/pricing';
 import './marketing.css';
 
+const BRANDING = 'mailto:sass@stakeoutsearch.com?subject=White%20label%20setup';
 const ACCESS = 'mailto:sass@stakeoutsearch.com?subject=Access%20to%20Stakeout%20Search';
 
 const INCLUDED = [
@@ -32,7 +33,7 @@ const FAQ: [string, string][] = [
   ['Do I have to pay for onboarding?', `No. Start with a pack from ${usd(PACKS[0].cents)} and run a scan today. Onboarding (${usd(ONBOARDING.cents)}, with ${ONBOARDING.credits.toLocaleString('en-US')} credits) is there if you want us to set you up and run your first audit with you.`],
   ['Why do packs cost more per credit than plans?', `A pack is for trying it, or for a one-off job. Once you scan every week, a plan costs about half as much per credit: ${usd(Math.round(perCredit(PLANS[0]) * 100))} on ${PLANS[0].name} against ${usd(Math.round(perCredit(PACKS[1]) * 100))} on the ${PACKS[1].name}.`],
   ['Is there a contract?', 'No. Plans are bought a month at a time from your account, and you can change plan or stop whenever you like.'],
-  ['Can I put my own brand on reports?', 'Yes. Every scan has a share link your client can open without an account. On a plan, we can put your reports on your own domain with your logo: ask us.'],
+  ['Can I put my own brand on reports?', `Yes. Every scan has a share link your client can open without an account. For a one-time ${usd(WHITE_LABEL.cents)} setup, all your reporting carries your logo on your own domain, share links included.`],
 ];
 
 /** The way in: create an account while sign-ups are open, otherwise ask for an invitation by email. */
@@ -48,7 +49,7 @@ function AccessButton({ className, label = 'Run your first scan' }: { className:
 const ANSWERS: [string, string, string][] = [
   ['“The tracker says #1. My client says that’s not what they see.”', 'Show them the video.', 'Every pin is a real phone at that spot, screen-recorded from the search to the last result, with the location Google itself reported. The argument ends when you press play.'],
   ['“My credits vanish at the end of the month.”', 'Yours never expire.', 'Buy credits once and use them when the work comes in. A pin that fails is credited back automatically.'],
-  ['“I can’t hand this report to a client.”', 'A report built to be shown.', 'One link, no login: the map, the competitors, the AI Overview and the recording behind every pin. On a plan, it can sit on your own domain with your logo.'],
+  ['“I can’t hand this report to a client.”', 'A report built to be shown.', `One link, no login: the map, the competitors, the AI Overview and the recording behind every pin. White label is a one-time ${usd(WHITE_LABEL.cents)} setup: your logo, your domain, share links included.`],
 ];
 
 /** How we differ from the usual grid tracker, row by row. */
@@ -189,7 +190,7 @@ export default function PricingPage() {
                 <ul className="mt-6 flex-1 space-y-2 text-sm text-[#c9d3df]">
                   <li>1 credit = 1 pin</li>
                   <li>Everything in the packs</li>
-                  <li>Reports on your own domain</li>
+                  <li>White label: {usd(WHITE_LABEL.cents)} one-time setup</li>
                 </ul>
                 {live && offer && (
                   <p className="mt-6 rounded-xl border border-[#f5c451]/40 bg-[#f5c451]/10 px-4 py-3 text-sm text-[#f5c451]">
@@ -237,6 +238,21 @@ export default function PricingPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-5xl px-5 pt-16 sm:px-8">
+        <div className="flex flex-col items-start justify-between gap-6 rounded-2xl border border-[#f5c451]/40 bg-[#0c1118] p-8 sm:flex-row sm:items-center">
+          <div>
+            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">White label · for agencies</p>
+            <h2 className="mk-display mt-2 text-3xl font-bold">Your logo. Your domain. Your reports.</h2>
+            <p className="mt-2 max-w-xl text-[#9aa7b8]">All your reporting under your brand, on your own domain, including the share links you send to clients. Set up once, on packs or plans.</p>
+          </div>
+          <div className="shrink-0 text-left sm:text-right">
+            <p className="mk-display text-4xl font-bold text-[#eef2f7]">{usd(WHITE_LABEL.cents)}</p>
+            <p className="text-sm text-[#9aa7b8]">one-time setup</p>
+            <a href={BRANDING} className="mt-2 inline-block text-sm font-semibold text-[#7aa7ff] hover:underline">Set up white label</a>
           </div>
         </div>
       </section>

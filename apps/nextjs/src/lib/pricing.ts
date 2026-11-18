@@ -91,3 +91,9 @@ export type Onboarding = 'exempt' | 'paid' | 'waived' | 'no';
 export function onboardingStatus(a: { paid: boolean; waived: boolean; admin: boolean; beforePricing: boolean }): Onboarding {
   return a.paid ? 'paid' : a.waived ? 'waived' : a.admin || a.beforePricing ? 'exempt' : 'no';
 }
+
+/** Reports under the customer's own logo and domain, share links included: a one-time setup, arranged by email. */
+export const WHITE_LABEL = { cents: 9700 };
+
+/** A real report anyone can open: the business plus the highest-income neighborhoods around it (Lakeland, FL). */
+export const DEMO_REPORT_URL = '/share/daa01a387187cc2ecc1baaf0f6ff095416e0099a8f997a9e';

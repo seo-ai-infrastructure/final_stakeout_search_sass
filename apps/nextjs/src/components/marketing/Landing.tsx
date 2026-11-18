@@ -1,8 +1,9 @@
 import Link from 'next/link';
-import { PACKS, PLANS, PREPAID, PROMO, promoLive, usd } from '@/lib/pricing';
+import { PACKS, PLANS, PREPAID, PROMO, promoLive, usd, DEMO_REPORT_URL, WHITE_LABEL } from '@/lib/pricing';
 import { SiteHeader, SiteFooter, JoinLink } from './SiteChrome';
-import { WALL, AI_NAMED, rankStyle } from './demoData';
+import { WALL, rankStyle } from './demoData';
 import ReceiptPrinter from './ReceiptPrinter';
+import ExpandShot from './ExpandShot';
 import HeroVideo from './HeroVideo';
 import './marketing.css';
 
@@ -126,7 +127,7 @@ function PhoneWall() {
 const COMPARE: { row: string; typical: string; stakeout: string }[] = [
   { row: 'Where the search runs', typical: 'A server or an API request', stakeout: 'A real Android phone session, in the real Google Maps app or Chrome' },
   { row: 'Location', typical: 'Coordinates passed into a query', stakeout: "The phone's GPS is moved to each grid point, and Google's own location line is captured as proof" },
-  { row: 'Network', typical: 'Data-center or random IPs', stakeout: 'A residential connection, from the ISP you choose, one or a mix' },
+  { row: 'Network', typical: 'Data-center or random IPs', stakeout: 'Real home and mobile connections: residential inside the point’s ZIP code from a mix of ISPs, or mobile from the nearest major city in the state' },
   { row: 'Proof', typical: 'A colored dot on a map', stakeout: 'A full screen recording, the screen data and a SHA-256 fingerprint for every point' },
   { row: 'AI answers', typical: 'A yes or no flag, if tracked at all', stakeout: 'The full AI Overview as it appeared on the phone, with the sources it cited, on the same recording (Ask Maps coming soon)' },
   { row: 'Ads', typical: 'Often mixed into the ranks', stakeout: 'Listed separately and never counted as a rank' },
@@ -135,7 +136,7 @@ const COMPARE: { row: string; typical: string; stakeout: string }[] = [
 const ANATOMY = [
   { n: '01', title: 'The recording', text: 'The whole search on video, from opening the app to the last result. Play it on a sales call.' },
   { n: '02', title: 'The exact spot', text: "Grid point and the GPS the phone used, to six decimal places. Google's own location line confirms it." },
-  { n: '03', title: 'The real network', text: 'A residential connection, and the internet provider it came from, named on the receipt.' },
+  { n: '03', title: 'The real network', text: 'A residential connection inside the ZIP code, or a mobile connection from the nearest major city. The provider is named on the receipt.' },
   { n: '04', title: 'The full results', text: 'Every business that ranked, in order, with ads set aside, read from the screen itself.' },
   { n: '05', title: 'The AI answer', text: 'Whether the AI Overview named the business, and which sources it cited. Ask Maps answers are coming soon.' },
   { n: '06', title: 'The fingerprint', text: 'A SHA-256 hash of the evidence as captured, so anyone can check it has not changed.' },
@@ -143,85 +144,144 @@ const ANATOMY = [
 
 const STEPS = [
   { n: '1', title: 'Drop your grid', text: 'Keyword, business and location. A 3×3, 5×5, 7×7 or 9×9 grid of points, spaced from half a mile to five miles.' },
-  { n: '2', title: 'Phones search every point', text: 'Each point gets its own Android phone session: GPS moved to the point, residential network, search run and recorded.' },
+  { n: '2', title: 'Phones search every point', text: 'Each point gets its own Android phone session: GPS moved to the point, a real residential or mobile network, search run and recorded.' },
   { n: '3', title: 'Open the receipts', text: 'Click any point to watch what the phone saw, inspect the results and AI answers, and share it with your client.' },
 ];
 
 /* ------------------------------------------------------------------ value section 1: AI answers */
 
+const AIO_SHOTS: { src: string; expand?: boolean; alt: string; tag: string; title: string; text: string }[] = [
+  {
+    src: '/media/aio-1-real-estate.jpg',
+    expand: true,
+    alt: 'An AI Overview for water damage restoration in Tampa with its own map, business cards and Call, Directions and Website buttons, followed by ordinary web results and no 3-pack',
+    tag: '01 · The AI Overview has the map now',
+    title: 'The most valuable real estate of 2027.',
+    text: 'Its own map, business cards and Call buttons. Underneath it: Servpro, then Yelp. No 3-pack anywhere on the page.',
+  },
+  {
+    src: '/media/aio-2-calls.jpg',
+    expand: true,
+    alt: 'An AI Overview that names a plumber and prints its phone number in the first sentence, shown above the Sponsored Plumbers ads and above the Businesses 3-pack',
+    tag: '02 · Tap to call',
+    title: 'This is where the calls come from.',
+    text: 'A plumber’s phone number in the first sentence, above the paid ads and above the 3-pack. The customer calls without scrolling.',
+  },
+  {
+    src: '/media/aio-3-above-ads.jpg',
+    alt: 'An AI Overview naming a plumber with its phone number, shown above the Sponsored Plumbers ads',
+    tag: '03 · Above the ads',
+    title: 'What your current rank tracker is missing.',
+    text: 'Here the AI Overview sits above the paid Local Services Ads. A rank tracker reports none of it.',
+  },
+];
+
+/** Two result pages for the same keyword in the same city: one still has the 3-pack under the AI Overview, one has none. */
+const SERPS: { src: string; expand?: boolean; alt: string; tag: string; tone: string; title: string; text: string; order: [string, string][] }[] = [
+  {
+    src: '/media/aio-4-phone-number.jpg',
+    expand: true,
+    alt: 'A Google results page: the AI Overview names one plumber with its phone number and rating, and the Businesses 3-pack follows underneath',
+    tag: 'The 3-pack is still there',
+    tone: '#f5c451',
+    title: 'The AI Overview lands on a phone number.',
+    text: 'The AI Overview names one plumber and prints its number and its rating. The map and the 3-pack come second.',
+    order: [['AI Overview', '#f5c451'], ['3-pack', '#3ddc97'], ['Web results', '#6b7686']],
+  },
+  {
+    src: '/media/aio-5-no-pack.jpg',
+    alt: 'Another results page for the same search: the AI Overview is followed directly by a Yelp result. There is no map and no Businesses 3-pack',
+    tag: 'No 3-pack at all',
+    tone: '#ff6b6b',
+    title: 'Here, the 3-pack is gone.',
+    text: 'Ads, the AI Overview, then Yelp. No map. No Businesses list. A tracker that only reads the 3-pack has nothing to report here, and the customer still calls someone.',
+    order: [['Ads', '#6b7686'], ['Ad', '#6b7686'], ['AI Overview', '#f5c451'], ['No 3-pack', '#ff6b6b']],
+  },
+];
+
+const PHONE_FRAME = 'w-full overflow-hidden rounded-[28px] border-[6px] border-[#1b2431] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.5)]';
+
+function SerpCompare() {
+  return (
+    <div className="mt-16">
+      <h3 className="mk-display text-center text-3xl font-bold sm:text-4xl">Same keyword. Same city. <span className="mk-gold-text">Two different pages.</span></h3>
+      <div className="mx-auto mt-10 grid max-w-5xl gap-10 md:grid-cols-2">
+        {SERPS.map((p) => (
+          <figure key={p.src} className="flex flex-col items-center text-center">
+            {p.expand ? (
+              <ExpandShot src={p.src} alt={p.alt} thumbHeight={585} maxWidth={320} />
+            ) : (
+              <div className={PHONE_FRAME + ' max-w-[320px]'}>
+                <img src={p.src} alt={p.alt} loading="lazy" className="block w-full" />
+              </div>
+            )}
+            <figcaption className="mt-6 max-w-[400px]">
+              <p className="mk-mono text-[12px] uppercase tracking-widest" style={{ color: p.tone }}>{p.tag}</p>
+              <h4 className="mk-display mt-2 text-2xl font-semibold">{p.title}</h4>
+              <p className="mt-2 leading-relaxed text-[#9aa7b8]">{p.text}</p>
+              <ol className="mt-4 flex flex-wrap justify-center gap-1.5 text-[11px]" aria-label="Order of the page, top to bottom">
+                {p.order.map(([label, color], i) => (
+                  <li key={i} className="rounded-full border px-2.5 py-1 font-semibold" style={{ borderColor: color, color }}>{i + 1}. {label}</li>
+                ))}
+              </ol>
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+      <p className="mt-8 text-center text-[12px] text-[#6b7686]">Real Google results in Chrome on Android: “emergency plumber near me”, Lakeland, FL.</p>
+    </div>
+  );
+}
+
 function AiAnswers() {
-  const named = AI_NAMED.filter(Boolean).length;
   return (
     <section className="relative border-y border-[#1b2431] bg-[#080b10]">
-      <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 sm:px-8 lg:grid-cols-[1fr_1.1fr]">
-        <div>
-          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">AI Overviews · Ask Maps coming soon</p>
-          <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
-            The AI Answer Is the <span className="mk-gold-text">New #1 Spot.</span>
-          </h2>
-          <p className="mt-5 text-lg leading-relaxed text-[#c9d3df]">
-            Google now shows an AI answer above the results for many searches. You can rank #2 and still be invisible if the answer above you names someone else.
-          </p>
-          <ul className="mt-7 space-y-4">
-            {[
-              ['Who the AI recommends, at every point', 'The full AI Overview answer is saved in each receipt, not reduced to a yes or no. Ask Maps answers are coming soon.'],
-              ['Named, or left out?', `See the points where the answer includes you, and where it sends people to a competitor instead.`],
-              ['What the AI trusted', 'The sources an AI Overview cited, so you know which reviews, directories and pages to work on.'],
-            ].map(([t, d]) => (
-              <li key={t} className="flex gap-3">
-                <Check className="mt-0.5 text-[#7aa7ff]" />
-                <span><b className="block text-white">{t}</b><span className="text-[#9aa7b8]">{d}</span></span>
-              </li>
-            ))}
-          </ul>
-        </div>
+      <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
+        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#7aa7ff]">AI Overviews · the new local pack</p>
+        <h2 className="mk-display mx-auto mt-3 max-w-5xl text-center text-4xl font-bold leading-tight sm:text-6xl">
+          The 3-Pack Is Disappearing. <span className="mk-gold-text">The AI Overview Is Taking Its Place.</span>
+        </h2>
+        <p className="mx-auto mt-5 max-w-3xl text-center text-lg leading-relaxed text-[#c9d3df]">
+          On more and more local searches, Google answers with its own list of businesses before the map pack, complete with Call buttons. Most grid trackers never look at it. Stakeout records it at every point.
+        </p>
 
-        <div className="relative">
-          <div className="grid gap-4 sm:grid-cols-[1fr_210px]">
-            <div className="space-y-3">
-              <div className="rounded-2xl border border-[#d6e4ff]/20 bg-[#0f1624] p-4">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps preview · point 2,5</span>
-                  <span className="rounded-full bg-[#ff6b6b]/15 px-2 py-0.5 font-semibold text-[#ff9b9b]">Not named</span>
+        <div className="mt-14 grid gap-8 md:grid-cols-3">
+          {AIO_SHOTS.map((a) => (
+            <figure key={a.src} className="flex flex-col items-center text-center">
+              {a.expand ? (
+                <ExpandShot src={a.src} alt={a.alt} thumbHeight={460} />
+              ) : (
+                <div className={PHONE_FRAME + ' max-w-[270px]'}>
+                  <img src={a.src} alt={a.alt} loading="lazy" className="block w-full" />
                 </div>
-                <p className="mt-2 text-[13px] leading-relaxed text-[#c9d3df]">
-                  For a fast, reliable plumber nearby, <b className="text-white">Harbor Plumbing Co.</b> and <b className="text-white">Northside Drain &amp; Sewer</b> get strong reviews for emergency calls.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-[#3ddc97]/30 bg-[#0d1a16] p-4">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-[#9dbcff]">✦ Ask Maps preview · point 4,4</span>
-                  <span className="rounded-full bg-[#3ddc97]/15 px-2 py-0.5 font-semibold text-[#3ddc97]">Named first</span>
-                </div>
-                <p className="mt-2 text-[13px] leading-relaxed text-[#c9d3df]">
-                  <mark className="rounded bg-[#f5c451] px-1 font-semibold text-[#1a1300]">Your Business</mark> is highly rated for same-day repairs, and Harbor Plumbing Co. is another option.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-[#2a3442] bg-[#0c1118] p-4">
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-semibold text-[#9dbcff]">✦ AI Overview · point 5,3</span>
-                  <span className="text-[#9aa7b8]">3 sources cited</span>
-                </div>
-                <div className="mt-2.5 flex flex-wrap gap-1.5">
-                  {['A review site', 'A local directory', 'Your website'].map((s, i) => (
-                    <span key={s} className={'rounded-full border px-2.5 py-1 text-[11px] ' + (i === 2 ? 'border-[#f5c451]/50 text-[#ffdf8e]' : 'border-[#2a3442] text-[#c9d3df]')}>{s}</span>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <figure className="rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-4">
-              <div className="grid grid-cols-5 gap-1.5" role="img" aria-label={`Named in the AI answer at ${named} of 25 points`}>
-                {AI_NAMED.map((v, i) => (
-                  <span key={i} className={'aspect-square rounded-full ' + (v ? 'bg-[#f5c451] shadow-[0_0_10px_rgba(245,196,81,0.6)]' : 'bg-[#1b2431]')} />
-                ))}
-              </div>
-              <figcaption className="mt-4">
-                <span className="mk-display block text-4xl font-bold text-[#f5c451]">{named}<span className="text-xl text-[#9aa7b8]"> / 25</span></span>
-                <span className="text-[12px] leading-snug text-[#9aa7b8]">points where the AI answer named you</span>
+              )}
+              <figcaption className="mt-6 max-w-[320px]">
+                <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">{a.tag}</p>
+                <h3 className="mk-display mt-2 text-xl font-semibold">{a.title}</h3>
+                <p className="mt-2 leading-relaxed text-[#9aa7b8]">{a.text}</p>
               </figcaption>
             </figure>
-          </div>
-          <p className="mt-3 text-[12px] text-[#6b7686]">Illustrative answers and grid. Ask Maps capture is coming soon.</p>
+          ))}
+        </div>
+        <p className="mt-8 text-center text-[12px] text-[#6b7686]">Real Google results in Chrome on Android: water damage and emergency plumber searches in Tampa and Lakeland, FL.</p>
+
+        <SerpCompare />
+
+        <ul className="mx-auto mt-16 grid max-w-5xl gap-6 md:grid-cols-3">
+          {[
+            ['Who the AI recommends, at every point', 'The full AI Overview is saved in each receipt, on video, not reduced to a yes or no.'],
+            ['Named, or left out?', 'See the points where the answer includes your client, and where it sends the call to a competitor.'],
+            ['What the AI trusted', 'The sources the AI Overview cited, so you know which reviews, directories and pages to work on.'],
+          ].map(([t, d]) => (
+            <li key={t} className="flex gap-3">
+              <Check className="mt-0.5 shrink-0 text-[#7aa7ff]" />
+              <span><b className="block text-white">{t}</b><span className="text-[#9aa7b8]">{d}</span></span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-10 text-center">
+          <Link href="/pricing" className="mk-btn-primary inline-block rounded-xl px-6 py-3.5 font-semibold">See who the AI names for your client →</Link>
+          <p className="mt-3 text-sm text-[#9aa7b8]">AI Overview tracking is included with every Chrome scan. Ask Maps is coming soon.</p>
         </div>
       </div>
     </section>
@@ -437,11 +497,14 @@ function WhereTheMoneyIs() {
         <div>
           <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Ranks meet the U.S. Census</p>
           <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
-            Rank where the <span className="mk-gold-text">money</span> is.
+            Find the <span className="mk-gold-text">Highest-Paying</span> Customers.
           </h2>
           <p className="mt-5 leading-relaxed text-[#9aa7b8]">
-            A #1 in a neighborhood of renters isn’t worth a #1 among homeowners. Every report maps your ranks onto the neighborhoods around them, in 2D or 3D.
+            A #1 in a neighborhood of renters isn’t worth a #1 among homeowners. Skip the blind grid: point a scan at the highest-income neighborhoods in your client’s service area, and every report maps the ranks onto income and homeownership, in 2D or 3D.
           </p>
+          <Link href={DEMO_REPORT_URL} className="mt-6 inline-block rounded-xl border border-[#f5c451]/50 px-5 py-3 font-semibold text-[#ffdf8e] hover:bg-[#f5c451]/10">
+            Open a real report: the top-income neighborhoods around Lakeland, FL →
+          </Link>
           <ul className="mt-8 space-y-4">
             {MONEY_POINTS.map(([t, d]) => (
               <li key={t} className="flex gap-3">
@@ -521,7 +584,7 @@ const AGENCY_USES: [string, string, string][] = [
   ['Prospecting', 'Make the gap concrete.', 'Show a prospect the neighborhood they know, the competitor who appeared there, and the recording that proves it.'],
   ['Onboarding', 'Set a baseline nobody can dispute.', 'Day one, on video: where the client appeared and where they did not, before your work starts.'],
   ['Monthly reviews', 'Explain what changed.', 'When a point moves, open it. The search, the time and the results are there to look at together.'],
-  ['Renewals', 'Let them inspect the work.', 'Send one link, no login. The client can click any point and watch the search behind it.'],
+  ['Renewals', 'Let them inspect the work.', `Send one link, no login. The client can click any point and watch the search behind it. Your logo and domain for a one-time ${usd(WHITE_LABEL.cents)} setup.`],
 ];
 
 function AgencyUses() {
@@ -580,7 +643,7 @@ export default function Landing() {
               The <span className="text-[#f5c451]">ONLY</span> local SEO tool on the market measuring <span className="underline decoration-[#f5c451] decoration-2 underline-offset-4">REAL</span> results for real people on real mobile devices.
             </p>
             <p className="mt-4 max-w-xl leading-relaxed text-[#9aa7b8]">
-              At every point of your grid, a real Android phone moves its GPS to that spot, searches on a residential connection, and records the whole search. You get the rank, plus the video, the screen data and a fingerprint that proves it.
+              At every point of your grid, a real Android phone moves its GPS to that spot, searches on a real residential or mobile connection, and records the whole search. You get the rank, plus the video, the screen data and a fingerprint that proves it.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link href="/pricing" className="mk-btn-primary rounded-xl px-6 py-3.5 text-base font-semibold">Run your first scan for {usd(PACKS[0].cents)} →</Link>
@@ -588,7 +651,7 @@ export default function Landing() {
             </div>
             <p className="mt-3 text-sm text-[#9aa7b8]">Credits never expire. Failed points are credited back.</p>
             <ul className="mt-9 grid max-w-xl grid-cols-1 gap-x-6 gap-y-3 text-sm text-[#c9d3df] sm:grid-cols-2">
-              {['Video receipt for every grid point', 'GPS set on the phone itself', 'Residential ISP you choose', 'AI Overviews tracked · Ask Maps soon'].map((t) => (
+              {['Video receipt for every grid point', 'GPS set on the phone itself', 'Local residential and mobile networks', 'AI Overviews tracked · Ask Maps soon'].map((t) => (
                 <li key={t} className="flex items-center gap-2.5"><Check className="text-[#3ddc97]" />{t}</li>
               ))}
             </ul>
@@ -757,10 +820,23 @@ export default function Landing() {
 
         <div className="mt-8 grid items-center gap-8 rounded-2xl border border-[#2a3442] bg-gradient-to-br from-[#0f1520] to-[#0b0f15] p-8 md:grid-cols-[1fr_auto]">
           <div>
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">Only on real connections</p>
+            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">Only on real connections · the honest version</p>
             <h3 className="mk-display mt-2 text-3xl font-semibold">Pick the internet provider your customers use.</h3>
             <p className="mt-3 max-w-2xl leading-relaxed text-[#9aa7b8]">
               Run a grid on one ISP, or spread it across several. Each point keeps its ISP on every run, so this month compares like for like with last month, and every receipt names the provider it ran on.
+            </p>
+            <dl className="mt-5 grid max-w-2xl gap-4 sm:grid-cols-2">
+              <div className="rounded-xl border border-[#1b2431] bg-[#0b0f15] p-4">
+                <dt className="font-semibold text-[#eef2f7]">Residential</dt>
+                <dd className="mt-1 text-sm leading-relaxed text-[#9aa7b8]">Home internet inside the point’s own ZIP code, from a mix of the providers people there use. As local as a network gets.</dd>
+              </div>
+              <div className="rounded-xl border border-[#1b2431] bg-[#0b0f15] p-4">
+                <dt className="font-semibold text-[#eef2f7]">Mobile</dt>
+                <dd className="mt-1 text-sm leading-relaxed text-[#9aa7b8]">A carrier connection from the nearest major city in the same state. Carriers hand out addresses by region, not by street, and we say so.</dd>
+              </div>
+            </dl>
+            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[#9aa7b8]">
+              Either way, the phone’s GPS sits on the grid point itself, and Google’s own location line on the recording shows where it placed the search.
             </p>
           </div>
           <div className="flex flex-wrap gap-2 md:max-w-[260px] md:justify-end" aria-label="Example ISPs in one market">
