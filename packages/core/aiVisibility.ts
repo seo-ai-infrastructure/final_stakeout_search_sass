@@ -85,7 +85,11 @@ export type AiVisRow = {
   cells: Record<string, number>;
   /** Another business here has the same name (another office, its own Google ID). */
   twin: boolean;
+  /** At each point where the AI Overview credited it: its place in the opening answer, its card's slot (and whether that card was above "Show more"), and its website's place among the business websites cited elsewhere. */
+  at: Record<string, AiVisAt>;
 };
+/** p0: its place among the businesses the opening answer names; card: its card's slot; above: that card was in view before "Show more" (null: not measured); web: its website's place among the business websites cited (directories left out). */
+export type AiVisAt = { p0: number | null; card: number | null; above: boolean | null; web: number | null };
 
 export type AiVisSite = { domain: string; owner: string | null; ownerKey: string | null; pins: number; points: number };
 
@@ -93,8 +97,9 @@ export type AiVisibility = {
   /** N: the points every score is averaged over, and their grid places ("row_col"). */
   points: number;
   cells: string[];
-  /** Points with an AI Overview whose answer could not be read in parts (not in N). */
+  /** Points with an AI Overview whose answer could not be read in parts (not in N), and their ids. */
   unread: number;
+  unreadPins: string[];
   /** Points of N that showed an AI Overview. */
   withAi: number;
   /** Every business with points, best first. */
@@ -208,6 +213,7 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
   const done = pins.filter((p) => p.status === 'COMPLETED');
   const read: { pin: AiVisPin; parts: AiParts }[] = [];
   let unread = 0;
+  const unreadPins: string[] = [];
   const counted: AiVisPin[] = [];
   for (const p of done) {
     const ai = p.insights?.ai;
@@ -216,7 +222,10 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
     else if (ai?.parts && typeof ai.parts === 'object') {
       read.push({ pin: p, parts: ai.parts });
       counted.push(p);
-    } else unread++;
+    } else {
+      unread++;
+      unreadPins.push(p.id);
+    }
   }
   const N = counted.length;
 
@@ -314,13 +323,13 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
   };
 
   // --- Scoring, point by point ----------------------------------------------------------------
-  type Tally = { p0: number; card: number; web: number; p0First: boolean; p0Phone: boolean; cardSlot: number | null; cardAbove: boolean | null };
+  type Tally = { p0: number; card: number; web: number; p0First: boolean; p0Phone: boolean; p0Order: number | null; cardSlot: number | null; cardAbove: boolean | null; webOrder: number | null };
   const tallies = new Map<string, Map<string, Tally>>();
   const tally = (key: string, pinId: string): Tally => {
     let m = tallies.get(key);
     if (!m) tallies.set(key, (m = new Map()));
     let t = m.get(pinId);
-    if (!t) m.set(pinId, (t = { p0: 0, card: 0, web: 0, p0First: false, p0Phone: false, cardSlot: null, cardAbove: null }));
+    if (!t) m.set(pinId, (t = { p0: 0, card: 0, web: 0, p0First: false, p0Phone: false, p0Order: null, cardSlot: null, cardAbove: null, webOrder: null }));
     return t;
   };
   const sites = new Map<string, { domain: string; owner: Entity | null; pins: Set<string>; points: number }>();
@@ -343,6 +352,7 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
       // is found), so the spec's 0.85 for an unlinked mention never applies here.
       t.p0 = Math.max(t.p0, P0_MAX * p0Decay(order));
       if (order === 1) t.p0First = true;
+      if (t.p0Order == null || order < t.p0Order) t.p0Order = order;
       if (b.phone) t.p0Phone = true;
     }
     for (const s of parts.p0.sites) {
@@ -353,6 +363,7 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
       const t = tally(owner.key, pin.id);
       t.p0 = Math.max(t.p0, P0_MAX * p0Decay(order));
       if (order === 1) t.p0First = true;
+      if (t.p0Order == null || order < t.p0Order) t.p0Order = order;
     }
     // 2. Business cards, in their order; 0.6 of that for a card the saved page shows behind "Show more".
     const page = pin.insights?.ai?.page;
@@ -391,6 +402,7 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
       sites.set(d, row);
       if (!owner) continue;
       const t = tally(owner.key, pin.id);
+      if (t.webOrder == null || k < t.webOrder) t.webOrder = k;
       const before = t.web;
       t.web = Math.min(WEB_MAX, t.web + pts);
       row.points += t.web - before;
@@ -544,6 +556,11 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
       pins: per,
       cells,
       twin: (nameCount.get(normName(e.name)) ?? 0) > 1,
+      at: Object.fromEntries(
+        [...(m?.entries() ?? [])]
+          .filter(([, t]) => t.p0 > 0 || t.cardSlot != null || t.web > 0)
+          .map(([pinId, t]) => [pinId, { p0: t.p0Order, card: t.cardSlot, above: t.cardSlot != null ? t.cardAbove : null, web: t.web > 0 ? t.webOrder : null }]),
+      ),
     });
   }
   for (const r of rows) r.share = grand > 0 ? round(r.share / grand, 3) : 0;
@@ -557,6 +574,7 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
     points: N,
     cells: counted.filter((p) => p.rowIdx != null && p.colIdx != null).map((p) => p.rowIdx + '_' + p.colIdx),
     unread,
+    unreadPins,
     withAi: read.length,
     rows: scored,
     you: youRow,

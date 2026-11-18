@@ -1,7 +1,8 @@
 /**
  * Saves Chrome's results page while the template runs, at moments the template asks for: "pre"
- * (the results page as it loaded, before the AI Overview is expanded) and "post" (the AI Overview
- * fully shown, only on a page that has one). The worker only reads
+ * (the results page as it loaded, before the AI Overview is expanded: its HTML only, all the fold,
+ * cards and citations need) and "post" (the AI Overview fully shown, only on a page that has one:
+ * in full, with its images and styles, for the report). The worker only reads
  * the page, over Chrome's DevTools socket through the phone's ADB connection: every tap and scroll
  * stays in the template, nothing runs inside Google's page, and none of it uses the proxy.
  *
@@ -108,7 +109,10 @@ function cdpCaller(ws: WebSocket) {
  * The page Chrome shows now: its HTML (DOM.getOuterHTML) and a full snapshot with its styles and
  * images (Page.captureSnapshot, MHTML). Read-only: no script is run in the page.
  */
-export async function readChromePage(d: ShellTarget): Promise<{ url: string; html: string; mhtml: string | null; steps: Record<string, number> }> {
+export async function readChromePage(
+  d: ShellTarget,
+  o: { snapshot?: boolean } = {},
+): Promise<{ url: string; html: string; mhtml: string | null; steps: Record<string, number> }> {
   // Each failure says the step it happened at: "forward", "list", "connect" or the DevTools call.
   let step = 'forward';
   const t0 = Date.now(),
@@ -144,11 +148,14 @@ export async function readChromePage(d: ShellTarget): Promise<{ url: string; htm
     // One read: the snapshot holds the page's HTML too, so the HTML is read on its own only when
     // the snapshot fails (every byte comes over the phone's ADB link while the template waits).
     step = 'Page.captureSnapshot';
-    const mhtml = await call('Page.captureSnapshot', { format: 'mhtml' }, 30000).then(
-      (r) => (typeof r?.data === 'string' && r.data ? r.data : null),
-      (e) => (console.warn('[pages] snapshot not taken, reading the HTML alone:', errText(e)), null),
-    );
-    mark('snapshot');
+    const mhtml =
+      o.snapshot === false
+        ? null
+        : await call('Page.captureSnapshot', { format: 'mhtml' }, 30000).then(
+            (r) => (typeof r?.data === 'string' && r.data ? r.data : null),
+            (e) => (console.warn('[pages] snapshot not taken, reading the HTML alone:', errText(e)), null),
+          );
+    if (o.snapshot !== false) mark('snapshot');
     const inSnapshot = mhtml ? readMhtml(mhtml).find((p) => p.type === 'text/html')?.body.toString('utf8') : undefined;
     if (inSnapshot) return { url: tab.url ?? '', html: inSnapshot, mhtml, steps };
     step = 'DOM.getDocument';
@@ -214,7 +221,8 @@ export function watchPageSnapshots(
       for (;;) {
         tries++;
         try {
-          page = await io.read(o.d);
+          // The page as it loaded ("pre") is read as HTML only; the page shown in the report ("post") in full.
+          page = await io.read(o.d, { snapshot: label !== 'pre' || process.env.PAGE_PRE_SNAPSHOT === 'full' });
           error = '';
           break;
         } catch (e) {

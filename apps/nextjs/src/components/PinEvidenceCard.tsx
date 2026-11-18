@@ -1,10 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { GridPinData, GridScanData } from './GeoGridDashboard';
 import { rankColor } from '@/lib/gridColumns';
 import { aiPosition } from '@/lib/marketInsights';
 import { tidyAiText } from '@/lib/aiText';
 import { AiView, usePinEvidence } from './EvidencePanel';
+import { OutlinePicker, SavedPageFrame, type Outline } from './SavedPage';
 
 const key = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
 const btn = 'rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40';
@@ -46,6 +47,7 @@ export function PinEvidenceCard({
   rerunBusy,
   onOpenEvidence,
   shareToken,
+  outline,
 }: {
   scan: GridScanData;
   pin: GridPinData | null;
@@ -56,8 +58,17 @@ export function PinEvidenceCard({
   onOpenEvidence?: () => void;
   /** On a shared report: the link's token, needed to load a point's evidence. */
   shareToken?: string;
+  /** Opened from the map's AI parts view: the AI tab, with that part outlined on the saved page. */
+  outline?: Exclude<Outline, 'none'> | null;
 }) {
-  const [tab, setTab] = useState<'results' | 'ai'>('results');
+  const [tab, setTab] = useState<'results' | 'ai'>(outline ? 'ai' : 'results');
+  const [show, setShow] = useState<Outline>(outline ?? 'none');
+  // The map's AI parts view decides what opens: each point picked there opens on its AI Overview.
+  useEffect(() => {
+    if (!outline) return;
+    setTab('ai');
+    setShow(outline);
+  }, [outline, pin?.id]);
   // The real page Google served, when the point saved it (worker v156+): shown in place of the rebuilt answer.
   const realPage = pin?.proxyMeta?.pages?.post ? 'page_post' : pin?.proxyMeta?.pages?.pre ? 'page_pre' : null;
   // The AI Overview as rebuilt from the point's evidence (the same as the Evidence tab shows),
@@ -240,16 +251,11 @@ export function PinEvidenceCard({
               <div className="mt-3 space-y-3">
                 {realPage ? (
                   <>
-                    <iframe
-                      key={pin.id + realPage}
-                      title="The page Google served at this point"
-                      sandbox=""
-                      referrerPolicy="no-referrer"
-                      src={'/api/proof/' + pin.id + '?kind=' + realPage + (shareToken ? '&share=' + encodeURIComponent(shareToken) : '')}
-                      className="h-[640px] w-full rounded-xl border-0 bg-white"
-                    />
+                    <OutlinePicker show={show} onChange={setShow} />
+                    <SavedPageFrame pinId={pin.id} kind={realPage} show={show} shareToken={shareToken} className="h-[640px] w-full rounded-xl border-0 bg-white" />
                     <p className="text-[11px] text-slate-500">
-                      {realPage === 'page_post' ? 'With its AI Overview open, ' : 'As it loaded, '}exactly as Google served it to the phone at this point, saved at that moment. Nothing on it runs.
+                      {realPage === 'page_post' ? 'With its AI Overview open, ' : 'As it loaded, '}exactly as Google served it to the phone at this point, saved at that moment
+                      {show === 'none' ? '' : ', the AI Overview’s parts outlined'}. Nothing on it runs.
                     </p>
                   </>
                 ) : rebuilt ? (

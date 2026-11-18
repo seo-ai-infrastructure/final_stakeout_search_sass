@@ -11,6 +11,7 @@ import { kgmidOf } from '@stakeout/core/businessIds';
 import type { GridPinData, GridScanData } from './GeoGridDashboard';
 import { AiView, usePinEvidence } from './EvidencePanel';
 import { gridSide } from './PinEvidenceCard';
+import { OutlinePicker, SavedPageFrame, type Outline } from './SavedPage';
 
 type Part = 'all' | 'p0' | 'card' | 'web';
 const PART = {
@@ -548,28 +549,12 @@ function Snapshot({ row, scan, shareToken, onClose }: { row: AiVisRow; scan: Gri
   const kind = pages?.post ? 'page_post' : pages?.pre ? 'page_pre' : null;
   const evidence = usePinEvidence(pin?.id, Boolean(pin && !kind), shareToken);
   const isYou = (n: string) => n.trim().toLowerCase() === scan.targetBusiness.trim().toLowerCase();
-  const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [show, setShow] = useState<'all' | 'p0' | 'card' | 'web' | 'none'>('all');
+  const [show, setShow] = useState<Outline>('all');
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  // The page's own address, once: the outlines then switch by its #anchor, in place.
-  useEffect(() => {
-    if (!pin || !kind) return;
-    let live = true;
-    setUrl(null);
-    setFailed(false);
-    fetch('/api/proof/' + pin.id + '?kind=' + kind + '&as=json' + (shareToken ? '&share=' + encodeURIComponent(shareToken) : ''), { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((j: { url?: string }) => live && (j.url ? setUrl(j.url) : setFailed(true)))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, [pin?.id, kind, shareToken]);
   if (!pin) return null;
   const parts = pin.insights?.ai?.parts;
   const at: string[] = [];
@@ -585,13 +570,6 @@ function Snapshot({ row, scan, shareToken, onClose }: { row: AiVisRow; scan: Gri
     const w = [...parts.p0.sites, ...parts.other].filter((s) => row.domains.some((d) => s.includes(d)));
     if (w.length) at.push('its website cited');
   }
-  const outlines: [typeof show, string, string][] = [
-    ['all', 'All three', 'border-slate-500'],
-    ['p0', 'Position 0', 'border-amber-400'],
-    ['card', 'Cards', 'border-violet-500'],
-    ['web', 'Websites', 'border-cyan-400'],
-    ['none', 'None', 'border-slate-700'],
-  ];
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/70" role="dialog" aria-modal="true" aria-label={'Snapshot: ' + row.name} onClick={onClose}>
       <div className="flex h-full w-full max-w-xl flex-col border-l border-slate-800 bg-slate-950" onClick={(e) => e.stopPropagation()}>
@@ -608,36 +586,10 @@ function Snapshot({ row, scan, shareToken, onClose }: { row: AiVisRow; scan: Gri
             Close
           </button>
         </div>
-        {kind && (
-          <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800 px-4 py-2.5" role="group" aria-label="Outline on the page">
-            <span className="mr-1 text-xs text-slate-400">Outline</span>
-            {outlines.map(([k, label, border]) => (
-              <button
-                key={k}
-                type="button"
-                aria-pressed={show === k}
-                onClick={() => setShow(k)}
-                className={'min-h-[30px] rounded-lg border-2 px-2.5 text-[11px] font-semibold ' + border + (show === k ? ' bg-slate-800 text-white' : ' text-slate-400 hover:text-slate-200')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
+        {kind && <OutlinePicker show={show} onChange={setShow} className="border-b border-slate-800 px-4 py-2.5" />}
         <div className="flex-1 overflow-y-auto bg-slate-900 p-3">
           {kind ? (
-            url ? (
-              <iframe
-                key={pin.id + kind}
-                title="The page Google served at this point"
-                sandbox=""
-                referrerPolicy="no-referrer"
-                src={url + (show === 'none' ? '#top' : '#sk-' + show)}
-                className="h-full min-h-[600px] w-full rounded-xl border-0 bg-white"
-              />
-            ) : (
-              <p className="p-4 text-sm text-slate-400">{failed ? 'This point’s saved page could not be opened.' : 'Opening the saved page…'}</p>
-            )
+            <SavedPageFrame pinId={pin.id} kind={kind} show={show} shareToken={shareToken} className="h-full min-h-[600px] w-full rounded-xl border-0 bg-white" />
           ) : evidence.ev ? (
             <div className="rounded-xl bg-white">
               <AiView ev={evidence.ev} isTarget={isYou} target={scan.targetBusiness} />
