@@ -184,3 +184,16 @@ export async function forwardDevtools(d: ShellTarget): Promise<number> {
 export async function unforwardDevtools(d: ShellTarget, port: number) {
   if (transportFor(d) === 'adb') await run('adb', ['-s', d.adbAddr!, 'forward', '--remove', 'tcp:' + port], { timeout: 10000 });
 }
+
+/**
+ * How fast a page can come over a phone's ADB link, and why: the worker's adb version, the phone's
+ * Android version and the ADB features both sides speak ("delayed_ack" lets several packets travel
+ * at once; without it each one waits for the last, which caps a far-away phone near 1 MB/s).
+ */
+export async function adbLinkInfo(d: ShellTarget): Promise<{ client: string; android: string; features: string; delayedAck: boolean }> {
+  const client = (await run('adb', ['version'], { timeout: 5000 }).then((r) => r.stdout, () => '')).split('\n').find((l) => /version/i.test(l))?.trim() ?? '';
+  if (transportFor(d) !== 'adb') return { client, android: '', features: '', delayedAck: false };
+  const android = (await shell(d, 'getprop ro.build.version.release; true', 10000).catch(() => '')).trim();
+  const features = (await adb(d.adbAddr!, ['features'], 10000).catch(() => '')).replace(/\s+/g, ' ').trim();
+  return { client, android, features, delayedAck: /\bdelayed_ack\b/.test(features) };
+}

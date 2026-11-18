@@ -151,3 +151,26 @@ test('the saved page: a card behind "Show more" counts 0.6, and its Website butt
   const tom = v.rows.find((r) => r.name.startsWith('1-Tom'))!;
   assert.deepEqual([tom.card, tom.cardAbove, tom.domains], [17.5, 1, ['1tomplumber.com']]);
 });
+
+test('change since the last scan: point to point over the same grid, arrows only beyond normal variation', async () => {
+  const { compareAiVisibility } = await import('../packages/core/aiVisibility');
+  const grid = (cards: string[][]) =>
+    cards.map((names, i) => ({ ...pin('p' + i + names.join(''), parts({ cards: names.map((n) => card(n, n === 'A' ? '/g/aaaa1' : '/g/bbbb1')) }), []), rowIdx: Math.floor(i / 3), colIdx: i % 3 }));
+  // Before: A has the first card at all 9 places. After: A first at all 9, B gone → A steady, B down.
+  const before = aiVisibility(grid(Array.from({ length: 9 }, () => ['A', 'B'])), { name: 'A' });
+  const after = aiVisibility(grid(Array.from({ length: 9 }, () => ['A'])), { name: 'A' });
+  const t = compareAiVisibility(after, before, true);
+  assert.equal(t.you.trend, 'flat');
+  assert.equal(t.you.method, 'paired');
+  // B is not in the later scan's rows: only the businesses shown are compared.
+  assert.equal(t['g:/g/bbbb1'], undefined);
+  // The other way round: B appears at every place (26.25 each) → up, well beyond the noise.
+  const t2 = compareAiVisibility(before, after, true);
+  assert.deepEqual([t2['g:/g/bbbb1'].trend, t2['g:/g/bbbb1'].delta, t2['g:/g/bbbb1'].prev], ['up', 26.3, 0]);
+  // A small change at two places of nine is noise.
+  const wobble = aiVisibility(grid([['B', 'A'], ['B', 'A'], ...Array.from({ length: 7 }, () => ['A'])]), { name: 'A' });
+  const t3 = compareAiVisibility(wobble, after, true);
+  assert.equal(t3.you.trend, 'flat', 'two places of nine moving one slot is within normal variation');
+  // Different grids: the two averages and their ranges.
+  assert.equal(compareAiVisibility(before, after, false)['g:/g/bbbb1'].method, 'unpaired');
+});

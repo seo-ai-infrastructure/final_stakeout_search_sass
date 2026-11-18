@@ -13,6 +13,7 @@ import type { PinCensus } from '@stakeout/core/censusLookup';
 import type { PinInsights } from '@stakeout/core/pinInsights';
 import { ReportVerdict, RankDistributionCard } from './ReportSummary';
 import { AiVisibilitySection } from './AiVisibilitySection';
+import type { AiTrendSummary } from '@/lib/reports';
 import { bandOf, reportSummary, type RankBucket, type FindingKind } from '../lib/reportSummary';
 import { groundOwners, aiPosition, winningRadius } from '../lib/marketInsights';
 import { combinedReading, combinedStyle, combinedTotals, COMBINED_LEGEND } from '../lib/combinedMap';
@@ -198,6 +199,8 @@ export type GridScanData = {
   targetType: string;
   trackAiOverviews: boolean;
   pins: GridPinData[];
+  /** Each business's change in the AI Overview since the last scan of this search (null: none to compare). */
+  aiTrend?: AiTrendSummary | null;
 };
 export function GeoGridDashboard({
   identifier,

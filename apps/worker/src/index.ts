@@ -21,7 +21,8 @@ import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
 import { idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
-import { devtoolsProbe } from './deviceShell';
+import { adbLinkInfo, devtoolsProbe } from './deviceShell';
+import { r2DryRunDaily } from './r2Report';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
@@ -707,8 +708,13 @@ if (process.env.DEVTOOLS_PROBE !== 'false')
         '· sockets:',
         r.sockets || 'none',
       );
+      // How fast pages can come over this phone's link (saved pages travel over it while the template waits).
+      const link = await adbLinkInfo(p).catch(() => null);
+      if (link) console.log('[adb]', p.imageId + ':', link.client || 'adb version unknown', '· Android', link.android || '?', '· delayed_ack', link.delayedAck ? 'yes' : 'no', '· features:', link.features.slice(0, 300) || 'none listed');
     }
   }, 120_000);
+// Once a day at most, four minutes after start: what R2 holds and what a clean-up would free (nothing deleted).
+setTimeout(() => void r2DryRunDaily(), 240_000);
 if ((process.env.SEARCH_MODE ?? '').toLowerCase() === 'rpa') {
   console.info('[rpa] SEARCH_MODE=rpa: the search step runs your DuoPlus RPA template');
   void describeRpaTemplates();

@@ -2,6 +2,39 @@ import { db, Prisma } from '@stakeout/db';
 import { ispLabel } from './ispLabel';
 import { InputError } from '@stakeout/core/grid';
 import { lookupCensus, type PinCensus } from '@stakeout/core/censusLookup';
+import { aiVisibility, compareAiVisibility, type AiTrend, type AiVisPin } from '@stakeout/core/aiVisibility';
+
+/** Each business's change in the AI Overview since the last finished scan of the same search. */
+export type AiTrendSummary = { since: string; sameGrid: boolean; rows: Record<string, AiTrend> };
+
+/**
+ * The comparison with the last earlier scan of the same search by the same account (same keyword,
+ * business and kind of scan), worked out here so only the changes reach the browser. Null when
+ * there is none, or when either scan has no AI Overview to compare.
+ */
+async function aiTrendSince(s: { id: string; createdAt: Date; keyword: string; targetBusiness: string; targetType: string; targetKgmid: string | null; targetDomain: string | null; gridSize: number; spacingKm: number; centerLat: number; centerLng: number; pins: AiVisPin[] }, userId: string): Promise<AiTrendSummary | null> {
+  const prev = await db.gridScan.findFirst({
+    where: { userId, keyword: s.keyword, targetBusiness: s.targetBusiness, targetType: s.targetType, status: 'COMPLETED', createdAt: { lt: s.createdAt }, id: { not: s.id } },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      createdAt: true,
+      gridSize: true,
+      spacingKm: true,
+      centerLat: true,
+      centerLng: true,
+      pins: { select: { id: true, rowIdx: true, colIdx: true, status: true, rankFound: true, topCompetitors: true, hasAiOverview: true, insights: true } },
+    },
+  });
+  if (!prev) return null;
+  const target = { name: s.targetBusiness, kgmid: s.targetKgmid, domain: s.targetDomain };
+  const now = aiVisibility(s.pins, target);
+  const before = aiVisibility(prev.pins as AiVisPin[], target);
+  if (!now.withAi || !before.withAi) return null;
+  // The same grid: same size and spacing, centred within about 50 m.
+  const sameGrid =
+    prev.gridSize === s.gridSize && Math.abs(prev.spacingKm - s.spacingKm) < 0.01 && Math.abs(prev.centerLat - s.centerLat) < 0.0005 && Math.abs(prev.centerLng - s.centerLng) < 0.0005;
+  return { since: prev.createdAt.toISOString(), sameGrid, rows: compareAiVisibility(now, before, sameGrid) };
+}
 
 const CENSUS_VINTAGE = (process.env.CENSUS_VINTAGE || process.env.NEXT_PUBLIC_CENSUS_VINTAGE || '').trim();
 
@@ -63,6 +96,7 @@ export function savedPages(m: Record<string, unknown> | null | undefined): { pre
 }
 export const reportSelect = {
   id: true,
+  userId: true,
   keyword: true,
   targetBusiness: true,
   targetKgmid: true,
@@ -94,11 +128,18 @@ export const reportSelect = {
  * a search is carried out, so only an admin may download it. Everyone else gets `hasBundle`.
  */
 export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: boolean } = {}) {
-  const s = await db.gridScan.findFirst({ where, select: reportSelect });
-  if (!s) throw new InputError('Report unavailable.', 404);
+  const found = await db.gridScan.findFirst({ where, select: reportSelect });
+  if (!found) throw new InputError('Report unavailable.', 404);
+  // The account is used to find its earlier scans; it is not sent.
+  const { userId, ...s } = found;
   await fillCensus(s.pins);
+  const aiTrend = await aiTrendSince(s as Parameters<typeof aiTrendSince>[0], userId).catch((e) => {
+    console.warn('[report] AI change not compared:', (e as Error).message);
+    return null;
+  });
   return {
     ...s,
+    aiTrend,
     pins: s.pins.map((p) => {
       const m = p.proxyMeta as Record<string, unknown> | null;
       const token =

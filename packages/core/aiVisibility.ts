@@ -29,6 +29,9 @@ import { isDirectory } from './directories';
 
 export type AiVisPin = {
   id: string;
+  /** Its place on the grid: the same place in two scans of one grid is compared point to point. */
+  rowIdx?: number;
+  colIdx?: number;
   status: string;
   rankFound: number | null;
   topCompetitors: string[] | null;
@@ -39,6 +42,8 @@ export type AiVisTarget = { name: string; kgmid?: string | null; domain?: string
 
 export type AiVisRow = {
   key: string;
+  /** The same business in another scan of this search: "you", its Google ID, or its name. */
+  stable: string;
   name: string;
   you: boolean;
   /** Google's ID for it, when one was seen. */
@@ -75,8 +80,9 @@ export type AiVisRow = {
   localAvg: number | null;
   /** The point where it scored most: the one to look at. */
   bestPin: string | null;
-  /** Its score at each point of N, by point id. */
+  /** Its score at each point of N, by point id, and by grid place ("row_col"). */
   pins: Record<string, number>;
+  cells: Record<string, number>;
   /** Another business here has the same name (another office, its own Google ID). */
   twin: boolean;
 };
@@ -84,8 +90,9 @@ export type AiVisRow = {
 export type AiVisSite = { domain: string; owner: string | null; ownerKey: string | null; pins: number; points: number };
 
 export type AiVisibility = {
-  /** N: the points every score is averaged over. */
+  /** N: the points every score is averaged over, and their grid places ("row_col"). */
   points: number;
+  cells: string[];
   /** Points with an AI Overview whose answer could not be read in parts (not in N). */
   unread: number;
   /** Points of N that showed an AI Overview. */
@@ -464,12 +471,14 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
       best = -1,
       bestPin: string | null = null;
     const values: number[] = [];
-    const per: Record<string, number> = {};
+    const per: Record<string, number> = {},
+      cells: Record<string, number> = {};
     for (const p of counted) {
       const t = m?.get(p.id);
       const v = t ? Math.min(100, t.p0 + t.card + t.web) : 0;
       values.push(v);
       per[p.id] = round(v);
+      if (p.rowIdx != null && p.colIdx != null) cells[p.rowIdx + '_' + p.colIdx] = round(v);
       sum += v;
       if (t) {
         sp0 += t.p0;
@@ -507,6 +516,7 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
     if (sum > 0) grand += sum;
     rows.push({
       key: e.key,
+      stable: e.you ? 'you' : e.kgmid ? 'g:' + e.kgmid : 'n:' + normName(e.name),
       name: e.name,
       you: e.you,
       kgmid: e.kgmid,
@@ -532,6 +542,7 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
       localAvg: localPins ? round(localSum / localPins, 1) : null,
       bestPin,
       pins: per,
+      cells,
       twin: (nameCount.get(normName(e.name)) ?? 0) > 1,
     });
   }
@@ -544,6 +555,7 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
   const top = (f: (r: AiVisRow) => number) => scored.filter((r) => f(r) > 0).sort((a, b) => f(b) - f(a))[0] ?? null;
   return {
     points: N,
+    cells: counted.filter((p) => p.rowIdx != null && p.colIdx != null).map((p) => p.rowIdx + '_' + p.colIdx),
     unread,
     withAi: read.length,
     rows: scored,
@@ -555,4 +567,46 @@ export function aiVisibility(pins: AiVisPin[], target: AiVisTarget): AiVisibilit
     foldPins,
     foldMeasured: foldPins > 0,
   };
+}
+
+export type AiTrend = {
+  /** The business's score in the earlier scan, and the change since. */
+  prev: number;
+  delta: number;
+  /** The smallest change that is more than normal AI variation here (95%), and the verdict. */
+  threshold: number;
+  trend: 'up' | 'down' | 'flat';
+  /** Point to point over the same grid places, or the two scans' averages and ranges. */
+  method: 'paired' | 'unpaired';
+};
+
+/**
+ * Each business's change since an earlier scan of the same search (the noise gate of the 3-part
+ * scoring spec). Over the same grid (five or more shared places), point to point: the mean change,
+ * significant when beyond 1.96 standard errors of the changes and at least 1 point; place-to-place
+ * differences in geography cancel out. Otherwise the two averages, against their combined ranges.
+ * A business absent from a scan scored 0 there. Keyed by AiVisRow.stable.
+ */
+export function compareAiVisibility(curr: AiVisibility, prev: AiVisibility, sameGrid: boolean): Record<string, AiTrend> {
+  const prevRows = new Map(prev.rows.map((r) => [r.stable, r] as const));
+  prevRows.set('you', prev.you);
+  const shared = sameGrid ? curr.cells.filter((c) => prev.cells.includes(c)) : [];
+  const out: Record<string, AiTrend> = {};
+  for (const r of [curr.you, ...curr.rows.filter((x) => !x.you)]) {
+    const p = prevRows.get(r.stable);
+    if (shared.length >= 5) {
+      const diffs = shared.map((c) => (r.cells[c] ?? 0) - (p?.cells[c] ?? 0));
+      const mean = diffs.reduce((a, d) => a + d, 0) / diffs.length;
+      const sd = Math.sqrt(diffs.reduce((a, d) => a + (d - mean) ** 2, 0) / (diffs.length - 1));
+      const threshold = Z * (sd / Math.sqrt(diffs.length));
+      const sig = Math.abs(mean) > threshold && Math.abs(mean) >= 1;
+      out[r.stable] = { prev: p?.score ?? 0, delta: round(mean, 1), threshold: round(threshold, 1), trend: sig ? (mean > 0 ? 'up' : 'down') : 'flat', method: 'paired' };
+    } else {
+      const delta = r.score - (p?.score ?? 0);
+      const threshold = Z * Math.sqrt((r.moe / Z) ** 2 + ((p?.moe ?? 0) / Z) ** 2);
+      const sig = Math.abs(delta) > threshold && Math.abs(delta) >= 1;
+      out[r.stable] = { prev: p?.score ?? 0, delta: round(delta, 1), threshold: round(threshold, 1), trend: sig ? (delta > 0 ? 'up' : 'down') : 'flat', method: 'unpaired' };
+    }
+  }
+  return out;
 }

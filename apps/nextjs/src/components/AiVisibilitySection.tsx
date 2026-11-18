@@ -6,7 +6,7 @@
  * at the point where a business scored most, when that page was saved.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { aiVisibility, normName, type AiVisRow, type AiVisibility } from '@stakeout/core/aiVisibility';
+import { aiVisibility, normName, type AiTrend, type AiVisRow, type AiVisibility } from '@stakeout/core/aiVisibility';
 import { kgmidOf } from '@stakeout/core/businessIds';
 import type { GridPinData, GridScanData } from './GeoGridDashboard';
 import { AiView, usePinEvidence } from './EvidencePanel';
@@ -22,6 +22,30 @@ const box = 'rounded-2xl border border-slate-800 bg-slate-900/70 p-5';
 const f1 = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
 const pct = (n: number) => Math.round(n * 100) + '%';
 const plural = (n: number, one: string, many = one + 's') => n + ' ' + (n === 1 ? one : many);
+const day = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+/** A business's change since the last scan of this search: an arrow only when beyond normal AI variation. */
+function Change({ t, since, full }: { t?: AiTrend; since?: string; full?: boolean }) {
+  if (!t || !since) return null;
+  const when = 'since ' + day(since);
+  const why = `Change ${t.delta >= 0 ? '+' : ''}${f1(t.delta)} since the scan of ${day(since)} (${t.method === 'paired' ? 'point to point over the same grid' : 'grid averages'}); normal AI variation here: ±${f1(t.threshold)}`;
+  if (t.trend === 'flat')
+    return (
+      <span className="rounded border border-slate-800 px-2 py-0.5 text-[11px] text-slate-400" title={why} suppressHydrationWarning>
+        {full ? `No real change ${when}` : '≈ ' + when}
+      </span>
+    );
+  const up = t.trend === 'up';
+  return (
+    <span
+      className={'rounded border px-2 py-0.5 text-[11px] font-semibold ' + (up ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/40 bg-rose-500/10 text-rose-300')}
+      title={why}
+      suppressHydrationWarning
+    >
+      {up ? '▲' : '▼'} {f1(Math.abs(t.delta))} {when}
+    </span>
+  );
+}
 
 export function AiVisibilitySection({ scan, shareToken }: { scan: GridScanData; shareToken?: string }) {
   const v = useMemo(
@@ -93,6 +117,11 @@ export function AiVisibilitySection({ scan, shareToken }: { scan: GridScanData; 
               <p className="mt-1 text-xs text-slate-400">
                 In the AI Overview at <span className="font-semibold text-slate-200">{inAi(you)} of {N}</span> points · {pct(you.share)} AI share of voice
               </p>
+              {scan.aiTrend && (
+                <p className="mt-1.5">
+                  <Change t={scan.aiTrend.rows.you} since={scan.aiTrend.since} full />
+                </p>
+              )}
             </Kpi>
             <Kpi title="Recommended beyond the local results">
               {v.beyondLocal.length ? (
@@ -206,13 +235,13 @@ export function AiVisibilitySection({ scan, shareToken }: { scan: GridScanData; 
             </div>
             {!youShown && (
               <div className="border-b border-slate-800">
-                <Row r={you} N={N} part={part} rank={youAt >= 0 ? youAt + 1 : null} onSnapshot={you.bestPin ? () => setSnap(you) : null} />
+                <Row r={you} N={N} part={part} rank={youAt >= 0 ? youAt + 1 : null} onSnapshot={you.bestPin ? () => setSnap(you) : null} trend={scan.aiTrend} />
               </div>
             )}
             <ol className="divide-y divide-slate-800">
               {list.map((r, i) => (
                 <li key={r.key}>
-                  <Row r={r} N={N} part={part} rank={i + 1} onSnapshot={r.bestPin ? () => setSnap(r) : null} />
+                  <Row r={r} N={N} part={part} rank={i + 1} onSnapshot={r.bestPin ? () => setSnap(r) : null} trend={scan.aiTrend} />
                 </li>
               ))}
             </ol>
@@ -336,7 +365,21 @@ function Message({ v, scan }: { v: AiVisibility; scan: GridScanData }) {
   );
 }
 
-function Row({ r, N, part, rank, onSnapshot }: { r: AiVisRow; N: number; part: Part; rank: number | null; onSnapshot: (() => void) | null }) {
+function Row({
+  r,
+  N,
+  part,
+  rank,
+  onSnapshot,
+  trend,
+}: {
+  r: AiVisRow;
+  N: number;
+  part: Part;
+  rank: number | null;
+  onSnapshot: (() => void) | null;
+  trend?: GridScanData['aiTrend'];
+}) {
   const dim = (k: 'p0' | 'card' | 'web') => (part !== 'all' && part !== k ? ' opacity-25' : '');
   return (
     <div className={'p-4 ' + (r.you ? 'bg-emerald-950/20' : '')}>
@@ -367,6 +410,7 @@ function Row({ r, N, part, rank, onSnapshot }: { r: AiVisRow; N: number; part: P
             {f1(r.score)} <span className="text-xs font-normal text-slate-400">of 100</span>
           </span>
           {N > 1 && r.score > 0 && <span className="text-[11px] text-slate-500">±{f1(r.moe)}</span>}
+          <Change t={trend?.rows[r.stable]} since={trend?.since} />
           <span className="rounded border border-slate-800 px-2 py-0.5 text-[11px] text-slate-300" title="AI share of voice: its part of all the points in these answers">
             {pct(r.share)} share
           </span>
