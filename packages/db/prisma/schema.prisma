@@ -249,3 +249,24 @@ model SavedBusiness {
 
   @@index([userId])
 }
+
+/// Every Google Business Profile edit sent from the admin editor (through Postproxy).
+/// `changes`: the fields that changed, with their risk and old and new values. `before`: the whole
+/// profile as Google returned it just before the edit, to restore from. `status`: LIVE (Google shows
+/// every change), SENT (accepted, not all showing yet), FAILED (Google or Postproxy refused it).
+model GbpEdit {
+  id         String    @id @default(cuid())
+  userId     String
+  profileId  String
+  locationId String
+  title      String?
+  tier       String
+  changes    Json
+  before     Json
+  status     String
+  error      String?
+  checkedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([locationId, createdAt])
+}
