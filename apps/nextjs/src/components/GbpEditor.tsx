@@ -1,5 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import GbpInsights from '@/components/GbpInsights';
+import GoogleSitePanel from '@/components/GoogleSitePanel';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, diff, problemWith, redBlock, siteOf, worst,
   type DayHours, type FieldChange, type GbpChange, type GbpLocation, type Tier,
@@ -19,6 +21,13 @@ const STATUS: Record<string, string> = { LIVE: 'text-emerald-300', SENT: 'text-a
 const STATUS_TEXT: Record<string, string> = { LIVE: 'Live on Google', SENT: 'Sent, not showing yet', FAILED: 'Failed' };
 const input = 'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500 disabled:opacity-50';
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
+
+const GOOGLE_RESULT: Record<string, string> = {
+  connected: 'Google connected. Open a listing to see its website in Search Console and Analytics.',
+  declined: 'Google sign-in was cancelled.',
+  nopermission: 'Google connected, but neither Search Console nor Analytics was allowed. Connect again and leave the boxes ticked.',
+  failed: 'Google sign-in did not complete. Try again from a listing’s website panel.',
+};
 
 const formOf = (l: GbpLocation, week: DayHours[] | null): Form => ({
   description: l.profile?.description ?? '',
@@ -77,6 +86,7 @@ export default function GbpEditor() {
   const [ready, setReady] = useState(true);
   const [pick, setPick] = useState<{ profile: string; location: string } | null>(null);
   const [find, setFind] = useState('');
+  const [notice, setNotice] = useState('');
   const [live, setLive] = useState<GbpLocation | null>(null);
   const [edits, setEdits] = useState<Edit[]>([]);
   const [form, setForm] = useState<Form | null>(null);
@@ -87,6 +97,16 @@ export default function GbpEditor() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<{ status: string; waiting: string[] } | null>(null);
+
+  useEffect(() => {
+    // The result of a Google sign-in that just came back, shown once and then taken off the address.
+    const q = new URLSearchParams(window.location.search);
+    const r = q.get('google');
+    if (r) {
+      setNotice(GOOGLE_RESULT[r] ?? '');
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     api<{ ready: boolean; profiles: Profile[] }>('/api/admin/gbp')
@@ -183,6 +203,7 @@ export default function GbpEditor() {
           </ol>
         </div>
       )}
+      {notice && <p className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">{notice}</p>}
       {error && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p>}
 
       {ready && (
@@ -230,6 +251,9 @@ export default function GbpEditor() {
             </div>
             <p className="mt-1 text-xs text-slate-500">Address, map pin, service area and open/closed status are not editable here.</p>
           </div>
+
+          <GbpInsights profile={pick.profile} location={pick.location} businessName={live.title ?? ''} />
+          <GoogleSitePanel website={live.websiteUri ?? ''} businessName={live.title ?? ''} />
 
           <section className={card + ' space-y-5'}>
             <h3 className="flex items-center gap-2 font-semibold">Everyday edits <span className={'rounded-full border px-2 py-0.5 text-[11px] ' + TIER.green.chip}>{TIER.green.text}</span></h3>

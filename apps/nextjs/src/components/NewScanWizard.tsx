@@ -94,6 +94,7 @@ export function NewScanWizard() {
   // The phones a scan will run on, by model.
   const [phones, setPhones] = useState<{ brand: string; model: string }[]>([]);
   const [launched, setLaunched] = useState<{ ids: string[]; summary: string; points: number; repeat: boolean } | null>(null);
+  const incoming = useRef<string[]>([]);
   function addKeyword() {
     const v = keyword.trim();
     if (!v) return;
@@ -114,8 +115,9 @@ export function NewScanWizard() {
     setIspSelected(b.isps ?? []);
     setTrackAiOverviews(b.trackAiOverviews);
     setScheduleType(b.scheduleType);
-    setKeywordList(b.keywords);
-    setPicked(b.keywords.slice(0, 1));
+    // Keywords that arrived with the page (from a Google profile's search terms) stay picked whichever business is chosen.
+    setKeywordList([...new Set([...b.keywords, ...incoming.current])]);
+    setPicked(incoming.current.length ? incoming.current : b.keywords.slice(0, 1));
     setKeyword('');
     setSaveMsg('');
   }
@@ -135,6 +137,21 @@ export function NewScanWizard() {
       const q = new URLSearchParams(window.location.search);
       const b = q.get('business') && list.find((x) => x.id === q.get('business'));
       if (b) return applyBusiness(b);
+      // From a Google profile's search terms (?name=…&kw=…&kw=…): the saved business of that name if
+      // there is one, with those keywords added and picked. Without one, the keywords wait in the list
+      // while the business is searched for as usual.
+      const kws = [...new Set(q.getAll('kw').map((k) => k.trim().slice(0, 120)).filter(Boolean))].slice(0, 10);
+      if (kws.length) {
+        const name = (q.get('name') ?? '').trim().toLowerCase();
+        const match = name ? list.find((x) => x.name.trim().toLowerCase() === name) : undefined;
+        incoming.current = kws;
+        if (match) applyBusiness(match);
+        else {
+          setKeywordList(kws);
+          setPicked(kws);
+        }
+        return;
+      }
       const from = q.get('from');
       if (from) {
         // "Run again": the same settings as a past scan.
@@ -786,7 +803,7 @@ export function NewScanWizard() {
                 onChange={(e) => {
                   const b = saved.find((x) => x.id === e.target.value);
                   if (b) applyBusiness(b);
-                  else { setBusinessId(''); setTargetBusiness(''); setKeywordList([]); setPicked([]); }
+                  else { setBusinessId(''); setTargetBusiness(''); setKeywordList(incoming.current); setPicked(incoming.current); }
                 }}
                 className={field + ' font-semibold'}
               >

@@ -270,3 +270,14 @@ model GbpEdit {
 
   @@index([locationId, createdAt])
 }
+
+/// An account's link to Google for reading Search Console and Analytics. One per account.
+/// `refreshToken` is encrypted (AES-256-GCM, key derived from AUTH_SECRET); it is never sent to the browser.
+model GoogleConnection {
+  userId       String   @id
+  email        String
+  scopes       String
+  refreshToken String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now())
+}
