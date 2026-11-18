@@ -144,3 +144,15 @@ export async function devtoolsProbe(d: ShellTarget): Promise<{ ok: boolean; sock
     if (/^\d+$/.test(port)) await adb(d.adbAddr!, ['forward', '--remove', 'tcp:' + port], 10000).catch(() => {});
   }
 }
+
+/** Forwards a free local port to Chrome's DevTools socket on the phone, over the ADB connection; returns the port. */
+export async function forwardDevtools(d: ShellTarget): Promise<number> {
+  if (transportFor(d) !== 'adb') throw new Error('DEVTOOLS_NEEDS_ADB');
+  const out = (await adb(d.adbAddr!, ['forward', 'tcp:0', 'localabstract:chrome_devtools_remote'], 15000)).trim();
+  if (!/^\d+$/.test(out)) throw new Error('DEVTOOLS_FORWARD ' + out.slice(0, 60));
+  return Number(out);
+}
+
+export async function unforwardDevtools(d: ShellTarget, port: number) {
+  if (transportFor(d) === 'adb') await adb(d.adbAddr!, ['forward', '--remove', 'tcp:' + port], 10000);
+}

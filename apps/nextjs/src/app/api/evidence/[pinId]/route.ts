@@ -82,6 +82,13 @@ export async function GET(req: Request, c: { params: Promise<{ pinId: string }> 
     const body = JSON.stringify({
       pinId: pin.id,
       resultsPage,
+      // The results page as Google served it, saved at the template's two moments (worker v156+).
+      // A page read too slowly may not be the moment it is labelled with: not offered.
+      pages: (() => {
+        const saved = (pin.proxyMeta as { pages?: Record<string, { replay?: string | null; late?: boolean }> } | null)?.pages;
+        const shown = (s?: { replay?: string | null; late?: boolean }) => Boolean(s?.replay && !s.late);
+        return { pre: shown(saved?.pre), post: shown(saved?.post) };
+      })(),
       finderShown: finder ? isLocalFinder(finder) : null,
       firstScreen: first ? readResultsPage(first) : null,
       capture,
