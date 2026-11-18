@@ -1,14 +1,19 @@
 /**
- * Idle proxies (IDLE_PROXY_GROUP, a DuoPlus proxy group id): once no point has been waiting for
+ * Idle proxies (IDLE_PROXY_GROUP, a DuoPlus proxy group id): once no point has been able to run for
  * IDLE_PROXY_AFTER_SECONDS (default 90), every phone that is on and not running a point is bound
  * to its own proxy from that group, one proxy (one IP) per phone, always the same one. The paid
  * residential and mobile proxies then carry only searches. Nothing else changes: a phone's next
  * point binds its own search proxy, then checks the exit, before anything is searched.
+ *
+ * Points waiting for a network whose proxies are all down (an outage: they retry one at a time,
+ * for up to a day) do not keep the fleet on its paid proxies.
  */
 import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { redis, duoplusPost } from '@stakeout/core/redis';
 import { assignIdleProxies, groupProxyIds, IDLE_MAP_KEY, idleBoundKey } from '@stakeout/core/idleProxy';
+import { pinOutageKey } from '@stakeout/core/proxyWait';
+import { proxyOutageSince } from './proxyOutage';
 
 export const idleProxyGroup = () => (process.env.IDLE_PROXY_GROUP ?? '').trim();
 const afterMs = () => Math.max(30, Number(process.env.IDLE_PROXY_AFTER_SECONDS ?? 90)) * 1000;
@@ -46,14 +51,24 @@ export async function idleProxyTick() {
     report = { group: '', proxies: 0, phones: 0, assigned: 0, bound: 0, note: '' };
     return;
   }
-  // Points waiting (the same count power saving uses): phones keep their search proxies.
-  const pending = await db.gridPin.count({
+  // Points that can run (or are running): phones keep their search proxies. Points waiting for a
+  // network that is down are left out: they retry one at a time and may wait for hours.
+  const pending = await db.gridPin.findMany({
     where: { status: 'PENDING', scan: { status: { in: ['QUEUED', 'RUNNING'] }, targetType: { not: 'desktop_aimode' } } },
+    select: { rowIdx: true, colIdx: true, scan: { select: { proxyRegion: true, stateCode: true, network: true } } },
+    take: 5000,
   });
+  const down = new Map<string, boolean>();
+  let runnable = 0;
+  for (const p of pending) {
+    const key = pinOutageKey(p);
+    if (key && !down.has(key)) down.set(key, Boolean(await proxyOutageSince(key)));
+    if (!key || !down.get(key)) runnable++;
+  }
   const now = Date.now();
-  if (pending > 0) {
+  if (runnable > 0) {
     lastDemandAt = now;
-    report = { ...report, group, note: pending + ' point(s) waiting: phones keep their search proxies' };
+    report = { ...report, group, note: runnable + ' point(s) to run: phones keep their search proxies' };
     return;
   }
   if (now - lastDemandAt < afterMs()) return;
@@ -118,7 +133,13 @@ export async function idleProxyTick() {
     phones: phones.length,
     assigned: Object.keys(map).length,
     bound,
-    note: !ids.length ? 'no proxies found in group ' + group : without.length ? without.length + ' phone(s) have no idle proxy (the group has ' + ids.length + ')' : '',
+    note: !ids.length
+      ? 'no proxies found in group ' + group
+      : without.length
+        ? without.length + ' phone(s) have no idle proxy (the group has ' + ids.length + ')'
+        : pending.length
+          ? pending.length + ' point(s) waiting for proxies that are down'
+          : '',
   };
   if (without.length && changed.length) console.warn('[idle] group', group, 'has', ids.length, 'proxies for', phones.length, 'phones: no idle proxy for', without.join(', '));
 }

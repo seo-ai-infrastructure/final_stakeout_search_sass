@@ -262,3 +262,15 @@ export function locationVerified(line: string | null | undefined, stateCode: str
   // Or names only the place: "Donelson, Nashville - From your device".
   return Boolean(city && squash(city).length >= 4 && squash(text).includes(squash(city)));
 }
+
+/**
+ * Google's line at the top of the results ("Hermitage, TN 37076", beside "Choose area") names the
+ * place the results are for, without saying where Google got it from (the footer line says that:
+ * "- From your device"). Alone it verifies a point only when it names the point's exact ZIP code
+ * in the point's state: stricter than the footer rule, which accepts the state.
+ */
+export function topLineVerified(line: string | null | undefined, stateCode: string, zips: (string | null | undefined)[]) {
+  const m = /^(.+?),\s*([A-Z]{2})\s+(\d{5})$/.exec((line ?? '').replace(/\s+/g, ' ').trim());
+  if (!m) return false;
+  return m[2] === stateCode.toUpperCase() && zips.some((z) => Boolean(z) && z === m[3]);
+}

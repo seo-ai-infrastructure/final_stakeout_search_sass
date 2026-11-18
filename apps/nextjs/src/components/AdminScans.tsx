@@ -27,6 +27,8 @@ const MEANING: Record<string, string> = {
   LOCATION_UNVERIFIED: 'The phone did not confirm the point location',
   'RPA_SURFACE_ERROR no_scroll': 'The template never scrolled the page',
   'RPA_SURFACE_ERROR location_not_refreshed': 'The template did not tap Update location',
+  'RPA_SURFACE_ERROR finder_not_opened': 'The full list of businesses never opened',
+  WRONG_QUERY: 'The page was for a different search (the keyword was never searched)',
 };
 /** Failures a person caused on purpose: not a quality problem. */
 const deliberate = (error: string) => /^(CANCELLED|Paused)/.test(error);

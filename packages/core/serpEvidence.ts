@@ -113,6 +113,8 @@ export type ResultsPage = {
   localServicesAds: { title: string | null; listings: Listing[] };
   aiPreview: string | null;
   pack: Listing[];
+  /** The map pack's link to the full list (the Local Finder): "More businesses", "More places" or "See more on Google". */
+  packMore: string | null;
   peopleAlsoSearch: string[];
   web: WebResult[];
 };
@@ -120,7 +122,7 @@ export type ResultsPage = {
 /** The results page, in Google's order. Ads are detected by Google's own markers. */
 export function readResultsPage(xml: string): ResultsPage {
   const L = uiLabels(xml);
-  const page: ResultsPage = { location: null, googleLocation: null, localServicesAds: { title: null, listings: [] }, aiPreview: null, pack: [], peopleAlsoSearch: [], web: [] };
+  const page: ResultsPage = { location: null, googleLocation: null, localServicesAds: { title: null, listings: [] }, aiPreview: null, pack: [], packMore: null, peopleAlsoSearch: [], web: [] };
   const lsa: Omit<Listing, 'pos'>[] = [], pack: Omit<Listing, 'pos'>[] = [];
   let mode: 'top' | 'lsa' | 'aio' | 'pack' | 'pasf' | 'web' | 'end' = 'top';
   let nextIsAd = false, aio: string[] = [];
@@ -153,7 +155,7 @@ export function readResultsPage(xml: string): ResultsPage {
     }
     if (mode === 'pack') {
       // The pack ends at its link to the full list: "More businesses", or "See more on Google" since Nov 2026.
-      if (label === 'More businesses' || label === 'More places' || label === 'See more on Google') { mode = 'top'; continue; }
+      if (label === 'More businesses' || label === 'More places' || label === 'See more on Google') { page.packMore ??= label; mode = 'top'; continue; }
       if (card) { pack.push({ ...card, ad: nextIsAd }); nextIsAd = false; }
       continue;
     }
@@ -174,6 +176,46 @@ export function readResultsPage(xml: string): ResultsPage {
   page.localServicesAds.listings = finish(lsa);
   page.pack = finish(pack);
   return page;
+}
+
+/**
+ * The words a Google results page was searched for, from Chrome's title for it ("<words> - Google
+ * Search", the same on the Local Finder). Null when the snapshot has no such title (the Maps app,
+ * a page that never loaded): then nothing is concluded from it.
+ */
+export function searchedQuery(xml: string | null | undefined): string | null {
+  if (!xml) return null;
+  for (const { cls, label } of uiLabels(xml)) {
+    if (cls !== 'WebView') continue;
+    const m = /^(.+?) - Google Search$/.exec(label);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+const words = (s: string) =>
+  s.normalize('NFKC').toLowerCase().replace(/[\u2018\u2019\u02bc]/g, "'").replace(/[^\p{L}\p{N}']+/gu, ' ').trim();
+
+/** Whether two searches are the same words (letter case, spacing and punctuation aside). */
+export function sameQuery(a: string, b: string): boolean {
+  return words(a) === words(b);
+}
+
+/**
+ * The search a page was for when it was not this keyword (a warm-up search left on screen, a
+ * related search opened by mistake); null when it was the keyword, or when the page does not say.
+ * A spelling correction still counts as the keyword's search: Google keeps the keyword on the page
+ * ("Search instead for <keyword>").
+ */
+export function otherSearch(xml: string | null | undefined, keyword: string): string | null {
+  const q = searchedQuery(xml);
+  if (q === null || sameQuery(q, keyword)) return null;
+  const kw = words(keyword);
+  const kept = uiLabels(xml!).some(({ label }) => {
+    const l = words(label);
+    return l === kw || (/^(Showing results for|Search instead for|Including results for|Did you mean)\b/i.test(label) && l.endsWith(' ' + kw));
+  });
+  return kept ? null : q;
 }
 
 /** The Local Finder list, in Google's order: ads (labelled, unranked) and organic listings. */

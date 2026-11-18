@@ -1,12 +1,12 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, type PinInsights } from '@stakeout/core/pinInsights';
-import { searchLocationLine, isLocalFinder, readAiOverview, readLocalFinder, sameBusiness, rankWithoutFinder } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readAiOverview, readLocalFinder, readResultsPage, sameBusiness, rankWithoutFinder, otherSearch } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { db, type GridPin, type GridScan } from '@stakeout/db';
-import { listsForPin, normPlace, locationVerified } from '@stakeout/core/proxyLists';
+import { listsForPin, normPlace, locationVerified, topLineVerified } from '@stakeout/core/proxyLists';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
 import { isProxyProblem, pinOutageKey, supplyDown } from '@stakeout/core/proxyWait';
@@ -1166,6 +1166,18 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       throw new Error('FLAG_CAPTCHA_DETECTED');
     if (b.flags.trim()) throw new Error('FLAG_MAP_DRIFT_OR_CHALLENGE');
     if (!b.video.length) throw new Error('EMPTY_VIDEO');
+    // The results must be for this point's keyword. Chrome titles Google's results page "<words> -
+    // Google Search": a run that never searched the keyword (its typing failed, so the page is still
+    // a warm-up search) or that ended on another search (a related-search link) is retried, never
+    // recorded. 15 Nov: "emergency plumber near me" was saved with the Local Finder of the warm-up
+    // search "things to do today" (Hollis Garden, Polk Theatre ...) as its competitors.
+    if (surface === 'chrome' || surface === 'google') {
+      const wrong = [b.serp, b.final].map((x) => otherSearch(x, scan.keyword)).find(Boolean);
+      if (wrong) {
+        await keepRefusedEvidence();
+        throw new Error('WRONG_QUERY the page was a search for "' + wrong.slice(0, 80) + '", not the keyword');
+      }
+    }
 
     // The results page dump (serp.xml) holds the AI Overview too on web surfaces.
     const aiDumps = scan.trackAiOverviews ? [...b.ai, ...(b.serp && surface !== 'maps' ? [b.serp] : [])] : [];
@@ -1190,8 +1202,19 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     // device and name this point's state or ZIP; anything else (another country, another
     // language, an IP guess) fails and is refunded instead of being recorded.
     if ((surface === 'chrome' || surface === 'google') && !locationVerified(result.locationSource, p.stateCode, p.zip, p.city)) {
-      await keepRefusedEvidence();
-      throw new Error('LOCATION_UNVERIFIED');
+      // No footer line was captured at all (the page was never scrolled to its end, e.g. the Local
+      // Finder opened late). Google's line at the top of the results names the place too: it counts
+      // when it names this point's exact ZIP code (our label or the Census ZIP area) and the
+      // template refreshed the location on this run. A footer line that disagrees is never overruled.
+      const zips = [p.zip, (p.census as { zcta?: { id?: string } } | null)?.zcta?.id];
+      const top = [b.serp, b.final, ...b.scroll].map((x) => (x ? readResultsPage(x).location : null)).find((x) => topLineVerified(x, p.stateCode, zips));
+      if (!result.locationSource && top && /location_refreshed=1/.test(b.meta)) {
+        Object.assign(result, { locationSource: top + ' (top of the results)' });
+        Object.assign(proof, { locationCheckedBy: 'top_line' });
+      } else {
+        await keepRefusedEvidence();
+        throw new Error('LOCATION_UNVERIFIED');
+      }
     }
     // The template's own verdict, recorded by the recorder before cleanup: a failure marker
     // or a ".done" that says "failed" means this point has no trustworthy result.
@@ -1231,6 +1254,13 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       const aiLeft = !('aio_copy.txt' in (b.fingerprints ?? {})) && /"AI Overview"/.test(b.serp ?? b.final ?? '');
       if (r.from === 'none' && aiLeft && shots.length >= 3 && new Set(shots).size === 1)
         throw new Error('RPA_SURFACE_ERROR no_scroll: the template finished without scrolling the results page');
+      // The map pack offered its full list ("More businesses") but the run never got into it (the
+      // Local Finder opened late, or the tap missed). Missing from the pack's three is not "not
+      // found": retry the point rather than record a rank the full list might contradict.
+      if (r.from === 'map_pack' && r.rank === null && [b.serp, b.final, ...b.scroll].some((x) => Boolean(x && readResultsPage(x).packMore))) {
+        await keepRefusedEvidence();
+        throw new Error('RPA_SURFACE_ERROR finder_not_opened: the full list of businesses never opened');
+      }
       aiList = { rank: r.rank, list: r.list };
       Object.assign(proof, { finderShown: false, rankFrom: r.from });
     }

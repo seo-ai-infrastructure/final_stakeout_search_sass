@@ -33,6 +33,41 @@ test('evidence: the real results page, in Google order, ads labelled and unranke
   assert.equal(rankIn(p.pack, 'McIntyre Painting'), 2);
 });
 
+test("evidence: the map pack's link to its full list is recorded (a run that never opened it is retried)", () => {
+  assert.equal(readResultsPage(fx('real-r3c2-serp.xml').toString('utf8')).packMore, 'More businesses');
+  assert.equal(readResultsPage(fx('real-pack4-see-more-2026-11-12.xml').toString('utf8')).packMore, 'See more on Google');
+  assert.equal(readResultsPage(fx('real-aio-list-no-finder.xml').toString('utf8')).packMore, null); // no pack: nothing to open
+});
+
+test('evidence: the words each page was searched for (a warm-up page is never taken for the keyword)', async () => {
+  const { searchedQuery, sameQuery, otherSearch } = await import('../packages/core/serpEvidence');
+  assert.equal(searchedQuery(fx('real-r3c2-serp.xml').toString('utf8')), 'exterior painting contractors near me');
+  assert.equal(searchedQuery(fx('real-r3c2-finder.xml').toString('utf8')), 'exterior painting contractors near me'); // the Local Finder too
+  assert.equal(searchedQuery(fx('real-maps-results-top-2026-11-10.xml').toString('utf8')), null); // the Maps app: nothing concluded
+  assert.equal(searchedQuery(null), null);
+  // A run whose keyword was never typed is still on its warm-up search (15 Nov, pl5Iw):
+  const warm = '<hierarchy><node class="android.webkit.WebView" text="things to do today - Google Search" content-desc="" /></hierarchy>';
+  assert.equal(searchedQuery(warm), 'things to do today');
+  assert.equal(sameQuery('things to do today', 'emergency plumber near me'), false);
+  assert.equal(sameQuery('emergency plumber', 'emergency plumber near me'), false);
+  assert.equal(sameQuery('Emergency  plumber near me ', 'emergency plumber near me'), true);
+  assert.equal(sameQuery('joe\u2019s plumbing', "Joe's Plumbing"), true);
+  assert.equal(sameQuery('24/7 plumber', '24 7 plumber'), true);
+  // What the worker refuses: a page for another search. Real pages for the keyword pass.
+  assert.equal(otherSearch(warm, 'emergency plumber near me'), 'things to do today');
+  assert.equal(otherSearch(fx('real-r3c2-serp.xml').toString('utf8'), 'Exterior painting contractors near me'), null);
+  assert.equal(otherSearch(fx('real-maps-results-top-2026-11-10.xml').toString('utf8'), 'emergency plumber'), null);
+  const related = '<hierarchy><node class="android.webkit.WebView" text="emergency plumber near me open now - Google Search" content-desc="" /></hierarchy>';
+  assert.equal(otherSearch(related, 'emergency plumber near me'), 'emergency plumber near me open now');
+  // A spelling correction is still the keyword's own search:
+  const fixed = '<hierarchy><node class="android.webkit.WebView" text="plumbers near me - Google Search" content-desc="" />' +
+    '<node class="android.view.View" text="Search instead for plumers near me" content-desc="" /></hierarchy>';
+  assert.equal(otherSearch(fixed, 'plumers near me'), null);
+  const fixedSplit = '<hierarchy><node class="android.webkit.WebView" text="plumbers near me - Google Search" content-desc="" />' +
+    '<node class="android.view.View" text="Search instead for" content-desc="" /><node class="android.view.View" text="plumers near me" content-desc="" /></hierarchy>';
+  assert.equal(otherSearch(fixedSplit, 'plumers near me'), null);
+});
+
 test('evidence: the real Local Finder keeps an advertiser that also ranks organically', () => {
   const f = readLocalFinder(fx('real-r3c2-finder.xml').toString('utf8'));
   assert.equal(f.filter((l) => l.ad).length, 4);

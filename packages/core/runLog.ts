@@ -36,6 +36,7 @@ export function kindLabel(kind: string): string {
   const known: [RegExp, string][] = [
     [/^RPA_SURFACE_ERROR location_not_refreshed/, "Location not refreshed"],
     [/^RPA_SURFACE_ERROR no_scroll/, "Template didn't scroll the results"],
+    [/^RPA_SURFACE_ERROR finder_not_opened/, 'The full list of businesses never opened'],
     [/^RPA_SURFACE_ERROR (surface_error|template)/, 'Template reported a wrong page'],
     [/^RPA_SURFACE_ERROR blocked/, 'Template reported being blocked'],
     [/^RPA_SURFACE_ERROR/, 'Template reported a problem'],
@@ -43,6 +44,7 @@ export function kindLabel(kind: string): string {
     [/^RPA_TASK_FAILED/, 'A template step failed'],
     [/^RPA_TASK_TIMEOUT/, 'Template ran out of time'],
     [/^LOCATION_UNVERIFIED/, "Google's location line didn't match the point"],
+    [/^WRONG_QUERY/, 'The page was for a different search'],
     [/^LOCATION_FROM_IP/, 'Google used the IP address, not the GPS'],
     [/^UNRECOGNIZED_RESULT_LAYOUT/, 'Results page not recognised'],
     [/^FLAG_CAPTCHA_DETECTED/, 'Captcha'],

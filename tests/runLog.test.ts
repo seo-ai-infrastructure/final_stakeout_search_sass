@@ -27,6 +27,10 @@ test('a failure is named by its code, and template failures by what went wrong',
   assert.equal(failureKind(new Error('RPA_TASK_FAILED cancelled')), 'RPA_TASK_FAILED cancelled');
   assert.equal(failureKind(new Error('RPA_TASK_TIMEOUT status=1')), 'RPA_TASK_TIMEOUT');
   assert.equal(failureKind(new Error('LOCATION_UNVERIFIED')), 'LOCATION_UNVERIFIED');
+  assert.equal(failureKind(new Error('WRONG_QUERY the page was a search for "things to do today", not the keyword')), 'WRONG_QUERY');
+  assert.equal(kindLabel('WRONG_QUERY'), 'The page was for a different search');
+  assert.equal(failureKind(new Error('RPA_SURFACE_ERROR finder_not_opened: the full list of businesses never opened')), 'RPA_SURFACE_ERROR finder_not_opened');
+  assert.equal(kindLabel('RPA_SURFACE_ERROR finder_not_opened'), 'The full list of businesses never opened');
   const named = new Error('x');
   named.name = 'NoSuchBucket';
   assert.equal(failureKind(named), 'NoSuchBucket');

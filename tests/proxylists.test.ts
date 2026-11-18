@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractGeoRows, matchMarket, parseProxyLines, toDuoPlusLine, ispForPin, listRotation, marketKey, listTries, locationVerified } from '../packages/core/proxyGeo';
+import { readFileSync } from 'node:fs';
+import { extractGeoRows, matchMarket, parseProxyLines, toDuoPlusLine, ispForPin, listRotation, marketKey, listTries, locationVerified, topLineVerified } from '../packages/core/proxyGeo';
 import { parseSpec } from '../packages/core/grid';
 
 const flat = { status: 'success', data: [
@@ -103,6 +104,24 @@ test('locationVerified: only a device location in the right state or ZIP counts'
   assert.equal(locationVerified('From your device', 'TN', '37076', 'Old'), false);
   assert.equal(locationVerified('30301, Georgia - From your device', 'TN', '37121'), false); // wrong state
   assert.equal(locationVerified(null, 'TN', '37121'), false);
+});
+
+test("topLineVerified: Google's line at the top counts only when it names the point's exact ZIP in its state", async () => {
+  // Real capture (17 Nov, 9Wh3y point 6,1): the run never reached the footer; the top line was right.
+  assert.equal(topLineVerified('Hermitage, TN 37076', 'TN', ['37076']), true);
+  assert.equal(topLineVerified('Hermitage, TN 37076', 'tn', [null, '37076']), true); // the Census ZIP area
+  assert.equal(topLineVerified('Hermitage,  TN  37076 ', 'TN', ['37076']), true);
+  assert.equal(topLineVerified('Hermitage, TN 37076', 'TN', ['37214']), false); // a neighbouring ZIP is not enough
+  assert.equal(topLineVerified('Hermitage, KY 37076', 'TN', ['37076']), false);
+  assert.equal(topLineVerified('Mt. Juliet, TN', 'TN', ['37122']), false); // no ZIP named: the footer rule decides
+  assert.equal(topLineVerified('East Lake Morton, Lakeland', 'FL', ['33805']), false);
+  assert.equal(topLineVerified(null, 'TN', ['37076']), false);
+  assert.equal(topLineVerified('Hermitage, TN 37076', 'TN', [undefined, null, '']), false);
+  // The real page with a ZIP in its top line (Lakeland, 12 Nov):
+  const { readResultsPage } = await import('../packages/core/serpEvidence');
+  const top = readResultsPage(readFileSync(new URL('./fixtures/real-pack4-see-more-2026-11-12.xml', import.meta.url), 'utf8')).location;
+  assert.equal(topLineVerified(top, 'FL', ['33805']), true);
+  assert.equal(topLineVerified(top, 'FL', ['33801']), false);
 });
 
 test('location wording never pauses a phone; real phone faults still count', async () => {
