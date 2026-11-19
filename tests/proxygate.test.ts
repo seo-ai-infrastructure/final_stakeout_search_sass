@@ -108,3 +108,23 @@ test('gate: no network evidence from either lookup fails closed', () => {
   assert.ok(v.reasons.includes('NO_NETWORK_EVIDENCE'));
   assert.equal(judgeExit({ ...comcastTN }, { stateCode: 'TN' }).ok, true);
 });
+
+import { acrossStateLine, proxyPlace, proxyState } from '../packages/core/proxyGeo';
+
+test('a point across the state line uses the same proxies as the rest of its grid', () => {
+  const scan = { stateCode: 'GA', centerLat: 33.47, centerLng: -81.97 };
+  const inside = { stateCode: 'GA', city: 'Augusta', zip: '30901', lat: 33.48, lng: -81.96, scan };
+  const across = { stateCode: 'SC', city: 'North Augusta', zip: '29841', lat: 33.5, lng: -81.96, rowIdx: 0, scan };
+  assert.equal(acrossStateLine(inside), false);
+  assert.equal(proxyState(inside), 'GA');
+  assert.equal(proxyPlace(inside), inside);
+  // Across the line: the grid's state, and no town or ZIP of its own, so every ladder picks the centre's proxies.
+  assert.equal(acrossStateLine(across), true);
+  assert.equal(proxyState(across), 'GA');
+  assert.deepEqual(proxyPlace(across), { stateCode: 'GA', city: null, zip: null, lat: 33.47, lng: -81.97, rowIdx: 0, scan });
+  // The point itself is not changed: its GPS and its own state are still its own.
+  assert.deepEqual([across.stateCode, across.lat, across.city], ['SC', 33.5, 'North Augusta']);
+  // A scan saved without a state changes nothing.
+  assert.equal(proxyState({ stateCode: 'SC', scan: {} }), 'SC');
+  assert.equal(proxyState({ stateCode: 'sc', scan: { stateCode: 'SC' } }), 'sc');
+});

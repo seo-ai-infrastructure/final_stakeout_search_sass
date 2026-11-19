@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { db, type GridPin, type GridScan } from '@stakeout/db';
-import { listsForPin, normPlace, locationVerified, topLineVerified } from '@stakeout/core/proxyLists';
+import { listsForPin, normPlace, locationVerified, topLineVerified, proxyPlace, proxyState } from '@stakeout/core/proxyLists';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
 import { isProxyProblem, pinOutageKey, supplyDown } from '@stakeout/core/proxyWait';
@@ -233,7 +233,7 @@ async function googleProbe(d: LeasedDevice): Promise<string> {
 }
 
 /** Binds the proxy and GPS, then checks the exit through it: two geolocation services and Google itself. */
-async function preflightExit(d: LeasedDevice, p: Pin, isp: string, stateCode = p.stateCode) {
+async function preflightExit(d: LeasedDevice, p: Pin, isp: string, stateCode = proxyState(p)) {
   await applyNetworkAndGps(d, p);
   await sleep(6000);
   const token = process.env.IPINFO_TOKEN ? '?token=' + encodeURIComponent(process.env.IPINFO_TOKEN) : '';
@@ -385,7 +385,7 @@ async function provisionGateway(
       await redis().del(`stakeout:devport:${device.imageId}`).catch(() => {});
       // "Mix of ISPs": the ISP is a preference, so a residential IP in the right state will do.
       // Mobile data: any carrier the gatekeeper knows as a real mobile network.
-      const g = await preflightExit(device, p, p.scan.ispMode === 'mix' ? '' : g0.isp, target.state ?? p.stateCode);
+      const g = await preflightExit(device, p, p.scan.ispMode === 'mix' ? '' : g0.isp, target.state ?? proxyState(p));
       if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
       if (!g.verdict.ok) {
         tried.push(target.rung + ':' + session + ':' + g.verdict.reasons.join('+'));
@@ -416,7 +416,7 @@ async function provisionGateway(
         ispRuleApplied: false,
         ispObserved: v.network || null,
         ispMatched: g0.isp ? ispMatches(g0.isp, v.network) : null,
-        stateMatched: (target.state ?? p.stateCode).toUpperCase() === p.stateCode.toUpperCase(),
+        stateMatched: (target.state ?? proxyState(p)).toUpperCase() === proxyState(p).toUpperCase(),
         cityMatched: cityMatches(city, p.city),
         port: g0.port,
         portReused: false,
@@ -458,7 +458,7 @@ function provisionDecodo(device: LeasedDevice, p: Pin, network: 'residential' | 
     tries: Math.max(1, Number((mobile ? process.env.DECODO_MOBILE_TRIES : process.env.DECODO_TRIES_PER_TARGET) ?? (mobile ? 6 : 2))),
     minutes,
     isp: mobile ? '' : (p.isp ?? ''),
-    targets: (mobile ? decodoMobileLadder(p) : decodoLadder(p)).map((t) => ({ rung: t.rung, user: (session: string) => decodoUser(username, t.params, session, minutes) })),
+    targets: (mobile ? decodoMobileLadder(proxyPlace(p)) : decodoLadder(proxyPlace(p))).map((t) => ({ rung: t.rung, user: (session: string) => decodoUser(username, t.params, session, minutes) })),
   });
 }
 
@@ -472,7 +472,7 @@ async function provisionVoidmob(device: LeasedDevice, p: Pin) {
   // The package's own Flex login (read from VoidMob with VOIDMOB_API_KEY + VOIDMOB_PROXY_ID), or the fixed one.
   const { host, port, username: base, password } = await voidmobLogin();
   const minutes = Number(process.env.VOIDMOB_SESSION_MINUTES ?? 30);
-  const hubs = mobileHubs(p, { crossState: process.env.MOBILE_CROSS_STATE !== 'false' });
+  const hubs = mobileHubs(proxyPlace(p), { crossState: process.env.MOBILE_CROSS_STATE !== 'false' });
   return provisionGateway(device, p, {
     source: 'voidmob',
     network: 'mobile',
@@ -494,7 +494,7 @@ async function provisionVoidmob(device: LeasedDevice, p: Pin) {
 
 async function provisionFromLists(device: LeasedDevice, p: Pin) {
   const isp = p.isp ?? '';
-  const lists = await listsForPin(p.scan, p);
+  const lists = await listsForPin(p.scan, proxyPlace(p));
   if (!lists.length) throw new Error('PROXY_LIST_MISSING');
   const requireState = process.env.PROXY_REQUIRE_STATE_MATCH !== 'false';
   const tried: string[] = [];
@@ -654,7 +654,7 @@ async function provisionFromLists(device: LeasedDevice, p: Pin) {
       tried.push(label + ':NO_EXIT');
       continue;
     }
-    const stateMatched = regionMatchesState(c.region, p.stateCode);
+    const stateMatched = regionMatchesState(c.region, proxyState(p));
     if (!isUS(c) || (requireState && !stateMatched)) {
       tried.push(label + ':WRONG_LOCATION');
       continue;
@@ -730,13 +730,13 @@ async function provisionProxySeller(device: LeasedDevice, p: Pin) {
     for (let attempt = 0; attempt < 3; attempt++) {
       await device.assertOwned();
       const c = await checkExit(device, p);
-      if (c && isUS(c) && (!requireState || regionMatchesState(c.region, p.stateCode)))
+      if (c && isUS(c) && (!requireState || regionMatchesState(c.region, proxyState(p))))
         return {
           ...c,
           rungUsed: 'STATIC_DEVICE_PROXY' as TargetRung,
           ispRequested,
           ispRuleApplied: false,
-          stateMatched: regionMatchesState(c.region, p.stateCode),
+          stateMatched: regionMatchesState(c.region, proxyState(p)),
           cityMatched: cityMatches(c.city, p.city),
           port: null,
         };
@@ -748,7 +748,7 @@ async function provisionProxySeller(device: LeasedDevice, p: Pin) {
   const { login, password } = proxyCredentials();
   const port = proxyPort(device.slotIndex);
   const host = process.env.PROXY_SELLER_HOST?.trim() || 'us.res.proxy-seller.com';
-  const ladder = targetingLadder(p, ispRequested);
+  const ladder = targetingLadder(proxyPlace(p), ispRequested);
   if (!ladder.length) throw new Error('PROXY_NO_TARGET_FOR_PIN');
   const tried: string[] = [];
 
@@ -775,7 +775,7 @@ async function provisionProxySeller(device: LeasedDevice, p: Pin) {
       tried.push(rung.rung + ':NO_EXIT');
       continue;
     }
-    const stateMatched = regionMatchesState(c.region, p.stateCode);
+    const stateMatched = regionMatchesState(c.region, proxyState(p));
     if (!isUS(c) || (requireState && !stateMatched)) {
       tried.push(rung.rung + ':WRONG_LOCATION');
       continue;

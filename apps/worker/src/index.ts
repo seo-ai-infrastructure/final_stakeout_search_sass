@@ -14,7 +14,7 @@ import {
 import { WAKE_CHANNEL, mayRest } from '@stakeout/core/wake';
 import { r2DryRunDaily } from './r2Report';
 import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
-import { listsForPin, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
+import { listsForPin, proxyPlace, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
 import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, type LeasedDevice } from './duoplus';
@@ -75,7 +75,7 @@ async function execute(job: Job, token?: string) {
       throw new DelayedError();
     }
     // A phone already on this point's Proxy-Seller list is preferred (home internet only).
-    const preferred = pin.scan.proxyRegion && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'residential' ? (await listsForPin(pin.scan, pin))[0]?.id : null;
+    const preferred = pin.scan.proxyRegion && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'residential' ? (await listsForPin(pin.scan, proxyPlace(pin)))[0]?.id : null;
     // A retry goes to another phone when one is free (the phone it failed on is tried last).
     const lease = await acquireDeviceLease(pin.id, pin.scan.phoneModel, preferred, typeof job.data.lastPhone === 'string' ? job.data.lastPhone : null);
     if (!('device' in lease)) {

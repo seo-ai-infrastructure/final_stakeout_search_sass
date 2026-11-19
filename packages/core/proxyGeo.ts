@@ -274,3 +274,27 @@ export function topLineVerified(line: string | null | undefined, stateCode: stri
   if (!m) return false;
   return m[2] === stateCode.toUpperCase() && zips.some((z) => Boolean(z) && z === m[3]);
 }
+
+type PlacedPin = { stateCode: string; city?: string | null; zip?: string | null; lat?: number | null; lng?: number | null; scan: { stateCode?: string | null; centerLat?: number | null; centerLng?: number | null } };
+
+/** A point across the state line from its grid's centre (a grid in Augusta, GA reaches North Augusta, SC). */
+export const acrossStateLine = (p: PlacedPin) => Boolean(p.scan.stateCode) && p.scan.stateCode!.toUpperCase() !== p.stateCode.toUpperCase();
+
+/**
+ * The state a point's proxy must be in: the grid's own state. A point across the state line uses
+ * the same proxies as the rest of its grid, not ones from its own state: the search is placed by
+ * the phone's GPS (which stays on the point), and a town's proxy list hands out mostly addresses
+ * from the bigger city next door, so asking for the point's own state held such points up for an hour.
+ */
+export const proxyState = (p: PlacedPin) => (acrossStateLine(p) ? p.scan.stateCode! : p.stateCode);
+
+/**
+ * The point as the proxy ladders should see it. Unchanged inside the grid's state; across the
+ * line it stands at the grid's centre (state, and no town or ZIP of its own), so every ladder
+ * picks what the centre's points get. Only for choosing proxies: GPS, time zone and the checks on
+ * what Google showed always use the point itself.
+ */
+export function proxyPlace<P extends PlacedPin>(p: P): P {
+  if (!acrossStateLine(p)) return p;
+  return { ...p, stateCode: p.scan.stateCode!, city: null, zip: null, lat: p.scan.centerLat ?? p.lat, lng: p.scan.centerLng ?? p.lng };
+}
