@@ -183,7 +183,12 @@ async function briefing(user: ActingUser, invoke: Invoke) {
   ]);
   return {
     asOf: new Date().toISOString(),
-    listings: 'profiles' in listed ? { onAPlan: mine.length, connected: listed.profiles.reduce((n, p) => n + p.locations.length, 0), list: mine } : listed,
+    // An admin reaches every connected listing, so "on a plan" would be wrong for one: this briefing looks at the first dozen and says so.
+    listings: 'profiles' in listed
+      ? user.role === 'ADMIN'
+        ? { connected: listed.profiles.reduce((n, p) => n + p.locations.length, 0), coveredByThisBriefing: mine.length, note: 'An admin account reaches every connected listing. The reviews and posts below cover only the listings in `list` (the first ' + mine.length + '); use list_listings and the listing tools for the rest.', list: mine }
+        : { onAPlan: mine.length, connected: listed.profiles.reduce((n, p) => n + p.locations.length, 0), list: mine }
+      : listed,
     changesNobodyHereMade: changes, reviews, posts, latestScans: scans, agentScanBudget: budget, ...(activity ? { activity } : {}),
   };
 }
