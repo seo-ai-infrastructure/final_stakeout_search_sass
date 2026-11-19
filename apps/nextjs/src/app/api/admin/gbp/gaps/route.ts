@@ -14,7 +14,8 @@ export const maxDuration = 60;
  * Always: the yes/no attributes it has not answered, Google's own services for its categories that
  * are not on it, and the kinds of booking link it has none of. With a finished scan of the same
  * business: its top rivals there (three, going down the list when a listing cannot be found), and (once the rival lookup is set up) what their listings
- * have that this one lacks, including the additional categories they use. Rival listings are only
+ * have that this one lacks, including the additional categories they use, with each rival's
+ * description, hours, review make-up and recent Google posts. Rival listings are only
  * looked up, and paid for, when lookup=1; otherwise what was kept from the last 14 days is used.
  * Read-only: nothing on the listing is changed here.
  */
@@ -61,7 +62,8 @@ export async function GET(req: Request) {
       gaps,
       scan: scan ? { id: scan.id, keyword: scan.keyword, at: scan.createdAt } : null,
       top,
-      rivals: listings.rivals.map((r) => ({ name: r.name, categories: r.categories.map((c) => c.name), services: r.services.length, attributes: r.attributes.length, photos: r.photos, rating: r.rating, reviews: r.reviews })),
+      rivals: listings.rivals.map((r) => ({ name: r.name, categories: r.categories.map((c) => c.name), services: r.services, attributes: r.attributes.length, photos: r.photos, rating: r.rating, reviews: r.reviews, facts: r.facts, posts: r.posts })),
+      you: { description: (loc.profile?.description ?? '').length, categories: 1 + (loc.categories?.additionalCategories ?? []).length, attributes: x.attributes.list.filter((a) => (Array.isArray(a.value) ? a.value.length > 0 : a.value !== null)).length, services: x.services.list.length },
       missing: listings.missing,
       lookup: { ready: rivalsConfigured(), problem: listings.problem, lookedUp: listings.lookedUp, waiting: listings.waiting },
       current: { additionalCategories: loc.categories?.additionalCategories ?? [] },

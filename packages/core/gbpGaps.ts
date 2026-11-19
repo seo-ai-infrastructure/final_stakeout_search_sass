@@ -148,3 +148,93 @@ export function findGaps(
     .sort(byRivals);
   return { categories: [...cats.values()].sort(byRivals), attributes, services, links, categoryRoom: Math.max(0, 9 - client.additionalCategories.length) };
 }
+
+/* ───────────── A rival's listing in full, and its posts ───────────── */
+
+export type RivalFacts = {
+  description: string;
+  phone: string | null;
+  website: string | null;
+  claimed: boolean | null;
+  /** Hours open in a week (168 = always open), or null when the listing gives none. */
+  hoursPerWeek: number | null;
+  /** Each day's hours in words, Monday first ("Mon 8:00 AM – 5:00 PM", "Sat closed"). */
+  hours: string[];
+  /** When it is busiest: the day and hour Google shows as the peak. */
+  busiest: string | null;
+  /** How its reviews split by stars, 5 first, as counts. */
+  stars: number[] | null;
+  /** What its reviews talk about most, with how many mention each. */
+  topics: { topic: string; mentions: number }[];
+  /** What the listing says it does not have ("pay_check"). */
+  lacks: string[];
+  cid: string | null;
+};
+
+const DAY = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const clock = (h: number, m: number) => { const hh = h % 24; return `${hh % 12 === 0 ? 12 : hh % 12}:${String(m).padStart(2, '0')} ${hh < 12 ? 'AM' : 'PM'}`; };
+
+/** Everything else a rival's listing says, from the same lookup: description, contact, hours, busy times, review make-up. */
+export function rivalFacts(item: unknown): RivalFacts {
+  const i = obj(item);
+  const table = obj(obj(obj(i.work_time).work_hours).timetable);
+  let minutes = 0, any = false;
+  const hours = DAY.map((d) => {
+    const spans = (Array.isArray(table[d]) ? (table[d] as unknown[]) : []).map(obj).map((s) => ({ o: obj(s.open), c: obj(s.close) })).filter((s) => typeof s.o.hour === 'number' && typeof s.c.hour === 'number');
+    if (d in table) any = true;
+    const label = d[0].toUpperCase() + d.slice(1, 3);
+    if (!spans.length) return label + ' closed';
+    return label + ' ' + spans.map((s) => {
+      const from = (s.o.hour as number) * 60 + (Number(s.o.minute) || 0), to = (s.c.hour as number) * 60 + (Number(s.c.minute) || 0);
+      minutes += to > from ? to - from : to + 1440 - from;
+      return from === 0 && to >= 1440 ? 'open 24 hours' : clock(s.o.hour as number, Number(s.o.minute) || 0) + ' – ' + clock(s.c.hour as number, Number(s.c.minute) || 0);
+    }).join(', ');
+  });
+  let peak: { day: string; hour: number; index: number } | null = null;
+  for (const [day, list] of Object.entries(obj(obj(i.popular_times).popular_times_by_days)))
+    for (const p of Array.isArray(list) ? list.map(obj) : []) {
+      const index = Number(p.popular_index), hour = Number(obj(p.time).hour);
+      if (Number.isFinite(index) && Number.isFinite(hour) && (!peak || index > peak.index)) peak = { day, hour, index };
+    }
+  const dist = obj(i.rating_distribution);
+  const stars = ['5', '4', '3', '2', '1'].map((k) => Number(dist[k]));
+  const topics = Object.entries(obj(i.place_topics)).map(([topic, n]) => ({ topic, mentions: Number(n) || 0 })).filter((t) => t.mentions > 0).sort((a, b) => b.mentions - a.mentions).slice(0, 8);
+  const lacks = [...new Set(Object.values(obj(obj(i.attributes).unavailable_attributes)).flatMap((v) => (Array.isArray(v) ? v : [])).map(str).filter(Boolean))];
+  return {
+    description: str(i.description),
+    phone: str(i.phone) || null,
+    website: str(i.domain) || null,
+    claimed: typeof i.is_claimed === 'boolean' ? i.is_claimed : null,
+    hoursPerWeek: any ? Math.round(minutes / 6) / 10 : null,
+    hours: any ? hours : [],
+    busiest: peak ? `${peak.day[0].toUpperCase() + peak.day.slice(1)}s around ${clock(peak.hour, 0)}` : null,
+    stars: stars.every((n) => Number.isFinite(n)) ? stars : null,
+    topics,
+    lacks,
+    cid: str(i.cid) || null,
+  };
+}
+
+export type RivalPost = { text: string; at: string | null; url: string | null; image: string | null };
+
+/** A rival's posts from a "My Business Updates" result, newest first. Field names vary, so each is looked for under its likely names. */
+export function readPosts(items: unknown): RivalPost[] {
+  const out: RivalPost[] = [];
+  for (const x of Array.isArray(items) ? items.map(obj) : []) {
+    const text = str(x.post_text) || str(x.snippet) || str(x.text);
+    const when = str(x.timestamp) || str(x.post_date);
+    const t = when ? Date.parse(when.replace(' +00:00', 'Z').replace(' ', 'T')) : NaN;
+    const image = Array.isArray(x.images_url) ? str(x.images_url[0]) : str(x.images_url) || str(x.image_url);
+    const url = str(x.url) || str(x.post_url);
+    if (!text && !image) continue;
+    out.push({ text: text.slice(0, 600), at: Number.isFinite(t) ? new Date(t).toISOString() : null, url: /^https:\/\//.test(url) ? url : null, image: /^https:\/\//.test(image) ? image : null });
+  }
+  return out.sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')));
+}
+
+/** How often a business posts: in the last 30 and 90 days, and when it last did. */
+export function postCadence(posts: RivalPost[], now: Date = new Date()) {
+  const ago = (p: RivalPost) => (p.at ? (now.getTime() - Date.parse(p.at)) / 86400000 : Infinity);
+  const dated = posts.filter((p) => p.at);
+  return { total: posts.length, last30: dated.filter((p) => ago(p) <= 30).length, last90: dated.filter((p) => ago(p) <= 90).length, latest: dated[0]?.at ?? null, daysSince: dated[0] ? Math.max(0, Math.floor(ago(dated[0]))) : null };
+}

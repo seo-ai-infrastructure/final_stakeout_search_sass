@@ -351,9 +351,13 @@ model AioPageCheck {
 /// attributes, booking links), kept for 14 days so the same rival is not paid for twice. `key`:
 /// the business name as a key plus where it was looked for. `data`: the lookup's answer, or null
 /// when no matching listing was found.
+/// `posts`: its Google posts (collected separately: asked for with `postsTask`, ready a little later).
 model RivalProfile {
-  key       String   @id
+  key       String    @id
   name      String
   data      Json?
-  fetchedAt DateTime @default(now())
+  fetchedAt DateTime  @default(now())
+  postsTask String?
+  posts     Json?
+  postsAt   DateTime?
 }

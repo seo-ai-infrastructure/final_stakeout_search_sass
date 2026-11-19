@@ -1,12 +1,13 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import type { Gap, Gaps } from '@stakeout/core/gbpGaps';
+import type { Gap, Gaps, RivalFacts, RivalPost } from '@stakeout/core/gbpGaps';
 
 type Data = {
   gaps: Gaps;
   scan: { id: string; keyword: string; at: string } | null;
   top: { name: string; points: number }[];
-  rivals: { name: string; categories: string[]; services: number; attributes: number; photos: number | null; rating: number | null; reviews: number | null }[];
+  rivals: { name: string; categories: string[]; services: string[]; attributes: number; photos: number | null; rating: number | null; reviews: number | null; facts: RivalFacts; posts: { state: 'ready' | 'collecting' | 'none'; latest: RivalPost[]; cadence: { total: number; last30: number; last90: number; latest: string | null; daysSince: number | null } } }[];
+  you: { description: number; categories: number; attributes: number; services: number };
   missing: string[];
   lookup: { ready: boolean; problem: string | null; lookedUp: number; waiting: number };
   current: { additionalCategories: { name: string; displayName?: string }[] };
@@ -40,6 +41,7 @@ export default function GbpGaps({ profile, location, onApplied }: { profile: str
   const [picked, setPicked] = useState<Record<Part, string[]>>({ categories: [], attributes: [], services: [] });
   const [done, setDone] = useState<string[] | null>(null);
   const [more, setMore] = useState<Record<string, boolean>>({});
+  const [openRival, setOpenRival] = useState<string | null>(null);
   const base = `/api/admin/gbp/gaps?profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}`;
 
   const load = useCallback(async (lookup: boolean) => {
@@ -127,17 +129,56 @@ export default function GbpGaps({ profile, location, onApplied }: { profile: str
             )}
           </p>
         </div>
-        {d.scan && d.lookup.ready && d.lookup.waiting > 0 && <button type="button" onClick={lookUp} disabled={Boolean(busy)} className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40">{busy === 'lookup' ? 'Reading their listings…' : `Read ${d.lookup.waiting} rival listing${d.lookup.waiting === 1 ? '' : 's'}`}</button>}
+        {d.scan && d.lookup.ready && d.lookup.waiting > 0 && <button type="button" onClick={lookUp} disabled={Boolean(busy)} className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40">{busy === 'lookup' ? 'Reading their listings…' : 'Read rival listings and posts'}</button>}
       </div>
 
       {d.scan && d.top.length > 0 && !d.lookup.ready && <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">Rival listings are not being read yet: add <code className="text-slate-200">DATAFORSEO_LOGIN</code> and <code className="text-slate-200">DATAFORSEO_PASSWORD</code> on Vercel and redeploy. Until then this shows what Google offers the listing, without saying which rivals have it, and suggests no categories.</p>}
       {d.lookup.problem && <p className="text-xs text-amber-300">{d.lookup.problem}</p>}
       {d.missing.length > 0 && <p className="text-xs text-slate-500">No matching listing was found for {d.missing.join(', ')}{of >= 3 ? ', so the next business down the list was used' : ''}.</p>}
       {of > 0 && (
-        <ul className="flex flex-wrap gap-2 text-xs text-slate-400">
-          {d.rivals.map((r) => <li key={r.name} className="rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1.5"><span className="text-slate-200">{r.name}</span> · {r.categories.length ? r.categories.join(', ') : 'no category given'} · {r.attributes} attributes{r.services ? ` · ${r.services} services` : ''}{r.reviews !== null ? ` · ${r.rating ?? '–'}★ from ${r.reviews.toLocaleString('en-US')}` : ''}{r.photos !== null ? ` · ${r.photos} photos` : ''}</li>)}
-        </ul>
+        <div className="overflow-x-auto rounded-lg border border-slate-800">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-900 text-slate-400"><tr><th className="px-3 py-2 font-medium">Listing</th><th className="px-3 py-2 font-medium">Categories</th><th className="px-3 py-2 text-right font-medium">Description</th><th className="px-3 py-2 text-right font-medium">Attributes</th><th className="px-3 py-2 text-right font-medium">Services</th><th className="px-3 py-2 text-right font-medium">Open / week</th><th className="px-3 py-2 text-right font-medium">Reviews</th><th className="px-3 py-2 text-right font-medium">Photos</th><th className="px-3 py-2 text-right font-medium">Posts, 30 days</th></tr></thead>
+            <tbody className="divide-y divide-slate-800/70">
+              <tr className="bg-emerald-500/5 text-slate-200"><td className="px-3 py-1.5 font-semibold">This listing</td><td className="px-3 py-1.5">{d.you.categories}</td><td className="px-3 py-1.5 text-right tabular-nums">{d.you.description ? d.you.description + ' chars' : 'none'}</td><td className="px-3 py-1.5 text-right tabular-nums">{d.you.attributes}</td><td className="px-3 py-1.5 text-right tabular-nums">{d.you.services}</td><td className="px-3 py-1.5 text-right text-slate-500" colSpan={4}>see Search insights and Reviews</td></tr>
+              {d.rivals.map((r) => {
+                const isOpen = openRival === r.name;
+                return [
+                  <tr key={r.name} className="text-slate-300 hover:bg-slate-800/40">
+                    <td className="max-w-[16rem] truncate px-3 py-1.5"><button type="button" aria-expanded={isOpen} onClick={() => setOpenRival(isOpen ? null : r.name)} className="max-w-full truncate text-left text-slate-100 hover:text-sky-300" title={r.name}><span className="mr-1.5 inline-block w-2 text-slate-500">{isOpen ? '▾' : '▸'}</span>{r.name}</button></td>
+                    <td className="max-w-[12rem] truncate px-3 py-1.5" title={r.categories.join(', ')}>{r.categories.length ? r.categories.join(', ') : '–'}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{r.facts.description ? r.facts.description.length + ' chars' : 'none'}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{r.attributes}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{r.services.length || '–'}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{r.facts.hoursPerWeek === null ? '–' : r.facts.hoursPerWeek >= 168 ? '24/7' : r.facts.hoursPerWeek + ' h'}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{r.reviews === null ? '–' : `${r.rating ?? '–'}★ · ${r.reviews.toLocaleString('en-US')}`}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{r.photos ?? '–'}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{r.posts.state === 'collecting' ? <span className="text-amber-300">collecting…</span> : r.posts.state === 'none' ? '–' : r.posts.cadence.last30}</td>
+                  </tr>,
+                  isOpen && (
+                    <tr key={r.name + ':more'} className="bg-slate-950/50">
+                      <td colSpan={9} className="space-y-2 px-4 py-3 text-xs text-slate-300">
+                        {r.facts.description && <p><span className="text-slate-500">Description: </span>{r.facts.description}</p>}
+                        <p className="text-slate-400">{[r.facts.phone, r.facts.website, r.facts.claimed === false ? 'not claimed by its owner' : null, r.facts.busiest ? 'busiest ' + r.facts.busiest : null].filter(Boolean).join(' · ')}</p>
+                        {r.facts.hours.length > 0 && <p><span className="text-slate-500">Hours: </span>{r.facts.hours.join(' · ')}</p>}
+                        {r.services.length > 0 && <p><span className="text-slate-500">Services it lists: </span>{r.services.join(', ')}</p>}
+                        {r.facts.stars && <p><span className="text-slate-500">Reviews by stars: </span>{r.facts.stars.map((n, i) => `${5 - i}★ ${n.toLocaleString('en-US')}`).join(' · ')}</p>}
+                        {r.facts.topics.length > 0 && <p><span className="text-slate-500">What its reviews mention: </span>{r.facts.topics.map((t) => `${t.topic} (${t.mentions})`).join(', ')}</p>}
+                        {r.facts.lacks.length > 0 && <p><span className="text-slate-500">Says it does not have: </span>{r.facts.lacks.map((a) => a.replace(/_/g, ' ')).join(', ')}</p>}
+                        <div>
+                          <p><span className="text-slate-500">Google posts: </span>{r.posts.state === 'collecting' ? 'being collected; this takes a minute or two.' : r.posts.state === 'none' ? 'not read yet.' : r.posts.cadence.total === 0 ? 'none found.' : `${r.posts.cadence.last30} in the last 30 days, ${r.posts.cadence.last90} in the last 90${r.posts.cadence.daysSince !== null ? `, the latest ${r.posts.cadence.daysSince === 0 ? 'today' : r.posts.cadence.daysSince + ' days ago'}` : ''}.`}</p>
+                          {r.posts.latest.length > 0 && <ul className="mt-1 space-y-1 border-l border-slate-800 pl-3 text-slate-400">{r.posts.latest.map((p, i) => <li key={i}>{p.at && <span className="text-slate-500">{new Date(p.at).toLocaleDateString()}: </span>}{p.text.slice(0, 220) || 'A photo'}{p.text.length > 220 ? '…' : ''}{p.url && <> <a href={p.url} target="_blank" rel="noreferrer nofollow" className="text-sky-400 hover:underline">open</a></>}</li>)}</ul>}
+                        </div>
+                      </td>
+                    </tr>
+                  ),
+                ];
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
+      {d.rivals.some((r) => r.posts.state === 'collecting') && <p className="text-xs text-slate-500">Rivals’ posts are being collected. <button type="button" onClick={() => load(false)} className="text-sky-400 hover:underline">Check again</button></p>}
       {d.problems.map((p) => <p key={p} className="text-xs text-amber-300">{p}</p>)}
       {error && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
       {done && <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">Sent to Google: {done.join(', ')}.</p>}

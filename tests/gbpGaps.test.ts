@@ -60,3 +60,37 @@ test('gaps: what rivals have that the listing lacks, rival-backed first', () => 
   const alone = findGaps({ primaryCategory: 'categories/gcid:plumber', additionalCategories: [], attributes: [A('has_restroom', 'Restroom', null)], suggestedServices: [], services: [], links: [], linkTypes: [] }, []);
   assert.deepEqual([alone.categories.length, alone.attributes.length], [0, 1]);
 });
+
+import { postCadence, readPosts, rivalFacts } from '../packages/core/gbpGaps';
+
+test('the rest of a rival’s listing: hours, busiest time, review make-up', () => {
+  const span = (oh: number, ch: number) => [{ open: { hour: oh, minute: 0 }, close: { hour: ch, minute: 30 } }];
+  const f = rivalFacts({
+    description: 'Personal injury law firm.', phone: '+1863-777-4191', domain: 'lopezandhumphries.com', is_claimed: true, cid: '963',
+    work_time: { work_hours: { timetable: { monday: span(8, 17), tuesday: span(8, 17), wednesday: [{ open: { hour: 0, minute: 0 }, close: { hour: 24, minute: 0 } }], thursday: null, friday: span(22, 2), saturday: [], sunday: [] } } },
+    popular_times: { popular_times_by_days: { friday: [{ time: { hour: 4, minute: 0 }, popular_index: 67 }], tuesday: [{ time: { hour: 14, minute: 0 }, popular_index: 91 }] } },
+    rating_distribution: { '1': 14, '2': 1, '3': 3, '4': 10, '5': 437 }, place_topics: { settlement: 31, insurance: 12, 'car accident': 44 },
+    attributes: { unavailable_attributes: { payments: ['pay_check'] } },
+  });
+  assert.deepEqual(f.hours, ['Mon 8:00 AM – 5:30 PM', 'Tue 8:00 AM – 5:30 PM', 'Wed open 24 hours', 'Thu closed', 'Fri 10:00 PM – 2:30 AM', 'Sat closed', 'Sun closed']);
+  assert.equal(f.hoursPerWeek, 9.5 + 9.5 + 24 + 4.5);
+  assert.equal(f.busiest, 'Tuesdays around 2:00 PM');
+  assert.deepEqual(f.stars, [437, 10, 3, 1, 14]);
+  assert.deepEqual(f.topics.map((t) => t.topic), ['car accident', 'settlement', 'insurance']);
+  assert.deepEqual([f.phone, f.website, f.claimed, f.lacks, f.cid], ['+1863-777-4191', 'lopezandhumphries.com', true, ['pay_check'], '963']);
+  // A listing that gives nothing still reads.
+  assert.deepEqual(rivalFacts({}), { description: '', phone: null, website: null, claimed: null, hoursPerWeek: null, hours: [], busiest: null, stars: null, topics: [], lacks: [], cid: null });
+});
+
+test('a rival’s posts and how often it posts', () => {
+  const posts = readPosts([
+    { type: 'google_business_post', post_text: 'Injured in a crash? Free case review.', timestamp: '2026-11-10 14:00:00 +00:00', url: 'https://posts.example/1', images_url: ['https://img.example/1.jpg'] },
+    { snippet: 'We won a $1.2M verdict.', post_date: '2026-09-01', url: 'javascript:x' },
+    { post_text: '', images_url: null },
+    { post_text: 'Older news', timestamp: '2026-05-01 00:00:00 +00:00' },
+  ]);
+  assert.deepEqual(posts.map((p) => [p.text.slice(0, 12), p.at?.slice(0, 10), p.url, p.image]), [['Injured in a', '2026-11-10', 'https://posts.example/1', 'https://img.example/1.jpg'], ['We won a $1.', '2026-09-01', null, null], ['Older news', '2026-05-01', null, null]]);
+  assert.deepEqual(postCadence(posts, new Date('2026-11-18T00:00:00Z')), { total: 3, last30: 1, last90: 2, latest: '2026-11-10T14:00:00.000Z', daysSince: 7 });
+  assert.deepEqual(postCadence([]), { total: 0, last30: 0, last90: 0, latest: null, daysSince: null });
+  assert.deepEqual(readPosts(null), []);
+});
