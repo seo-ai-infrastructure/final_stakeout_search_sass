@@ -188,3 +188,40 @@ export function planSlots(weekdays: number[], time: string, weeks: number, taken
   }
   return out;
 }
+
+const ymd = (d: Date) => localDay(d);
+
+/**
+ * A month laid out as a calendar: whole weeks, Sunday first, each day as YYYY-MM-DD, including the
+ * days of the months either side that fill the first and last week. `month` is 0 for January.
+ */
+export function calendarWeeks(year: number, month: number): string[][] {
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  // Noon, so a clock change in the middle of the month never moves a day.
+  const day = new Date(year, month, 1 - first.getDay(), 12);
+  const weeks: string[][] = [];
+  while (day.getTime() <= last.getTime() + 12 * 3600000 || weeks.length === 0) {
+    const week: string[] = [];
+    for (let i = 0; i < 7; i++) { week.push(ymd(day)); day.setDate(day.getDate() + 1); }
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+/**
+ * Which of the next `count` weeks have no post: each week is seven days, the first starting on
+ * `today` (YYYY-MM-DD). `days` are the days that have a post. Returns each empty week's first day.
+ */
+export function emptyWeeks(days: string[], today: string, count: number): string[] {
+  const has = new Set(days);
+  const start = new Date(today + 'T12:00:00');
+  if (Number.isNaN(start.getTime())) return [];
+  const out: string[] = [];
+  for (let w = 0; w < count; w++) {
+    let any = false;
+    for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(d.getDate() + w * 7 + i); if (has.has(ymd(d))) any = true; }
+    if (!any) { const d = new Date(start); d.setDate(d.getDate() + w * 7); out.push(ymd(d)); }
+  }
+  return out;
+}

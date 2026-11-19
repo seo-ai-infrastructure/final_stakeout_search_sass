@@ -99,7 +99,7 @@ export default function GbpPostCalendar({ posts, onDay, onSchedule, onCancel }: 
       </div>
 
       {quiet.length > 0 && !planning && (
-        <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">{quiet.length === 4 ? 'Nothing is planned for the next four weeks.' : `${quiet.length} of the next four weeks ${quiet.length === 1 ? 'has' : 'have'} no post.`} A listing that posts every week looks looked-after. <button type="button" onClick={startPlanning} className="underline hover:text-amber-100">Plan them now</button></p>
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">{quiet.length === 4 ? 'Nothing is planned for the next four weeks.' : `${quiet.length} of the next four weeks ${quiet.length === 1 ? 'has' : 'have'} no post.`} A listing that posts every week looks cared for. <button type="button" onClick={startPlanning} className="underline hover:text-amber-100">Plan them now</button></p>
       )}
 
       <div className="overflow-hidden rounded-lg border border-slate-800">
