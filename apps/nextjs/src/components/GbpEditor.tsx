@@ -5,6 +5,7 @@ import GoogleSitePanel from '@/components/GoogleSitePanel';
 import GbpReviews from '@/components/GbpReviews';
 import GbpWatch from '@/components/GbpWatch';
 import GbpPosts from '@/components/GbpPosts';
+import GbpExtras from '@/components/GbpExtras';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, diff, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
@@ -284,6 +285,7 @@ export default function GbpEditor() {
           <GbpInsights profile={pick.profile} location={pick.location} businessName={live.title ?? ''} place={[live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(' ')} />
           <GoogleSitePanel website={live.websiteUri ?? ''} businessName={live.title ?? ''} />
           <GbpPosts profile={pick.profile} location={pick.location} />
+          <GbpExtras profile={pick.profile} location={pick.location} />
 
           <section className={card + ' space-y-5'}>
             <h3 className="flex items-center gap-2 font-semibold">Everyday edits <span className={'rounded-full border px-2 py-0.5 text-[11px] ' + TIER.green.chip}>{TIER.green.text}</span></h3>
