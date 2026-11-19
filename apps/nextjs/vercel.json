@@ -6,6 +6,10 @@
     {
       "path": "/api/alerts/flush",
       "schedule": "17 13 * * *"
+    },
+    {
+      "path": "/api/cron/gbp-watch",
+      "schedule": "43 10 * * *"
     }
   ]
 }

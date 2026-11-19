@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import GbpInsights from '@/components/GbpInsights';
 import GoogleSitePanel from '@/components/GoogleSitePanel';
 import GbpReviews from '@/components/GbpReviews';
+import GbpWatch from '@/components/GbpWatch';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, diff, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
@@ -94,7 +95,8 @@ export default function GbpEditor() {
   const [find, setFind] = useState('');
   const [notice, setNotice] = useState('');
   const [live, setLive] = useState<GbpLocation | null>(null);
-  const [tab, setTab] = useState<'listing' | 'reviews'>('listing');
+  const [tab, setTab] = useState<'listing' | 'reviews' | 'changes'>('listing');
+  const [waiting, setWaiting] = useState(0);
   const [edits, setEdits] = useState<Edit[]>([]);
   const [form, setForm] = useState<Form | null>(null);
   const [unlocked, setUnlocked] = useState(false);
@@ -109,6 +111,7 @@ export default function GbpEditor() {
     // The result of a Google sign-in that just came back, shown once and then taken off the address.
     const q = new URLSearchParams(window.location.search);
     const r = q.get('google');
+    if (q.get('tab') === 'changes' || q.get('tab') === 'reviews') setTab(q.get('tab') as 'changes' | 'reviews');
     if (r) {
       setNotice(GOOGLE_RESULT[r] ?? '');
       window.history.replaceState(null, '', window.location.pathname);
@@ -117,7 +120,11 @@ export default function GbpEditor() {
 
   useEffect(() => {
     api<{ ready: boolean; profiles: Profile[] }>('/api/admin/gbp')
-      .then((r) => { setReady(r.ready); setProfiles(r.profiles); })
+      .then((r) => {
+        setReady(r.ready); setProfiles(r.profiles);
+        // How many changes are waiting, for the tab's badge.
+        if (r.ready) api<{ open: unknown[] }>('/api/admin/gbp/watch').then((w) => setWaiting(w.open.length)).catch(() => {});
+      })
       .catch((e) => { setError(e.message); setProfiles([]); });
   }, []);
 
@@ -216,14 +223,16 @@ export default function GbpEditor() {
 
       {ready && profiles !== null && profiles.length > 0 && (
         <div role="tablist" className="flex gap-1 border-b border-slate-800">
-          {([['listing', 'Listings'], ['reviews', 'Reviews']] as const).map(([t, label]) => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={'-mb-px border-b-2 px-4 py-2 text-sm font-semibold ' + (tab === t ? 'border-emerald-500 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200')}>{label}</button>
+          {([['listing', 'Listings'], ['reviews', 'Reviews'], ['changes', 'Changes']] as const).map(([t, label]) => (
+            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={'-mb-px border-b-2 px-4 py-2 text-sm font-semibold ' + (tab === t ? 'border-emerald-500 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200')}>{label}{t === 'changes' && waiting > 0 && <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[11px] text-amber-300">{waiting}</span>}</button>
           ))}
         </div>
       )}
       {ready && tab === 'reviews' && profiles !== null && profiles.length > 0 && (
         <GbpReviews profiles={profiles} only={pick} onOpenListing={(p) => { setPick(p); setTab('listing'); window.scrollTo({ top: 0 }); }} />
       )}
+
+      {ready && tab === 'changes' && <GbpWatch onCount={setWaiting} onOpenListing={(p) => { setPick(p); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
 
       {ready && tab === 'listing' && (
         <div className={card}>

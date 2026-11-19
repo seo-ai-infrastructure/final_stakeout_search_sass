@@ -281,3 +281,35 @@ model GoogleConnection {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @default(now())
 }
+
+/// The change watchdog's memory of one Google listing: the profile as we last knew it (`baseline`,
+/// as Google returned it) and the values an admin has agreed to since (`accepted`: field → text).
+model GbpWatch {
+  locationId String   @id
+  profileId  String
+  title      String?
+  baseline   Json
+  accepted   Json     @default("{}")
+  baselineAt DateTime @default(now())
+  checkedAt  DateTime @default(now())
+  problem    String?
+}
+
+/// One field of a Google listing that changed without an edit from us. `status`: OPEN (to decide),
+/// ACCEPTED (kept), REVERTED (put back), GONE (it went back by itself).
+model GbpDrift {
+  id         String    @id @default(cuid())
+  locationId String
+  profileId  String
+  title      String?
+  field      String
+  label      String
+  was        String
+  now        String
+  status     String    @default("OPEN")
+  foundAt    DateTime  @default(now())
+  resolvedAt DateTime?
+
+  @@index([status, foundAt])
+  @@index([locationId, field, status])
+}
