@@ -7,9 +7,9 @@ import '@fontsource/ibm-plex-sans-condensed/latin-600.css';
 import DemographicDemo from '@/components/demo/DemographicDemo';
 
 export const metadata: Metadata = {
-  title: 'Buying-Power Geo-Grid & AI Citation Sandbox | Stakeout Search',
+  title: 'Real-Device Geo-Grid Demo: Local Rank vs. Google AI Answers | Stakeout Search',
   description:
-    'Explore U.S. Census income, homeownership and housing age beneath simulated Google Maps rankings and AI citations. Test the Buying-Power Geo-Grid, then request a live Android evidence audit.',
+    'See two real Stakeout scans of “emergency plumber near me” in Lakeland, Florida: where the local list disappeared, where Google’s AI answer named the business, the Census buying power under every pin, and the phone recording behind each result.',
 };
 
 const fonts = {
@@ -18,7 +18,7 @@ const fonts = {
   fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
 } as CSSProperties;
 
-/** Public sales sandbox: real Census data under simulated rankings. No account needed. */
+/** Public sales demo: real Census data under two real device scans. No account needed. */
 export default function DemographicsDemoPage() {
   return (
     <div style={fonts} className="min-h-screen bg-[#102527]">

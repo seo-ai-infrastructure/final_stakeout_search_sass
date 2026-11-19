@@ -90,7 +90,7 @@ export default function DemographicMapFallback(props: Props) {
     for (const pin of props.pins) {
       const rank = pinRank(pin, props.scenario);
       const background = rank <= 3 ? '#6ce2ac' : rank <= 10 ? '#f1d27b' : rank <= 20 ? '#ef996f' : '#b1b8c1';
-      const label = rank > 20 ? '20+' : String(rank);
+      const label = rank > 20 ? '–' : String(rank);
       const selection = { pinId: pin.id, tractId: pin.tractId ?? undefined };
       const marker = L.marker([pin.lat, pin.lng], { icon: L.divIcon({ className: 'demo-compat-pin', html: `<span style="background:${background};border-color:${props.showAI && pin.aiCited ? '#58d8ff' : '#142b2d'};border-width:${props.showAI && pin.aiCited ? 3 : 1.5}px">${label}</span>`, iconSize: [30, 30], iconAnchor: [15, 15] }), title: `${pin.id}: simulated rank ${label}`, alt: `${pin.id}: simulated rank ${label}`, keyboard: true });
       marker.on('mouseover', () => current.current.onHover(selection));
