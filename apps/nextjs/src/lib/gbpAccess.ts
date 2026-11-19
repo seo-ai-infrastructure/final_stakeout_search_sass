@@ -1,6 +1,6 @@
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
-import { allows, planNow, upgradeMessage, type Need, type Plan } from '@stakeout/core/gbpPlans';
+import { addonOn, allows, planNow, upgradeMessage, type Need, type Plan } from '@stakeout/core/gbpPlans';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { target } from '@/lib/gbpAdmin';
 import { isAgent } from '@/lib/acting';
@@ -36,7 +36,12 @@ export async function allow(u: Account, profile: string, location: string | null
   if (isAgent() && (location || need !== 'free')) need = 'agent';
   if (need === 'free') return;
   if (!location) throw new InputError('Pick a listing first.');
-  if (!allows(await planOf(u.id, location, profile), need)) throw new InputError(upgradeMessage(need), 402);
+  if (!allows(await planOf(u.id, location, profile), need, need === 'agent' && (await hasAddon(u.id)))) throw new InputError(upgradeMessage(need), 402);
+}
+
+/** Whether an account has the AI agents add-on on a paying subscription. */
+export async function hasAddon(userId: string): Promise<boolean> {
+  return addonOn(await db.gbpSub.findUnique({ where: { userId }, select: { agentAddon: true, status: true } }));
 }
 
 /** The plan one of a customer's listings is on right now (null = free). */
@@ -85,14 +90,13 @@ export async function customerWatchScope(): Promise<{ profiles: Set<string>; own
 
 /**
  * Whether an account may use AI agents at all (make a key, call the agent server): admins, and
- * customers with a listing on the Agent plan. Agent access is not on sale at the moment, so for
- * now that is admins only.
+ * customers with the AI agents add-on (or a listing on the old per-listing Agent plan).
  */
 export async function agentOpen(u: Account): Promise<boolean> {
   if (u.role === 'ADMIN') return true;
-  return [...(await paidLocations(u.id)).values()].includes('AGENT');
+  return (await hasAddon(u.id)) || [...(await paidLocations(u.id)).values()].includes('AGENT');
 }
-export const AGENT_CLOSED = 'AI agent access is not part of your plan. It is coming back as an add-on: email sass@stakeoutsearch.com to be told when.';
+export const AGENT_CLOSED = 'AI agent access needs the AI agents add-on. Add it on the Connected Accounts page, under AI agents.';
 
 /**
  * For reads that are not about one listing (Search Console, Analytics): through an AI agent they
@@ -100,5 +104,5 @@ export const AGENT_CLOSED = 'AI agent access is not part of your plan. It is com
  */
 export async function agentGate(u: Account): Promise<void> {
   if (!isAgent() || u.role === 'ADMIN') return;
-  if (![...(await paidLocations(u.id)).values()].includes('AGENT')) throw new InputError('Search Console and Analytics through an agent need a listing on the Agent plan.', 402);
+  if (!(await agentOpen(u))) throw new InputError(AGENT_CLOSED, 402);
 }

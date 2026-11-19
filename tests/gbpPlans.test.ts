@@ -165,3 +165,16 @@ test('just under a bracket, the nudge to reach it', () => {
   assert.equal(settlePending(8, 8, 2), 'drop');
   assert.equal(settlePending(8, 8, 0), 'none');
 });
+
+test('the AI agents add-on: agent work on Manage listings, never on free ones', async () => {
+  const { addonOn } = await import('../packages/core/gbpPlans');
+  assert.equal(allows('MANAGE', 'agent'), false);
+  assert.equal(allows('MANAGE', 'agent', true), true);
+  assert.equal(allows(null, 'agent', true), false, 'the listing still has to be on a plan');
+  assert.equal(allows('AGENT', 'agent'), true);
+  assert.equal(addonOn({ agentAddon: true, status: 'active' }), true);
+  assert.equal(addonOn({ agentAddon: true, status: 'past_due' }), true, 'kept while Stripe retries the card');
+  assert.equal(addonOn({ agentAddon: true, status: 'canceled' }), false);
+  assert.equal(addonOn({ agentAddon: false, status: 'active' }), false);
+  assert.equal(addonOn(null), false);
+});

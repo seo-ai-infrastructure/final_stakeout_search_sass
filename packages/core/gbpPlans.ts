@@ -29,6 +29,13 @@ export const PLANS: Record<Plan, { name: string; blurb: string; available: boole
   },
 };
 
+/**
+ * AI agents: one flat price a month for the whole account, however many listings it has. With it,
+ * the account's own agents can run scans and read Search Console and Analytics, and work on every
+ * listing that is on the Manage plan.
+ */
+export const AGENT_ADDON = { name: 'AI agents', cents: 4700, lookupKey: 'stakeout_agent_addon_v1' };
+
 export const isPlan = (v: unknown): v is Plan => v === 'MANAGE' || v === 'AGENT';
 
 /** The price of one listing a month when an account pays for `count` of them on this plan. */
@@ -60,16 +67,18 @@ export function planNow(row: PlanRow | null | undefined, subStatus: string | nul
   return null;
 }
 
-/** Whether a listing on this plan (null = free) may do something that needs `need`. */
-export function allows(plan: Plan | null, need: Need): boolean {
+/** Whether a listing on this plan (null = free) may do something that needs `need`. `addon`: the account has the AI agents add-on. */
+export function allows(plan: Plan | null, need: Need, addon = false): boolean {
   if (need === 'free') return true;
   if (need === 'manage') return plan === 'MANAGE' || plan === 'AGENT';
-  return plan === 'AGENT';
+  return plan === 'AGENT' || (addon && plan === 'MANAGE');
 }
+/** Whether the add-on on a subscription in this state counts: a failed card keeps it while Stripe retries. */
+export const addonOn = (sub: { agentAddon?: boolean | null; status?: string | null } | null | undefined) => Boolean(sub?.agentAddon) && PAYING.has(sub?.status ?? '');
 
 /** What to tell someone whose listing is not on the plan a feature needs. */
 export const upgradeMessage = (need: Need) =>
-  need === 'agent' ? 'This listing needs the Agent plan for that.' : 'This listing is on the free plan. Put it on the Manage plan to edit it, post to it, answer its reviews and watch it for changes.';
+  need === 'agent' ? 'Working on this listing through an agent needs the listing on the Manage plan and the AI agents add-on.' : 'This listing is on the free plan. Put it on the Manage plan to edit it, post to it, answer its reviews and watch it for changes.';
 
 /**
  * What a subscription should hold for these listings, against what it holds now: the quantity per

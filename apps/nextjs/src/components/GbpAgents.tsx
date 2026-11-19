@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { TOOLS, WRITES } from '@stakeout/core/agentTools';
-import { PLANS } from '@stakeout/core/gbpPlans';
+import { AGENT_ADDON, dollars } from '@stakeout/core/gbpPlans';
 
 type Key = { id: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null };
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
@@ -23,6 +23,26 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
   const [copied, setCopied] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // Customers: whether the AI agents add-on is on (admins always have access), and how to pay for it.
+  type Addon = { ready: boolean; addon?: { on: boolean; cents: number }; sub?: { running: boolean; periodEnd: string | null } | null };
+  const [bill, setBill] = useState<Addon | null>(null);
+  const [payLink, setPayLink] = useState<string | null>(null);
+  useEffect(() => { if (!admin) call<Addon>('/api/billing/gbp').then(setBill).catch(() => {}); }, [admin]);
+  const open = admin || Boolean(bill?.addon?.on);
+  const buy = async () => {
+    setBusy(true); setError('');
+    try {
+      const r = await call<Addon & { url?: string; pay?: string | null }>('/api/billing/gbp', 'POST', { addon: true });
+      if (r.url) { window.location.assign(r.url); return; }
+      if (r.pay !== undefined) { setPayLink(r.pay ?? ''); return; }
+      setBill(r);
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not add it.'); } finally { setBusy(false); }
+  };
+  const drop = async () => {
+    if (!window.confirm('Take the AI agents add-on off? Your keys stop working. Nothing is refunded.')) return;
+    setBusy(true); setError('');
+    try { setBill(await call<Addon>('/api/billing/gbp', 'POST', { addon: false })); } catch (e) { setError(e instanceof Error ? e.message : 'Could not remove it.'); } finally { setBusy(false); }
+  };
   const read = useCallback(() => call<{ keys: Key[] }>('/api/keys').then((r) => setKeys(r.keys)).catch((e) => setError(e.message)), []);
   useEffect(() => { read(); }, [read]);
   const url = typeof window === 'undefined' ? '' : window.location.origin + '/api/mcp';
@@ -42,7 +62,7 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
     <div className="space-y-5">
       <div className={card}>
         <h2 className="text-lg font-semibold">Connect your own AI agent</h2>
-        <p className="mt-2 text-sm text-slate-400">Stakeout speaks MCP, so an agent you already use (Claude Code, Cursor, or one you built) can read your scans and listings and do the everyday work on them. It signs in with a key from this page.{!admin && (PLANS.AGENT.available ? ' Scans work for every account. Listing tools work on listings on the Agent plan.' : ' Today an agent can read and start your scans. Working on your Google listings through an agent is coming as an add-on.')}</p>
+        <p className="mt-2 text-sm text-slate-400">Stakeout speaks MCP, so an agent you already use (Claude Code, Cursor, or one you built) can read your scans and listings and do the everyday work on them. It signs in with a key from this page.{!admin && ' It works on every listing you have on the Manage plan, and on your scans, Search Console and Analytics.'}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <code className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-emerald-300">{url}</code>
           <button type="button" onClick={() => copy('url', url)} className={btn}>{copied === 'url' ? 'Copied' : 'Copy address'}</button>
@@ -51,8 +71,22 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
       </div>
 
       {error && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p>}
+      {!admin && bill && !bill.addon?.on && (
+        <div className="rounded-xl border border-emerald-500/50 bg-emerald-500/5 p-5">
+          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Add-on</p>
+          <h2 className="mt-1 text-lg font-semibold">AI agents · {dollars(AGENT_ADDON.cents)} a month</h2>
+          <p className="mt-2 text-sm text-slate-300">One flat price for the whole account, however many listings you have. Your agent can run and read scans, read Search Console and Analytics, and do the everyday work on every listing that is on the Manage plan: posts, review replies, hours, descriptions, services and attributes.</p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={buy} disabled={busy || bill.ready === false} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{busy ? 'Working…' : `Add AI agents · ${dollars(AGENT_ADDON.cents)} a month`}</button>
+            <span className="text-xs text-slate-500">{bill.sub?.running ? 'Added to your subscription; the rest of this month is charged to your card now.' : 'Monthly. You pay on the next page; cancel any time.'}</span>
+          </div>
+          {payLink !== null && <p className="mt-3 text-sm text-amber-200">Your bank wants you to confirm this charge; the add-on switches on as soon as it goes through. {payLink ? <a href={payLink} target="_blank" rel="noreferrer" className="font-semibold underline">Confirm the payment</a> : 'Open “Card, invoices and cancelling” on the Plan and billing tab to finish it.'}</p>}
+          {bill.ready === false && <p className="mt-2 text-xs text-amber-300">Checkout is being set up. Email sass@stakeoutsearch.com and we will sort it out.</p>}
+        </div>
+      )}
+      {!admin && bill?.addon?.on && <p className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"><span>The AI agents add-on is on: {dollars(AGENT_ADDON.cents)} a month.</span><button type="button" onClick={drop} disabled={busy} className="text-xs text-slate-300 hover:text-rose-300">Take it off</button></p>}
 
-      <div className={card}>
+      {open && <div className={card}>
         <h2 className="text-lg font-semibold">Keys</h2>
         {fresh && (
           <div className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4">
@@ -79,7 +113,7 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
           <button type="button" onClick={make} disabled={busy} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{busy ? 'Making…' : 'Make a key'}</button>
         </div>
         <p className="mt-2 text-xs text-slate-500">A key acts as your account. Keep it out of shared documents, and revoke it the moment it might have leaked. Each key is limited to 60 requests a minute.</p>
-      </div>
+      </div>}
 
       <div className={card}>
         <h2 className="text-lg font-semibold">What an agent can do</h2>

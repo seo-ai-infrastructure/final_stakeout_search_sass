@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { pushAlert } from '@stakeout/core/alerts';
-import { PLANS, dollars, isPlan, monthlyCents, planNow, quantityPlan, settlePending, stripeTiers, type Plan } from '@stakeout/core/gbpPlans';
+import { AGENT_ADDON, PLANS, addonOn, dollars, isPlan, monthlyCents, planNow, quantityPlan, settlePending, stripeTiers, type Plan } from '@stakeout/core/gbpPlans';
 import { stripe, stripeTestMode } from '@/lib/stripe';
 import { postproxy } from '@/lib/postproxy';
 import { flushAlerts } from '@/lib/alerts';
@@ -54,6 +54,14 @@ async function prices(): Promise<Record<Plan, string>> {
   return out;
 }
 
+const isAddon = (i: Item) => i.price?.lookup_key === AGENT_ADDON.lookupKey;
+/** Stripe's price for the AI agents add-on: one flat amount a month, made the first time it is needed. */
+async function addonPrice(): Promise<string> {
+  const found = await stripe<{ data: { id: string }[] }>('/prices?active=true&limit=1&lookup_keys[0]=' + encodeURIComponent(AGENT_ADDON.lookupKey));
+  if (found.data[0]) return found.data[0].id;
+  return (await stripe<{ id: string }>('/prices', 'POST', { currency: 'usd', unit_amount: AGENT_ADDON.cents, recurring: { interval: 'month' }, lookup_key: AGENT_ADDON.lookupKey, product_data: { name: 'Stakeout Search · AI agents add-on' } }, 'price-' + AGENT_ADDON.lookupKey)).id;
+}
+
 const readSub = (id: string) => stripe<Sub>('/subscriptions/' + encodeURIComponent(id));
 
 /** What we keep about a subscription, from Stripe's own record of it. When it has ended, its listings go back to free. */
@@ -64,7 +72,7 @@ export async function applySub(s: Sub, userId?: string) {
   // An older subscription's ending must not switch off the one that replaced it.
   if (mine && mine.subscriptionId && mine.subscriptionId !== s.id) return null;
   const ended = ENDED.has(s.status);
-  const data = { customerId: s.customer, subscriptionId: ended ? null : s.id, status: ended ? 'canceled' : s.status, periodEnd: periodEnd(s), updatedAt: new Date() };
+  const data = { customerId: s.customer, subscriptionId: ended ? null : s.id, status: ended ? 'canceled' : s.status, periodEnd: periodEnd(s), updatedAt: new Date(), agentAddon: !ended && (s.items?.data ?? []).some(isAddon) };
   await db.gbpSub.upsert({ where: { userId: owner }, create: { userId: owner, ...data }, update: data });
   if (ended) await db.gbpPlan.deleteMany({ where: { userId: owner } });
   return owner;
@@ -84,6 +92,12 @@ async function syncStripe(userId: string, charge: boolean): Promise<{ pay?: stri
   const current: Partial<Record<Plan, number>> = {};
   for (const i of items) { const p = planOfItem(i); if (p) current[p] = i.quantity ?? 0; }
   const q = quantityPlan(rows, current);
+  if (q.empty && items.some(isAddon)) {
+    // No listing left on a plan, but the add-on stays: the subscription carries on with it alone.
+    const seats = items.filter((i) => planOfItem(i) && (i.quantity ?? 0) > 0).map((i) => ({ id: i.id, quantity: 0 }));
+    if (seats.length || s.cancel_at_period_end) await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { ...(seats.length ? { items: seats } : {}), cancel_at_period_end: false, proration_behavior: 'none' }, randomUUID()), userId);
+    return {};
+  }
   if (q.empty) {
     // Nothing left on a plan: the subscription runs out at the end of the month already paid for.
     if (!s.cancel_at_period_end) await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { cancel_at_period_end: true }), userId);
@@ -232,6 +246,60 @@ export async function removeListing(userId: string, location: string) {
   }
 }
 
+/**
+ * Adds the AI agents add-on. On a running subscription it is one more line, charged for the rest
+ * of the month now (it switches on when that payment clears); otherwise the answer is the address
+ * of Stripe's checkout page for a subscription with the add-on alone.
+ */
+export async function addAddon(u: { id: string; email: string; role: string }, origin: string): Promise<{ url?: string; done?: boolean; pay?: string | null }> {
+  if (u.role === 'ADMIN') throw new InputError('Admin accounts already have agent access.');
+  const mine = await db.gbpSub.findUnique({ where: { userId: u.id } });
+  const price = await addonPrice();
+  if (mine?.subscriptionId) {
+    const s = await readSub(mine.subscriptionId);
+    if ((s.items?.data ?? []).some(isAddon)) { await applySub(s, u.id); return { done: true }; }
+    if (s.cancel_at_period_end) await stripe<Sub>('/subscriptions/' + s.id, 'POST', { cancel_at_period_end: false });
+    const next = await stripe<Sub>('/subscriptions/' + s.id, 'POST', { items: [{ price, quantity: 1 }], proration_behavior: 'always_invoice', payment_behavior: 'pending_if_incomplete', expand: ['latest_invoice'] }, randomUUID());
+    await applySub(next, u.id);
+    if (next.pending_update) return { pay: typeof next.latest_invoice === 'object' ? next.latest_invoice?.hosted_invoice_url ?? null : null };
+    return { done: true };
+  }
+  // A listing checkout left unfinished is forgotten: only the add-on is being bought here.
+  await db.gbpPlan.deleteMany({ where: { userId: u.id, status: 'PENDING' } });
+  const meta = { kind: 'gbp', userId: u.id };
+  const session = await stripe<Session>('/checkout/sessions', 'POST', {
+    mode: 'subscription',
+    allow_promotion_codes: true,
+    client_reference_id: u.id,
+    ...(mine?.customerId ? { customer: mine.customerId } : { customer_email: u.email }),
+    metadata: meta,
+    subscription_data: { metadata: meta, description: 'Stakeout Search: AI agents' },
+    line_items: [{ price, quantity: 1 }],
+    success_url: origin + '/profiles?tab=agents&plan={CHECKOUT_SESSION_ID}',
+    cancel_url: origin + '/profiles?tab=agents&plan=cancelled',
+  }, randomUUID());
+  if (!session.url) throw new InputError('Stripe did not open a checkout page. Try again.', 502);
+  return { url: session.url };
+}
+
+/**
+ * Takes the add-on off. With listings still on a plan it comes off the subscription now; when it
+ * was the only thing on it, the subscription is set to end with the month already paid for, and
+ * agent access lasts until then. Nothing is refunded either way.
+ */
+export async function removeAddon(userId: string) {
+  const mine = await db.gbpSub.findUnique({ where: { userId } });
+  if (!mine?.subscriptionId) throw new InputError('The add-on is not on this account.', 404);
+  const s = await readSub(mine.subscriptionId);
+  const item = (s.items?.data ?? []).find(isAddon);
+  if (!item) { await applySub(s, userId); return; }
+  const others = (s.items?.data ?? []).some((i) => planOfItem(i) && (i.quantity ?? 0) > 0);
+  const next = others
+    ? await stripe<Sub>('/subscriptions/' + s.id, 'POST', { items: [{ id: item.id, deleted: true }], proration_behavior: 'none' }, randomUUID())
+    : await stripe<Sub>('/subscriptions/' + s.id, 'POST', { cancel_at_period_end: true });
+  await applySub(next, userId);
+}
+
 /** Takes every listing of one connected Google account off its plan: for when the account is disconnected. */
 export async function removeProfile(userId: string, profile: string) {
   const rows = await db.gbpPlan.findMany({ where: { userId, profileId: profile } });
@@ -274,6 +342,7 @@ export async function billingSummary(userId: string) {
     listings: rows.map((r) => ({ location: r.locationId, profile: r.profileId, title: r.title, plan: r.plan, status: r.status, endsAt: r.endsAt?.toISOString() ?? null, on: planNow(r, mine?.status, now) !== null })),
     sub: mine ? { status: mine.status, periodEnd: mine.periodEnd?.toISOString() ?? null, running: Boolean(mine.subscriptionId) } : null,
     counts,
-    monthlyCents: monthlyCents(counts),
+    addon: { on: addonOn(mine), cents: AGENT_ADDON.cents },
+    monthlyCents: monthlyCents(counts) + (addonOn(mine) ? AGENT_ADDON.cents : 0),
   };
 }

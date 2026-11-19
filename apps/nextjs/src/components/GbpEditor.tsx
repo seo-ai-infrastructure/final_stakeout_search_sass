@@ -160,9 +160,11 @@ export default function GbpEditor() {
     if (paid === 'cancelled') setNotice('Checkout was cancelled. Nothing was charged.');
     else if (paid) {
       // Back from Stripe: the listings switch on now (Stripe's own message does the same if this tab is closed first).
-      go('plan');
+      // Back from paying for the AI agents add-on, or for listings.
+      const forAgents = q.get('tab') === 'agents';
+      go(forAgents ? 'agents' : 'plan');
       api<{ on: boolean }>('/api/billing/gbp', { confirm: paid })
-        .then(() => { setNotice('Payment received. Your listings are on the Manage plan.'); readProfiles(); })
+        .then(() => { setNotice(forAgents ? 'Payment received. The AI agents add-on is on: make a key below.' : 'Payment received. Your listings are on the Manage plan.'); readProfiles(); })
         .catch(() => setNotice('Payment is still going through. Your listings switch on as soon as it does; reload in a minute.'));
     }
     if (r || g || paid) window.history.replaceState(null, '', window.location.pathname);
@@ -313,7 +315,7 @@ export default function GbpEditor() {
 
       {ready && profiles !== null && (profiles.length > 0 || !admin) && (
         <div role="tablist" className="flex gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-800">
-          {(admin ? ([['listing', 'Listings'], ['calendar', 'Calendar'], ['reviews', 'Reviews'], ['changes', 'Changes'], ['agents', 'AI agents']] as const) : ([['website', 'Website'], ['listing', 'Business Profile'], ['calendar', 'Calendar'], ['changes', 'Changes'], ['plan', 'Plan and billing']] as const)).map(([t, label]) => (
+          {(admin ? ([['listing', 'Listings'], ['calendar', 'Calendar'], ['reviews', 'Reviews'], ['changes', 'Changes'], ['agents', 'AI agents']] as const) : ([['website', 'Website'], ['listing', 'Business Profile'], ['calendar', 'Calendar'], ['changes', 'Changes'], ['agents', 'AI agents'], ['plan', 'Plan and billing']] as const)).map(([t, label]) => (
             <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={'-mb-px inline-flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-semibold ' + (tab === t ? 'border-emerald-500 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200')}>{t === 'listing' && !anyPaid && <Lock />}{label}{t === 'changes' && waiting > 0 && <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[11px] text-amber-300">{waiting}</span>}</button>
           ))}
         </div>
@@ -341,7 +343,7 @@ export default function GbpEditor() {
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">Your Business Profile is connected. Put a listing on the Manage plan to see its numbers and work on it. {daysLeft > 0 ? `With no listing on a plan, the connection is removed in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : 'With no listing on a plan, the connection is removed today.'}</p>
       )}
       {picking && ready && !admin && profiles !== null && <GbpPicker profiles={profiles} onClose={() => setPicking(false)} onDone={(n) => { setPicking(false); setNotice(n); readProfiles(); }} />}
-      {ready && tab === 'agents' && admin && profiles !== null && <GbpAgents admin={admin} />}
+      {ready && tab === 'agents' && profiles !== null && <GbpAgents admin={admin} />}
       {ready && tab === 'calendar' && profiles !== null && <GbpAllCalendar profiles={profiles} admin={admin} onOpen={(p) => { setPick(p); setChoosing(false); setView('posts'); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
       {ready && tab === 'reviews' && admin && alerts && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900 px-4 py-3 text-sm">

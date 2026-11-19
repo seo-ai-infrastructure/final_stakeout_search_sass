@@ -411,6 +411,8 @@ model GbpSub {
   status         String    @default("none")
   periodEnd      DateTime?
   updatedAt      DateTime  @default(now())
+  /// The AI agents add-on is on this subscription.
+  agentAddon     Boolean   @default(false)
 }
 
 /// A key an account gives its own AI agent to reach Stakeout (the MCP server at /api/mcp). Only the

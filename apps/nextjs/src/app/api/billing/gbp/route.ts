@@ -3,7 +3,7 @@ import { PLANS, isPlan } from '@stakeout/core/gbpPlans';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { target } from '@/lib/gbpAdmin';
-import { activate, addListings, billingSummary, portalUrl, removeListing, type Pick } from '@/lib/gbpBilling';
+import { activate, addAddon, addListings, billingSummary, portalUrl, removeAddon, removeListing, type Pick } from '@/lib/gbpBilling';
 import { stripeConfigured } from '@/lib/stripe';
 
 export const maxDuration = 60;
@@ -30,7 +30,10 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser();
-    const b = (await req.json()) as { add?: unknown; remove?: unknown; confirm?: unknown; portal?: unknown };
+    const b = (await req.json()) as { add?: unknown; remove?: unknown; confirm?: unknown; portal?: unknown; addon?: unknown };
+    // { addon: true | false }: the AI agents add-on, on or off.
+    if (b.addon === true) return Response.json({ ...(await addAddon(u, new URL(req.url).origin)), ...(await billingSummary(u.id)) });
+    if (b.addon === false) { await removeAddon(u.id); return Response.json(await billingSummary(u.id)); }
     const origin = new URL(req.url).origin;
     if (Array.isArray(b.add)) {
       const picks: Pick[] = b.add.map((x: { profile?: unknown; location?: unknown; plan?: unknown }) => {
