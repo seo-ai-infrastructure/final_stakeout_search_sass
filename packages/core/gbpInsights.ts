@@ -221,7 +221,7 @@ export function byWeek<T extends { date: string }>(days: T[], keys: (keyof T)[])
   return out;
 }
 
-export type KeywordTrend = { keyword: string; total: number; exact: boolean; latest: number | null; latestText: string; previous: number | null; gain: number | null; months: number; byMonth: (number | null)[] };
+export type KeywordTrend = { keyword: string; total: number; exact: boolean; latest: number | null; latestText: string; previous: number | null; previousText: string; gain: number | null; months: number; byMonth: (number | null)[] };
 
 /**
  * Each search that showed the listing, month by month across the months returned (oldest first).
@@ -230,17 +230,19 @@ export type KeywordTrend = { keyword: string; total: number; exact: boolean; lat
  * both are real counts, and the whole latest count when the search is new this month.
  */
 export function keywordTrends(months: Month[]): { rows: KeywordTrend[]; months: string[] } {
-  const order = [...months].sort((a, b) => a.month.localeCompare(b.month));
+  // A month Google has nothing for yet (the one still running) is left out, so the newest column is the newest month with figures.
+  const order = [...months].filter((m) => (m.keywords ?? []).length > 0).sort((a, b) => a.month.localeCompare(b.month));
   const by = new Map<string, KeywordTrend>();
+  const said = (k: { impressions: number | null; impressions_threshold?: number | null }) => (k.impressions !== null ? String(k.impressions) : '<' + (k.impressions_threshold ?? 15));
   order.forEach((m, i) => {
     for (const k of m.keywords ?? []) {
       const key = k.keyword.trim().toLowerCase();
       if (!key) continue;
-      const row = by.get(key) ?? { keyword: key, total: 0, exact: false, latest: null, latestText: '', previous: null, gain: null, months: 0, byMonth: order.map(() => null) };
+      const row = by.get(key) ?? { keyword: key, total: 0, exact: false, latest: null, latestText: '', previous: null, previousText: '', gain: null, months: 0, byMonth: order.map(() => null) };
       row.months++;
       if (k.impressions !== null) { row.total += k.impressions; row.exact = true; row.byMonth[i] = k.impressions; }
-      if (i === order.length - 1) { row.latest = k.impressions; row.latestText = k.impressions !== null ? String(k.impressions) : '<' + (k.impressions_threshold ?? 15); }
-      if (i === order.length - 2) row.previous = k.impressions;
+      if (i === order.length - 1) { row.latest = k.impressions; row.latestText = said(k); }
+      if (i === order.length - 2) { row.previous = k.impressions; row.previousText = said(k); }
       by.set(key, row);
     }
   });

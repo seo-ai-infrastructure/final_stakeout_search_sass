@@ -39,6 +39,9 @@ export async function GET(req: Request) {
     const months = monthsOf(range.recent.from, range.recent.to, 18);
     // Search terms come twelve months at a time.
     const year = (m: string, back: number) => { const d = new Date(m + '-01T00:00:00Z'); d.setUTCMonth(d.getUTCMonth() - back); return d.toISOString().slice(0, 7); };
+    // At least the three months before the newest are asked for: the month still running has no search terms yet,
+    // and one month alone has nothing to be compared with.
+    if (months.from > year(months.to, 3)) months.from = year(months.to, 3);
     const spans = months.from < year(months.to, 11) ? [{ from: months.from, to: year(months.to, 12) }, { from: year(months.to, 11), to: months.to }] : [months];
 
     const [performance, keywords] = await Promise.all([

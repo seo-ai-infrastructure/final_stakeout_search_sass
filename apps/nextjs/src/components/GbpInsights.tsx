@@ -156,7 +156,7 @@ export default function GbpInsights({ profile, location, businessName, place, ra
                           <td className="px-3 py-1.5"><input type="checkbox" className="h-4 w-4 accent-emerald-500" aria-label={'Scan ' + r.keyword} checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.keyword)} /></td>
                           <td className={'max-w-[20rem] truncate px-3 py-1.5 ' + (ok ? 'text-slate-200' : 'text-slate-500')} title={ok ? r.keyword : 'A search for the business by name, or a job search'}>{r.keyword}</td>
                           {r.latest !== null ? <BarCell value={r.latest} max={top} strong /> : <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.latestText || '–'}</td>}
-                          {months.length > 1 && <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.previous === null ? '–' : fmt(r.previous)}</td>}
+                          {months.length > 1 && <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.previous === null ? r.previousText || '–' : fmt(r.previous)}</td>}
                           {months.length > 1 && <td className="px-3 py-1.5 text-right text-xs tabular-nums">{r.latest === null ? <span className="text-slate-600">–</span> : <Change now={r.latest} was={r.previous} />}</td>}
                           {months.length > 2 && <td className="px-3 py-1"><Spark values={r.byMonth.map((v) => v ?? 0)} tone={r.latest !== null && r.previous !== null && r.latest < r.previous ? '#fb7185' : '#34d399'} /></td>}
                           {months.length > 2 && <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.exact ? fmt(r.total) : '–'}</td>}

@@ -118,3 +118,17 @@ test('the months a range touches, at most the latest twelve', () => {
   assert.deepEqual(monthsOf('2026-08-20', '2026-11-16'), { from: '2026-08', to: '2026-11' });
   assert.deepEqual(monthsOf('2025-06-01', '2026-11-16'), { from: '2025-12', to: '2026-11' });
 });
+
+test('the month still running is left out, and "fewer than" figures show in both columns', () => {
+  const t = keywordTrends([
+    { month: '2026-09', keywords: [{ keyword: 'dwi attorney near me', impressions: 40, impressions_threshold: null }] },
+    { month: '2026-10', keywords: [{ keyword: 'dwi attorney near me', impressions: null, impressions_threshold: 15 }, { keyword: 'broderick', impressions: 22, impressions_threshold: null }] },
+    { month: '2026-11', keywords: [] },
+  ]);
+  assert.deepEqual(t.months, ['2026-09', '2026-10']);
+  const dwi = t.rows.find((r) => r.keyword === 'dwi attorney near me')!;
+  assert.equal(dwi.latestText, '<15');
+  assert.equal(dwi.previous, 40);
+  assert.equal(t.rows.find((r) => r.keyword === 'broderick')!.latest, 22);
+  assert.deepEqual(keywordTrends([{ month: '2026-11', keywords: [] }]), { rows: [], months: [] });
+});
