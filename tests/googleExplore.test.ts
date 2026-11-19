@@ -6,8 +6,9 @@ const today = new Date('2026-11-18T15:00:00Z');
 
 test('a range is read against the same number of days before it', () => {
   assert.deepEqual(exploreRange({ days: 7 }, today, 3), { recent: { from: '2026-11-09', to: '2026-11-15' }, before: { from: '2026-11-02', to: '2026-11-08' }, days: 7 });
-  // Anything that is not one of the offered lengths is 28 days.
-  assert.equal((exploreRange({ days: 13 }, today, 1) as any).days, 28);
+  // Any sensible number of days is taken; anything else is 28 days.
+  assert.equal((exploreRange({ days: 60 }, today, 1) as any).days, 60);
+  for (const days of [0, -5, 9999, 'soon']) assert.equal((exploreRange({ days }, today, 1) as any).days, 28);
   assert.deepEqual(exploreRange({ from: '2026-10-01', to: '2026-10-31' }, today, 3), { recent: { from: '2026-10-01', to: '2026-10-31' }, before: { from: '2026-08-31', to: '2026-09-30' }, days: 31 });
   assert.match(exploreRange({ from: '2026-10-31', to: '2026-10-01' }, today, 3) as string, /before the start/);
   assert.match(exploreRange({ from: '2026-10-01' }, today, 3) as string, /both dates/);
@@ -71,4 +72,41 @@ test('Analytics rows and totals are read as numbers', () => {
     { key: '(not set)', a: 5, b: 1, c: 0, wasA: null },
   ]);
   assert.equal(gaRows([row('20261117', '7', '5', '1')], [], 'date')[0].key, '2026-11-17');
+});
+
+import { gaEventRows, gaEventsRequest, isCallEvent, pageOf, risingRows } from '../packages/core/googleExplore';
+
+test('the page Search Console knows: no tracking tags', () => {
+  assert.equal(pageOf('https://glow.example/botox/?utm_source=google&utm_campaign=gbp_listing#top'), 'https://glow.example/botox/');
+  assert.equal(pageOf('https://glow.example'), 'https://glow.example/');
+  assert.equal(pageOf('not a link'), '');
+  assert.equal(pageOf('sms:+1720'), '');
+});
+
+test('rising rows gained the most; one extra click is not rising', () => {
+  const rows = [
+    { key: 'botox denver', a: 120, b: 0, c: null, wasA: 96 },
+    { key: 'lip flip', a: 44, b: 0, c: null, wasA: 51 },
+    { key: 'semaglutide denver', a: 31, b: 0, c: null, wasA: null },
+    { key: 'med spa', a: 6, b: 0, c: null, wasA: 5 },
+  ];
+  assert.deepEqual(risingRows(rows).map((r) => [r.key, r.gain, r.fresh]), [['semaglutide denver', 31, true], ['botox denver', 24, false]]);
+});
+
+test('call events are found by name, however the site named them', () => {
+  for (const n of ['click_to_call', 'phone_call', 'call', 'Phone Click', 'tel_click', 'header_call_click', 'calls_from_ads', 'click-to-call']) assert.equal(isCallEvent(n), true, n);
+  for (const n of ['page_view', 'scroll', 'callback_form', 'recall_notice', 'telemetry', 'form_submit', 'hotel_view']) assert.equal(isCallEvent(n), false, n);
+});
+
+test('events: key events and calls are kept, with the calls counted', () => {
+  const row = (k: string, count: string, key: string) => ({ dimensionValues: [{ value: k }], metricValues: [{ value: count }, { value: key }] });
+  const r = gaEventRows([row('form_submit', '12', '12'), row('click_to_call', '30', '0'), row('page_view', '900', '0'), row('', '5', '5')], [row('click_to_call', '21', '0'), row('phone_call', '4', '0')]);
+  assert.deepEqual(r.rows, [
+    { name: 'form_submit', count: 12, keyEvents: 12, wasCount: null, call: false },
+    { name: 'click_to_call', count: 30, keyEvents: 0, wasCount: 21, call: true },
+  ]);
+  assert.deepEqual([r.calls, r.callsBefore], [30, 25]);
+  const req = gaEventsRequest({ from: '2026-10-01', to: '2026-10-31' }, { source: 'listing' }) as any;
+  assert.deepEqual(req.dimensions, [{ name: 'eventName' }]);
+  assert.equal(req.dimensionFilter.filter.stringFilter.value, 'gbp_listing');
 });

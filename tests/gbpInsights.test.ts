@@ -68,3 +68,53 @@ test('searches for the business by name and job searches are not offered as scan
   assert.equal(brandWord('210 Pressure Washing', ['pressure washer', 'pressure washing san antonio'], 'San Antonio TX'), '');
   assert.equal(scannable('pressure washer phone number', ''), false);
 });
+
+import { byWeek, dailySeries, keywordTrends, monthsOf, risingKeywords } from '../packages/core/gbpInsights';
+
+test('daily numbers fill every day of the range and add up the range before', () => {
+  const rec = (date: string, o: object) => ({ date, platform_stats: o });
+  const s = dailySeries([
+    rec('2026-11-01', { call_clicks: 2, website_clicks: 10, business_direction_requests: 1, business_impressions_mobile_search: 100, business_impressions_desktop_maps: 20 }),
+    rec('2026-11-03', { call_clicks: 1, website_clicks: 4 }),
+    rec('2026-10-30', { call_clicks: 5, website_clicks: 7 }),
+    rec('2026-10-01', { call_clicks: 99 }),
+    rec('nonsense', { call_clicks: 99 }),
+  ], '2026-11-01', '2026-11-03');
+  assert.equal(s.length, 3);
+  assert.deepEqual(s.days.map((d) => [d.date, d.calls, d.websiteClicks, d.views]), [['2026-11-01', 2, 10, 120], ['2026-11-02', 0, 0, 0], ['2026-11-03', 1, 4, 0]]);
+  assert.deepEqual([s.totals.calls, s.totals.websiteClicks, s.totals.directions, s.totals.views, s.totals.mobileSearch], [3, 14, 1, 120, 100]);
+  // The three days before the range, and nothing older.
+  assert.deepEqual([s.before.calls, s.before.websiteClicks], [5, 7]);
+  assert.deepEqual([s.daysWithData, s.daysBefore], [2, 1]);
+  assert.ok(s.known.includes('calls') && s.known.includes('views') && !s.known.includes('bookings'));
+});
+
+test('long ranges are read by the week', () => {
+  const days = Array.from({ length: 16 }, (_, i) => ({ date: '2026-11-' + String(i + 1).padStart(2, '0'), calls: 1, views: 10 }));
+  const w = byWeek(days, ['calls', 'views']);
+  assert.deepEqual(w.map((x) => [x.date, x.calls, x.views]), [['2026-11-01', 7, 70], ['2026-11-08', 7, 70], ['2026-11-15', 2, 20]]);
+  assert.equal(days[0].calls, 1);
+});
+
+test('keywords month by month, and the ones that are rising', () => {
+  const kw = (keyword: string, impressions: number | null, t: number | null = null) => ({ keyword, impressions, impressions_threshold: t });
+  const { rows, months } = keywordTrends([
+    { month: '2026-10', keywords: [kw('botox denver', 300), kw('lip flip', 40), kw('med spa', null, 15), kw('semaglutide', 90)] },
+    { month: '2026-09', keywords: [kw('botox denver', 250), kw('lip flip', 60)] },
+    { month: '2026-08', keywords: [kw('Botox Denver', 200)] },
+  ]);
+  assert.deepEqual(months, ['2026-08', '2026-09', '2026-10']);
+  const by = Object.fromEntries(rows.map((r) => [r.keyword, r]));
+  assert.deepEqual([by['botox denver'].total, by['botox denver'].latest, by['botox denver'].previous, by['botox denver'].gain], [750, 300, 250, 50]);
+  assert.deepEqual(by['botox denver'].byMonth, [200, 250, 300]);
+  assert.deepEqual([by['lip flip'].gain, by['semaglutide'].gain, by['semaglutide'].previous], [-20, 90, null]);
+  // "Fewer than 15" is kept as text and is never a count.
+  assert.deepEqual([by['med spa'].latest, by['med spa'].latestText, by['med spa'].gain, by['med spa'].exact], [null, '<15', null, false]);
+  assert.deepEqual(risingKeywords(rows).map((r) => r.keyword), ['semaglutide', 'botox denver']);
+  assert.equal(rows[rows.length - 1].keyword, 'med spa');
+});
+
+test('the months a range touches, at most the latest twelve', () => {
+  assert.deepEqual(monthsOf('2026-08-20', '2026-11-16'), { from: '2026-08', to: '2026-11' });
+  assert.deepEqual(monthsOf('2025-06-01', '2026-11-16'), { from: '2025-12', to: '2026-11' });
+});

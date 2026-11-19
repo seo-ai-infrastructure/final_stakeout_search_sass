@@ -153,3 +153,110 @@ export function scannable(keyword: string, brand: string): boolean {
   return !brand || !k.split(/[^a-z0-9]+/).includes(brand);
 }
 const GENERIC = new Set(['plumbing', 'plumber', 'plumbers', 'roofing', 'pressure', 'washing', 'cleaning', 'service', 'services', 'security', 'guard', 'attorney', 'attorneys', 'injury', 'accident', 'personal', 'criminal', 'defense', 'lawyer', 'dental', 'painting', 'garage', 'floors', 'drain', 'exteriors', 'premium', 'rentals', 'house', 'bail', 'bonds', 'medical', 'botox', 'city', 'county', 'south', 'north', 'east', 'west', 'beach']);
+
+/* ───────────── The Search insights tab: day-by-day numbers and keyword trends ───────────── */
+
+/** Everything Google counts for a listing each day. The first three are what a listing is for. */
+export const DAILY = [
+  { key: 'calls', label: 'Calls', from: ['call_clicks'] },
+  { key: 'websiteClicks', label: 'Website clicks', from: ['website_clicks'] },
+  { key: 'directions', label: 'Direction requests', from: ['business_direction_requests', 'direction_requests'] },
+  { key: 'views', label: 'Views', from: ['views'] },
+  { key: 'conversations', label: 'Messages', from: ['business_conversations', 'conversations'] },
+  { key: 'bookings', label: 'Bookings', from: ['business_bookings', 'bookings'] },
+  { key: 'foodOrders', label: 'Food orders', from: ['business_food_orders'] },
+  { key: 'menuClicks', label: 'Menu clicks', from: ['business_food_menu_clicks'] },
+  { key: 'mobileSearch', label: 'Search, on a phone', from: ['business_impressions_mobile_search'] },
+  { key: 'mobileMaps', label: 'Maps, on a phone', from: ['business_impressions_mobile_maps'] },
+  { key: 'desktopSearch', label: 'Search, on a computer', from: ['business_impressions_desktop_search'] },
+  { key: 'desktopMaps', label: 'Maps, on a computer', from: ['business_impressions_desktop_maps'] },
+] as const;
+export type DailyKey = (typeof DAILY)[number]['key'];
+export type Day = { date: string } & Record<DailyKey, number>;
+export const SURFACES: DailyKey[] = ['mobileSearch', 'mobileMaps', 'desktopSearch', 'desktopMaps'];
+export const ACTIONS: DailyKey[] = ['calls', 'websiteClicks', 'directions', 'conversations', 'bookings', 'foodOrders'];
+
+const zero = (date: string): Day => ({ date, ...(Object.fromEntries(DAILY.map((m) => [m.key, 0])) as Record<DailyKey, number>) });
+
+/**
+ * A listing's daily records for one range (`from` to `to`, inclusive) and the same number of days
+ * before it. Every day of the range is present (zero when Google sent nothing), so a chart has no
+ * holes. `known`: the things Google reported at all. `daysWithData`: so a range Google has only
+ * half of is not read as a drop. Views is the four places added up when it is not given.
+ */
+export function dailySeries(records: Row[], from: string, to: string) {
+  const start = Date.parse(from + 'T00:00:00Z'), end = Date.parse(to + 'T00:00:00Z');
+  const n = Math.round((end - start) / 86400000) + 1;
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
+  const days: Day[] = Array.from({ length: n }, (_, i) => zero(iso(start + i * 86400000)));
+  const totals = zero(''), before = zero('');
+  const known = new Set<DailyKey>();
+  let daysWithData = 0, daysBefore = 0;
+  for (const r of records) {
+    const t = Date.parse(String(r.date ?? '') + 'T00:00:00Z');
+    if (!Number.isFinite(t)) continue;
+    const i = Math.round((t - start) / 86400000);
+    if (i < -n || i >= n) continue;
+    const got: Partial<Record<DailyKey, number>> = {};
+    for (const m of DAILY) { const v = read(r, m.from); if (v !== null) got[m.key] = v; }
+    if (got.views === undefined) { const parts = SURFACES.map((k) => got[k]).filter((x): x is number => x !== undefined); if (parts.length) got.views = parts.reduce((a, b) => a + b, 0); }
+    if (!Object.keys(got).length) continue;
+    if (i >= 0) daysWithData++; else daysBefore++;
+    for (const [k, v] of Object.entries(got) as [DailyKey, number][]) {
+      known.add(k);
+      if (i >= 0) { days[i][k] += v; totals[k] += v; } else before[k] += v;
+    }
+  }
+  const { date: _a, ...t } = totals, { date: _b, ...b } = before;
+  return { days, totals: t as Record<DailyKey, number>, before: b as Record<DailyKey, number>, known: DAILY.map((m) => m.key).filter((k) => known.has(k)), daysWithData, daysBefore, length: n };
+}
+
+/** Days added up into weeks (each labelled by its first day) once a range is too long to read day by day. */
+export function byWeek<T extends { date: string }>(days: T[], keys: (keyof T)[]): T[] {
+  const out: T[] = [];
+  days.forEach((d, i) => {
+    if (i % 7 === 0) out.push({ ...d });
+    else for (const k of keys) (out[out.length - 1][k] as number) += d[k] as number;
+  });
+  return out;
+}
+
+export type KeywordTrend = { keyword: string; total: number; exact: boolean; latest: number | null; latestText: string; previous: number | null; gain: number | null; months: number; byMonth: (number | null)[] };
+
+/**
+ * Each search that showed the listing, month by month across the months returned (oldest first).
+ * `latest` and `previous` are the last two months (null: not shown that month, or Google only
+ * said "fewer than N", which `latestText` keeps as "<N"). `gain` is latest minus previous when
+ * both are real counts, and the whole latest count when the search is new this month.
+ */
+export function keywordTrends(months: Month[]): { rows: KeywordTrend[]; months: string[] } {
+  const order = [...months].sort((a, b) => a.month.localeCompare(b.month));
+  const by = new Map<string, KeywordTrend>();
+  order.forEach((m, i) => {
+    for (const k of m.keywords ?? []) {
+      const key = k.keyword.trim().toLowerCase();
+      if (!key) continue;
+      const row = by.get(key) ?? { keyword: key, total: 0, exact: false, latest: null, latestText: '', previous: null, gain: null, months: 0, byMonth: order.map(() => null) };
+      row.months++;
+      if (k.impressions !== null) { row.total += k.impressions; row.exact = true; row.byMonth[i] = k.impressions; }
+      if (i === order.length - 1) { row.latest = k.impressions; row.latestText = k.impressions !== null ? String(k.impressions) : '<' + (k.impressions_threshold ?? 15); }
+      if (i === order.length - 2) row.previous = k.impressions;
+      by.set(key, row);
+    }
+  });
+  const rows = [...by.values()].map((r) => ({ ...r, gain: r.latest === null ? null : order.length < 2 ? null : r.latest - (r.previous ?? 0) }))
+    .sort((a, b) => Number(b.exact) - Number(a.exact) || b.total - a.total || b.months - a.months || a.keyword.localeCompare(b.keyword));
+  return { rows, months: order.map((m) => m.month) };
+}
+
+/** The searches that grew most in the latest month against the one before (at least `min` more times shown). */
+export const risingKeywords = (rows: KeywordTrend[], min = 5, limit = 25) =>
+  rows.filter((r) => r.gain !== null && r.gain >= min).sort((a, b) => (b.gain as number) - (a.gain as number) || b.total - a.total).slice(0, limit);
+
+/** The months (YYYY-MM) a date range touches, capped at the 12 Google gives in one request (the latest 12). */
+export function monthsOf(from: string, to: string): { from: string; to: string } {
+  const a = from.slice(0, 7), b = to.slice(0, 7);
+  const [y, m] = b.split('-').map(Number);
+  const floor = new Date(Date.UTC(y, m - 12, 1)).toISOString().slice(0, 7);
+  return { from: a < floor ? floor : a, to: b };
+}

@@ -1,7 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import GbpInsights from '@/components/GbpInsights';
-import GoogleSitePanel from '@/components/GoogleSitePanel';
+import SearchInsights from '@/components/SearchInsights';
 import GbpReviews from '@/components/GbpReviews';
 import GbpWatch from '@/components/GbpWatch';
 import GbpPosts from '@/components/GbpPosts';
@@ -99,6 +98,9 @@ export default function GbpEditor() {
   const [live, setLive] = useState<GbpLocation | null>(null);
   const [tab, setTab] = useState<'listing' | 'reviews' | 'changes'>('listing');
   const [waiting, setWaiting] = useState(0);
+  // Within one listing: its numbers, its edits, its posts, its reviews.
+  const [view, setView] = useState<'insights' | 'edit' | 'posts' | 'reviews'>('insights');
+  const [choosing, setChoosing] = useState(true);
   const [edits, setEdits] = useState<Edit[]>([]);
   const [form, setForm] = useState<Form | null>(null);
   const [unlocked, setUnlocked] = useState(false);
@@ -207,7 +209,7 @@ export default function GbpEditor() {
     <div className="mx-auto max-w-5xl space-y-5 px-5 py-6 text-slate-200">
       <div>
         <h1 className="text-2xl font-bold">Google profiles</h1>
-        <p className="mt-1 text-sm text-slate-400">Edit a client’s Google Business Profile. Every edit is built on the live profile, logged with the profile as it was, and checked against Google afterwards.</p>
+        <p className="mt-1 text-sm text-slate-400">Each client’s Google Business Profile: how it is doing in search, its edits, posts and reviews.</p>
       </div>
 
       {!ready && (
@@ -231,12 +233,12 @@ export default function GbpEditor() {
         </div>
       )}
       {ready && tab === 'reviews' && profiles !== null && profiles.length > 0 && (
-        <GbpReviews profiles={profiles} only={pick} onOpenListing={(p) => { setPick(p); setTab('listing'); window.scrollTo({ top: 0 }); }} />
+        <GbpReviews profiles={profiles} only={pick} onOpenListing={(p) => { setPick(p); setChoosing(false); setTab('listing'); window.scrollTo({ top: 0 }); }} />
       )}
 
-      {ready && tab === 'changes' && <GbpWatch onCount={setWaiting} onOpenListing={(p) => { setPick(p); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
+      {ready && tab === 'changes' && <GbpWatch onCount={setWaiting} onOpenListing={(p) => { setPick(p); setChoosing(false); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
 
-      {ready && tab === 'listing' && (
+      {ready && tab === 'listing' && (choosing || !pick) && (
         <div className={card}>
           <label className="text-sm font-semibold">Location</label>
           {profiles === null ? <p className="mt-2 text-sm text-slate-400">Loading connected accounts…</p> : profiles.length === 0 ? (
@@ -252,7 +254,7 @@ export default function GbpEditor() {
                       const on = pick?.profile === p.id && pick.location === l.id;
                       return (
                         <li key={p.id + l.id}>
-                          <button type="button" onClick={() => setPick({ profile: p.id, location: l.id })} className={'flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-800 ' + (on ? 'bg-emerald-500/10 text-emerald-300' : '')}>
+                          <button type="button" onClick={() => { setPick({ profile: p.id, location: l.id }); setChoosing(false); setFind(''); }} className={'flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-800 ' + (on ? 'bg-emerald-500/10 text-emerald-300' : '')}>
                             <span className="min-w-0 truncate">{l.name}</span>
                             {/* Several locations share a name, and one can sit under two Google accounts: the ids tell them apart. */}
                             <span className="shrink-0 font-mono text-[11px] text-slate-500">account …{l.id.split('/')[1].slice(-4)} · location …{l.id.split('/')[3].slice(-5)}</span>
@@ -276,17 +278,25 @@ export default function GbpEditor() {
         <>
           <div className={card}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-lg font-semibold">{live.title}</h2>
+              <h2 className="text-lg font-semibold">{live.title} {!choosing && <button type="button" onClick={() => { setChoosing(true); window.scrollTo({ top: 0 }); }} className="ml-2 align-middle text-xs font-normal text-sky-400 hover:underline">Change listing</button>}</h2>
               <span className="text-xs text-slate-500">{[live.storefrontAddress?.addressLines?.join(' '), live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(', ') || 'Service-area business'}{typeof live.metadata?.mapsUri === 'string' && <> · <a href={live.metadata.mapsUri} target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">Open on Google Maps</a></>}</span>
             </div>
-            <p className="mt-1 text-xs text-slate-500">Address, map pin, service area and open/closed status are not editable here.</p>
+
           </div>
 
-          <GbpInsights profile={pick.profile} location={pick.location} businessName={live.title ?? ''} place={[live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(' ')} />
-          <GoogleSitePanel website={live.websiteUri ?? ''} businessName={live.title ?? ''} />
-          <GbpPosts profile={pick.profile} location={pick.location} />
-          <GbpExtras profile={pick.profile} location={pick.location} />
+          <div role="tablist" aria-label="This listing" className="flex flex-wrap gap-1.5">
+            {([['insights', 'Search insights'], ['edit', 'Edit business'], ['posts', 'Posts'], ['reviews', 'Reviews']] as const).map(([v, label]) => (
+              <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)} className={'rounded-lg px-3.5 py-2 text-sm font-semibold ' + (view === v ? 'bg-emerald-500 text-slate-950' : 'border border-slate-700 text-slate-300 hover:border-slate-500')}>{label}{v === 'edit' && changes.length > 0 && <span className="ml-1.5 rounded-full bg-slate-950/30 px-1.5 text-[11px]">{changes.length}</span>}</button>
+            ))}
+          </div>
 
+          {view === 'insights' && <SearchInsights profile={pick.profile} location={pick.location} businessName={live.title ?? ''} place={[live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(' ')} website={live.websiteUri ?? ''} />}
+          {view === 'posts' && <GbpPosts profile={pick.profile} location={pick.location} />}
+          {view === 'reviews' && profiles && <GbpReviews key={pick.location} profiles={profiles} only={pick} onOpenListing={(p) => { setPick(p); setView('insights'); }} />}
+
+          {view === 'edit' && (
+          <>
+          <p className="text-xs text-slate-500">Every edit is built on the live profile, logged with the profile as it was, and checked against Google afterwards. Address, map pin, service area and open/closed status are not editable here.</p>
           <section className={card + ' space-y-5'}>
             <h3 className="flex items-center gap-2 font-semibold">Everyday edits <span className={'rounded-full border px-2 py-0.5 text-[11px] ' + TIER.green.chip}>{TIER.green.text}</span></h3>
 
@@ -471,6 +481,9 @@ export default function GbpEditor() {
               </ul>
             )}
           </section>
+          <GbpExtras profile={pick.profile} location={pick.location} />
+          </>
+          )}
         </>
       )}
     </div>

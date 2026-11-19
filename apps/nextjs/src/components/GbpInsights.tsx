@@ -1,119 +1,177 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { METRICS, brandWord, change, scannable, type KeywordRow, type MetricKey, type Totals } from '@stakeout/core/gbpInsights';
+import { DAILY, SURFACES, brandWord, byWeek, risingKeywords, scannable, type DailyKey, type Day, type KeywordTrend } from '@stakeout/core/gbpInsights';
+import { Change, MiniChart, Segmented, SplitBar, Tile, card, fmt, shortDate } from '@/components/InsightBits';
 
+type Totals = Record<DailyKey, number>;
+type Range = { recent: { from: string; to: string }; before: { from: string; to: string }; days: number };
 type Performance =
-  | { kind: 'daily'; to: string; recent: Totals; before: Totals; known: MetricKey[]; daysWithData: number; daysBefore: number; days: number }
-  | { kind: 'snapshot'; totals: Totals; known: MetricKey[]; recordedAt: string }
+  | { kind: 'daily'; days: Day[]; totals: Totals; before: Totals; known: DailyKey[]; daysWithData: number; daysBefore: number; length: number }
+  | { kind: 'snapshot'; totals: Partial<Totals>; known: string[]; recordedAt: string }
   | { kind: 'none' }
   | { kind: 'problem'; problem: string };
-type Insights = { performance: Performance; keywords: { rows: KeywordRow[]; months: string[]; problem: string | null } };
+type Insights = { range: Range; performance: Performance; keywords: { rows: KeywordTrend[]; months: string[]; problem: string | null } };
 
-const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
+const label = (k: DailyKey) => DAILY.find((m) => m.key === k)!.label;
 const monthName = (m: string) => new Date(m + '-15T00:00:00Z').toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+const CHART: DailyKey[] = ['calls', 'websiteClicks', 'directions', 'views'];
+const HERO: DailyKey[] = ['calls', 'websiteClicks', 'directions'];
 const MAX_PICK = 10;
 
-/** The listing's numbers from Google and the searches that showed it, with a way to scan those searches. */
-export default function GbpInsights({ profile, location, businessName, place }: { profile: string; location: string; businessName: string; place: string }) {
+/**
+ * Google's own numbers for the listing: calls, website clicks and direction requests first, then
+ * where it was seen and the searches that showed it. `range` is the tab's date choice, as a query string.
+ */
+export default function GbpInsights({ profile, location, businessName, place, range }: { profile: string; location: string; businessName: string; place: string; range: string }) {
   const [data, setData] = useState<Insights | null>(null);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [metric, setMetric] = useState<DailyKey>('calls');
+  const [view, setView] = useState<'top' | 'rising'>('top');
+  const [find, setFind] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
   const [all, setAll] = useState(false);
 
+  useEffect(() => { setData(null); setPicked([]); setAll(false); setFind(''); }, [profile, location]);
   useEffect(() => {
     let live = true;
-    setData(null); setError(''); setPicked([]); setAll(false);
-    fetch(`/api/admin/gbp/insights?profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}`, { cache: 'no-store' })
+    setBusy(true); setError('');
+    fetch(`/api/admin/gbp/insights?profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}&${range}`, { cache: 'no-store' })
       .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || 'Could not read the numbers.'); return j as Insights; })
       .then((j) => { if (live) setData(j); })
-      .catch((e) => { if (live) setError(e.message); });
+      .catch((e) => { if (live) setError(e.message); })
+      .finally(() => { if (live) setBusy(false); });
     return () => { live = false; };
-  }, [profile, location]);
+  }, [profile, location, range]);
+
+  const p = data?.performance;
+  const daily = p?.kind === 'daily' ? p : null;
+  // A change is only shown when both periods are close to complete: a range Google has half of is not a drop.
+  const compare = Boolean(daily && daily.daysWithData >= daily.length - 3 && daily.daysBefore >= daily.length - 3);
+  const chartKeys = CHART.filter((k) => daily?.known.includes(k));
+  const shownMetric = chartKeys.includes(metric) ? metric : chartKeys[0];
+  const points = useMemo(() => {
+    if (!daily || !shownMetric) return [];
+    const weekly = daily.length > 92;
+    const rows = weekly ? byWeek(daily.days, DAILY.map((m) => m.key)) : daily.days;
+    return rows.map((d) => ({ label: (weekly ? 'Week of ' : '') + shortDate(d.date), value: d[shownMetric] }));
+  }, [daily, shownMetric]);
+  const actions = daily ? (['calls', 'websiteClicks', 'directions', 'conversations', 'bookings', 'foodOrders'] as DailyKey[]).filter((k) => daily.known.includes(k)).reduce((n, k) => n + daily.totals[k], 0) : 0;
+  const actionsBefore = daily ? (['calls', 'websiteClicks', 'directions', 'conversations', 'bookings', 'foodOrders'] as DailyKey[]).filter((k) => daily.known.includes(k)).reduce((n, k) => n + daily.before[k], 0) : 0;
 
   const rows = data?.keywords.rows ?? [];
+  const months = data?.keywords.months ?? [];
   const brand = useMemo(() => brandWord(businessName, rows.map((r) => r.keyword), place), [rows, businessName, place]);
   const good = useMemo(() => rows.filter((r) => scannable(r.keyword, brand)), [rows, brand]);
-  const shown = all ? rows : rows.slice(0, 12);
-  const toggle = (k: string) => setPicked((p) => (p.includes(k) ? p.filter((x) => x !== k) : p.length < MAX_PICK ? [...p, k] : p));
+  const rising = useMemo(() => risingKeywords(rows), [rows]);
+  const list = (view === 'rising' ? rising : rows).filter((r) => !find.trim() || r.keyword.includes(find.trim().toLowerCase()));
+  const shown = all || find.trim() ? list : list.slice(0, 15);
+  const toggle = (k: string) => setPicked((x) => (x.includes(k) ? x.filter((y) => y !== k) : x.length < MAX_PICK ? [...x, k] : x));
   const scanUrl = '/new-scan?' + new URLSearchParams([['name', businessName], ...picked.map((k) => ['kw', k] as [string, string])]).toString();
-  const p = data?.performance;
 
   return (
     <section className={card + ' space-y-5'}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="font-semibold">Performance on Google</h3>
-        <span className="text-xs text-slate-500">Google’s own numbers for this listing · read-only</span>
+        <h3 className="font-semibold">Google Business Profile</h3>
+        <span className="text-xs text-slate-500">{data ? `${shortDate(data.range.recent.from)} to ${shortDate(data.range.recent.to)}, ${data.range.days} days · ` : ''}Google’s own numbers for this listing</span>
       </div>
       {error && <p className="text-sm text-rose-300">{error}</p>}
       {!data && !error && <p className="text-sm text-slate-400">Reading Google’s numbers…</p>}
 
-      {p && (p.kind === 'daily' || p.kind === 'snapshot') && (
-        <div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            {METRICS.filter((m) => p.known.includes(m.key)).map((m) => {
-              const now = p.kind === 'daily' ? p.recent[m.key] : p.totals[m.key];
-              // A change is only shown when both periods are close to complete: a month Postproxy has half of is not a drop.
-              const was = p.kind === 'daily' && p.daysWithData >= p.days - 3 && p.daysBefore >= p.days - 3 ? p.before[m.key] : null;
-              const pct = was === null ? null : change(now, was);
-              return (
-                <div key={m.key} className="rounded-lg border border-slate-800 bg-slate-950 p-3">
-                  <p className="text-xs text-slate-400">{m.label}</p>
-                  <p className="mt-1 text-2xl font-bold tabular-nums text-slate-100">{now.toLocaleString('en-US')}</p>
-                  <p className={'mt-0.5 text-xs ' + (pct === null ? 'text-slate-600' : pct > 0 ? 'text-emerald-400' : pct < 0 ? 'text-rose-400' : 'text-slate-400')}>
-                    {pct === null ? ' ' : (pct > 0 ? '▲ ' : pct < 0 ? '▼ ' : '') + Math.abs(pct) + '% vs the 30 days before (' + (was ?? 0).toLocaleString('en-US') + ')'}
-                  </p>
-                </div>
-              );
-            })}
+      {daily && (
+        <div className={'space-y-5 ' + (busy ? 'opacity-50' : '')}>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {HERO.filter((k) => daily.known.includes(k)).map((k) => <Tile key={k} big label={label(k)} value={daily.totals[k]} was={daily.before[k]} compare={compare} />)}
           </div>
-          <p className="mt-2 text-xs text-slate-500">
-            {p.kind === 'daily'
-              ? `Last ${p.days} days, to ${p.to}. ${p.daysWithData} of ${p.days} days have data` + (p.daysWithData < p.days - 3 || p.daysBefore < p.days - 3 ? '; the comparison appears once both periods are complete.' : '.')
-              : `Google’s trailing 30-day totals, recorded ${new Date(p.recordedAt).toLocaleDateString()}.`}
-          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {daily.known.includes('views') && <Tile label="Views on Search and Maps" value={daily.totals.views} was={daily.before.views} compare={compare} />}
+            {daily.totals.views > 0 && <Tile label="Actions per 100 views" value={(actions / daily.totals.views) * 100} was={daily.before.views ? (actionsBefore / daily.before.views) * 100 : null} digits={1} compare={compare} note="calls, clicks, directions and more" />}
+            {(['conversations', 'bookings', 'foodOrders', 'menuClicks'] as DailyKey[]).filter((k) => daily.known.includes(k) && (daily.totals[k] > 0 || daily.before[k] > 0)).map((k) => <Tile key={k} label={label(k)} value={daily.totals[k]} was={daily.before[k]} compare={compare} />)}
+          </div>
+          {!compare && <p className="text-xs text-slate-500">Google has {daily.daysWithData} of these {daily.length} days{daily.daysBefore < daily.length - 3 ? ` and ${daily.daysBefore} of the ${daily.length} before` : ''}, so no comparison is shown: a part-filled period is not a drop.</p>}
+
+          {shownMetric && (
+            <div>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold">{label(shownMetric)} {daily.length > 92 ? 'by week' : 'by day'}</h4>
+                <Segmented label="What to chart" value={shownMetric} onChange={setMetric} options={chartKeys.map((k) => [k, k === 'directions' ? 'Directions' : label(k)] as const)} />
+              </div>
+              <MiniChart points={points} name={label(shownMetric)} />
+            </div>
+          )}
+
+          {SURFACES.some((k) => daily.totals[k] > 0) && (
+            <div>
+              <h4 className="mb-2 text-sm font-semibold">Where the listing was seen</h4>
+              <SplitBar parts={SURFACES.map((k) => ({ label: label(k), value: daily.totals[k] }))} />
+            </div>
+          )}
+        </div>
+      )}
+      {p?.kind === 'snapshot' && (
+        <div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {(['calls', 'websiteClicks', 'directions', 'views'] as DailyKey[]).filter((k) => p.known.includes(k)).map((k) => <Tile key={k} big={k !== 'views'} label={label(k)} value={p.totals[k] ?? 0} compare={false} />)}
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Google’s totals for the 30 days up to {new Date(p.recordedAt).toLocaleDateString()}. Day-by-day figures (and other date ranges) appear about a day after a profile is connected.</p>
         </div>
       )}
       {p?.kind === 'none' && <p className="text-sm text-slate-400">No performance numbers yet. They are collected about once a day after a profile is connected, so check back tomorrow.</p>}
       {p?.kind === 'problem' && <p className="text-sm text-amber-300">Performance numbers are not available for this listing: {p.problem}</p>}
 
       {data && (
-        <div>
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h4 className="text-sm font-semibold">Searches that showed this listing</h4>
-            {data.keywords.months.length > 0 && <span className="text-xs text-slate-500">{monthName(data.keywords.months[0])} to {monthName(data.keywords.months[data.keywords.months.length - 1])} · times shown</span>}
+        <div className="border-t border-slate-800 pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-sm font-semibold">Searches that showed this listing {months.length > 0 && <span className="ml-1 font-normal text-slate-500">{monthName(months[0])}{months.length > 1 ? ' to ' + monthName(months[months.length - 1]) : ''}</span>}</h4>
+            {rows.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Segmented label="Which searches" value={view} onChange={setView} options={[['top', 'Top'], ['rising', `Rising${rising.length ? ' · ' + rising.length : ''}`]] as const} />
+                <input className="w-44 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-xs text-slate-100 outline-none focus:border-emerald-500" placeholder="Find a search" value={find} onChange={(e) => setFind(e.target.value)} />
+              </div>
+            )}
           </div>
           {data.keywords.problem ? (
             <p className="mt-2 text-sm text-amber-300">Google gives no search terms for this listing: {data.keywords.problem}</p>
           ) : rows.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-400">Google reported no searches for the last three months.</p>
+            <p className="mt-2 text-sm text-slate-400">Google reported no searches for these months.</p>
           ) : (
             <>
-              <ul className="mt-2 divide-y divide-slate-800 rounded-lg border border-slate-800">
-                {shown.map((r) => {
-                  const ok = scannable(r.keyword, brand);
-                  const on = picked.includes(r.keyword);
-                  return (
-                    <li key={r.keyword}>
-                      <label className={'flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-slate-800/60 ' + (on ? 'bg-emerald-500/5' : '')}>
-                        <input type="checkbox" checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.keyword)} />
-                        <span className={'min-w-0 flex-1 truncate ' + (ok ? 'text-slate-200' : 'text-slate-500')}>{r.keyword}</span>
-                        {!ok && <span className="shrink-0 text-[11px] text-slate-600">search for the business by name, or a job search</span>}
-                        <span className="w-24 shrink-0 text-right text-xs tabular-nums text-slate-400" title="Times shown in the latest month it appeared">{r.latest} <span className="text-slate-600">latest</span></span>
-                        <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-300" title="Total times shown across the months listed; searches Google only reports as fewer than 15 count as 0">{r.exact ? r.total.toLocaleString('en-US') + ' total' : ''}</span>
-                      </label>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="mt-3 flex flex-wrap items-center gap-3">
-                <a href={picked.length ? scanUrl : undefined} aria-disabled={!picked.length} className={'rounded-lg px-4 py-2 text-sm font-semibold ' + (picked.length ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400' : 'pointer-events-none bg-slate-800 text-slate-500')}>
-                  Scan {picked.length || ''} keyword{picked.length === 1 ? '' : 's'} →
-                </a>
-                <button type="button" onClick={() => setPicked(good.slice(0, 5).map((r) => r.keyword))} disabled={!good.length} className="text-sm text-sky-400 hover:underline disabled:opacity-40">Pick the top 5 customer searches</button>
-                {rows.length > 12 && <button type="button" onClick={() => setAll((v) => !v)} className="text-sm text-slate-400 hover:text-slate-200">{all ? 'Show fewer' : `Show all ${rows.length}`}</button>}
-                {picked.length >= MAX_PICK && <span className="text-xs text-slate-500">Up to {MAX_PICK} at a time.</span>}
+              <div className="mt-2 overflow-x-auto rounded-lg border border-slate-800">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-900 text-xs text-slate-400">
+                    <tr>
+                      <th className="w-8 px-3 py-2" />
+                      <th className="px-3 py-2 font-medium">Search</th>
+                      <th className="px-3 py-2 text-right font-medium">{months.length ? monthName(months[months.length - 1]) : 'Latest'}</th>
+                      {months.length > 1 && <th className="px-3 py-2 text-right font-medium">{monthName(months[months.length - 2])}</th>}
+                      {months.length > 1 && <th className="px-3 py-2 text-right font-medium">Change</th>}
+                      {months.length > 2 && <th className="px-3 py-2 text-right font-medium">{months.length} months</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/70">
+                    {shown.map((r) => {
+                      const ok = scannable(r.keyword, brand), on = picked.includes(r.keyword);
+                      return (
+                        <tr key={r.keyword} className={'hover:bg-slate-800/40 ' + (on ? 'bg-emerald-500/5' : '')}>
+                          <td className="px-3 py-1.5"><input type="checkbox" aria-label={'Scan ' + r.keyword} checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.keyword)} /></td>
+                          <td className={'max-w-[20rem] truncate px-3 py-1.5 ' + (ok ? 'text-slate-200' : 'text-slate-500')} title={ok ? r.keyword : 'A search for the business by name, or a job search'}>{r.keyword}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{r.latestText || '–'}</td>
+                          {months.length > 1 && <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.previous === null ? '–' : fmt(r.previous)}</td>}
+                          {months.length > 1 && <td className="px-3 py-1.5 text-right text-xs tabular-nums">{r.latest === null ? <span className="text-slate-600">–</span> : <Change now={r.latest} was={r.previous} />}</td>}
+                          {months.length > 2 && <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.exact ? fmt(r.total) : '–'}</td>}
+                        </tr>
+                      );
+                    })}
+                    {!shown.length && <tr><td colSpan={6} className="px-3 py-3 text-sm text-slate-400">{view === 'rising' && !find.trim() ? 'No search grew by five or more in the latest month.' : 'No search matches that.'}</td></tr>}
+                  </tbody>
+                </table>
               </div>
-              <p className="mt-2 text-xs text-slate-500">Opens New scan with these keywords filled in. “&lt;15” means Google only says the search showed the listing fewer than 15 times that month.</p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <a href={picked.length ? scanUrl : undefined} aria-disabled={!picked.length} className={'rounded-lg px-4 py-2 text-sm font-semibold ' + (picked.length ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400' : 'pointer-events-none bg-slate-800 text-slate-500')}>Scan {picked.length || ''} keyword{picked.length === 1 ? '' : 's'} →</a>
+                <button type="button" onClick={() => setPicked(good.slice(0, 5).map((r) => r.keyword))} disabled={!good.length} className="text-sm text-sky-400 hover:underline disabled:opacity-40">Pick the top 5 customer searches</button>
+                {list.length > 15 && !find.trim() && <button type="button" onClick={() => setAll((v) => !v)} className="text-sm text-slate-400 hover:text-slate-200">{all ? 'Show fewer' : `Show all ${list.length}`}</button>}
+              </div>
+              <p className="mt-2 text-xs text-slate-500">Times the listing was shown for each search, by calendar month (Google gives these by month, up to the latest 12). “&lt;15” means fewer than 15 that month. Google counts calls, clicks and directions for the listing as a whole, not per search: a scan shows where each search ranks.</p>
             </>
           )}
         </div>

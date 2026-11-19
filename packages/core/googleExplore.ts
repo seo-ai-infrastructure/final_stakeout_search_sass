@@ -16,7 +16,8 @@ export const PRESETS: { days: number; label: string }[] = [
 
 /**
  * The range to read and the one of the same length just before it. `days` counts back from
- * `lag` days ago (Search Console runs about three days behind; Analytics one). A custom
+ * `lag` days ago (Search Console runs about three days behind; Analytics one). Any number of days
+ * from 1 to 480 is taken; anything else is 28. A custom
  * from/to wins over `days`. Search Console keeps 16 months, so nothing older is asked for.
  */
 export function exploreRange(o: { days?: unknown; from?: unknown; to?: unknown }, today: Date, lag: number): { recent: Range; before: Range; days: number } | string {
@@ -28,7 +29,8 @@ export function exploreRange(o: { days?: unknown; from?: unknown; to?: unknown }
     if (to > Date.parse(iso(today.getTime()) + 'T00:00:00Z')) return 'The end date is in the future.';
   } else if (o.from || o.to) return 'Set both dates, as YYYY-MM-DD.';
   else {
-    const days = PRESETS.some((p) => p.days === Number(o.days)) ? Number(o.days) : 28;
+    const asked = Math.round(Number(o.days));
+    const days = asked >= 1 && asked <= 480 ? asked : 28;
     to = end; from = end - (days - 1) * DAY;
   }
   if (from < Date.parse(iso(today.getTime()) + 'T00:00:00Z') - 16 * 31 * DAY) return 'Google keeps 16 months of data: choose a later start date.';
@@ -132,4 +134,60 @@ export function gaRows(now: GaRow[], was: GaRow[], dimension: GaDimension): Expl
   const name = (r: GaRow) => { const v = r.dimensionValues?.[0]?.value ?? ''; return dimension === 'date' && /^\d{8}$/.test(v) ? v.slice(0, 4) + '-' + v.slice(4, 6) + '-' + v.slice(6) : v; };
   const before = new Map(was.map((r) => [name(r), num(r, 0)]));
   return now.map((r) => ({ key: name(r) || '(not set)', a: num(r, 0), b: num(r, 1), c: num(r, 2), wasA: dimension === 'date' ? null : before.has(name(r)) ? (before.get(name(r)) as number) : null }));
+}
+
+/* ───────────── Overviews (the Search insights tab) ───────────── */
+
+/** A page address as Search Console knows it: no tracking tags, no fragment. Empty when it is not a web address. */
+export function pageOf(url: string): string {
+  try {
+    const u = new URL(url);
+    return /^https?:$/.test(u.protocol) ? u.origin + u.pathname : '';
+  } catch {
+    return '';
+  }
+}
+
+export type Rising = ExploreRow & { gain: number; fresh: boolean };
+
+/**
+ * The rows that gained most on their first figure (clicks, or visits) against the range before:
+ * biggest gain first. A row that was not there before is `fresh`, and counts its whole figure as
+ * gain. Rows that gained less than `min` are left out, so one extra click is not "rising".
+ */
+export function risingRows(rows: ExploreRow[], min = 2, limit = 25): Rising[] {
+  return rows
+    .map((r) => ({ ...r, gain: r.a - (r.wasA ?? 0), fresh: r.wasA === null }))
+    .filter((r) => r.gain >= min)
+    .sort((x, y) => y.gain - x.gain || y.a - x.a || x.key.localeCompare(y.key))
+    .slice(0, limit);
+}
+
+/** An event that is a phone call: a tap on a phone link, or a call-tracking event, whatever the site named it. */
+export const isCallEvent = (name: string) => /(^|[^a-z])(call|calls|phone|tel|click_to_call|clicktocall)([^a-z]|$)/i.test(name.replace(/_/g, ' ')) || /click.?to.?call|phone.?call|tel.?click|call.?click/i.test(name);
+
+/** Analytics: every event by name with how often it happened and how many of those count as key events. */
+export function gaEventsRequest(range: Range, f: GaFilters, limit = 200) {
+  const filters = gaFilters(f);
+  return {
+    dateRanges: [{ startDate: range.from, endDate: range.to }],
+    dimensions: [{ name: 'eventName' }],
+    metrics: [{ name: 'eventCount' }, { name: 'keyEvents' }],
+    orderBys: [{ metric: { metricName: 'keyEvents' }, desc: true }, { metric: { metricName: 'eventCount' }, desc: true }],
+    limit,
+    ...(filters.length ? { dimensionFilter: filters.length === 1 ? filters[0] : { andGroup: { expressions: filters } } } : {}),
+  };
+}
+
+export type EventRow = { name: string; count: number; keyEvents: number; wasCount: number | null; call: boolean };
+
+/**
+ * The events worth showing: every key event, and every call event whether or not the site has
+ * marked it as key (most sites never do). `calls` is the number of call events in each range.
+ */
+export function gaEventRows(now: GaRow[], was: GaRow[]): { rows: EventRow[]; calls: number; callsBefore: number } {
+  const read = (r: GaRow) => ({ name: r.dimensionValues?.[0]?.value ?? '', count: num(r, 0), keyEvents: num(r, 1) });
+  const before = new Map(was.map(read).map((r) => [r.name, r.count]));
+  const rows = now.map(read).filter((r) => r.name).map((r) => ({ ...r, wasCount: before.has(r.name) ? (before.get(r.name) as number) : null, call: isCallEvent(r.name) })).filter((r) => r.keyEvents > 0 || r.call);
+  return { rows, calls: rows.filter((r) => r.call).reduce((n, r) => n + r.count, 0), callsBefore: was.map(read).filter((r) => isCallEvent(r.name)).reduce((n, r) => n + r.count, 0) };
 }
