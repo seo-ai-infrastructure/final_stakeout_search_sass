@@ -5,11 +5,16 @@ import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { catalogFor } from '@/lib/billing';
 import { stripe, stripeConfigured } from '@/lib/stripe';
+import { activePlan, planPortal, settleIfDue, startPlan } from '@/lib/creditSub';
+import { PLANS } from '@/lib/pricing';
 
 /** What this account can buy, and whether checkout is switched on. */
 export async function GET() {
   try {
-    return Response.json({ packs: await catalogFor(await getAuthenticatedUser()), ready: stripeConfigured() });
+    const u = await getAuthenticatedUser();
+    await settleIfDue(u.id);
+    const plan = await activePlan(u.id);
+    return Response.json({ packs: await catalogFor(u), ready: stripeConfigured(), plan: plan ? { ...plan, periodEnd: plan.periodEnd?.toISOString() ?? null } : null });
   } catch (e) {
     return errorResponse(e);
   }
@@ -25,14 +30,18 @@ const safePath = (v: unknown) => (typeof v === 'string' && /^\/[A-Za-z0-9\-._~/?
 export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser(),
-      { item: key, credits, returnTo } = await req.json(),
+      { item: key, credits, returnTo, portal } = await req.json(),
       catalog = await catalogFor(u),
       // By its key; a page loaded before keys were sent names its credits instead, which only counts when one item has that many.
       byCredits = catalog.filter((p) => p.credits === credits),
       item = typeof key === 'string' ? catalog.find((p) => p.key === key) : byCredits.length === 1 ? byCredits[0] : undefined;
-    if (!item) throw new InputError('That is not available for this account.');
     const origin = new URL(req.url).origin,
       back = origin + safePath(returnTo);
+    // { portal: true }: Stripe's page for the plan's card, invoices and cancelling.
+    if (portal === true) return Response.json({ url: await planPortal(u.id, back) });
+    if (!item) throw new InputError('That is not available for this account.');
+    // A monthly plan is a subscription: checkout the first time, a change of plan after that.
+    if (PLANS.some((p) => p.key === item.key)) return Response.json(await startPlan(u, item.key, back));
     const session = await stripe<{ id: string; url: string }>(
       '/checkout/sessions',
       'POST',

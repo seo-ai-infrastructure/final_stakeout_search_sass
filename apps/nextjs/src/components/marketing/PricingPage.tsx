@@ -28,11 +28,11 @@ const FAQ: [string, string][] = [
   ['How is this different from other grid trackers?', 'Most trackers ask Google for results from a server and show you a number. We send a real Android phone to each pin, run the search in Chrome or the Google Maps app, and record the screen. You get the ranking and the video that proves it.'],
   ['My client says they see something different on their phone. Now what?', 'Open that pin and play the recording. It shows the search being typed, the location Google itself reported for the phone, and the results as they appeared. That is the conversation other tools leave you to argue from memory.'],
   ['What does a credit buy?', 'One pin: a real phone moved to that spot, the search run and recorded, and a receipt with the results, the location Google used and a fingerprint of the evidence. AI Overview tracking is included.'],
-  ['Do credits expire?', 'No. Credits you buy stay on your account until you use them, on packs and plans alike.'],
+  ['Do credits expire?', 'Credits from packs never expire. Credits from a monthly plan roll over for one month: what you do not use carries into the next month, up to one month’s worth, and they are used before your pack credits. If you cancel a plan, its unused credits end with the month you paid for.'],
   ['What happens if a pin fails?', 'Its credit goes straight back to your balance, and you can run it again with one click.'],
   ['Do I have to pay for onboarding?', `No. Your first pack is ${usd(WELCOME.cents)} for ${WELCOME.credits} credits (one per account and card): run a scan today. Onboarding (${usd(ONBOARDING.cents)}, with ${ONBOARDING.credits.toLocaleString('en-US')} credits) is there if you want us to set you up and run your first audit with you.`],
   ['Why do packs cost more per credit than plans?', `A pack is for trying it, or for a one-off job. Once you scan every week, a plan costs less per credit: ${usd(Math.round(perCredit(PLANS[0]) * 100))} on ${PLANS[0].name} against ${usd(Math.round(perCredit(PACKS[1]) * 100))} on the ${PACKS[1].name}.`],
-  ['Is there a contract?', 'No. Plans are bought a month at a time from your account, and you can change plan or stop whenever you like.'],
+  ['Is there a contract?', 'No. A plan renews each month on the card you paid with, and you can change plan or cancel whenever you like from your account. A change of plan starts at the next renewal.'],
   ['Can I put my own brand on reports?', `Yes. Every scan has a share link your client can open without an account. For a one-time ${usd(WHITE_LABEL.cents)} setup, all your reporting carries your logo on your own domain, share links included.`],
 ];
 
@@ -65,7 +65,7 @@ const VERSUS: [string, string, string][] = [
   ['A pin that fails', 'Varies', 'Credited back automatically'],
 ];
 
-const TRUST = ['No setup fee', 'Credits never expire', 'Failed pins credited back', 'No contract'];
+const TRUST = ['No setup fee', 'Pack credits never expire', 'Failed pins credited back', 'No contract'];
 
 export default function PricingPage() {
   // The offer leaves the page when it ends (the page is rebuilt every hour).
@@ -181,7 +181,7 @@ export default function PricingPage() {
       <section className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
         <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#f5c451]">Step 2 · when you scan every week</p>
         <h2 className="mk-display mx-auto mt-3 max-w-3xl text-center text-4xl font-bold leading-tight sm:text-5xl">Then pay less for every pin.</h2>
-        <p className="mx-auto mt-4 max-w-2xl text-center text-[#9aa7b8]">Monthly plans, no contract. Change or stop whenever you like.</p>
+        <p className="mx-auto mt-4 max-w-2xl text-center text-[#9aa7b8]">Monthly plans that renew until you cancel, no contract. Unused credits roll over one month.</p>
         <div className="mt-12 grid items-stretch gap-6 lg:grid-cols-3">
           {PLANS.map((p) => {
             const offer = PREPAID.find((x) => x.plan === p.key);
@@ -199,6 +199,7 @@ export default function PricingPage() {
                 <ul className="mt-6 flex-1 space-y-2 text-sm text-[#c9d3df]">
                   <li>1 credit = 1 pin</li>
                   <li>Everything in the packs</li>
+                  <li>Renews monthly; unused credits roll over one month</li>
                   <li>White label: {usd(WHITE_LABEL.cents)} one-time setup</li>
                 </ul>
                 {live && offer && (
@@ -302,7 +303,7 @@ export default function PricingPage() {
             See your first pin on video <span className="mk-gold-text">for {usd(WELCOME.cents)}.</span>
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-[#9aa7b8]">
-            {live ? `No setup fee. ${PROMO.name} plan pricing ends ${PROMO.endsText}.` : 'No setup fee, no contract, and credits that never expire.'}
+            {live ? `No setup fee. ${PROMO.name} plan pricing ends ${PROMO.endsText}.` : 'No setup fee, no contract, and pack credits that never expire.'}
           </p>
           <AccessButton className="mk-btn-primary mt-8 inline-block rounded-xl px-8 py-4 text-lg font-semibold" />
           <p className="mt-4 text-sm text-[#9aa7b8]">

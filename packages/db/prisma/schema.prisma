@@ -415,6 +415,23 @@ model GbpSub {
   agentAddon     Boolean   @default(false)
 }
 
+/// A monthly credit plan as a subscription. `bucket`: the plan credits held right after the last
+/// renewal; `packFloor`: the rest of the balance at that moment; `grantAt`: when that was. What is
+/// left of the plan's credits is worked out from these (packages/core/creditPlan.ts).
+model CreditSub {
+  userId         String    @id
+  customerId     String
+  subscriptionId String?   @unique
+  plan           String
+  status         String    @default("none")
+  periodEnd      DateTime?
+  bucket         Int       @default(0)
+  packFloor      Int       @default(0)
+  grantAt        DateTime?
+  cancelAtEnd    Boolean   @default(false)
+  updatedAt      DateTime  @default(now())
+}
+
 /// A key an account gives its own AI agent to reach Stakeout (the MCP server at /api/mcp). Only the
 /// SHA-256 of the key is kept; the key itself is shown once, when it is made.
 model ApiKey {

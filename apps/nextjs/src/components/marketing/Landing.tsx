@@ -649,7 +649,7 @@ export default function Landing() {
               <Link href="/pricing" className="mk-btn-primary rounded-xl px-6 py-3.5 text-base font-semibold">Run your first scan for {usd(WELCOME.cents)} →</Link>
               <Link href="/demo" className="rounded-xl border border-[#2a3442] bg-[#0c1118] px-6 py-3.5 text-base font-semibold hover:border-[#3a4658]">Watch a recorded search</Link>
             </div>
-            <p className="mt-3 text-sm text-[#9aa7b8]">Credits never expire. Failed points are credited back.</p>
+            <p className="mt-3 text-sm text-[#9aa7b8]">Pack credits never expire. Failed points are credited back.</p>
             <ul className="mt-9 grid max-w-xl grid-cols-1 gap-x-6 gap-y-3 text-sm text-[#c9d3df] sm:grid-cols-2">
               {['Video receipt for every grid point', 'GPS set on the phone itself', 'Local residential and mobile networks', 'AI Overviews tracked · Ask Maps soon'].map((t) => (
                 <li key={t} className="flex items-center gap-2.5"><Check className="text-[#3ddc97]" />{t}</li>

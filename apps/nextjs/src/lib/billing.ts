@@ -3,6 +3,7 @@ import { stripe, stripeTestMode } from './stripe';
 import { InputError } from '@stakeout/core/grid';
 import { ONBOARDING, WELCOME, currentPlan, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
+import { activePlan } from './creditSub';
 
 /** Accounts created before this pricing took effect, and admins, go straight to the plans. */
 const PRICING_START = new Date('2026-11-12T00:00:00Z');
@@ -32,7 +33,9 @@ export async function catalogFor(user: { id: string; role: string; createdAt: Da
     onboardingOf([user]),
     db.paymentOrder.findMany({ where: { userId: user.id, captureId: { not: null }, refundedAt: null }, select: { item: true, credits: true, createdAt: true } }),
   ]);
-  return itemsFor({ onboarded: onboarding.get(user.id) !== 'no', admin: user.role === 'ADMIN', firstPurchase: paid.length === 0, plan: currentPlan(paid) });
+  // On a plan: a running subscription, or the three-month offer bought in the last 95 days.
+  const plan = (await activePlan(user.id))?.plan ?? currentPlan(paid);
+  return itemsFor({ onboarded: onboarding.get(user.id) !== 'no', admin: user.role === 'ADMIN', firstPurchase: paid.length === 0 && !plan, plan });
 }
 
 /**

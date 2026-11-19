@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GA_SOURCES, risingSearches, samePage, topSearches, type Competing, type EventRow, type ExploreRow, type GaSource, type Inspection } from '@stakeout/core/googleExplore';
 import { brandWord } from '@stakeout/core/gbpInsights';
 import { brandedQuery } from '@stakeout/core/upgradeTriggers';
@@ -82,6 +82,17 @@ function SearchConsole({ website, host, businessName, dates, wholeSite, onUnlock
     return () => { live = false; };
   }, [website, scope]);
   const flags = useMemo(() => new Map((phones?.offer ? phones.rows : []).map((r) => [r.query, r])), [phones]);
+  // The locked listing card's scan button opens the same offer, on the search this section would start with.
+  const topRef = useRef<{ query: string; why: string } | null>(null);
+  useEffect(() => {
+    const open = (e: Event) => {
+      if (!topRef.current) return;
+      (e as CustomEvent<{ handled: boolean }>).detail.handled = true;
+      setOffer(topRef.current);
+    };
+    window.addEventListener('stakeout:scan-offer', open);
+    return () => window.removeEventListener('stakeout:scan-offer', open);
+  }, []);
   const price = phones ? ((phones.balance ?? 0) >= 25 ? '25 credits' : phones.packCents ? '$' + phones.packCents / 100 : '') : '';
   const whyOf = (r: Phones['rows'][number]) => (phones?.fallback
     ? `On phones over the last 28 days your page was shown ${fmt(r.impressions)} times for this search${r.position !== null ? `, around position ${r.position}` : ''}.`
@@ -117,6 +128,9 @@ function SearchConsole({ website, host, businessName, dates, wholeSite, onUnlock
     open: (r: ExploreRow) => !brandedQuery(r.key, host, brand),
   };
   const count = (k: keyof typeof CHIPS) => queries.filter(CHIPS[k]).length;
+  // The search a first scan should start on: the one phones flag, else the most-shown one that is not the business's name.
+  const topQuery = phones?.rows[0]?.query ?? [...queries].filter((r) => !brandedQuery(r.key, host, brand)).sort((x, y) => y.b - x.b)[0]?.key ?? '';
+  topRef.current = topQuery ? { query: topQuery, why: phones?.rows[0] ? whyOf(phones.rows[0]) : 'Your site was shown for this search more than any other in the dates on screen.' } : null;
   const list = (view === 'rising' ? rising : queries).filter(CHIPS[chip]).filter((r) => !find.trim() || r.key.includes(find.trim().toLowerCase()));
   const shown = all || find.trim() ? list : list.slice(0, 15);
   const toggle = (k: string) => setPicked((x) => (x.includes(k) ? x.filter((y) => y !== k) : x.length < MAX_PICK ? [...x, k] : x));
@@ -168,7 +182,7 @@ function SearchConsole({ website, host, businessName, dates, wholeSite, onUnlock
             // Their own numbers, as a reason to look at the map: the search most worth scanning is the most-shown local one.
             const missed = d.recent.impressions - d.recent.clicks;
             const best = phones?.rows[0] ?? null;
-            const query = best?.query ?? queries.filter((r) => !brandedQuery(r.key, host, brand)).sort((x, y) => y.b - x.b)[0]?.key ?? '';
+            const query = topQuery;
             return (
               <div className="rounded-xl border border-emerald-500/50 bg-emerald-500/10 p-4">
                 <p className="text-lg font-bold leading-snug text-slate-50">{fmt(missed)} times in {d.range.days} days, your site was shown in Google and nobody clicked {host}.</p>

@@ -3,6 +3,7 @@ import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
 import { fulfill } from '@/lib/billing';
 import { activate, subscriptionEvent } from '@/lib/gbpBilling';
+import { settle } from '@/lib/creditSub';
 import { stripeSignatureValid } from '@/lib/stripe';
 
 export const dynamic = 'force-dynamic';
@@ -17,7 +18,15 @@ export async function POST(req: Request) {
     if (!secret) throw new InputError('Webhook is awaiting configuration.', 503);
     const raw = await req.text();
     if (!stripeSignatureValid(raw, req.headers.get('stripe-signature'), secret)) throw new InputError('Invalid webhook signature.', 401);
-    const e = JSON.parse(raw) as { type?: string; data?: { object?: { id?: string; mode?: string; metadata?: Record<string, string> } } };
+    const e = JSON.parse(raw) as { type?: string; data?: { object?: { id?: string; mode?: string; subscription?: unknown; parent?: { subscription_details?: { subscription?: unknown } }; metadata?: Record<string, string> } } };
+    // A monthly credit plan: its checkout, a renewal paid, a change or an ending. Each brings the plan in line with Stripe.
+    const o = e.data?.object;
+    const planSub =
+      (e.type === 'checkout.session.completed' || e.type === 'checkout.session.async_payment_succeeded') && o?.mode === 'subscription' && o.metadata?.kind === 'credits' ? o.subscription
+      : (e.type === 'customer.subscription.updated' || e.type === 'customer.subscription.deleted') && o?.metadata?.kind === 'credits' ? o.id
+      : e.type === 'invoice.paid' || e.type === 'invoice.payment_succeeded' ? o?.subscription ?? o?.parent?.subscription_details?.subscription
+      : null;
+    if (typeof planSub === 'string') await settle(planSub).catch((err) => { console.error('[credit-plan] webhook could not settle:', (err as Error).message); throw err; });
     if (e.type === 'checkout.session.completed' || e.type === 'checkout.session.async_payment_succeeded') {
       const id = e.data?.object?.id;
       // A Google listings subscription: the listings picked for it switch on.

@@ -32,11 +32,11 @@ export const PACKS: (PriceItem & { fits: string; featured?: boolean })[] = [
   { key: 'pack-300', name: 'Pro Pack', credits: 300, cents: 9900, blurb: 'One-time pack: 300 credits.', fits: 'A few clients, a few keywords each' },
 ];
 
-/** Bought each month; no contract. */
+/** Monthly subscriptions: renewed each month until cancelled. Unused credits roll over for one month. */
 export const PLANS: (PriceItem & { fits: string; featured?: boolean })[] = [
-  { key: 'starter', name: 'Starter', credits: 700, cents: 19700, blurb: 'Monthly plan: 700 credits.', fits: '1–2 clients, scanned weekly' },
-  { key: 'growth', name: 'Growth', credits: 1600, cents: 39700, blurb: 'Monthly plan: 1,600 credits.', fits: 'A typical agency: 5 clients, 3 keywords each, weekly', featured: true },
-  { key: 'agency', name: 'Agency', credits: 3500, cents: 69700, blurb: 'Monthly plan: 3,500 credits.', fits: '10 or more clients, or daily scans' },
+  { key: 'starter', name: 'Starter', credits: 700, cents: 19700, blurb: 'Monthly plan: 700 credits a month.', fits: '1–2 clients, scanned weekly' },
+  { key: 'growth', name: 'Growth', credits: 1600, cents: 39700, blurb: 'Monthly plan: 1,600 credits a month.', fits: 'A typical agency: 5 clients, 3 keywords each, weekly', featured: true },
+  { key: 'agency', name: 'Agency', credits: 3500, cents: 69700, blurb: 'Monthly plan: 3,500 credits a month.', fits: '10 or more clients, or daily scans' },
 ];
 
 /**

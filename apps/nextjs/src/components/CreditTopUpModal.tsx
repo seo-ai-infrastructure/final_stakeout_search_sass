@@ -7,7 +7,7 @@ const GROUPS: Record<string, string> = {
   welcome: 'Your first scan · one time',
   topup: 'More credits · at your plan’s price',
   pack: 'Credit packs · one time',
-  plan: 'Monthly plans · the lowest price per credit',
+  plan: 'Monthly plans · renew each month, cancel any time',
   offer: 'Black Friday · 3 months paid once',
   onboarding: 'Done for you · optional',
   test: 'Admin',
@@ -23,6 +23,9 @@ export function CreditTopUpModal(p: Props) {
   const [packs, setPacks] = useState<{ key: string; name: string; credits: number; cents: number; blurb: string }[]>([]),
     [pick, choose] = useState('pack-100'),
     [ready, setReady] = useState(true),
+    // The monthly plan this account's subscription is on, if it has one.
+    [plan, setPlan] = useState<{ plan: string; periodEnd: string | null; cancelAtEnd: boolean; status: string } | null>(null),
+    [note, setNote] = useState(''),
     [going, setGoing] = useState(false),
     [error, setError] = useState('');
   useEffect(() => {
@@ -34,6 +37,7 @@ export function CreditTopUpModal(p: Props) {
           const list: { key: string; name: string; credits: number; cents: number; blurb: string }[] = d.packs ?? [];
           setPacks(list);
           setReady(d.ready !== false);
+          setPlan(d.plan ?? null);
           choose((list.find((k) => k.key === 'welcome') ?? list.find((k) => k.key.startsWith('topup')) ?? list.find((k) => k.key === 'pack-100') ?? list[0])?.key ?? 'pack-100');
         })
         .catch(() => setError('Unable to load the price list.'));
@@ -50,6 +54,8 @@ export function CreditTopUpModal(p: Props) {
         body: JSON.stringify({ item: pick, returnTo: window.location.pathname }),
       });
       const d = await res.json();
+      // A change of plan on a running subscription needs no checkout: it applies from the next renewal.
+      if (res.ok && d.changed) { setNote(`Your plan changes to ${d.changed} at the next renewal: this month stays as it is.`); setPlan((x) => (x ? { ...x, plan: pick, cancelAtEnd: false } : x)); setGoing(false); return; }
       if (!res.ok || !d.url) throw new Error(d.error || 'Checkout could not start.');
       window.location.assign(d.url);
     } catch (e) {
@@ -59,6 +65,17 @@ export function CreditTopUpModal(p: Props) {
     }
   }
   const chosen = packs.find((k) => k.key === pick);
+  const isPlan = (key?: string) => groupOf(key) === 'plan';
+  const manage = async () => {
+    setError('');
+    try {
+      const res = await fetch('/api/billing/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ portal: true, returnTo: window.location.pathname }) });
+      const d = await res.json();
+      if (!res.ok || !d.url) throw new Error(d.error || 'Could not open it.');
+      window.location.assign(d.url);
+    } catch (e) { setError((e as Error).message); }
+  };
+  const planName = packs.find((k) => k.key === plan?.plan)?.name ?? plan?.plan;
   return (
     // The overlay scrolls: the price list is taller than a small screen.
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75">
@@ -78,6 +95,14 @@ export function CreditTopUpModal(p: Props) {
           One credit is one grid point.{' '}
           <a href="/pricing" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">Full price list</a>
         </p>
+        {plan && (
+          <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">
+            You are on the {planName} plan.{' '}
+            {plan.status === 'past_due' ? <span className="text-amber-200">The last payment failed: update your card.</span> : plan.periodEnd ? (plan.cancelAtEnd ? `It ends on ${new Date(plan.periodEnd).toLocaleDateString()}; unused plan credits lapse then.` : `It renews on ${new Date(plan.periodEnd).toLocaleDateString()}.`) : ''}{' '}
+            <button type="button" onClick={manage} className="font-semibold underline">Card, invoices and cancelling</button>
+          </p>
+        )}
+        {note && <p className="text-sm text-emerald-300">{note}</p>}
         {ready && packs.length > 0 ? (
           <>
             <div role="radiogroup" aria-label="What to buy" className="space-y-2">
@@ -92,10 +117,10 @@ export function CreditTopUpModal(p: Props) {
                   <input type="radio" name="pack" className="mt-1" checked={pick === k.key} onChange={() => choose(k.key)} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-baseline justify-between gap-3">
-                      <span className="font-semibold">{k.name}</span>
-                      <span className="shrink-0 font-bold">USD {(k.cents / 100).toFixed(2)}</span>
+                      <span className="font-semibold">{k.name}{plan?.plan === k.key && !plan.cancelAtEnd && <span className="ml-2 rounded-full border border-emerald-500/40 px-1.5 py-0.5 text-[10px] font-normal uppercase tracking-wide text-emerald-300">your plan</span>}</span>
+                      <span className="shrink-0 font-bold">USD {(k.cents / 100).toFixed(2)}{isPlan(k.key) && <span className="text-xs font-normal text-slate-400"> / month</span>}</span>
                     </span>
-                    <span className="block text-sm text-slate-400">{k.blurb} ${(k.cents / 100 / k.credits).toFixed(2)} per credit.</span>
+                    <span className="block text-sm text-slate-400">{k.blurb} ${(k.cents / 100 / k.credits).toFixed(2)} per credit.{isPlan(k.key) && ' Renews monthly; unused credits roll over one month.'}</span>
                   </span>
                 </label>
                 </Fragment>
@@ -104,10 +129,10 @@ export function CreditTopUpModal(p: Props) {
             <button
               type="button"
               onClick={pay}
-              disabled={going || !chosen}
+              disabled={going || !chosen || (isPlan(chosen?.key) && plan?.plan === chosen?.key && !plan?.cancelAtEnd)}
               className="min-h-[48px] w-full rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950 disabled:opacity-60"
             >
-              {going ? 'Opening secure checkout…' : chosen ? `Pay USD ${(chosen.cents / 100).toFixed(2)}` : 'Choose what to buy'}
+              {going ? 'Working…' : !chosen ? 'Choose what to buy' : isPlan(chosen.key) ? (plan ? (plan.plan === chosen.key && !plan.cancelAtEnd ? 'This is your plan' : `Change to ${chosen.name} from the next renewal`) : `Subscribe · USD ${(chosen.cents / 100).toFixed(2)} a month`) : `Pay USD ${(chosen.cents / 100).toFixed(2)}`}
             </button>
             <p className="text-center text-xs text-slate-500">Card payment on Stripe’s secure page. You come straight back here.</p>
           </>

@@ -2,11 +2,15 @@
 import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { db } from '@stakeout/db';
+import { settleIfDue } from '@/lib/creditSub';
 import { getSettings } from '@stakeout/core/settings';
 import { redis } from '@stakeout/core/redis';
 export async function GET() {
   try {
-    const user = await getAuthenticatedUser();
+    let user = await getAuthenticatedUser();
+    // A plan whose paid month has run out is brought up to date first, so the balance shown is the real one.
+    const due = await db.creditSub.findUnique({ where: { userId: user.id }, select: { subscriptionId: true, periodEnd: true } }).catch(() => null);
+    if (due?.subscriptionId && due.periodEnd && due.periodEnd.getTime() < Date.now()) { await settleIfDue(user.id); user = { ...user, creditBalance: (await db.user.findUnique({ where: { id: user.id }, select: { creditBalance: true } }))?.creditBalance ?? user.creditBalance }; }
     const recentLedger = await db.creditLedger.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
