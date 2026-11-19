@@ -326,6 +326,20 @@ export function upcomingHolidays(today: string): { name: string; date: string }[
   return out.filter((h) => h.date >= today && h.date <= until).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/**
+ * The next usual closing day within `within` days, and whether the listing has hours set for it
+ * (any holiday hours covering that date, closed or open). Null when none is coming up.
+ */
+export function nextHoliday(loc: GbpLocation, today: string, within = 45): { name: string; date: string; days: number; set: boolean } | null {
+  const h = upcomingHolidays(today)[0];
+  if (!h) return null;
+  const days = Math.round((Date.parse(h.date + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000);
+  if (days > within) return null;
+  const iso = (d?: { year?: number; month?: number; day?: number }) => (d?.year && d.month && d.day ? `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}` : '');
+  const set = (loc.specialHours?.specialHourPeriods ?? []).some((p) => { const a = iso(p.startDate), b = iso(p.endDate) || a; return Boolean(a) && a <= h.date && h.date <= b; });
+  return { ...h, days, set };
+}
+
 /** The highest risk among the changes. */
 export function worst(changes: FieldChange[]): Tier {
   return changes.some((c) => c.tier === 'red') ? 'red' : changes.some((c) => c.tier === 'amber') ? 'amber' : 'green';

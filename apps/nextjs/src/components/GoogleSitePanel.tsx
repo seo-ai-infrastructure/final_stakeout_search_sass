@@ -4,9 +4,11 @@ import { GA_SOURCES, risingRows, type EventRow, type ExploreRow, type GaSource }
 import GoogleExplorer from '@/components/GoogleExplorer';
 import { BarCell, Change, MiniChart, SectionHead, Segmented, Skeleton, Tile, alongside, card, fmt, shortDate } from '@/components/InsightBits';
 
-export type Dates = { days: number } | { from: string; to: string };
+export type Dates = ({ days: number } | { from: string; to: string }) & { /** Hold the range against the same days a year earlier instead of the days right before it. */ compare?: 'year' };
 type Status = { configured: boolean; connected: boolean; email: string | null; searchConsole: boolean; analytics: boolean };
-type Range = { recent: { from: string; to: string }; before: { from: string; to: string }; days: number };
+type Range = { recent: { from: string; to: string }; before: { from: string; to: string }; days: number; compare?: 'previous' | 'year' };
+const back = (r: Range) => (r.compare === 'year' ? 364 : r.days);
+const beforeName = (r: Range) => (r.compare === 'year' ? 'a year earlier' : 'the period before');
 type GscTotals = { clicks: number; impressions: number; ctr: number | null; position: number | null };
 type Gsc =
   | { property: null; properties: number }
@@ -83,7 +85,7 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
           </div>
           <div>
             <h4 className="mb-2 text-sm font-semibold">{metric === 'clicks' ? 'Clicks' : 'Times shown'} by day</h4>
-            <MiniChart points={alongside(d.days, d.daysBefore, d.range.days, (x) => x[metric])} name={metric === 'clicks' ? 'Clicks' : 'Times shown'} />
+            <MiniChart points={alongside(d.days, d.daysBefore, back(d.range), (x) => x[metric])} beforeName={beforeName(d.range)} name={metric === 'clicks' ? 'Clicks' : 'Times shown'} />
           </div>
 
           <div>
@@ -232,7 +234,7 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
 
           <div>
             <h4 className="mb-2 text-sm font-semibold">{metric === 'keyEvents' ? 'Key events' : 'Visits'} by day</h4>
-            <MiniChart points={alongside(d.days, d.daysBefore, d.range.days, (x) => x[metric])} name={metric === 'keyEvents' ? 'Key events' : 'Visits'} />
+            <MiniChart points={alongside(d.days, d.daysBefore, back(d.range), (x) => x[metric])} beforeName={beforeName(d.range)} name={metric === 'keyEvents' ? 'Key events' : 'Visits'} />
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">

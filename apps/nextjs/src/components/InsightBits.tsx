@@ -34,7 +34,7 @@ export function Spark({ values, tone = '#34d399' }: { values: number[]; tone?: s
  * is also the switch for the chart below it (`active` when it is the one charted), and `spark`
  * draws the number's shape over the period along its foot.
  */
-export function Tile({ label, value, was, lowerIsBetter, digits = 0, unit = '', big, note, compare = true, spark, active, onSelect }: { label: string; value: number | null; was?: number | null; lowerIsBetter?: boolean; digits?: number; unit?: string; big?: boolean; note?: ReactNode; compare?: boolean; spark?: number[]; active?: boolean; onSelect?: () => void }) {
+export function Tile({ label, value, was, lowerIsBetter, digits = 0, unit = '', big, note, extra, compare = true, spark, active, onSelect }: { label: string; value: number | null; was?: number | null; lowerIsBetter?: boolean; digits?: number; unit?: string; big?: boolean; note?: ReactNode; /** One more line under the change, such as a rate. */ extra?: ReactNode; compare?: boolean; spark?: number[]; active?: boolean; onSelect?: () => void }) {
   const body = (
     <>
       <p className="flex items-center gap-1.5 text-xs text-slate-400">{onSelect && <span className={'h-1.5 w-1.5 rounded-full ' + (active ? 'bg-emerald-400' : 'bg-slate-600')} aria-hidden />}{label}</p>
@@ -42,10 +42,11 @@ export function Tile({ label, value, was, lowerIsBetter, digits = 0, unit = '', 
       <p className="mt-0.5 min-h-4 text-xs text-slate-500">
         {compare && value !== null && was !== null && was !== undefined ? <><Change now={value} was={was} lowerIsBetter={lowerIsBetter} fresh="" /> <span>was {fmt(was, digits)}{unit}</span></> : note ?? ' '}
       </p>
-      {spark && <div className="mt-2"><Spark values={spark} tone={active || !onSelect ? '#34d399' : '#64748b'} /></div>}
+      {extra && <p className="mt-0.5 text-xs text-slate-400">{extra}</p>}
+      {spark && <div className="mt-auto pt-2"><Spark values={spark} tone={active || !onSelect ? '#34d399' : '#64748b'} /></div>}
     </>
   );
-  const box = 'rounded-lg border bg-slate-950 p-3 text-left ';
+  const box = 'flex h-full min-w-0 flex-col rounded-lg border bg-slate-950 p-3 text-left ';
   if (!onSelect) return <div className={box + (big ? 'border-slate-700' : 'border-slate-800')}>{body}</div>;
   return (
     <button type="button" aria-pressed={active} onClick={onSelect} title={'Chart ' + label.toLowerCase()} className={box + 'transition-colors ' + (active ? 'border-emerald-500/70 shadow-[inset_0_2px_0_0_rgb(52_211_153)]' : 'border-slate-800 hover:border-slate-600')}>
@@ -137,7 +138,7 @@ export type ChartPoint = { label: string; value: number; before?: number | null 
  * One measure over time: this period as a solid line, the period before (when given) as a dashed
  * one on the same scale. Move over it to read any point. `name` says what is being counted.
  */
-export function MiniChart({ points, name, height = 190, digits = 0 }: { points: ChartPoint[]; name: string; height?: number; digits?: number }) {
+export function MiniChart({ points, name, height = 190, digits = 0, beforeName = 'the period before' }: { points: ChartPoint[]; name: string; height?: number; digits?: number; /** What the dashed line is: "the period before" or "a year earlier". */ beforeName?: string }) {
   const [ref, width] = useWidth();
   const [at, setAt] = useState<number | null>(null);
   const hasBefore = points.some((p) => typeof p.before === 'number');
@@ -194,39 +195,120 @@ export function MiniChart({ points, name, height = 190, digits = 0 }: { points: 
           <div className="pointer-events-none absolute top-1 z-10 rounded-lg border border-slate-700 bg-slate-950/95 px-2.5 py-1.5 text-xs shadow-lg" style={geo.x(at) > width / 2 ? { right: width - geo.x(at) + 10 } : { left: geo.x(at) + 10 }}>
             <p className="text-slate-400">{p.label}</p>
             <p className="font-semibold tabular-nums text-slate-100">{fmt(p.value, digits)} <span className="font-normal text-slate-400">{name.toLowerCase()}</span></p>
-            {typeof p.before === 'number' && <p className="tabular-nums text-slate-400">{fmt(p.before, digits)} the period before</p>}
+            {typeof p.before === 'number' && <p className="tabular-nums text-slate-400">{fmt(p.before, digits)} {beforeName}</p>}
           </div>
         )}
       </div>
       {hasBefore && (
         <p className="mt-1 flex flex-wrap gap-x-4 text-[11px] text-slate-400">
           <span><span className="mr-1.5 inline-block h-0.5 w-5 translate-y-[-3px] bg-emerald-400" />This period</span>
-          <span><span className="mr-1.5 inline-block w-5 translate-y-[-3px] border-t-2 border-dashed border-slate-500" />The period before</span>
+          <span><span className="mr-1.5 inline-block w-5 translate-y-[-3px] border-t-2 border-dashed border-slate-500" />{beforeName[0].toUpperCase() + beforeName.slice(1)}</span>
         </p>
       )}
     </div>
   );
 }
 
-/** A thin bar split into named parts, each with its share. */
-export function SplitBar({ parts }: { parts: { label: string; value: number }[] }) {
+/** The colours of parts shown together, always in this order (checked to stay apart for colour-blind readers on the dark background). */
+export const SERIES = ['#059669', '#0284c7', '#d97706', '#8b5cf6'];
+
+/** A thin bar split into named parts, each with its share. `stack`: the list in one column, for a narrow place. */
+export function SplitBar({ parts, stack }: { parts: { label: string; value: number }[]; stack?: boolean }) {
   const total = parts.reduce((n, p) => n + p.value, 0);
   if (!total) return null;
-  const tones = ['bg-emerald-400', 'bg-sky-400', 'bg-amber-400', 'bg-violet-400'];
   return (
     <div>
       <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
-        {parts.map((p, i) => p.value > 0 && <div key={p.label} className={tones[i % tones.length]} style={{ width: (p.value / total) * 100 + '%' }} />)}
+        {parts.map((p, i) => p.value > 0 && <div key={p.label} style={{ width: (p.value / total) * 100 + '%', background: SERIES[i % SERIES.length] }} />)}
       </div>
-      <ul className="mt-2 grid gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
+      <ul className={'mt-2 grid gap-x-6 gap-y-1 text-xs ' + (stack ? '' : 'sm:grid-cols-2')}>
         {parts.map((p, i) => (
           <li key={p.label} className="flex items-baseline gap-2">
-            <span className={'h-2 w-2 shrink-0 rounded-sm ' + tones[i % tones.length]} aria-hidden />
+            <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: SERIES[i % SERIES.length] }} aria-hidden />
             <span className="min-w-0 flex-1 truncate text-slate-300">{p.label}</span>
             <span className="tabular-nums text-slate-200">{fmt(p.value)}</span>
             <span className="w-9 text-right tabular-nums text-slate-500">{Math.round((p.value / total) * 100)}%</span>
           </li>
         ))}
+      </ul>
+    </div>
+  );
+}
+
+export type StackSeries = { name: string; tone: string; values: number[] };
+
+/**
+ * Several counts over time, one on top of the other, so the height is their total and each band is
+ * one of them. Move over it to read any point. A legend names every band.
+ */
+export function StackChart({ labels, series, height = 190 }: { labels: string[]; series: StackSeries[]; height?: number }) {
+  const [ref, width] = useWidth();
+  const [at, setAt] = useState<number | null>(null);
+  const pad = { l: 44, r: 12, t: 10, b: 24 };
+  const n = labels.length;
+  const geo = useMemo(() => {
+    const sums = labels.map((_, i) => series.reduce((t, s) => t + (s.values[i] ?? 0), 0));
+    const max = niceMax(Math.max(1, ...sums));
+    const w = Math.max(0, width - pad.l - pad.r), h = height - pad.t - pad.b;
+    const x = (i: number) => pad.l + (n > 1 ? (i / (n - 1)) * w : w / 2);
+    const y = (v: number) => pad.t + h - (v / max) * h;
+    const base = labels.map(() => 0);
+    const bands = series.map((s) => {
+      const low = [...base];
+      s.values.forEach((v, i) => { base[i] += v ?? 0; });
+      const top = [...base];
+      const up = top.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+      const down = low.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).reverse();
+      return { ...s, area: [...up, ...down].join(' '), line: up.join(' '), top };
+    });
+    return { max, x, y, bands, sums };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [labels, series, width, height]);
+  if (!n || !series.length) return <p className="text-sm text-slate-400">Nothing to chart for these dates.</p>;
+
+  const move = (clientX: number) => {
+    const box = ref.current?.getBoundingClientRect();
+    if (!box) return;
+    const w = box.width - pad.l - pad.r;
+    setAt(Math.max(0, Math.min(n - 1, Math.round(((clientX - box.left - pad.l) / (w || 1)) * (n - 1)))));
+  };
+  const ticks = n <= 2 ? labels.map((_, i) => i) : [0, Math.floor((n - 1) / 2), n - 1];
+  const total = geo.sums.reduce((a, b) => a + b, 0);
+
+  return (
+    <div>
+      <div ref={ref} className="relative" style={{ height }} onMouseMove={(e) => move(e.clientX)} onMouseLeave={() => setAt(null)} onTouchStart={(e) => move(e.touches[0].clientX)} onTouchMove={(e) => move(e.touches[0].clientX)}>
+        {width > 0 && (
+          <svg width={width} height={height} role="img" aria-label={`${series.map((s) => s.name).join(', ')} over time: ${fmt(total)} in total, from ${labels[0]} to ${labels[n - 1]}`}>
+            {[0, 1, 2, 3].map((i) => {
+              const v = (geo.max / 3) * i;
+              return (
+                <g key={i}>
+                  <line x1={pad.l} x2={width - pad.r} y1={geo.y(v)} y2={geo.y(v)} stroke="#1e293b" strokeWidth="1" />
+                  <text x={pad.l - 8} y={geo.y(v) + 4} textAnchor="end" fontSize="11" fill="#64748b">{fmt(v, v % 1 ? 1 : 0)}</text>
+                </g>
+              );
+            })}
+            {ticks.map((i, k) => <text key={i} x={geo.x(i)} y={height - 6} textAnchor={k === 0 ? 'start' : k === ticks.length - 1 ? 'end' : 'middle'} fontSize="11" fill="#64748b">{labels[i]}</text>)}
+            {n > 1 && geo.bands.map((b) => <polygon key={b.name} points={b.area} fill={b.tone} opacity="0.85" />)}
+            {/* A line of the background between bands keeps them apart without relying on colour. */}
+            {n > 1 && geo.bands.map((b) => <polyline key={b.name} points={b.line} fill="none" stroke="#0f172a" strokeWidth="2" strokeLinejoin="round" />)}
+            {n === 1 && geo.bands.map((b) => <circle key={b.name} cx={geo.x(0)} cy={geo.y(b.top[0])} r="4" fill={b.tone} />)}
+            {at !== null && <line x1={geo.x(at)} x2={geo.x(at)} y1={pad.t} y2={height - pad.b} stroke="#94a3b8" strokeWidth="1" />}
+          </svg>
+        )}
+        {at !== null && width > 0 && (
+          <div className="pointer-events-none absolute top-1 z-10 min-w-36 rounded-lg border border-slate-700 bg-slate-950/95 px-2.5 py-1.5 text-xs shadow-lg" style={geo.x(at) > width / 2 ? { right: width - geo.x(at) + 10 } : { left: geo.x(at) + 10 }}>
+            <p className="text-slate-400">{labels[at]}</p>
+            {[...series].reverse().map((s) => (
+              <p key={s.name} className="flex items-baseline gap-1.5 tabular-nums text-slate-200"><span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: s.tone }} aria-hidden /><span className="flex-1 text-slate-400">{s.name}</span><span className="font-semibold">{fmt(s.values[at] ?? 0)}</span></p>
+            ))}
+            <p className="mt-0.5 flex justify-between border-t border-slate-800 pt-0.5 tabular-nums text-slate-100"><span className="text-slate-400">Total</span><span className="font-semibold">{fmt(geo.sums[at])}</span></p>
+          </div>
+        )}
+      </div>
+      <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+        {series.map((s) => <li key={s.name} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm" style={{ background: s.tone }} aria-hidden />{s.name} <span className="tabular-nums text-slate-300">{fmt(s.values.reduce((a, b) => a + b, 0))}</span></li>)}
       </ul>
     </div>
   );

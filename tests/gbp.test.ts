@@ -173,3 +173,12 @@ test('closely checked lines of business, and what Google strips from a descripti
   assert.deepEqual(descriptionWarnings('<b>Best</b> plumber'), ['HTML']);
   assert.deepEqual(descriptionWarnings('BEST PLUMBER LAKELAND EMERGENCY SERVICE CALL TODAY licensed insured'), ['a lot of capital letters']);
 });
+
+test('nextHoliday: the next closing day and whether hours are set for it', () => {
+  assert.deepEqual(nextHoliday({}, '2026-11-19'), { name: 'Thanksgiving', date: '2026-11-26', days: 7, set: false });
+  const loc = { specialHours: { specialHourPeriods: [{ startDate: { year: 2026, month: 11, day: 26 }, closed: true }] } };
+  assert.equal(nextHoliday(loc, '2026-11-19')?.set, true);
+  // Nothing within 45 days in midsummer.
+  assert.equal(nextHoliday({}, '2026-06-01'), null);
+});
+import { nextHoliday } from '../packages/core/gbp';

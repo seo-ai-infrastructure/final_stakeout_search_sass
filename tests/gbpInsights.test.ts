@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { brandWord, change, comparePeriods, latestSnapshot, scannable, topKeywords } from '../packages/core/gbpInsights';
+import { brandWord, change, comparePeriods, latestSnapshot, scannable, topKeywords , intentOf } from '../packages/core/gbpInsights';
 
 test('daily records add up into the last 30 days and the 30 before, wherever the numbers sit', () => {
   const day = (d: string, o: object) => ({ date: d, ...o });
@@ -178,4 +178,39 @@ test('every listing from its newest totals, busiest first', () => {
   assert.equal(t[1].rate, 6);
   assert.equal(t[2].rate, null);
   assert.deepEqual(listingTotals(null), []);
+});
+
+test('keywordTrends: a search under Google’s line last month is not new this month', () => {
+  const k = (keyword: string, impressions: number | null) => ({ keyword, impressions, impressions_threshold: impressions === null ? 15 : null });
+  const { rows } = keywordTrends([
+    { month: '2026-08', keywords: [k('roof repair', 40), k('gone and back', 22), k('fading', 30)] },
+    { month: '2026-09', keywords: [k('roof repair', 30), k('was low', null), k('fading', 20)] },
+    { month: '2026-10', keywords: [k('roof repair', 45), k('was low', 45), k('gone and back', 18), k('brand new', 12), k('fading', null)] },
+  ]);
+  const by = Object.fromEntries(rows.map((r) => [r.keyword, r]));
+  assert.deepEqual(by['roof repair'].move, { kind: 'change', pct: 50 });
+  // Fewer than 15 means 14 at most: 45 is up by 31 or more.
+  assert.deepEqual(by['was low'].move, { kind: 'atLeast', by: 31 });
+  assert.equal(by['was low'].gain, 31);
+  assert.deepEqual(by['gone and back'].move, { kind: 'back' });
+  assert.deepEqual(by['brand new'].move, { kind: 'new' });
+  assert.deepEqual(by['fading'].move, { kind: 'below', under: 15 });
+  assert.equal(by['fading'].gain, null);
+});
+
+test('intentOf: by name, job hunting, or a customer search', () => {
+  assert.equal(intentOf('gattoni botox', 'gattoni'), 'branded');
+  assert.equal(intentOf('security guard jobs', 'ranger'), 'noise');
+  assert.equal(intentOf('security guard salary', ''), 'noise');
+  assert.equal(intentOf('botox near me', 'gattoni'), 'money');
+});
+
+test('dailySeries: held against the same days a year earlier', () => {
+  const recs = [{ date: '2026-11-10', call_clicks: 5 }, { date: '2026-11-03', call_clicks: 9 }, { date: '2025-11-11', call_clicks: 2 }];
+  const s = dailySeries(recs, '2026-11-10', '2026-11-16', '2025-11-11');
+  assert.equal(s.totals.calls, 5);
+  assert.equal(s.before.calls, 2);
+  assert.equal(s.daysBefore, 1);
+  // Without it, the seven days before.
+  assert.equal(dailySeries(recs, '2026-11-10', '2026-11-16').before.calls, 9);
 });

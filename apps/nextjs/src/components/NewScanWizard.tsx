@@ -138,7 +138,7 @@ export function NewScanWizard() {
       const q = new URLSearchParams(window.location.search);
       const b = q.get('business') && list.find((x) => x.id === q.get('business'));
       if (b) return applyBusiness(b);
-      // From a Google profile's search terms (?name=…&kw=…&kw=…): the saved business of that name if
+      // From a Google profile's search terms (?name=…&kw=…&kw=…[&lat=&lng=&grid=]): the saved business of that name if
       // there is one, with those keywords added and picked. Without one, the keywords wait in the list
       // while the business is searched for as usual.
       const kws = [...new Set(q.getAll('kw').map((k) => k.trim().slice(0, 120)).filter(Boolean))].slice(0, 10);
@@ -150,7 +150,15 @@ export function NewScanWizard() {
         else {
           setKeywordList(kws);
           setPicked(kws);
+          // From a listing with a place on the map (&lat=&lng=): the scan starts there, under the listing's name.
+          const lat = Number(q.get('lat')), lng = Number(q.get('lng'));
+          if (q.get('lat') && q.get('lng') && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && (q.get('name') ?? '').trim()) {
+            setTargetBusiness((q.get('name') ?? '').trim().slice(0, 200));
+            setCenterLat(lat);
+            setCenterLng(lng);
+          }
         }
+        if (q.get('grid')) setGridSize(offeredSize(Number(q.get('grid'))));
         return;
       }
       const from = q.get('from');

@@ -13,8 +13,8 @@ const said = (e: unknown) => (e instanceof Error ? e.message : 'Not available.')
 const DAY = 86400000;
 
 /**
- * GET /api/admin/gbp/insights?profile=&location=&days= (or &from=&to=) (admins only): Google's own
- * numbers for the listing over a range and the same number of days before it, day by day (calls,
+ * GET /api/admin/gbp/insights?profile=&location=&days= (or &from=&to=) [&compare=year]: Google's own
+ * numbers for the listing over a range and the same number of days before it (or a year earlier), day by day (calls,
  * website clicks, direction requests, views by where they were, messages, bookings), and the
  * searches that showed it month by month across the months the range touches. Read-only. Each
  * half is fetched on its own, so a listing Google gives no keywords for still shows its numbers.
@@ -25,7 +25,7 @@ export async function GET(req: Request) {
     const t = await gate(q.get('profile'), q.get('location'), 'manage');
     // Google's listing numbers run about two days behind.
     // Google keeps 18 months of a listing's numbers, so that is how far back a connected listing can be read from day one.
-    const range = exploreRange({ days: q.get('days') ?? 30, from: q.get('from') ?? undefined, to: q.get('to') ?? undefined }, new Date(), 2, 18);
+    const range = exploreRange({ days: q.get('days') ?? 30, from: q.get('from') ?? undefined, to: q.get('to') ?? undefined, compare: q.get('compare') ?? undefined }, new Date(), 2, 18);
     if (typeof range === 'string') throw new InputError(range);
     const profile = '/api/profiles/' + encodeURIComponent(t.profile);
     // The range and the one before it, as far back as Google keeps (18 months). The service gives at
@@ -48,7 +48,7 @@ export async function GET(req: Request) {
       (async () => {
         const parts = await Promise.all(pieces.map((p) => postproxy<{ data?: { records?: Row[] } }>(profile + '/daily_stats', { query: { placement_id: t.location, from: p.from, to: p.to } })));
         const records = parts.flatMap((d) => d.data?.records ?? []);
-        const series = dailySeries(records, range.recent.from, range.recent.to);
+        const series = dailySeries(records, range.recent.from, range.recent.to, range.before.from);
         // The same days of the period before, for the dashed line on the chart (only when all of it was read).
         const previous = range.before.from >= from ? dailySeries(records, range.before.from, range.before.to).days : [];
         if (series.known.length) return { kind: 'daily' as const, ...series, previous };

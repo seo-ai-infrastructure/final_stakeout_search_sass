@@ -181,12 +181,14 @@ const zero = (date: string): Day => ({ date, ...(Object.fromEntries(DAILY.map((m
 /**
  * A listing's daily records for one range (`from` to `to`, inclusive) and the same number of days
  * before it. Every day of the range is present (zero when Google sent nothing), so a chart has no
- * holes. `known`: the things Google reported at all. `daysWithData`: so a range Google has only
+ * holes. `beforeFrom` holds it against another stretch instead. `known`: the things Google reported at all. `daysWithData`: so a range Google has only
  * half of is not read as a drop. Views is the four places added up when it is not given.
  */
-export function dailySeries(records: Row[], from: string, to: string) {
+export function dailySeries(records: Row[], from: string, to: string, beforeFrom?: string) {
   const start = Date.parse(from + 'T00:00:00Z'), end = Date.parse(to + 'T00:00:00Z');
   const n = Math.round((end - start) / 86400000) + 1;
+  // What the range is held against: the days right before it, or the same number of days from `beforeFrom` (a year earlier, say).
+  const bstart = beforeFrom ? Date.parse(beforeFrom + 'T00:00:00Z') : start - n * 86400000;
   const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
   const days: Day[] = Array.from({ length: n }, (_, i) => zero(iso(start + i * 86400000)));
   const totals = zero(''), before = zero('');
@@ -195,16 +197,19 @@ export function dailySeries(records: Row[], from: string, to: string) {
   for (const r of records) {
     const t = Date.parse(String(r.date ?? '') + 'T00:00:00Z');
     if (!Number.isFinite(t)) continue;
-    const i = Math.round((t - start) / 86400000);
-    if (i < -n || i >= n) continue;
+    const i = Math.round((t - start) / 86400000), j = Math.round((t - bstart) / 86400000);
+    const inNow = i >= 0 && i < n, inBefore = j >= 0 && j < n;
+    if (!inNow && !inBefore) continue;
     const got: Partial<Record<DailyKey, number>> = {};
     for (const m of DAILY) { const v = read(r, m.from); if (v !== null) got[m.key] = v; }
     if (got.views === undefined) { const parts = SURFACES.map((k) => got[k]).filter((x): x is number => x !== undefined); if (parts.length) got.views = parts.reduce((a, b) => a + b, 0); }
     if (!Object.keys(got).length) continue;
-    if (i >= 0) daysWithData++; else daysBefore++;
+    if (inNow) daysWithData++;
+    if (inBefore) daysBefore++;
     for (const [k, v] of Object.entries(got) as [DailyKey, number][]) {
       known.add(k);
-      if (i >= 0) { days[i][k] += v; totals[k] += v; } else before[k] += v;
+      if (inNow) { days[i][k] += v; totals[k] += v; }
+      if (inBefore) before[k] += v;
     }
   }
   const { date: _a, ...t } = totals, { date: _b, ...b } = before;
@@ -221,34 +226,63 @@ export function byWeek<T extends { date: string }>(days: T[], keys: (keyof T)[])
   return out;
 }
 
-export type KeywordTrend = { keyword: string; total: number; exact: boolean; latest: number | null; latestText: string; previous: number | null; previousText: string; gain: number | null; months: number; byMonth: (number | null)[] };
+/**
+ * How a search moved in the latest month against the one before. Google hides small counts ("fewer
+ * than 15"), so a search that was under the line last month is not new this month: it grew by at
+ * least the gap (`atLeast`). One missing last month but seen in earlier months is `back`. `below`:
+ * it had a real count and has dropped under the line.
+ */
+export type KeywordMove = { kind: 'change'; pct: number | null } | { kind: 'atLeast'; by: number } | { kind: 'back' } | { kind: 'new' } | { kind: 'below'; under: number } | { kind: 'none' };
+export type KeywordTrend = { keyword: string; total: number; exact: boolean; latest: number | null; latestText: string; previous: number | null; previousText: string; gain: number | null; months: number; byMonth: (number | null)[]; move: KeywordMove };
 
 /**
  * Each search that showed the listing, month by month across the months returned (oldest first).
  * `latest` and `previous` are the last two months (null: not shown that month, or Google only
- * said "fewer than N", which `latestText` keeps as "<N"). `gain` is latest minus previous when
- * both are real counts, and the whole latest count when the search is new this month.
+ * said "fewer than N", which `latestText` keeps as "<N"). `gain` is how much the latest month is
+ * up on the one before: the difference of two real counts, at least the gap when the month before
+ * was under Google's line, and the whole count when the search was not there at all.
  */
 export function keywordTrends(months: Month[]): { rows: KeywordTrend[]; months: string[] } {
   // A month Google has nothing for yet (the one still running) is left out, so the newest column is the newest month with figures.
   const order = [...months].filter((m) => (m.keywords ?? []).length > 0).sort((a, b) => a.month.localeCompare(b.month));
-  const by = new Map<string, KeywordTrend>();
+  type Seen = { last: number | null; lastLine: number | null; prev: number | null; prevLine: number | null; inLast: boolean; inPrev: boolean; earlier: boolean };
+  const by = new Map<string, KeywordTrend & Seen>();
   const said = (k: { impressions: number | null; impressions_threshold?: number | null }) => (k.impressions !== null ? String(k.impressions) : '<' + (k.impressions_threshold ?? 15));
   order.forEach((m, i) => {
     for (const k of m.keywords ?? []) {
       const key = k.keyword.trim().toLowerCase();
       if (!key) continue;
-      const row = by.get(key) ?? { keyword: key, total: 0, exact: false, latest: null, latestText: '', previous: null, previousText: '', gain: null, months: 0, byMonth: order.map(() => null) };
+      const row = by.get(key) ?? { keyword: key, total: 0, exact: false, latest: null, latestText: '', previous: null, previousText: '', gain: null, months: 0, byMonth: order.map(() => null), move: { kind: 'none' as const }, last: null, lastLine: null, prev: null, prevLine: null, inLast: false, inPrev: false, earlier: false };
       row.months++;
       if (k.impressions !== null) { row.total += k.impressions; row.exact = true; row.byMonth[i] = k.impressions; }
-      if (i === order.length - 1) { row.latest = k.impressions; row.latestText = said(k); }
-      if (i === order.length - 2) { row.previous = k.impressions; row.previousText = said(k); }
+      const line = k.impressions === null ? k.impressions_threshold ?? 15 : null;
+      if (i === order.length - 1) { row.latest = k.impressions; row.latestText = said(k); row.inLast = true; row.lastLine = line; }
+      else if (i === order.length - 2) { row.previous = k.impressions; row.previousText = said(k); row.inPrev = true; row.prevLine = line; }
+      else row.earlier = true;
       by.set(key, row);
     }
   });
-  const rows = [...by.values()].map((r) => ({ ...r, gain: r.latest === null ? null : order.length < 2 ? null : r.latest - (r.previous ?? 0) }))
+  const rows = [...by.values()].map(({ last: _l, lastLine, prev: _p, prevLine, inLast, inPrev, earlier, ...r }) => {
+    let move: KeywordMove = { kind: 'none' };
+    let gain: number | null = null;
+    if (order.length >= 2 && inLast) {
+      if (r.latest !== null) {
+        if (r.previous !== null) { gain = r.latest - r.previous; move = { kind: 'change', pct: change(r.latest, r.previous) }; }
+        else if (inPrev && prevLine !== null) { gain = Math.max(0, r.latest - (prevLine - 1)); move = gain > 0 ? { kind: 'atLeast', by: gain } : { kind: 'none' }; }
+        else { gain = r.latest; move = earlier ? { kind: 'back' } : { kind: 'new' }; }
+      } else if (r.previous !== null && lastLine !== null && r.previous >= lastLine) move = { kind: 'below', under: lastLine };
+    }
+    return { ...r, gain, move };
+  })
     .sort((a, b) => Number(b.exact) - Number(a.exact) || b.total - a.total || b.months - a.months || a.keyword.localeCompare(b.keyword));
   return { rows, months: order.map((m) => m.month) };
+}
+
+/** What a search is: for the business by name, job hunting and the like, or a customer looking for the service. */
+export type Intent = 'branded' | 'noise' | 'money';
+export function intentOf(keyword: string, brand: string): Intent {
+  if (brand && keyword.toLowerCase().split(/[^a-z0-9]+/).includes(brand)) return 'branded';
+  return scannable(keyword, brand) ? 'money' : 'noise';
 }
 
 /** The searches that grew most in the latest month against the one before (at least `min` more times shown). */

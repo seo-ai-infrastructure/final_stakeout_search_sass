@@ -5,13 +5,13 @@ import { exploreRange, gaFilters, gaRequest, gaRows, gaTotals, gscFilters, gscRe
 const today = new Date('2026-11-18T15:00:00Z');
 
 test('a range is read against the same number of days before it', () => {
-  assert.deepEqual(exploreRange({ days: 7 }, today, 3), { recent: { from: '2026-11-09', to: '2026-11-15' }, before: { from: '2026-11-02', to: '2026-11-08' }, days: 7 });
+  assert.deepEqual(exploreRange({ days: 7 }, today, 3), { recent: { from: '2026-11-09', to: '2026-11-15' }, before: { from: '2026-11-02', to: '2026-11-08' }, days: 7, compare: 'previous' });
   // Any sensible number of days is taken; anything else is 28 days.
   assert.equal((exploreRange({ days: 60 }, today, 1) as any).days, 60);
   for (const days of [0, -5, 'soon']) assert.equal((exploreRange({ days }, today, 1) as any).days, 28);
   // More than Google keeps is as far back as it goes (16 months).
   assert.equal((exploreRange({ days: 9999 }, today, 1) as any).days, 480);
-  assert.deepEqual(exploreRange({ from: '2026-10-01', to: '2026-10-31' }, today, 3), { recent: { from: '2026-10-01', to: '2026-10-31' }, before: { from: '2026-08-31', to: '2026-09-30' }, days: 31 });
+  assert.deepEqual(exploreRange({ from: '2026-10-01', to: '2026-10-31' }, today, 3), { recent: { from: '2026-10-01', to: '2026-10-31' }, before: { from: '2026-08-31', to: '2026-09-30' }, days: 31, compare: 'previous' });
   assert.match(exploreRange({ from: '2026-10-31', to: '2026-10-01' }, today, 3) as string, /before the start/);
   assert.match(exploreRange({ from: '2026-10-01' }, today, 3) as string, /both dates/);
   assert.match(exploreRange({ from: '2026-11-01', to: '2026-12-01' }, today, 3) as string, /future/);
@@ -111,4 +111,15 @@ test('events: key events and calls are kept, with the calls counted', () => {
   const req = gaEventsRequest({ from: '2026-10-01', to: '2026-10-31' }, { source: 'listing' }) as any;
   assert.deepEqual(req.dimensions, [{ name: 'eventName' }]);
   assert.equal(req.dimensionFilter.filter.stringFilter.value, 'gbp_listing');
+});
+
+test('exploreRange: against the same days a year earlier (52 weeks back)', () => {
+  const r = exploreRange({ days: 7, compare: 'year' }, new Date('2026-11-19T12:00:00Z'), 2, 18);
+  assert.ok(typeof r !== 'string');
+  if (typeof r === 'string') return;
+  assert.deepEqual(r.recent, { from: '2026-11-11', to: '2026-11-17' });
+  assert.deepEqual(r.before, { from: '2025-11-12', to: '2025-11-18' });
+  assert.equal(r.compare, 'year');
+  const p = exploreRange({ days: 7 }, new Date('2026-11-19T12:00:00Z'), 2, 18);
+  assert.ok(typeof p !== 'string' && p.compare === 'previous' && p.before.to === '2026-11-10');
 });

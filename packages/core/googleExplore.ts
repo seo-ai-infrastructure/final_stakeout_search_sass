@@ -20,7 +20,10 @@ export const PRESETS: { days: number; label: string }[] = [
  * from 1 to 480 is taken; anything else is 28. A custom
  * from/to wins over `days`. Search Console keeps 16 months, so nothing older is asked for.
  */
-export function exploreRange(o: { days?: unknown; from?: unknown; to?: unknown }, today: Date, lag: number, keptMonths = 16): { recent: Range; before: Range; days: number } | string {
+/** How far back "the same days last year" is: 52 weeks. */
+export const YEAR = 364;
+
+export function exploreRange(o: { days?: unknown; from?: unknown; to?: unknown; compare?: unknown }, today: Date, lag: number, keptMonths = 16): { recent: Range; before: Range; days: number; compare: 'previous' | 'year' } | string {
   const end = Date.parse(iso(today.getTime()) + 'T00:00:00Z') - lag * DAY;
   let from: number, to: number;
   if (isDate(o.from) && isDate(o.to)) {
@@ -36,7 +39,9 @@ export function exploreRange(o: { days?: unknown; from?: unknown; to?: unknown }
   }
   if (from < Date.parse(iso(today.getTime()) + 'T00:00:00Z') - keptMonths * 31 * DAY) return `Google keeps ${keptMonths} months of data: choose a later start date.`;
   const days = Math.round((to - from) / DAY) + 1;
-  return { recent: { from: iso(from), to: iso(to) }, before: { from: iso(from - days * DAY), to: iso(from - DAY) }, days };
+  // Against the same days a year earlier: 52 weeks back, so each day lines up with the same day of the week.
+  if (o.compare === 'year') return { recent: { from: iso(from), to: iso(to) }, before: { from: iso(from - YEAR * DAY), to: iso(to - YEAR * DAY) }, days, compare: 'year' };
+  return { recent: { from: iso(from), to: iso(to) }, before: { from: iso(from - days * DAY), to: iso(from - DAY) }, days, compare: 'previous' };
 }
 
 const clean = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
