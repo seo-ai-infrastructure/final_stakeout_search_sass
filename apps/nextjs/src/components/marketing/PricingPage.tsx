@@ -65,6 +65,24 @@ const VERSUS: [string, string, string][] = [
   ['A pin that fails', 'Varies', 'Credited back automatically'],
 ];
 
+/**
+ * What a 5 × 5 scan with AI tracking draws from a balance, line by line. The left side follows the published
+ * credit rules of a leading credit-based grid tracker (one credit per pin, per platform; a flat fee per AI
+ * analysis report), checked 18 November 2026. Re-check those rules before changing a number.
+ */
+const THEIR_RECEIPT: [string, string][] = [
+  ['Maps rank, 25 pins', '25'],
+  ['AI Overview scan, the same 25 pins again', '+25'],
+  ['AI analysis report for the scan', '+25'],
+];
+const OUR_RECEIPT: [string, string][] = [
+  ['Rank on a real phone, 25 pins', '25'],
+  ['AI Overview at every pin', 'included'],
+  ['Ads above your listing, counted and named', 'included'],
+  ['Screen recording and receipt for every pin', 'included'],
+  ['Checklist from the pages Google’s AI cited', 'included'],
+];
+
 const TRUST = ['No setup fee', 'Credits never expire', 'Failed pins credited back', 'No contract'];
 
 export default function PricingPage() {
@@ -240,6 +258,67 @@ export default function PricingPage() {
             </table>
           </div>
         </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
+        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#f5c451]">Read the receipt, not the credit count</p>
+        <h2 className="mk-display mx-auto mt-3 max-w-4xl text-center text-4xl font-bold leading-tight sm:text-5xl">
+          A Big Credit Number Is Not a Big Number of Scans. <span className="mk-gold-text">Here Is the Same 5 × 5, Itemised.</span>
+        </h2>
+        <p className="mx-auto mt-4 max-w-3xl text-center text-lg leading-relaxed text-[#c9d3df]">
+          Credit-based trackers sell thousands of credits at a fraction of a cent each. Then the scan you wanted draws credits once for the map, again for each AI platform, and again for the analysis. Our credit costs more. It is also the only charge.
+        </p>
+        <div className="mt-12 grid gap-6 lg:grid-cols-2">
+          <div className="rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-7">
+            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#9aa7b8]">A leading credit-based grid tracker</p>
+            <h3 className="mk-display mt-2 text-2xl font-semibold">One 5 × 5 scan, with AI</h3>
+            <dl className="mt-5 divide-y divide-[#1b2431]">
+              {THEIR_RECEIPT.map(([k, v]) => (
+                <div key={k} className="flex items-baseline justify-between gap-4 py-3.5">
+                  <dt className="text-[#c9d3df]">{k}</dt>
+                  <dd className="mk-mono shrink-0 font-semibold text-[#eef2f7]">{v}</dd>
+                </div>
+              ))}
+              <div className="flex items-baseline justify-between gap-4 py-4">
+                <dt className="font-semibold text-white">Credits drawn</dt>
+                <dd className="mk-display shrink-0 text-4xl font-bold text-[#ff6b6b]">75</dd>
+              </div>
+            </dl>
+            <ul className="mt-4 space-y-2 text-sm text-[#9aa7b8]">
+              <li>Three times the “one credit per pin” on the pricing page.</li>
+              <li>Each further AI platform scans the whole grid again.</li>
+              <li>On monthly plans, credits you don’t use are gone at the end of the month.</li>
+              <li>Review reports and listing alerts are billed separately.</li>
+            </ul>
+          </div>
+          <div className="rounded-2xl border border-[#f5c451]/40 bg-[#f5c451]/[0.06] p-7">
+            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Stakeout Search</p>
+            <h3 className="mk-display mt-2 text-2xl font-semibold">The same 5 × 5 scan</h3>
+            <dl className="mt-5 divide-y divide-[#f5c451]/15">
+              {OUR_RECEIPT.map(([k, v]) => (
+                <div key={k} className="flex items-baseline justify-between gap-4 py-3.5">
+                  <dt className="text-[#c9d3df]">{k}</dt>
+                  <dd className={'mk-mono shrink-0 font-semibold ' + (v === 'included' ? 'text-[#3ddc97]' : 'text-[#eef2f7]')}>{v}</dd>
+                </div>
+              ))}
+              <div className="flex items-baseline justify-between gap-4 py-4">
+                <dt className="font-semibold text-white">Credits drawn</dt>
+                <dd className="mk-display shrink-0 text-4xl font-bold text-[#f5c451]">25</dd>
+              </div>
+            </dl>
+            <ul className="mt-4 space-y-2 text-sm text-[#c9d3df]">
+              <li>One credit per pin. Nothing else is metered.</li>
+              <li>Credits never expire, on packs and plans alike.</li>
+              <li>A pin that fails is credited back automatically.</li>
+            </ul>
+          </div>
+        </div>
+        <p className="mx-auto mt-8 max-w-4xl rounded-2xl border border-[#2a3442] bg-[#0c1118] p-6 text-center text-lg leading-relaxed text-[#c9d3df]">
+          <b className="text-white">We know how this looks on a comparison chart.</b> Their credit is cheaper than ours, and we will not pretend otherwise. Ours sends a real phone to the pin and hands you the recording. We would rather show you the whole bill up front than win on a number that isn’t the bill.
+        </p>
+        <p className="mx-auto mt-4 max-w-3xl text-center text-xs text-[#6b7686]">
+          The left-hand figures follow the published credit rules of a leading credit-based grid tracker (one credit per pin, per platform, and a flat 25 credits per AI analysis report), checked on 18 November 2026. Other trackers meter differently; read the credit rules before you buy.
+        </p>
       </section>
 
       <section className="mx-auto max-w-5xl px-5 pt-16 sm:px-8">
