@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { allow, gate } from '@/lib/gbpAccess';
+import { db } from '@stakeout/db';
+import { allow, gate, paidLocations } from '@/lib/gbpAccess';
 import { postproxy } from '@/lib/postproxy';
 import { emptyDraft, postProblem, postRequest, readPost, type GbpPost, type PostDraft } from '@stakeout/core/gbpPosts';
 
@@ -23,6 +24,7 @@ function draftOf(v: unknown): PostDraft {
 export async function GET(req: Request) {
   try {
     const q = new URL(req.url).searchParams;
+    if (q.get('all') === '1') return NextResponse.json(await everyPost());
     const t = await gate(q.get('profile'), q.get('location'), 'manage');
     const posts: GbpPost[] = [];
     for (let page = 1; page <= 3; page++) {
@@ -40,6 +42,46 @@ export async function GET(req: Request) {
   } catch (e) {
     return errorResponse(e);
   }
+}
+
+/**
+ * Every listing's posts in one list, for the calendar across listings: all connected accounts for
+ * an admin; for a customer, the listings they have on a paid plan. Up to the newest 300 posts of
+ * each account. Each post says which account it belongs to.
+ */
+async function everyPost() {
+  const u = await getAuthenticatedUser();
+  let profiles: string[];
+  let allowed: Set<string> | null = null;
+  if (u.role === 'ADMIN') {
+    const all = await postproxy<{ data?: { id: string; platform: string }[] }>('/api/profiles');
+    profiles = (all.data ?? []).filter((p) => p.platform === 'google_business').map((p) => p.id);
+  } else {
+    allowed = new Set((await paidLocations(u.id)).keys());
+    const mine = await db.gbpAccount.findMany({ where: { userId: u.id, profileId: { not: null } }, select: { profileId: true } });
+    profiles = allowed.size ? mine.map((a) => String(a.profileId)) : [];
+  }
+  const posts: (GbpPost & { profile: string })[] = [];
+  const problems: string[] = [];
+  await Promise.all(
+    profiles.slice(0, 40).map(async (profile) => {
+      try {
+        for (let page = 1; page <= 3; page++) {
+          const r = await postproxy<{ data?: unknown[] }>('/api/posts', { query: { profile_id: profile, 'platforms[]': 'google_business', per_page: '100', page: String(page), include_media: 'true' } });
+          const rows = r.data ?? [];
+          for (const raw of rows) {
+            const p = readPost(raw);
+            if (p && (!allowed || allowed.has(p.location))) posts.push({ ...p, profile });
+          }
+          if (rows.length < 100) break;
+        }
+      } catch (e) {
+        problems.push(e instanceof Error ? e.message : 'Could not read an account’s posts.');
+      }
+    }),
+  );
+  posts.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  return { posts, problems: [...new Set(problems)].slice(0, 3) };
 }
 
 /** POST /api/admin/gbp/posts (admins only) { profile, location, draft }: publishes the post now, or schedules it. */

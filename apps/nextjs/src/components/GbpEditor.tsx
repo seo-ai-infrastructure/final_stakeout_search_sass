@@ -9,6 +9,7 @@ import GbpGaps from '@/components/GbpGaps';
 import GbpPlans, { UpgradeCard, connectGoogle } from '@/components/GbpPlans';
 import GbpAgents from '@/components/GbpAgents';
 import GbpOverview from '@/components/GbpOverview';
+import GbpAllCalendar from '@/components/GbpAllCalendar';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, descriptionWarnings, diff, highScrutiny, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
@@ -107,7 +108,7 @@ export default function GbpEditor() {
   const [pick, setPick] = useState<{ profile: string; location: string } | null>(null);
   const [notice, setNotice] = useState('');
   const [live, setLive] = useState<GbpLocation | null>(null);
-  const [tab, setTab] = useState<'listing' | 'reviews' | 'changes' | 'plan' | 'agents'>('listing');
+  const [tab, setTab] = useState<'listing' | 'calendar' | 'reviews' | 'changes' | 'plan' | 'agents'>('listing');
   // Admins: whether a 1–2 star review is emailed the moment it arrives.
   const [alerts, setAlerts] = useState<{ on: boolean; maxStars: number } | null>(null);
   // Admins reach every listing. A customer reads the accounts they connected and pays per listing to change one.
@@ -134,7 +135,7 @@ export default function GbpEditor() {
     // The result of a Google sign-in that just came back, shown once and then taken off the address.
     const q = new URLSearchParams(window.location.search);
     const r = q.get('google');
-    if (['changes', 'reviews', 'plan', 'agents'].includes(q.get('tab') ?? '')) setTab(q.get('tab') as 'changes' | 'reviews' | 'plan' | 'agents');
+    if (['calendar', 'changes', 'reviews', 'plan', 'agents'].includes(q.get('tab') ?? '')) setTab(q.get('tab') as 'calendar' | 'changes' | 'reviews' | 'plan' | 'agents');
     const g = q.get('gbp'), paid = q.get('plan');
     if (r) setNotice(GOOGLE_RESULT[r] ?? '');
     if (g) setNotice(CONNECT_RESULT[g] ?? '');
@@ -286,13 +287,14 @@ export default function GbpEditor() {
       )}
 
       {ready && profiles !== null && (profiles.length > 0 || !admin) && (
-        <div role="tablist" className="flex gap-1 border-b border-slate-800">
-          {(admin ? ([['listing', 'Listings'], ['reviews', 'Reviews'], ['changes', 'Changes'], ['agents', 'AI agents']] as const) : ([['listing', 'Listings'], ['changes', 'Changes'], ['agents', 'AI agents'], ['plan', 'Plan and billing']] as const)).map(([t, label]) => (
+        <div role="tablist" className="flex gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-800">
+          {(admin ? ([['listing', 'Listings'], ['calendar', 'Calendar'], ['reviews', 'Reviews'], ['changes', 'Changes'], ['agents', 'AI agents']] as const) : ([['listing', 'Listings'], ['calendar', 'Calendar'], ['changes', 'Changes'], ['agents', 'AI agents'], ['plan', 'Plan and billing']] as const)).map(([t, label]) => (
             <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={'-mb-px border-b-2 px-4 py-2 text-sm font-semibold ' + (tab === t ? 'border-emerald-500 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200')}>{label}{t === 'changes' && waiting > 0 && <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[11px] text-amber-300">{waiting}</span>}</button>
           ))}
         </div>
       )}
       {ready && tab === 'agents' && profiles !== null && <GbpAgents admin={admin} />}
+      {ready && tab === 'calendar' && profiles !== null && <GbpAllCalendar profiles={profiles} admin={admin} onOpen={(p) => { setPick(p); setChoosing(false); setView('posts'); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
       {ready && tab === 'reviews' && admin && alerts && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900 px-4 py-3 text-sm">
           <span className="text-slate-300">{alerts.on ? `Instant alerts are on: a review of ${alerts.maxStars} star${alerts.maxStars === 1 ? '' : 's'} or fewer is emailed within the hour it is left.` : `Instant alerts are off. Turn them on to be emailed when a review of ${alerts.maxStars} stars or fewer arrives.`}</span>
