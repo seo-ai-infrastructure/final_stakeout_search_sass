@@ -19,7 +19,7 @@ import {
 
 type Cat = { name: string; displayName?: string };
 type Profile = { id: string; name: string; status: string; problem: string | null; customer?: boolean; locations: { id: string; name: string; placeId: string | null; plan: string | null }[] };
-type Account = { id: string; profile: string | null; name: string | null; daysLeft?: number | null };
+type Account = { id: string; profile: string | null; name: string | null; daysLeft?: number | null; minutesLeft?: number | null };
 type Tab = 'website' | 'listing' | 'calendar' | 'reviews' | 'changes' | 'plan' | 'agents';
 type Edit = { id: string; tier: Tier; changes: FieldChange[]; status: string; error: string | null; checkedAt: string | null; createdAt: string };
 type Form = { openingDate: string; address: AddressForm; description: string; websiteUri: string; additionalCategories: Cat[]; additionalPhones: string; regularHours: DayHours[] | null; specialHours: SpecialDay[] | null; pastSpecial: number; title: string; primaryCategory: Cat | null; primaryPhone: string };
@@ -200,6 +200,7 @@ export default function GbpEditor() {
   const openName = pick ? profiles?.find((p) => p.id === pick.profile)?.locations.find((l) => l.id === pick.location)?.name ?? 'This listing' : '';
   // The soonest a connection with no paying listing will be removed.
   const daysLeft = accounts.map((a) => a.daysLeft).filter((d): d is number => typeof d === 'number').sort((a, b) => a - b)[0] ?? null;
+  const minutesLeft = accounts.map((a) => a.minutesLeft).filter((d): d is number => typeof d === 'number').sort((a, b) => a - b)[0] ?? null;
 
   const load = useCallback(async (p: { profile: string; location: string }) => {
     setLive(null); setForm(null); setError(''); setReview(false); setUnlocked(false);
@@ -338,11 +339,11 @@ export default function GbpEditor() {
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button type="button" onClick={connect} disabled={connecting} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{connecting ? 'Opening Google…' : 'Connect your Business Profile · $29 a month per location ($22 from 10)'}</button>
           </div>
-          <p className="mt-2 text-xs text-slate-500">You connect first so you can pick which listings to put on the plan, then pay. Nothing on Google changes. A connection with no listing on a plan is removed after 7 days.</p>
+          <p className="mt-2 text-xs text-slate-500">You connect first so you can pick which listings to put on the plan, then pay. Nothing on Google changes. A connection with no listing put on a plan within the hour is removed; connecting again takes a minute.</p>
         </div>
       )}
       {ready && tab === 'listing' && !admin && profiles !== null && profiles.length > 0 && !anyPaid && daysLeft !== null && (
-        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">Your Business Profile is connected. Put a listing on the Manage plan to see its numbers and work on it. {daysLeft > 0 ? `With no listing on a plan, the connection is removed in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : 'With no listing on a plan, the connection is removed today.'}</p>
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">Your Business Profile is connected. Put a listing on the Manage plan to see its numbers and work on it. {minutesLeft !== null && minutesLeft <= 120 ? (minutesLeft > 0 ? `With no listing on a plan, the connection is removed in about ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'}; connecting again takes a minute.` : 'With no listing on a plan, the connection is about to be removed.') : daysLeft > 0 ? `With no listing on a plan, the connection is removed in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : 'With no listing on a plan, the connection is removed today.'}</p>
       )}
       {picking && ready && !admin && profiles !== null && <GbpPicker profiles={profiles} onClose={() => setPicking(false)} onDone={(n) => { setPicking(false); setNotice(n); readProfiles(); }} />}
       {ready && tab === 'agents' && profiles !== null && <GbpAgents admin={admin} />}

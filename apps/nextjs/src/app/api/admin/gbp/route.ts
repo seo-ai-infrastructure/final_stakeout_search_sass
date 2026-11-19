@@ -5,6 +5,7 @@ import { getAuthenticatedUser } from '@/lib/auth';
 import { InputError } from '@stakeout/core/grid';
 import { gbpOpen, paidLocations } from '@/lib/gbpAccess';
 import { connectionPaid, unpaidClock } from '@stakeout/core/gbpPlans';
+import { sweepUnpaid } from '@/lib/gbpUnpaid';
 import { postproxy, postproxyConfigured } from '@/lib/postproxy';
 
 type Profile = { id: string; name: string; platform: string; status: string };
@@ -16,7 +17,9 @@ async function daysLeft(userId: string, a: { profileId: string | null; unpaidSin
     db.gbpSub.findUnique({ where: { userId }, select: { status: true } }),
   ]);
   const now = new Date();
-  return unpaidClock(connectionPaid(rows, sub?.status, now), a.unpaidSince, now).daysLeft;
+  const c = unpaidClock(connectionPaid(rows, sub?.status, now), a.unpaidSince, now, sub !== null);
+  // In days for an account that paid before; for one that never has, the minutes it has left as a fraction of a day would read as zero, so those are given too.
+  return { daysLeft: c.daysLeft, minutesLeft: c.minutesLeft };
 }
 type Placement = { id: string; name: string; metadata?: { place_id?: string } };
 
@@ -31,6 +34,8 @@ export async function GET() {
     const admin = u.role === 'ADMIN';
     if (!gbpOpen(u)) throw new InputError('Connected Accounts is not open on this account yet.', 403);
     if (!postproxyConfigured()) return NextResponse.json({ ready: false, admin, profiles: [], accounts: [] });
+    // A customer's own connection that has run out of time unpaid is removed before the page is drawn.
+    if (!admin) await sweepUnpaid(new Date(), u.id).catch(() => null);
     const accounts = await db.gbpAccount.findMany({ where: admin ? { profileId: { not: null } } : { userId: u.id }, orderBy: { createdAt: 'asc' } });
     const all = await postproxy<{ data: Profile[] }>('/api/profiles');
     const own = new Set(accounts.map((a) => a.profileId));
@@ -46,7 +51,7 @@ export async function GET() {
           return { id: p.id, name: p.name, status: p.status, customer: own.has(p.id), ...places };
         }),
     );
-    return NextResponse.json({ ready: true, admin, profiles, accounts: admin ? [] : await Promise.all(accounts.map(async (a) => ({ id: a.id, profile: a.profileId, name: a.name, daysLeft: await daysLeft(u.id, a) }))) });
+    return NextResponse.json({ ready: true, admin, profiles, accounts: admin ? [] : await Promise.all(accounts.map(async (a) => ({ id: a.id, profile: a.profileId, name: a.name, ...(await daysLeft(u.id, a)) }))) });
   } catch (e) {
     return errorResponse(e);
   }

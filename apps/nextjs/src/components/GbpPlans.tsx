@@ -152,7 +152,7 @@ export function GbpPicker({ profiles, onClose, onDone }: { profiles: Profile[]; 
                 {picked.size > 0 && <span className="text-xs text-slate-500">{dollars(unitCents('MANAGE', total))} each{have ? `, with the ${have} already on the plan` : ''}. {billing?.sub?.running ? 'The rest of this month is charged to your card now.' : 'You pay on the next page. Cancel any time.'}</span>}
               </div>
               {billing?.ready === false && <p className="text-xs text-amber-300">Checkout is being set up. Email sass@stakeoutsearch.com and we will sort it out.</p>}
-              <p className="text-xs text-slate-500">A connected account with no listing on a plan is removed after 7 days. Nothing changes on Google either way.</p>
+              <p className="text-xs text-slate-500">If no listing is put on a plan within the hour, the connection is removed; connecting again takes a minute. Nothing changes on Google either way.</p>
             </>
           )}
           {error && <p className="text-sm text-rose-300">{error}</p>}
@@ -295,7 +295,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           })}
           {accounts.filter((a) => a.profile).length === 0 && <li className="px-3 py-2.5 text-sm text-slate-400">No Google account connected yet.</li>}
         </ul>
-        <p className="mt-2 text-xs text-slate-500">A connected account with no listing on a plan is removed after 7 days; connecting again takes a minute. Disconnecting removes our access; nothing changes on Google.</p>
+        <p className="mt-2 text-xs text-slate-500">A newly connected account with no listing put on a plan within the hour is removed, and one whose plan has ended is removed after 7 days; connecting again takes a minute. Disconnecting removes our access; nothing changes on Google.</p>
       </div>
     </div>
   );

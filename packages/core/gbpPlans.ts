@@ -96,8 +96,14 @@ export function quantityPlan(rows: { plan: string; status: string }[], current: 
 
 export const dollars = (cents: number) => '$' + (cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2));
 
-/** How long a Google Business connection may go without a paying listing before it is disconnected. */
+/** How long a Google Business connection that once had a paying listing may go without one before it is disconnected. */
 export const UNPAID_DAYS = 7;
+/**
+ * How long a connection that has never been paid for is kept, in minutes: long enough to pick
+ * listings and get through checkout. Each connection costs us a seat with the connection service,
+ * so one made to look around is given back quickly.
+ */
+export const UNPAID_FIRST_MINUTES = 60;
 /** Subscription states that count as paying for this clock: a failed card (past_due) does not. */
 const SETTLED = new Set(['active', 'trialing']);
 
@@ -113,13 +119,15 @@ export function connectionPaid(rows: PlanRow[], subStatus: string | null | undef
 /**
  * What to do with a connection today. `unpaidSince` is when it last stopped having a paying
  * listing (null: it had one at the last look). Returns the new `unpaidSince`, and whether its
- * time is up.
+ * time is up. `everPaid`: the account has completed a checkout at some point.
  */
-export function unpaidClock(paid: boolean, unpaidSince: Date | null, now: Date): { unpaidSince: Date | null; disconnect: boolean; daysLeft: number | null } {
-  if (paid) return { unpaidSince: null, disconnect: false, daysLeft: null };
+export function unpaidClock(paid: boolean, unpaidSince: Date | null, now: Date, everPaid = true): { unpaidSince: Date | null; disconnect: boolean; daysLeft: number | null; minutesLeft: number | null } {
+  if (paid) return { unpaidSince: null, disconnect: false, daysLeft: null, minutesLeft: null };
   const since = unpaidSince ?? now;
-  const left = UNPAID_DAYS - (now.getTime() - since.getTime()) / 86400000;
-  return { unpaidSince: since, disconnect: left <= 0, daysLeft: Math.max(0, Math.ceil(left)) };
+  // An account that has never completed a checkout gets an hour; one that paid before gets the week.
+  const allowed = everPaid ? UNPAID_DAYS * 1440 : UNPAID_FIRST_MINUTES;
+  const left = allowed - (now.getTime() - since.getTime()) / 60000;
+  return { unpaidSince: since, disconnect: left <= 0, daysLeft: Math.max(0, Math.ceil(left / 1440)), minutesLeft: Math.max(0, Math.ceil(left)) };
 }
 
 /**

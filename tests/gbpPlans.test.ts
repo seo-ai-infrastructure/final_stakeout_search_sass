@@ -145,9 +145,9 @@ test('an unpaid connection gets seven days, and a failed card starts the clock',
   assert.equal(connectionPaid([row('ENDING', new Date('2026-11-01T00:00:00Z'))], 'canceled', now), false);
   assert.equal(connectionPaid([], null, now), false);
 
-  assert.deepEqual(unpaidClock(true, new Date('2026-11-01T00:00:00Z'), now), { unpaidSince: null, disconnect: false, daysLeft: null });
+  assert.deepEqual(unpaidClock(true, new Date('2026-11-01T00:00:00Z'), now), { unpaidSince: null, disconnect: false, daysLeft: null, minutesLeft: null });
   // Just stopped paying: the clock starts now.
-  assert.deepEqual(unpaidClock(false, null, now), { unpaidSince: now, disconnect: false, daysLeft: 7 });
+  assert.deepEqual(unpaidClock(false, null, now), { unpaidSince: now, disconnect: false, daysLeft: 7, minutesLeft: 10080 });
   assert.equal(unpaidClock(false, new Date('2026-11-14T12:00:00Z'), now).daysLeft, 2);
   assert.equal(unpaidClock(false, new Date('2026-11-12T12:00:00Z'), now).disconnect, true);
   assert.equal(unpaidClock(false, new Date('2026-11-12T12:00:01Z'), now).disconnect, false);
@@ -176,4 +176,12 @@ test('agent access comes with a listing on a plan; the add-on is for an account 
   assert.equal(addonOn({ agentAddon: true, status: 'canceled' }), false);
   assert.equal(addonOn({ agentAddon: false, status: 'active' }), false);
   assert.equal(addonOn(null), false);
+});
+
+test('a connection never paid for is given back after an hour', () => {
+  const now = new Date('2026-11-19T12:00:00Z'), ago = (min: number) => new Date(now.getTime() - min * 60000);
+  assert.deepEqual(unpaidClock(false, ago(20), now, false), { unpaidSince: ago(20), disconnect: false, daysLeft: 1, minutesLeft: 40 });
+  assert.equal(unpaidClock(false, ago(60), now, false).disconnect, true);
+  assert.equal(unpaidClock(false, ago(60), now, true).disconnect, false, 'an account that paid before keeps the week');
+  assert.equal(unpaidClock(true, ago(600), now, false).disconnect, false);
 });
