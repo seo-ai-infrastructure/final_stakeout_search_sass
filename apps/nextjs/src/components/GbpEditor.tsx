@@ -280,7 +280,6 @@ export default function GbpEditor() {
             <li><span className="text-emerald-400">Free:</span> the searches people found you with</li>
             <li><span className="text-emerald-400">Free:</span> Search Console and Analytics for the listing’s website</li>
             <li><span className="text-slate-400">Manage, from $29 a listing:</span> edits, posts, review replies, a change watchdog and competitor gaps</li>
-            <li><span className="text-slate-400">Agent, from $59 a listing:</span> all of that, done by your own AI agent</li>
           </ul>
           <button type="button" onClick={connect} disabled={connecting} className="mt-4 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{connecting ? 'Opening Google…' : 'Connect Google account'}</button>
         </div>

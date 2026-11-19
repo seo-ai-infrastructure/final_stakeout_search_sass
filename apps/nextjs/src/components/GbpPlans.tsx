@@ -8,6 +8,8 @@ type Account = { id: string; profile: string | null; name: string | null };
 type Row = { location: string; profile: string; title: string | null; plan: string; status: string; endsAt: string | null; on: boolean };
 type Billing = { ready: boolean; listings: Row[]; sub: { status: string; periodEnd: string | null; running: boolean } | null; counts: Record<Plan, number>; monthlyCents: number };
 
+// The plans a customer can buy today.
+const ON_SALE = (['MANAGE', 'AGENT'] as Plan[]).filter((p) => PLANS[p].available);
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
 const btn = 'rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40';
 const go = 'rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40';
@@ -129,7 +131,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           <table className="w-full min-w-[30rem] text-left text-sm">
             <thead className="text-xs text-slate-500"><tr><th className="py-1 pr-3 font-medium">Listings on the plan</th>{tiers.map((t, i) => <th key={i} className="px-2 py-1 text-right font-medium">{t.upTo === null ? `${(tiers[i - 1]?.upTo ?? 0) + 1}+` : `${(tiers[i - 1]?.upTo ?? 0) + 1}–${t.upTo}`}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-800">
-              {(['MANAGE', 'AGENT'] as Plan[]).map((p) => (
+              {ON_SALE.map((p) => (
                 <tr key={p}><td className="py-1.5 pr-3"><span className="font-semibold text-slate-200">{PLANS[p].name}</span> <span className="text-xs text-slate-500">{PLANS[p].blurb}</span></td>{PLANS[p].tiers.map((t, i) => <td key={i} className="px-2 py-1.5 text-right tabular-nums text-slate-200">{dollars(t.cents)}</td>)}</tr>
               ))}
             </tbody>
@@ -169,9 +171,9 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
         )}
         {all.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <div role="group" aria-label="Plan for the ticked listings" className="inline-flex overflow-hidden rounded-lg border border-slate-700 text-sm">
-              {(['MANAGE', 'AGENT'] as Plan[]).map((p) => <button key={p} type="button" aria-pressed={plan === p} onClick={() => { setPlan(p); setPicked(new Set()); }} className={'px-3 py-2 ' + (plan === p ? 'bg-slate-700 font-semibold text-white' : 'text-slate-400 hover:text-slate-200')}>{PLANS[p].name}</button>)}
-            </div>
+            {ON_SALE.length > 1 && <div role="group" aria-label="Plan for the ticked listings" className="inline-flex overflow-hidden rounded-lg border border-slate-700 text-sm">
+              {ON_SALE.map((p) => <button key={p} type="button" aria-pressed={plan === p} onClick={() => { setPlan(p); setPicked(new Set()); }} className={'px-3 py-2 ' + (plan === p ? 'bg-slate-700 font-semibold text-white' : 'text-slate-400 hover:text-slate-200')}>{PLANS[p].name}</button>)}
+            </div>}
             <button type="button" onClick={add} disabled={!picked.size || busy === 'add' || billing?.ready === false} className={go}>{busy === 'add' ? 'Working…' : picked.size ? `Put ${picked.size} on ${PLANS[plan].name}` : `Tick listings to put on ${PLANS[plan].name}`}</button>
             {picked.size > 0 && <span className="text-sm text-slate-400">Your month becomes <span className="font-semibold text-slate-200">{dollars(monthlyCents(next))}</span>. {billing?.sub?.running ? 'The difference for the rest of this month is charged to your card now.' : 'You pay on the next page.'}</span>}
           </div>

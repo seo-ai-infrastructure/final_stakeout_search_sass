@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { TOOLS, WRITES } from '@stakeout/core/agentTools';
+import { PLANS } from '@stakeout/core/gbpPlans';
 
 type Key = { id: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null };
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
@@ -41,7 +42,7 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
     <div className="space-y-5">
       <div className={card}>
         <h2 className="text-lg font-semibold">Connect your own AI agent</h2>
-        <p className="mt-2 text-sm text-slate-400">Stakeout speaks MCP, so an agent you already use (Claude Code, Cursor, or one you built) can read your scans and listings and do the everyday work on them. It signs in with a key from this page.{!admin && ' Scans work for every account. Listing tools work on listings on the Agent plan.'}</p>
+        <p className="mt-2 text-sm text-slate-400">Stakeout speaks MCP, so an agent you already use (Claude Code, Cursor, or one you built) can read your scans and listings and do the everyday work on them. It signs in with a key from this page.{!admin && (PLANS.AGENT.available ? ' Scans work for every account. Listing tools work on listings on the Agent plan.' : ' Today an agent can read and start your scans. Working on your Google listings through an agent is coming as an add-on.')}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <code className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-emerald-300">{url}</code>
           <button type="button" onClick={() => copy('url', url)} className={btn}>{copied === 'url' ? 'Copied' : 'Copy address'}</button>

@@ -22,7 +22,8 @@ export const PLANS: Record<Plan, { name: string; blurb: string; available: boole
   AGENT: {
     name: 'Agent',
     blurb: 'Everything in Manage, plus access for your own AI agents.',
-    available: true,
+    // Not on sale: agent access is to come back as one flat add-on for any number of listings.
+    available: false,
     lookupKey: 'stakeout_gbp_agent_v1',
     tiers: [{ upTo: 9, cents: 5900 }, { upTo: 24, cents: 4500 }, { upTo: 99, cents: 3300 }, { upTo: null, cents: 2500 }],
   },
