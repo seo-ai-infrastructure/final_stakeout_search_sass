@@ -6,6 +6,7 @@ import { DEMO, type RealPin, type ScanKey, pct, scanStats, shareReportUrl } from
 import './demographic-demo.css';
 import DemoSalesSections, { SPRINT_URL } from './DemoSalesSections';
 import RealScanFindings from './RealScanFindings';
+import TrackerCompare from './TrackerCompare';
 
 type MapMode = 'combined' | 'rank' | 'ai' | 'ads';
 type View = { mode: MapMode; tab: 'overview' | 'evidence' };
@@ -54,6 +55,7 @@ export default function RealReportDemo() {
       <p className="demo-report-hint">This is the actual client report, not a mockup. Switch the map between Combined, Pack rank, AI place and Ads above, turn on the income layer, and open any point for its recording.</p>
       <GeoGridDashboard key={scan.shareToken + mode + tab} identifier={scan.shareToken} shared initialMapMode={mode} initialTab={tab} initialPin={tab === 'evidence' ? proof.pinId : null} />
     </div>
+    <TrackerCompare />
     <RealScanFindings scanKey={scanKey} />
     <DemoSalesSections />
   </main>;

@@ -200,3 +200,23 @@
 .demo-report-note a { color: #8fdbed; }
 @media (max-width: 1050px) { .demo-finding-cards, .demo-feature-picks { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .demo-finding-cards, .demo-feature-picks { grid-template-columns: 1fr; } }
+.demo-versus { margin: 44px 0 10px; }
+.demo-versus-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
+.demo-versus figure { margin: 0; padding: 22px; border: 1px solid var(--demo-rule); border-radius: 8px; background: #132a2c; display: grid; gap: 18px; align-content: start; }
+.demo-versus figure:last-child { border-color: #63836a; background: #020617; }
+.demo-versus figcaption strong { display: block; font-size: 44px; line-height: 1.05; font-weight: 600; letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.demo-versus figcaption strong small { font-size: 15px; letter-spacing: 0; font-weight: 400; color: var(--demo-muted); margin-left: 8px; }
+.demo-versus figure:last-child figcaption strong { color: #b794ff; }
+.demo-versus figcaption > small { display: block; font-size: 12px; line-height: 1.6; color: var(--demo-muted); margin-top: 8px; min-height: 58px; }
+.demo-versus-grid { display: grid; gap: 6px; max-width: 420px; width: 100%; margin: 0 auto; }
+.demo-versus-grid span { aspect-ratio: 1; display: grid; place-items: center; border-radius: 50%; font-size: 12px; font-weight: 600; color: #132426; font-variant-numeric: tabular-nums; }
+.demo-versus [data-tone="top"] { background: #6ce2ac; }
+.demo-versus [data-tone="mid"] { background: #f1d27b; }
+.demo-versus [data-tone="low"] { background: #e2684f; color: #fff; }
+.demo-versus [data-tone="ai"] { background: #8b5cf6; color: #fff; }
+.demo-versus [data-tone="miss"] { background: #e11d48; color: #fff; }
+.demo-versus-key { font-size: 11px; color: var(--demo-muted); margin: 14px 0 0; display: flex; flex-wrap: wrap; gap: 6px 4px; align-items: center; }
+.demo-versus-key span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 4px 0 12px; }
+.demo-versus-key span:first-child { margin-left: 0; }
+.demo-versus-take { margin: 18px 0 0; padding: 16px 20px; border-left: 3px solid #b794ff; background: #173134; font-size: 14px; line-height: 1.65; }
+@media (max-width: 860px) { .demo-versus-pair { grid-template-columns: 1fr; } .demo-versus figcaption > small { min-height: 0; } }

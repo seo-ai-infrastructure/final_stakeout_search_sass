@@ -59,3 +59,17 @@ export function scanStats(scan: RealScan) {
   };
 }
 export const pct = (part: number, whole: number) => (whole ? Math.round((100 * part) / whole) : 0);
+
+/**
+ * Ranks a leading rank-grid tool reported for the same keyword and business on the same 7×7 points,
+ * row by row from the north-west corner. Transcribed from the tool's map; re-check against the source before editing.
+ */
+export const TRACKER_GRID: number[][] = [
+  [13, 12, 11, 9, 9, 8, 5],
+  [10, 8, 7, 8, 6, 4, 4],
+  [12, 8, 7, 5, 5, 4, 1],
+  [11, 7, 4, 3, 2, 2, 1],
+  [10, 5, 4, 2, 1, 1, 1],
+  [11, 8, 5, 3, 1, 1, 1],
+  [11, 7, 4, 3, 1, 1, 1],
+];
