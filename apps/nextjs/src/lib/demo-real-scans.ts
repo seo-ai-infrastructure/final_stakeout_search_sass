@@ -31,6 +31,7 @@ export const DEMO = {
   } as Record<ScanKey, RealScan>,
 };
 
+export const proofVideoUrl = (scan: RealScan, pin: RealPin) => `/api/proof/${pin.pinId}?kind=video&share=${scan.shareToken}`;
 export const shareReportUrl = (scan: RealScan) => `/share/${scan.shareToken}`;
 const DIRECTORIES = /(^|\.)(google|yelp|thumbtack|angi|bbb|facebook|nextdoor)\./;
 

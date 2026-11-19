@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { GeoGridDashboard } from '@/components/GeoGridDashboard';
 import { SiteFooter, SiteHeader } from '@/components/marketing/SiteChrome';
 import '@/components/marketing/marketing.css';
+import PinCompare from './PinCompare';
+import { RetentionCalculator, RetentionToggle, SoloSlots } from './RetentionProof';
 import { DEMO, TRACKER_GRID, type RealPin, type ScanKey, pct, scanStats, shareReportUrl } from '@/lib/demo-real-scans';
 
 // The Done-For-You sprint offer lives on the agency page (/agency).
@@ -37,6 +39,8 @@ export default function RealReportDemo() {
   const theirTop3 = theirs.filter(r => r <= 3).length, theirLow = theirs.length - theirTop3;
   const lowButNamed = gridPins.filter(p => TRACKER_GRID[p.row][p.col] > 3 && p.aiCited).length;
   const noListNamed = gridPins.filter(p => !p.pack && p.aiCited).length;
+  const gridVisible = gridPins.filter(p => p.rank != null || p.aiCited).length;
+  const gridSolo = gridPins.filter(p => !p.pack && p.solo).length, gridNoLocal = grid.singleBusiness - gridSolo;
 
   // Proof points: every figure is counted from the Top 25 scan's own pins.
   const t25 = DEMO.scans.top25, visible = t25.pins.filter(p => p.rank != null || p.aiCited).length;
@@ -118,16 +122,19 @@ export default function RealReportDemo() {
               </figure>
               <figure className="flex flex-col rounded-2xl border border-[#f5c451]/40 bg-[#f5c451]/[0.05] p-6">
                 <p className={EYEBROW + ' text-[#f5c451]'}>Stakeout · a real phone at each point</p>
-                <p className="mk-display mt-2 text-5xl font-bold text-[#f5c451]">{pct(grid.named, grid.n)}% <span className="text-lg font-semibold text-[#c9d3df]">named by Google’s AI</span></p>
-                <p className="mt-2 text-[#c9d3df] lg:min-h-[72px]">A local list appeared at only {grid.n - grid.singleBusiness} points. At the other {grid.singleBusiness}, Google showed one business under an AI answer, and that answer named {DEMO.business} at {noListNamed} of them.</p>
+                <p className="mk-display mt-2 text-5xl font-bold text-[#f5c451]">{pct(gridVisible, grid.n)}% <span className="text-lg font-semibold text-[#c9d3df]">visible: {gridVisible} of {grid.n} points</span></p>
+                <p className="mt-2 text-[#c9d3df] lg:min-h-[72px]">In the local results or named in Google’s AI answer at every point but {grid.n - gridVisible === 1 ? 'one' : grid.n - gridVisible}. A map pack appeared at only {grid.n - grid.singleBusiness} points. At {gridSolo} Google showed a single business{gridNoLocal > 0 ? `, at ${gridNoLocal} no local results at all` : ''}, and its AI answer named {DEMO.business} at {noListNamed} of those {grid.singleBusiness}.</p>
                 <img src={IMG + 'stakeout-combined-7x7.jpg'} alt="Stakeout’s combined map for the same 49 points: local rank where a list was shown, AI Overview placement where it was not" loading="lazy" className={SHOT + ' my-auto'} />
               </figure>
             </div>
             <p className="mx-auto mt-8 max-w-4xl rounded-2xl border border-[#2a3442] bg-[#0c1118] p-6 text-lg leading-relaxed text-[#c9d3df]"><b className="text-white">What that means for a client report:</b> the rank grid put {DEMO.business} outside the top 3 at {theirLow} points. Google’s AI answer was recommending the business by name at {lowButNamed} of those {theirLow}. One tool says the west side of town is lost. The phones say it is being won in a place the rank grid cannot see.</p>
+            <PinCompare />
           </div>
         </section>
 
-        <section className="mx-auto max-w-7xl space-y-24 px-5 py-24 sm:px-8">
+        <RetentionToggle />
+
+        <section className="mx-auto max-w-7xl space-y-24 border-t border-[#1b2431] px-5 py-24 sm:px-8">
           {features.map((f, i) => (
             <div key={f.tag} className={'grid items-center gap-10 ' + (i % 2 ? 'lg:grid-cols-[1.5fr_1fr]' : 'lg:grid-cols-[1fr_1.5fr]')}>
               <div className={i % 2 ? 'lg:order-2' : ''}>
@@ -201,12 +208,15 @@ export default function RealReportDemo() {
               </div>
             ))}
           </div>
+          <SoloSlots />
         </section>
+
+        <RetentionCalculator cta={SPRINT_URL} />
 
         <section className="border-t border-[#1b2431] bg-[#080b10]">
           <div className="mx-auto max-w-4xl px-5 py-20 text-center sm:px-8">
-            <h2 className="mk-display text-4xl font-bold leading-tight sm:text-5xl">Want This Report for Your Market, <span className="mk-gold-text">With Live Phone Receipts?</span></h2>
-            <p className="mx-auto mt-4 max-w-2xl text-[#9aa7b8]">Find out what mobile searchers see in the neighborhoods you most want to serve, then bring the gaps and the evidence into a focused 30-day visibility sprint.</p>
+            <h2 className="mk-display text-4xl font-bold leading-tight sm:text-5xl">Stop Defending Colored Dots. <span className="mk-gold-text">Start Showing Video Receipts.</span></h2>
+            <p className="mx-auto mt-4 max-w-2xl text-[#9aa7b8]">Get this report for your market: what mobile searchers see in the neighborhoods you most want to serve, with a recording behind every point, brought into a focused 30-day visibility sprint.</p>
             <Link href={SPRINT_URL} className="mk-btn-primary mt-8 inline-block rounded-xl px-8 py-4 text-lg font-semibold">Apply for 1 of 12 DFY Sprint Spots ($297/mo) →</Link>
             <p className="mt-4 text-sm text-[#9aa7b8]">Or <Link href="/login?mode=register" className="text-[#7aa7ff] hover:underline">run live grids on your own account</Link>.</p>
           </div>
