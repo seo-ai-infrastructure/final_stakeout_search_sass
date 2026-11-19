@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allows, dollars, monthlyCents, planNow, quantityPlan, stripeTiers, unitCents } from '../packages/core/gbpPlans';
+import { allows, dollars, monthlyCents, planNow, quantityPlan, stripeTiers, unitCents, settlePending, tierNudge } from '../packages/core/gbpPlans';
 
 test('one listing costs less the more listings an account pays for', () => {
   assert.equal(unitCents('MANAGE', 1), 2900);
@@ -151,4 +151,17 @@ test('an unpaid connection gets seven days, and a failed card starts the clock',
   assert.equal(unpaidClock(false, new Date('2026-11-14T12:00:00Z'), now).daysLeft, 2);
   assert.equal(unpaidClock(false, new Date('2026-11-12T12:00:00Z'), now).disconnect, true);
   assert.equal(unpaidClock(false, new Date('2026-11-12T12:00:01Z'), now).disconnect, false);
+});
+
+test('just under a bracket, the nudge to reach it', () => {
+  assert.deepEqual(tierNudge('MANAGE', 8), { count: 10, cents: 22000, each: 2200, more: 2 });
+  assert.deepEqual(tierNudge('MANAGE', 9), { count: 10, cents: 22000, each: 2200, more: 1 });
+  assert.equal(tierNudge('MANAGE', 7), null, '7 at $29 is $203: ten would cost more');
+  assert.deepEqual(tierNudge('MANAGE', 20), { count: 25, cents: 40000, each: 1600, more: 5 });
+  assert.equal(tierNudge('MANAGE', 18), null);
+  assert.equal(tierNudge('MANAGE', 150), null);
+  assert.equal(tierNudge('MANAGE', 0), null);
+  assert.equal(settlePending(10, 8, 2), 'activate');
+  assert.equal(settlePending(8, 8, 2), 'drop');
+  assert.equal(settlePending(8, 8, 0), 'none');
 });

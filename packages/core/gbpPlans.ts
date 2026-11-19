@@ -111,3 +111,29 @@ export function unpaidClock(paid: boolean, unpaidSince: Date | null, now: Date):
   const left = UNPAID_DAYS - (now.getTime() - since.getTime()) / 86400000;
   return { unpaidSince: since, disconnect: left <= 0, daysLeft: Math.max(0, Math.ceil(left)) };
 }
+
+/**
+ * When a few more listings would cost the same or less: the whole count is charged at its
+ * bracket's price, so just under a bracket the month is dearer than at it (9 at $29 is $261; 10 at
+ * $22 is $220). The count to reach and what the month then costs, or null when there is no saving.
+ */
+export function tierNudge(plan: Plan, count: number): { count: number; cents: number; each: number; more: number } | null {
+  if (count < 1) return null;
+  const now = count * unitCents(plan, count);
+  const tiers = PLANS[plan].tiers;
+  const i = tiers.findIndex((t) => t.upTo === null || count <= t.upTo);
+  const upTo = tiers[i]?.upTo;
+  if (upTo === null || upTo === undefined) return null;
+  const next = upTo + 1, cents = next * unitCents(plan, next);
+  return cents <= now ? { count: next, cents, each: unitCents(plan, next), more: next - count } : null;
+}
+
+/**
+ * After Stripe reports on a subscription: what to do with listings still waiting for a payment to
+ * clear. Once the subscription holds enough seats for them they switch on; if it does not (the
+ * payment lapsed), they are dropped.
+ */
+export function settlePending(seats: number, active: number, pending: number): 'activate' | 'drop' | 'none' {
+  if (pending < 1) return 'none';
+  return seats >= active + pending ? 'activate' : 'drop';
+}

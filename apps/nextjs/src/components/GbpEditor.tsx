@@ -7,7 +7,7 @@ import GbpEditTop, { type ExtrasLite } from '@/components/GbpEditTop';
 import GbpPosts from '@/components/GbpPosts';
 import GbpExtras from '@/components/GbpExtras';
 import GbpGaps from '@/components/GbpGaps';
-import GbpPlans, { UpgradeCard, connectGoogle } from '@/components/GbpPlans';
+import GbpPlans, { GbpPicker, UpgradeCard, connectGoogle } from '@/components/GbpPlans';
 import GbpAgents from '@/components/GbpAgents';
 import GbpOverview from '@/components/GbpOverview';
 import GbpAllCalendar from '@/components/GbpAllCalendar';
@@ -134,6 +134,8 @@ export default function GbpEditor() {
   const [choosing, setChoosing] = useState(true);
   // Raised when the gaps panel changes the listing, so the panels below read it again.
   const [rev, setRev] = useState(0);
+  // Straight after a Google account is connected: the listings found in it, to choose which to pay for.
+  const [picking, setPicking] = useState(false);
   // What the listing has by way of services, attributes and links, for the gaps at the top of the editor.
   const [extras, setExtras] = useState<ExtrasLite | null>(null);
   const [edits, setEdits] = useState<Edit[]>([]);
@@ -154,7 +156,7 @@ export default function GbpEditor() {
     if (['website', 'listing', 'calendar', 'changes', 'reviews', 'plan', 'agents'].includes(q.get('tab') ?? '')) go(q.get('tab') as Tab);
     const g = q.get('gbp'), paid = q.get('plan');
     if (r) { setNotice(GOOGLE_RESULT[r] ?? ''); go('website'); }
-    if (g) { setNotice(CONNECT_RESULT[g] ?? ''); go('listing'); }
+    if (g) { setNotice(CONNECT_RESULT[g] ?? ''); go('listing'); if (g === 'connected') setPicking(true); }
     if (paid === 'cancelled') setNotice('Checkout was cancelled. Nothing was charged.');
     else if (paid) {
       // Back from Stripe: the listings switch on now (Stripe's own message does the same if this tab is closed first).
@@ -338,6 +340,7 @@ export default function GbpEditor() {
       {ready && tab === 'listing' && !admin && profiles !== null && profiles.length > 0 && !anyPaid && daysLeft !== null && (
         <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">Your Business Profile is connected. Put a listing on the Manage plan to see its numbers and work on it. {daysLeft > 0 ? `With no listing on a plan, the connection is removed in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : 'With no listing on a plan, the connection is removed today.'}</p>
       )}
+      {picking && ready && !admin && profiles !== null && <GbpPicker profiles={profiles} onClose={() => setPicking(false)} onDone={(n) => { setPicking(false); setNotice(n); readProfiles(); }} />}
       {ready && tab === 'agents' && profiles !== null && <GbpAgents admin={admin} />}
       {ready && tab === 'calendar' && profiles !== null && <GbpAllCalendar profiles={profiles} admin={admin} onOpen={(p) => { setPick(p); setChoosing(false); setView('posts'); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
       {ready && tab === 'reviews' && admin && alerts && (

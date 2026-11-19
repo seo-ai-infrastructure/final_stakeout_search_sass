@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { pushAlert } from '@stakeout/core/alerts';
-import { PLANS, dollars, isPlan, monthlyCents, planNow, quantityPlan, stripeTiers, type Plan } from '@stakeout/core/gbpPlans';
+import { PLANS, dollars, isPlan, monthlyCents, planNow, quantityPlan, settlePending, stripeTiers, type Plan } from '@stakeout/core/gbpPlans';
 import { stripe, stripeTestMode } from '@/lib/stripe';
 import { postproxy } from '@/lib/postproxy';
 import { flushAlerts } from '@/lib/alerts';
@@ -14,7 +14,7 @@ import { flushAlerts } from '@/lib/alerts';
  * and the listing keeps working until the month that was paid for ends.
  */
 type Item = { id: string; quantity?: number; current_period_end?: number; price?: { id: string; lookup_key?: string | null } };
-type Sub = { id: string; status: string; customer: string; cancel_at_period_end?: boolean; current_period_end?: number; items?: { data?: Item[] }; metadata?: Record<string, string> };
+type Sub = { id: string; status: string; customer: string; /** A change held back until its payment clears. */ pending_update?: unknown | null; latest_invoice?: { hosted_invoice_url?: string | null } | string | null; cancel_at_period_end?: boolean; current_period_end?: number; items?: { data?: Item[] }; metadata?: Record<string, string> };
 type Session = { id: string; url?: string; mode?: string; status?: string; payment_status?: string; client_reference_id?: string; customer?: string | null; subscription?: string | null; metadata?: Record<string, string> };
 export type Pick = { profile: string; location: string; plan: Plan };
 
@@ -72,11 +72,13 @@ export async function applySub(s: Sub, userId?: string) {
 
 /**
  * Makes the subscription match the listings that are ACTIVE. `charge`: bill the rest of the month
- * for what was added now; if the card refuses, nothing changes and the refusal is thrown.
+ * for what was added now. Stripe holds the change back until that payment clears: when the card
+ * needs the customer (their bank asks for a confirmation), the answer is `{ pay }`, the page where
+ * they finish it, and the seats are not on the subscription yet. A card refused outright is thrown.
  */
-async function syncStripe(userId: string, charge: boolean) {
+async function syncStripe(userId: string, charge: boolean): Promise<{ pay?: string | null }> {
   const mine = await db.gbpSub.findUnique({ where: { userId } });
-  if (!mine?.subscriptionId) return;
+  if (!mine?.subscriptionId) return {};
   const [s, rows] = await Promise.all([readSub(mine.subscriptionId), db.gbpPlan.findMany({ where: { userId }, select: { plan: true, status: true } })]);
   const items = s.items?.data ?? [];
   const current: Partial<Record<Plan, number>> = {};
@@ -85,9 +87,9 @@ async function syncStripe(userId: string, charge: boolean) {
   if (q.empty) {
     // Nothing left on a plan: the subscription runs out at the end of the month already paid for.
     if (!s.cancel_at_period_end) await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { cancel_at_period_end: true }), userId);
-    return;
+    return {};
   }
-  if (q.same && !s.cancel_at_period_end) return;
+  if (q.same && !s.cancel_at_period_end) return {};
   const price = await prices();
   const change: Record<string, unknown>[] = [];
   for (const p of Object.keys(PLANS) as Plan[]) {
@@ -96,13 +98,17 @@ async function syncStripe(userId: string, charge: boolean) {
     else if (q.want[p] > 0) change.push({ price: price[p], quantity: q.want[p] });
   }
   const bill = charge && q.grows;
-  const next = await stripe<Sub>(
-    '/subscriptions/' + s.id,
-    'POST',
-    { items: change, cancel_at_period_end: false, proration_behavior: bill ? 'always_invoice' : 'none', ...(bill ? { payment_behavior: 'error_if_incomplete' } : {}) },
-    randomUUID(),
-  );
+  if (!bill) {
+    await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { items: change, cancel_at_period_end: false, proration_behavior: 'none' }, randomUUID()), userId);
+    return {};
+  }
+  // A change that waits on its payment may only carry the seats and how they are charged, so a
+  // subscription that was set to end is first set to carry on.
+  if (s.cancel_at_period_end) await stripe<Sub>('/subscriptions/' + s.id, 'POST', { cancel_at_period_end: false });
+  const next = await stripe<Sub>('/subscriptions/' + s.id, 'POST', { items: change, proration_behavior: 'always_invoice', payment_behavior: 'pending_if_incomplete', expand: ['latest_invoice'] }, randomUUID());
   await applySub(next, userId);
+  if (!next.pending_update) return {};
+  return { pay: typeof next.latest_invoice === 'object' ? next.latest_invoice?.hosted_invoice_url ?? null : null };
 }
 
 /** A customer's listings in one of their connected Google accounts, by location: its name, checked before anything is sold for it. */
@@ -118,7 +124,7 @@ async function listingNames(userId: string, profile: string): Promise<Map<string
  * of the month is charged to the card on file; without one, the answer is the address of Stripe's
  * checkout page and the listings switch on when it is paid.
  */
-export async function addListings(u: { id: string; email: string; role: string }, picks: Pick[], origin: string): Promise<{ url?: string; done?: boolean }> {
+export async function addListings(u: { id: string; email: string; role: string }, picks: Pick[], origin: string): Promise<{ url?: string; done?: boolean; /** The bank wants the customer to confirm the charge: the page where they do, and the listings wait until then. */ pay?: string | null }> {
   if (u.role === 'ADMIN') throw new InputError('Admin accounts have every listing unlocked.');
   if (!picks.length || picks.length > 200) throw new InputError('Pick the listings to upgrade.');
   for (const p of picks) if (!isPlan(p.plan) || !PLANS[p.plan].available) throw new InputError('That plan is not available yet.');
@@ -142,7 +148,13 @@ export async function addListings(u: { id: string; email: string; role: string }
   }
   if (running) {
     try {
-      await syncStripe(u.id, charge);
+      const r = await syncStripe(u.id, charge);
+      if (r.pay !== undefined) {
+        // Not paid yet: the listings added now wait (ones that were already on a plan stay as they were).
+        const waiting = picks.filter((p) => { const b = before.find((x) => x.locationId === p.location); return !(b && b.status === 'ACTIVE' && b.plan === p.plan) && !paidAlready(p); });
+        await db.gbpPlan.updateMany({ where: { userId: u.id, locationId: { in: waiting.map((p) => p.location) } }, data: { status: 'PENDING' } });
+        return { pay: r.pay };
+      }
     } catch (e) {
       // The card refused, or Stripe did not answer: the listings go back to how they were.
       for (const p of picks) {
@@ -236,7 +248,17 @@ export async function portalUrl(userId: string, origin: string) {
 /** Stripe says a subscription changed or ended (a renewal, a failed card, a cancellation in its portal). */
 export async function subscriptionEvent(id: string) {
   const s = await readSub(id).catch(() => null);
-  if (s) await applySub(s);
+  if (!s) return;
+  const owner = await applySub(s);
+  // Listings that were waiting on a payment: on once the subscription holds their seats, dropped if it lapsed.
+  if (!owner || ENDED.has(s.status) || s.pending_update) return;
+  const rows = await db.gbpPlan.findMany({ where: { userId: owner }, select: { plan: true, status: true } });
+  for (const p of Object.keys(PLANS) as Plan[]) {
+    const seats = (s.items?.data ?? []).filter((i) => planOfItem(i) === p).reduce((n, i) => n + (i.quantity ?? 0), 0);
+    const what = settlePending(seats, rows.filter((r) => r.plan === p && r.status === 'ACTIVE').length, rows.filter((r) => r.plan === p && r.status === 'PENDING').length);
+    if (what === 'activate') await db.gbpPlan.updateMany({ where: { userId: owner, plan: p, status: 'PENDING' }, data: { status: 'ACTIVE' } });
+    if (what === 'drop') await db.gbpPlan.deleteMany({ where: { userId: owner, plan: p, status: 'PENDING' } });
+  }
 }
 
 /** What an account pays for: its listings, its subscription and the month's total. Listings whose paid month has run out are dropped. */
