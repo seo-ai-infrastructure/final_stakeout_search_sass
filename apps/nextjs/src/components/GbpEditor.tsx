@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import GbpInsights from '@/components/GbpInsights';
 import GoogleSitePanel from '@/components/GoogleSitePanel';
+import GbpReviews from '@/components/GbpReviews';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, diff, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
@@ -93,6 +94,7 @@ export default function GbpEditor() {
   const [find, setFind] = useState('');
   const [notice, setNotice] = useState('');
   const [live, setLive] = useState<GbpLocation | null>(null);
+  const [tab, setTab] = useState<'listing' | 'reviews'>('listing');
   const [edits, setEdits] = useState<Edit[]>([]);
   const [form, setForm] = useState<Form | null>(null);
   const [unlocked, setUnlocked] = useState(false);
@@ -212,7 +214,18 @@ export default function GbpEditor() {
       {notice && <p className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">{notice}</p>}
       {error && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p>}
 
-      {ready && (
+      {ready && profiles !== null && profiles.length > 0 && (
+        <div role="tablist" className="flex gap-1 border-b border-slate-800">
+          {([['listing', 'Listings'], ['reviews', 'Reviews']] as const).map(([t, label]) => (
+            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={'-mb-px border-b-2 px-4 py-2 text-sm font-semibold ' + (tab === t ? 'border-emerald-500 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200')}>{label}</button>
+          ))}
+        </div>
+      )}
+      {ready && tab === 'reviews' && profiles !== null && profiles.length > 0 && (
+        <GbpReviews profiles={profiles} only={pick} onOpenListing={(p) => { setPick(p); setTab('listing'); window.scrollTo({ top: 0 }); }} />
+      )}
+
+      {ready && tab === 'listing' && (
         <div className={card}>
           <label className="text-sm font-semibold">Location</label>
           {profiles === null ? <p className="mt-2 text-sm text-slate-400">Loading connected accounts…</p> : profiles.length === 0 ? (
@@ -246,9 +259,9 @@ export default function GbpEditor() {
         </div>
       )}
 
-      {pick && !form && !error && <p className="text-sm text-slate-400">Reading the profile from Google…</p>}
+      {tab === 'listing' && pick && !form && !error && <p className="text-sm text-slate-400">Reading the profile from Google…</p>}
 
-      {form && live && pick && (
+      {tab === 'listing' && form && live && pick && (
         <>
           <div className={card}>
             <div className="flex flex-wrap items-baseline justify-between gap-2">

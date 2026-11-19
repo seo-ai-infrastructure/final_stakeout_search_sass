@@ -21,7 +21,7 @@ export function postproxyProblem(status: number, body: unknown, retryAfter: stri
 
 export async function postproxy<T = unknown>(
   path: string,
-  o: { method?: 'GET' | 'PATCH' | 'POST'; query?: Record<string, string | undefined>; body?: unknown } = {},
+  o: { method?: 'GET' | 'PATCH' | 'POST' | 'DELETE'; query?: Record<string, string | undefined>; body?: unknown } = {},
 ): Promise<T> {
   const key = process.env.POSTPROXY_API_KEY;
   if (!key) throw new InputError('Postproxy is not set up: add POSTPROXY_API_KEY on Vercel.', 503);
