@@ -2,7 +2,7 @@ import { flushAlerts } from '@/lib/alerts';
 import { wakeWorker } from '@stakeout/core/wake';
 import { randomUUID } from 'node:crypto';
 import { createScan } from '@stakeout/core/scans';
-import { parseSpec, market, buildGrid, placedPins, InputError, OFFERED_GRID_SIZES } from '@stakeout/core/grid';
+import { parseSpec, market, buildGrid, placedPins, InputError, OFFERED_GRID_SIZES, fixedCron } from '@stakeout/core/grid';
 import { skippedPoints } from '@stakeout/core/gridSizes';
 import { getSettings, ispAllowed } from '@stakeout/core/settings';
 import { targetableIspCodes } from '@stakeout/core/proxySeller';
@@ -65,7 +65,14 @@ export async function POST(req: Request) {
     const pins = placed ? placed.pins : skip.size ? buildGrid(s).filter((p) => !skip.has(p.rowIdx + '_' + p.colIdx)) : undefined;
     // The business's own website, when none was given: taken from what the account already has, so the report can tell when an AI answer cites it.
     if (!s.targetDomain) s.targetDomain = await knownSite(u.id, s.targetBusiness);
-    const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins);
+    // A repeating scan can be given its own time of day, in the business's time zone.
+    let cron: string | undefined;
+    if (body.scheduleAt !== undefined && body.scheduleAt !== null && body.scheduleAt !== '') {
+      const made = fixedCron(s.scheduleType, body.scheduleAt, body.scheduleTimezone, body.scheduleWeekday);
+      if (typeof made !== 'string') throw new InputError(made.problem);
+      cron = made;
+    }
+    const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins, { cron });
     await wakeWorker('new scan');
     // A customer just started a scan: if the worker has gone quiet, the admins hear about it now.
     await flushAlerts().catch(() => {});

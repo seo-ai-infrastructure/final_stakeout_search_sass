@@ -19,6 +19,9 @@ import { POST as explore } from '@/app/api/admin/google/explore/route';
 import { GET as site } from '@/app/api/admin/google/site/route';
 import { GET as scans } from '@/app/api/scans/route';
 import { POST as scanCreate } from '@/app/api/scans/create/route';
+import { POST as scanAction } from '@/app/api/scans/[scanId]/route';
+import { compareProblem, compareScans, type ComparedScan } from '@stakeout/core/scanCompare';
+import { scheduleText } from '@stakeout/core/grid';
 import { getListed } from '@stakeout/core/citeSites';
 import { needsReply, isLow, type Review } from '@stakeout/core/gbpReviews';
 import type { GbpChange } from '@stakeout/core/gbp';
@@ -63,11 +66,29 @@ const ROUTES: Record<string, Handler> = {
   'scan-create POST': scanCreate,
 };
 
-/** One scan, small enough for an agent to read: the rank at each point and who showed up most above the business. */
+/** A scan as the comparison takes it: its grid and, at each point, the rank and the first three businesses. */
+async function gridOf(user: ActingUser, id: string): Promise<ComparedScan> {
+  const scan = await db.gridScan.findFirst({ where: { id, ...(user.role === 'ADMIN' ? {} : { userId: user.id }) }, select: { id: true, keyword: true, targetBusiness: true, gridSize: true, spacingKm: true, centerLat: true, centerLng: true, targetType: true, createdAt: true } });
+  if (!scan) throw new InputError('Unknown scan: ' + id + '.', 404);
+  const pins = await db.gridPin.findMany({ where: { scanId: id }, orderBy: [{ rowIdx: 'asc' }, { colIdx: 'asc' }], select: { rowIdx: true, colIdx: true, status: true, rankFound: true, topCompetitors: true } });
+  return { id: scan.id, keyword: scan.keyword, business: scan.targetBusiness, gridSize: scan.gridSize, spacingKm: scan.spacingKm, centerLat: scan.centerLat, centerLng: scan.centerLng, targetType: scan.targetType, createdAt: scan.createdAt, pins: pins.map((p) => ({ row: p.rowIdx, col: p.colIdx, status: p.status, rank: p.rankFound, top3: (Array.isArray(p.topCompetitors) ? (p.topCompetitors as unknown[]) : []).filter((x): x is string => typeof x === 'string').slice(0, 3) })) };
+}
+
+/** Two scans of the same grid, point by point. */
+async function compare(user: ActingUser, b: { a: string; b: string; timezone: string }) {
+  const [x, y] = await Promise.all([gridOf(user, b.a), gridOf(user, b.b)]);
+  const problem = compareProblem(x, y);
+  if (problem) throw new InputError(problem);
+  let zone = b.timezone;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: zone }); } catch { zone = 'UTC'; }
+  return compareScans(x, y, zone);
+}
+
+/** One scan, small enough for an agent to read: the rank at each point and which other businesses are seen most among the first three. */
 async function scanSummary(user: ActingUser, id: string) {
   const scan = await db.gridScan.findFirst({
     where: { id, ...(user.role === 'ADMIN' ? {} : { userId: user.id }) },
-    select: { id: true, userId: true, targetType: true, keyword: true, targetBusiness: true, targetDomain: true, centerLat: true, centerLng: true, status: true, solv: true, gridSize: true, spacingKm: true, city: true, stateCode: true, totalPins: true, completedPins: true, failedPins: true, createdAt: true, trackAiOverviews: true },
+    select: { id: true, userId: true, targetType: true, scheduleType: true, scheduleCron: true, keyword: true, targetBusiness: true, targetDomain: true, centerLat: true, centerLng: true, status: true, solv: true, gridSize: true, spacingKm: true, city: true, stateCode: true, totalPins: true, completedPins: true, failedPins: true, createdAt: true, trackAiOverviews: true },
   });
   if (!scan) throw new InputError('Unknown scan.', 404);
   const pins = await db.gridPin.findMany({ where: { scanId: id }, orderBy: [{ rowIdx: 'asc' }, { colIdx: 'asc' }], select: { rowIdx: true, colIdx: true, city: true, status: true, rankFound: true, topCompetitors: true, hasAiOverview: true, targetCitedInAi: true, aiCitations: true } });
@@ -78,7 +99,8 @@ async function scanSummary(user: ActingUser, id: string) {
   const known = await keptRivals(rivals.slice(0, 3).map((r) => r.name), scan.centerLat, scan.centerLng).catch(() => ({}) as Awaited<ReturnType<typeof keptRivals>>);
   const answered = done.filter((p) => p.hasAiOverview);
   const maps = scan.targetType === 'mobile_maps';
-  const { userId: _owner, targetDomain: _site, targetType: _type, trackAiOverviews: _ai, centerLat: _lat, centerLng: _lng, ...shown } = scan;
+  const repeats = scheduleText(scan.scheduleType, scan.scheduleCron);
+  const { userId: _owner, targetDomain: _site, targetType: _type, trackAiOverviews: _ai, centerLat: _lat, centerLng: _lng, scheduleType: _kind, scheduleCron: _cron, ...shown } = scan;
   // A scan with no website of its own borrows the one from the account's other scans of the same business.
   const website = scan.targetDomain ?? (await siteFromScans(scan.userId, scan.targetBusiness).catch(() => null));
   const cited = getListed(done, website);
@@ -86,10 +108,11 @@ async function scanSummary(user: ActingUser, id: string) {
     ...shown,
     website,
     searchedIn: maps ? 'Google Maps app' : 'Google search in Chrome',
+    ...(repeats ? { repeats } : {}),
     points: pins.map((p) => ({ row: p.rowIdx, col: p.colIdx, city: p.city, status: p.status, rank: p.rankFound, ...(scan.trackAiOverviews ? { aiAnswer: p.hasAiOverview, citedInAi: p.targetCitedInAi } : {}) })),
     averageRank: ranked.length ? Math.round((ranked.reduce((n, p) => n + (p.rankFound ?? 0), 0) / ranked.length) * 10) / 10 : null,
     notFoundAt: done.length - ranked.length,
-    topRivals: rivals.map((r, i) => (i < 3 ? { ...r, ...(known[r.name] ?? { details: 'Not looked up yet: a person can open this scan’s rival comparison on the site to fetch them.' }) } : r)),
+    topRivals: rivals.map((r, i) => ({ name: r.name, inTopThreeAtPoints: r.points, ...(i < 3 ? known[r.name] ?? { details: 'Not looked up yet: a person can open this scan’s rival comparison on the site to fetch them.' } : {}) })),
     ...(maps ? { aiAnswers: 'Not applicable: this scan searched the Google Maps app, which shows no AI Overview. A scan in Google search (the default) always records them.' } : {}),
     ...(scan.trackAiOverviews ? { aiAnswers: { pointsWithAnAnswer: answered.length, pointsCitingTheBusiness: answered.filter((p) => p.targetCitedInAi).length, ownSiteCitedAt: cited.ownAnswers, mostCitedSites: [...cited.act, ...cited.others].sort((a, b) => b.answers - a.answers).slice(0, 10).map((c) => ({ site: c.site, name: c.name, answers: c.answers, share: c.share })) } } : {}),
   };
@@ -218,15 +241,30 @@ export async function runTool(user: ActingUser, name: string, args: Record<strin
     };
     if (call.route === 'scan') return scanSummary(user, String(call.query?.scanId));
     if (call.route === 'briefing') return trim(await briefing(user, invoke));
+    if (call.route === 'compare') return compare(user, call.body as { a: string; b: string; timezone: string });
+    if (call.route === 'scan-action') {
+      // Pausing or resuming goes through the site's own handler, which only acts on the account's own repeating scans.
+      const { scanId, action } = call.body as { scanId: string; action: string };
+      const res = await scanAction(new Request(origin + '/agent/scan-action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) }), { params: Promise.resolve({ scanId }) });
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new InputError(data?.error === 'Invalid schedule action.' ? 'This scan does not repeat, so it has no schedule to pause or resume.' : data?.error ?? 'That did not work.', res.status);
+      return { scanId, schedule: action === 'pause' ? 'paused' : 'running' };
+    }
     if (call.route === 'resolve') return resolveChange(invoke, call.body as { id: string; action: 'accept' | 'revert' });
     if (call.route === 'scan-create') {
       // An agent's scans count against the account's monthly limit; the credits go back if the scan does not start.
       const size = Number(call.body?.gridSize) || 5;
+      // A repeating scan keeps charging after this first run: one whose month of runs costs more than the agents' monthly limit is refused outright.
+      const runs = call.body?.scheduleType === 'daily' ? 31 : call.body?.scheduleType === 'weekly' ? 5 : 1;
+      if (runs > 1) {
+        const budget = await agentBudget(user.id);
+        if (size * size * runs > budget.cap) throw new InputError(`A ${size}×${size} scan every ${runs === 31 ? 'day' : 'week'} costs about ${size * size * runs} credits a month, more than the ${budget.cap} this account’s agents may spend. Choose a smaller grid or a weekly scan, or a person can raise the limit on the Connected Accounts page, under AI agents.`, 402);
+      }
       const back = await reserveAgentCredits(user.id, size * size);
       try {
         const made = await invoke<{ scanId: string; creditsCharged: number }>('scan-create', 'POST', { body: call.body });
         const b = await agentBudget(user.id).catch(() => null);
-        return { ...made, ...(b ? { agentCreditsLeftThisMonth: b.left } : {}) };
+        return { ...made, ...(runs > 1 ? { repeats: 'This scan runs now and then on its schedule. Each later run is charged to the account’s credits as it starts, and the schedule pauses itself if they run out. set_scan_schedule pauses it.' } : {}), ...(b ? { agentCreditsLeftThisMonth: b.left } : {}) };
       } catch (e) {
         await back();
         throw e;

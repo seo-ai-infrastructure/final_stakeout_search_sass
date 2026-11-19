@@ -122,21 +122,27 @@ export const TOOLS: Tool[] = [
   }, ['property']),
   tool('inspect_url', 'What Google’s own index says about one page: indexed or not and why, the address Google filed it under, when it last fetched it, and the rich results it found. The answer is kept for 24 hours.', { url: str('The page’s full address, with https://. Its website has to be in the connected Search Console.') }, ['url']),
   tool('website_properties', 'Which Search Console property and Analytics properties the connected Google login has for a website.', { website: str('The website address, with https://.') }, ['website']),
-  tool('list_scans', 'This account’s rank scans, newest first: keyword, business, status and share of local voice.'),
-  tool('get_scan', 'One scan: where the business ranked at each point of the grid; the three businesses most often above it, with their categories, rating and review count where known; and how often Google gave an AI answer, how often it cited the business or its website, and the sites it cited most. A scan run in the Google Maps app has no AI answers to record, and says so.', { scanId: str('The scan’s `id` from list_scans.') }, ['scanId']),
-  tool('start_scan', 'Starts a rank scan: a grid of points around a place, each searched in Google on a real phone. Google’s AI Overview is recorded at every point, at no extra cost. Costs one credit per point: 25 for the default 5×5. A larger grid is only run when gridSize is given, and every scan counts against the monthly credit limit the account sets for its agents.', {
+  tool('list_scans', 'This account’s rank scans, newest first: keyword, business, grid, status, share of local voice, and whether it repeats.'),
+  tool('compare_scans', 'Two scans of the same grid, point by point: the rank before and after at each point, how many points got better or worse, the change in top-three placements and average rank, which other businesses gained or lost top-three places, and what makes the comparison less than fair (a different hour of the day, a different search). Scans of different grids are refused.', { scanA: str('A scan’s `id` from list_scans.'), scanB: str('Another scan’s `id`. The earlier of the two is taken as “before”.'), timezone: str('The time zone to show the scans’ times in, e.g. America/New_York. Default UTC.') }, ['scanA', 'scanB']),
+  tool('set_scan_schedule', 'Pauses or resumes a repeating scan. A paused scan runs no more and charges nothing until it is resumed.', { scanId: str('The repeating scan’s `id` from list_scans.'), action: { type: 'string', enum: ['pause', 'resume'] } }, ['scanId', 'action']),
+  tool('get_scan', 'One scan: where the business ranked at each point of the grid; the other businesses seen most often among the first three results (`inTopThreeAtPoints`: a business is counted wherever it is in the first three, whether or not it is above the scanned business there), the first three of them with their categories, rating and review count where known; and how often Google gave an AI answer, how often it cited the business or its website, and the sites it cited most. A scan run in the Google Maps app has no AI answers to record, and says so.', { scanId: str('The scan’s `id` from list_scans.') }, ['scanId']),
+  tool('start_scan', 'Starts a rank scan: a grid of points around a place, each searched in Google on a real phone. Google’s AI Overview is recorded at every point, at no extra cost. Costs one credit per point: 25 for the default 5×5. A larger grid is only run when gridSize is given, and every scan counts against the monthly credit limit the account sets for its agents. It can be made to repeat every day or week at a set time of day; a repeating scan is refused when a month of its runs would cost more than that limit.', {
     keyword: str('The search to track, e.g. "plumber near me".'),
     business: str('The business name exactly as on Google.'),
     lat: { type: 'number', description: 'Centre of the grid.' },
     lng: { type: 'number', description: 'Centre of the grid.' },
     gridSize: { type: 'integer', enum: AGENT_GRIDS, description: 'Points per side. Default 5 (25 credits). 7 is 49 credits, 9 is 81, 11 is 121.' },
     spacingMiles: { type: 'number', enum: [0.5, 1, 2, 3, 5], description: 'Distance between points. Default 1.' },
+    repeat: { type: 'string', enum: ['once', 'daily', 'weekly'], description: 'Default once. A repeating scan runs now and then again on its schedule, charging credits each time, until it is paused or the account runs out of credits.' },
+    at: str('For a repeating scan: the time of day to run it, HH:MM in 24-hour time, e.g. 07:30. Scans compared over time should run at the same hour, since Google ranks a business higher while it is shown as open. Left out, it runs at 13:00 UTC.'),
+    timezone: str('The time zone `at` is in, by name, e.g. America/New_York. Needed with `at`.'),
+    weekday: { type: 'integer', minimum: 0, maximum: 6, description: 'For a weekly scan: the day, 0 Sunday to 6 Saturday. Default 1 (Monday).' },
     website: str('The business’s own website, e.g. stuartsplumbing.com, so the report can tell when an AI answer cites it. Left out, it is taken from the account’s earlier scans of the business or its listing, when one is known.'),
   }, ['keyword', 'business', 'lat', 'lng']),
 ];
 
 /** Tools that change something or spend credits: an agent's client asks the person before running them. */
-export const WRITES = new Set(['reply_to_review', 'create_post', 'update_post', 'enqueue_post', 'create_queue', 'delete_post', 'update_listing', 'upsert_services', 'remove_services', 'update_attributes', 'manage_action_links', 'add_media', 'delete_media', 'resolve_change', 'start_scan']);
+export const WRITES = new Set(['reply_to_review', 'create_post', 'update_post', 'enqueue_post', 'create_queue', 'delete_post', 'update_listing', 'upsert_services', 'remove_services', 'update_attributes', 'manage_action_links', 'add_media', 'delete_media', 'resolve_change', 'start_scan', 'set_scan_schedule']);
 /** What a client is told about a tool, so it can ask before a change and run a read straight away. */
 export const annotationsOf = (name: string) => (WRITES.has(name) ? { readOnlyHint: false, destructiveHint: true, openWorldHint: true } : { readOnlyHint: true, destructiveHint: false, openWorldHint: true });
 
@@ -239,6 +245,14 @@ export function toolCall(name: string, a: Record<string, unknown>): Call | strin
     case 'inspect_url': return /^https?:\/\/\S+$/.test(s(a.url)) ? { route: 'overview', method: 'POST', body: { source: 'inspect', website: s(a.url) } } : 'Give the page’s full address, with https://.';
     case 'website_properties': return { route: 'site', method: 'GET', query: { website: s(a.website) } };
     case 'list_scans': return { route: 'scans', method: 'GET' };
+    case 'compare_scans': {
+      const ok = (v: unknown) => /^[a-z0-9]{10,40}$/.test(s(v));
+      if (!ok(a.scanA) || !ok(a.scanB)) return 'Give two scan ids from list_scans.';
+      return { route: 'compare', method: 'OP', body: { a: s(a.scanA), b: s(a.scanB), timezone: s(a.timezone) || 'UTC' } };
+    }
+    case 'set_scan_schedule':
+      if (a.action !== 'pause' && a.action !== 'resume') return 'action must be pause or resume.';
+      return /^[a-z0-9]{10,40}$/.test(s(a.scanId)) ? { route: 'scan-action', method: 'OP', body: { scanId: s(a.scanId), action: a.action } } : 'Unknown scan.';
     case 'get_scan': return /^[a-z0-9]{10,40}$/.test(s(a.scanId)) ? { route: 'scan', method: 'GET', query: { scanId: s(a.scanId) } } : 'Unknown scan.';
     case 'start_scan': {
       const spacingKm = KM[String(a.spacingMiles ?? 1)];
@@ -246,7 +260,11 @@ export function toolCall(name: string, a: Record<string, unknown>): Call | strin
       // 5×5 unless a size is named: a scan is never made larger than asked for.
       const gridSize = a.gridSize === undefined || a.gridSize === null ? AGENT_GRID : Number(a.gridSize);
       if (!AGENT_GRIDS.includes(gridSize)) return 'gridSize must be 3, 5, 7, 9 or 11.';
-      return { route: 'scan-create', method: 'POST', body: { keyword: s(a.keyword), targetBusiness: s(a.business), centerLat: a.lat, centerLng: a.lng, gridSize, spacingKm, targetType: 'mobile_chrome', ...(s(a.website).trim() ? { targetDomain: s(a.website).trim() } : {}) } };
+      const repeat = a.repeat === undefined || a.repeat === null ? 'once' : s(a.repeat);
+      if (!['once', 'daily', 'weekly'].includes(repeat)) return 'repeat must be once, daily or weekly.';
+      if (repeat === 'once' && (a.at !== undefined || a.weekday !== undefined)) return 'A time of day is for a scan that repeats: set repeat to daily or weekly, or leave `at` out to run it once, now.';
+      const when = repeat !== 'once' && a.at !== undefined ? { scheduleAt: s(a.at), scheduleTimezone: s(a.timezone), ...(a.weekday !== undefined ? { scheduleWeekday: a.weekday } : {}) } : {};
+      return { route: 'scan-create', method: 'POST', body: { keyword: s(a.keyword), targetBusiness: s(a.business), centerLat: a.lat, centerLng: a.lng, gridSize, spacingKm, targetType: 'mobile_chrome', scheduleType: repeat, ...when, ...(s(a.website).trim() ? { targetDomain: s(a.website).trim() } : {}) } };
     }
     default: return 'Unknown tool.';
   }

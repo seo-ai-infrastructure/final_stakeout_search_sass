@@ -286,3 +286,74 @@ test('a scan keeps the business’s website as a bare domain', () => {
   assert.equal('trackAiOverviews' in call.body, false);
   assert.equal('trackAiOverviews' in (TOOLS.find((t) => t.name === 'start_scan')!.inputSchema.properties), false);
 });
+
+import { compareProblem, compareScans, type ComparedScan } from '../packages/core/scanCompare';
+import { cronParts, fixedCron, scheduleText } from '../packages/core/grid';
+
+const gridScan = (id: string, at: string, ranks: (number | null)[], over: Partial<ComparedScan> = {}): ComparedScan => ({
+  id, keyword: 'emergency plumber near me', business: "Stuart's Plumbing", gridSize: 3, spacingKm: 1.60934, centerLat: 28.0289, centerLng: -81.9386, targetType: 'mobile_chrome', createdAt: new Date(at),
+  pins: ranks.map((rank, i) => ({ row: Math.floor(i / 3), col: i % 3, status: 'COMPLETED', rank, top3: rank !== null && rank <= 3 ? ['Nest Plumbing LLC', "Stuart's Plumbing", 'Pro plumbing LLC'] : ['Nest Plumbing LLC', '1 Time Plumbing', 'Pro plumbing LLC'] })),
+  ...over,
+});
+
+test('two scans of the same grid, point by point', () => {
+  const a = gridScan('scanaaaaaaaaa', '2026-11-18T11:54:00Z', [null, 5, 5, 4, 5, 4, 4, 3, 3]);
+  const b = gridScan('scanbbbbbbbbb', '2026-11-19T16:35:00Z', [6, 8, 8, 5, 6, 6, null, 3, 1]);
+  assert.equal(compareProblem(a, b), null);
+  // Given in either order, the earlier scan is "before".
+  const c = compareScans(b, a, 'America/New_York');
+  assert.equal(c.before.id, 'scanaaaaaaaaa');
+  assert.deepEqual([c.before.inTop3, c.after.inTop3, c.before.notFound, c.after.notFound], [2, 2, 1, 1]);
+  assert.deepEqual(c.moved, { better: 1, worse: 5, same: 1, gained: 1, lost: 1 });
+  assert.deepEqual(c.points[0], { row: 0, col: 0, before: null, after: 6, move: 'gained' });
+  assert.deepEqual(c.points[8], { row: 2, col: 2, before: 3, after: 1, move: 'better', places: 2 });
+  assert.deepEqual(c.points[1], { row: 0, col: 1, before: 5, after: 8, move: 'worse', places: -3 });
+  assert.equal(c.points[6].move, 'lost');
+  // The scanned business is never one of its own rivals; a rival is counted wherever it is in the first three.
+  assert.equal(c.rivalsInTheTopThree.list.some((r) => r.name === "Stuart's Plumbing"), false);
+  assert.deepEqual(c.rivalsInTheTopThree.list.find((r) => r.name === 'Nest Plumbing LLC'), { name: 'Nest Plumbing LLC', inTopThreeBefore: 9, inTopThreeAfter: 9, change: 0 });
+  // What makes the comparison less than fair is said: the hour of the day, and how close together they are.
+  assert.match(c.before.at, /6:54 AM/);
+  assert.match(c.after.at, /11:35 AM/);
+  assert.equal(c.cautions.some((x) => /different times of day/.test(x)), true);
+  assert.equal(c.cautions.some((x) => /day-to-day movement/.test(x)), true);
+  // Same hour a week apart: nothing to caution about.
+  assert.deepEqual(compareScans(a, gridScan('scancccccccccc', '2026-11-25T11:50:00Z', [null, 5, 5, 4, 5, 4, 4, 3, 3]), 'America/New_York').cautions, []);
+  // Different grids, spacing or centres are refused: their points do not line up.
+  assert.match(String(compareProblem(a, { ...b, gridSize: 5 })), /different grids \(3×3 and 5×5\)/);
+  assert.match(String(compareProblem(a, { ...b, spacingKm: 3.21868 })), /space their points differently/);
+  assert.match(String(compareProblem(a, { ...b, centerLat: 28.2 })), /different places/);
+  assert.match(String(compareProblem(a, a)), /two different scans/);
+  // A point that was not read in one scan is left out of the moves and said.
+  const half = gridScan('scanddddddddd', '2026-11-25T11:50:00Z', [null, 5, 5, 4, 5, 4, 4, 3, 3]);
+  half.pins[4].status = 'FAILED';
+  const h = compareScans(a, half, 'UTC');
+  assert.equal(h.points[4].move, 'not read in both');
+  assert.equal(h.cautions.some((x) => /not read in both/.test(x)), true);
+});
+
+test('a repeating scan at a set time of day', () => {
+  assert.equal(fixedCron('daily', '07:30', 'America/New_York'), '30 7 * * *;tz=America/New_York');
+  assert.equal(fixedCron('weekly', '18:05', 'America/Chicago', 3), '5 18 * * 3;tz=America/Chicago');
+  assert.equal(fixedCron('weekly', '9:00', 'UTC'), '0 9 * * 1;tz=UTC');
+  for (const bad of [['once', '07:30', 'UTC'], ['daily', '7.30', 'UTC'], ['daily', '25:00', 'UTC'], ['daily', '07:30', 'Mars/Olympus'], ['daily', '07:30', ''], ['weekly', '07:30', 'UTC', 9]] as const)
+    assert.equal(typeof fixedCron(bad[0], bad[1], bad[2], bad[3]), 'object', bad.join(' '));
+  assert.deepEqual(cronParts('30 7 * * *;tz=America/New_York'), { pattern: '30 7 * * *', tz: 'America/New_York' });
+  // The usual schedules carry no time zone and stay in UTC; a paused one keeps its time.
+  assert.deepEqual(cronParts('0 13 * * 1'), { pattern: '0 13 * * 1', tz: 'UTC' });
+  assert.deepEqual(cronParts('PAUSED:30 7 * * *;tz=America/New_York'), { pattern: '30 7 * * *', tz: 'America/New_York' });
+  assert.equal(scheduleText('daily', '30 7 * * *;tz=America/New_York'), 'every day at 7:30 AM (America/New_York)');
+  assert.equal(scheduleText('weekly', 'PAUSED:0 13 * * 1'), 'every Monday at 1:00 PM (UTC), paused');
+  assert.equal(scheduleText('once', null), null);
+  // An agent's scan: a time of day only with a scan that repeats.
+  const base = { keyword: 'plumber near me', business: 'Acme', lat: 28, lng: -81 };
+  const daily = toolCall('start_scan', { ...base, repeat: 'daily', at: '07:30', timezone: 'America/New_York' }) as { body: Record<string, unknown> };
+  assert.deepEqual([daily.body.scheduleType, daily.body.scheduleAt, daily.body.scheduleTimezone], ['daily', '07:30', 'America/New_York']);
+  assert.equal((toolCall('start_scan', base) as { body: Record<string, unknown> }).body.scheduleType, 'once');
+  assert.match(String(toolCall('start_scan', { ...base, at: '07:30' })), /scan that repeats/);
+  assert.match(String(toolCall('start_scan', { ...base, repeat: 'hourly' })), /once, daily or weekly/);
+  assert.deepEqual(toolCall('set_scan_schedule', { scanId: 'cmwnut6r60004k8zvvyx2rgp6', action: 'pause' }), { route: 'scan-action', method: 'OP', body: { scanId: 'cmwnut6r60004k8zvvyx2rgp6', action: 'pause' } });
+  assert.match(String(toolCall('set_scan_schedule', { scanId: 'cmwnut6r60004k8zvvyx2rgp6', action: 'delete' })), /pause or resume/);
+  assert.deepEqual(toolCall('compare_scans', { scanA: 'cmwnut6r60004k8zvvyx2rgp6', scanB: 'cmwntwpvy0004siqf50wazp2c' }), { route: 'compare', method: 'OP', body: { a: 'cmwnut6r60004k8zvvyx2rgp6', b: 'cmwntwpvy0004siqf50wazp2c', timezone: 'UTC' } });
+  assert.match(String(toolCall('compare_scans', { scanA: '../x', scanB: 'y' })), /two scan ids/);
+});

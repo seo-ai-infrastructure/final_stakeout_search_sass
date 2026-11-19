@@ -21,7 +21,7 @@ export async function createScan(
   key: string,
   lead?: { email: string; holdForEmail?: boolean },
   templatePins?: ReturnType<typeof buildGrid>,
-  opts?: { free?: boolean },
+  opts?: { free?: boolean; /** A repeating scan's own schedule (see fixedCron), in place of the usual hour. */ cron?: string },
 ) {
   const prior = await db.gridScan.findUnique({ where: { requestKey: key } });
   if (prior) {
@@ -52,7 +52,7 @@ export async function createScan(
             // Teasers can be held until the lead confirms the inbox (released by /api/auth/verify).
             ...(lead?.holdForEmail ? { status: 'AWAITING_EMAIL' } : {}),
             shareToken: lead ? randomBytes(24).toString('hex') : null,
-            scheduleCron: scheduleCron(s.scheduleType),
+            scheduleCron: (s.scheduleType !== 'once' && opts?.cron) || scheduleCron(s.scheduleType),
             totalPins: pins.length,
             creditsCharged: cost,
             zip: middle.zip,

@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 import { redis } from './redis';
+import { cronParts } from './grid';
 export async function registerStakeoutSchedule(
   queue: Queue,
   templateScanId: string,
@@ -7,7 +8,8 @@ export async function registerStakeoutSchedule(
 ) {
   return queue.upsertJobScheduler(
     'schedule-' + templateScanId,
-    { pattern: cron, tz: 'UTC' },
+    // A schedule set for a time of day carries its own time zone; the usual ones are in UTC.
+    cronParts(cron),
     {
       name: 'repeat-scan',
       data: { templateScanId },

@@ -84,7 +84,8 @@ export async function POST(req: Request, c: C) {
       await db.gridScan.update({ where: { id }, data: { shareToken: null } });
       return Response.json({ ok: true });
     }
-    const cron = scheduleCron(s.scheduleType);
+    // The scan's own schedule is kept as it is (it may be set for a time of day); only whether it is paused changes.
+    const cron = s.scheduleType === 'once' ? null : (s.scheduleCron ?? '').replace(/^PAUSED:/, '') || scheduleCron(s.scheduleType);
     if (!cron || !['pause', 'resume'].includes(action))
       throw new InputError('Invalid schedule action.');
     await db.gridScan.update({

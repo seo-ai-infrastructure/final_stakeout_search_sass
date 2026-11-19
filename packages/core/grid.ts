@@ -210,6 +210,35 @@ export function campaignId(userId: string, s: ScanSpec) {
     )
     .digest('hex');
 }
+/**
+ * A repeating scan's schedule at a chosen time: "MIN HOUR * * *" (every day) or "MIN HOUR * * DAY"
+ * (every week; 0 Sunday … 6 Saturday), followed by ";tz=<time zone>" so the hour is the clock's
+ * hour where the business is, through summer and winter time. Or a sentence saying what is wrong.
+ */
+export function fixedCron(kind: string, at: unknown, timeZone: unknown, weekday?: unknown): string | { problem: string } {
+  if (kind !== 'daily' && kind !== 'weekly') return { problem: 'Only a scan that repeats (daily or weekly) has a time of day.' };
+  const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(at ?? '').trim());
+  if (!m) return { problem: 'Give the time as HH:MM, 24-hour, such as 07:30.' };
+  const tz = String(timeZone ?? '').trim();
+  try { if (!tz) throw new Error(); new Intl.DateTimeFormat('en-US', { timeZone: tz }); } catch { return { problem: 'Give the time zone by its name, such as America/New_York.' }; }
+  const day = weekday === undefined || weekday === null ? 1 : Number(weekday);
+  if (kind === 'weekly' && (!Number.isInteger(day) || day < 0 || day > 6)) return { problem: 'Give the day of the week as a number, 0 Sunday to 6 Saturday.' };
+  return `${Number(m[2])} ${Number(m[1])} * * ${kind === 'weekly' ? day : '*'};tz=${tz}`;
+}
+/** A stored schedule as the scheduler takes it: the pattern and the time zone it is read in (UTC when none is stored). */
+export function cronParts(stored: string): { pattern: string; tz: string } {
+  const [pattern, tz] = stored.replace(/^PAUSED:/, '').split(';tz=');
+  return { pattern: pattern.trim(), tz: (tz ?? '').trim() || 'UTC' };
+}
+/** A schedule in words: "every day at 7:30 AM (America/New_York)". */
+export function scheduleText(kind: string, stored: string | null): string | null {
+  if (kind === 'once' || !stored) return null;
+  const { pattern, tz } = cronParts(stored);
+  const [min, hour, , , dow] = pattern.split(' ');
+  const h = Number(hour), time = `${h % 12 || 12}:${String(Number(min)).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return `${dow === '*' ? 'every day' : 'every ' + (days[Number(dow)] ?? 'week')} at ${time} (${tz})${stored.startsWith('PAUSED:') ? ', paused' : ''}`;
+}
 export function scheduleCron(kind: string) {
   return kind === 'daily'
     ? '0 13 * * *'
