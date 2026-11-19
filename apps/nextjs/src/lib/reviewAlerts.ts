@@ -1,5 +1,6 @@
 import { db } from '@stakeout/db';
 import { redis } from '@stakeout/core/redis';
+import { keptValue } from '@stakeout/core/kept';
 import { pushAlert } from '@stakeout/core/alerts';
 import { openToken, sealToken } from '@stakeout/core/tokenSeal';
 import { readReview } from '@stakeout/core/gbpReviews';
@@ -15,6 +16,8 @@ import { appUrl, mailerConfigured, sendNoticeEmail } from '@/lib/mailer';
  * pays for it, or the admins for the listings we manage ourselves.
  */
 const SECRET_KEY = 'stakeout:postproxy:webhook';
+// The secret is sealed before it is stored; its lasting copy is in Postgres, so alerts survive Redis being emptied.
+const secret = keptValue('secrets', 'postproxy-webhook', SECRET_KEY);
 const EVENTS = ['profile_comment.created'];
 type Hook = { id: string; url: string; events?: string[]; enabled?: boolean; secret?: string };
 
@@ -23,7 +26,7 @@ const hookUrl = (origin: string) => origin + '/api/webhooks/postproxy';
 export async function webhookSecret(): Promise<string> {
   const env = (process.env.POSTPROXY_WEBHOOK_SECRET ?? '').trim();
   if (env) return env;
-  const kept = await redis().get(SECRET_KEY).catch(() => null);
+  const kept = await secret.get().catch(() => null);
   return kept ? openToken(kept) ?? '' : '';
 }
 
@@ -41,7 +44,7 @@ export async function turnAlertsOn(origin: string) {
   for (const h of (list.data ?? []).filter((x) => x.url === hookUrl(origin))) await postproxy('/api/webhooks/' + encodeURIComponent(h.id), { method: 'DELETE' }).catch(() => {});
   const made = await postproxy<Hook>('/api/webhooks', { method: 'POST', body: { url: hookUrl(origin), events: EVENTS, description: 'Stakeout: instant review alerts' } });
   if (!made.secret) throw new Error('Postproxy did not return a signing secret.');
-  await redis().set(SECRET_KEY, sealToken(made.secret));
+  await secret.set(sealToken(made.secret));
   return alertsStatus(origin);
 }
 

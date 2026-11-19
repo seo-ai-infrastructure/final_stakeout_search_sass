@@ -40,3 +40,25 @@ test('settings: mobile data price and who can choose it', () => {
   assert.equal(creditsPerPoint('residential', { mobileCreditsPerPoint: 2 }), 1);
   assert.equal(creditsPerPoint(undefined, { mobileCreditsPerPoint: 2 }), 1);
 });
+
+import { reconcile } from '../packages/core/kept';
+
+test('bringing the Redis copy and the lasting copy together', () => {
+  // First time: only Redis has anything, so all of it is written to the lasting copy.
+  const first = reconcile({ searchGapSeconds: '45', powerSave: 'true' }, []);
+  assert.deepEqual(first.all, { searchGapSeconds: '45', powerSave: 'true' });
+  assert.deepEqual(first.toKeep, [['searchGapSeconds', '45'], ['powerSave', 'true']]);
+  assert.deepEqual(first.toRestore, []);
+  // Redis was emptied: everything comes back from the lasting copy.
+  const wiped = reconcile({}, [{ key: 'searchGapSeconds', value: '45' }, { key: 'powerSave', value: 'true' }]);
+  assert.deepEqual(wiped.all, { searchGapSeconds: '45', powerSave: 'true' });
+  assert.deepEqual(wiped.toKeep, []);
+  assert.equal(wiped.toRestore.length, 2);
+  // Emptied, then one value saved again before anything was read: the rest is restored, and where they differ the lasting copy wins.
+  const partial = reconcile({ powerSave: 'false', fresh: '1' }, [{ key: 'searchGapSeconds', value: '45' }, { key: 'powerSave', value: 'true' }]);
+  assert.deepEqual(partial.all, { powerSave: 'true', fresh: '1', searchGapSeconds: '45' });
+  assert.deepEqual(partial.toKeep, [['fresh', '1']]);
+  assert.deepEqual(partial.toRestore.map((r) => r.key).sort(), ['powerSave', 'searchGapSeconds']);
+  // Both the same: nothing to do.
+  assert.deepEqual(reconcile({ a: '1' }, [{ key: 'a', value: '1' }]).toRestore, []);
+});

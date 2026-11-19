@@ -526,3 +526,14 @@ model AgentLimit {
   used           Int      @default(0)
   updatedAt      DateTime @default(now())
 }
+
+/// The lasting copy of things that are read from Redis: admin settings, white-label brands and
+/// their logos, merged client names, the review-alert secret (see packages/core/kept.ts).
+model Kept {
+  scope     String
+  key       String
+  value     String   @db.Text
+  updatedAt DateTime @default(now())
+
+  @@id([scope, key])
+}

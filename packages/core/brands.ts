@@ -1,24 +1,27 @@
-import { redis } from './redis';
+import { keptHash, keptValue } from './kept';
 import { cleanDomain } from './brandHost';
 
 /**
  * A customer's white-label setup: their domain serves their shared reports under their name and
- * logo. Kept in Redis with the other admin settings (no schema change): one hash of
- * domain → brand, and one key per logo.
+ * logo. One set of domain → brand, and one value per logo; the lasting copy of both is in
+ * Postgres, and Redis is the copy that is read (see kept.ts).
  */
 export type Brand = { domain: string; userId: string; name: string; accent: string | null; hasLogo: boolean; updatedAt: string };
 
 const KEY = 'stakeout:brands';
 const LOGO = 'stakeout:brand-logo:';
+const kept = keptHash('brands', KEY);
+const logoOf = (domain: string) => keptValue('brand-logo', domain, LOGO + domain);
 /** Logos are small images shown in a report header. No SVG: it can carry scripts. */
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const LOGO_MAX_BYTES = 300 * 1024;
 
 let cache: { at: number; list: Brand[] } | null = null;
+const logosSeen = new Set<string>();
 
 export async function listBrands(fresh = false): Promise<Brand[]> {
   if (!fresh && cache && Date.now() - cache.at < 30_000) return cache.list;
-  const raw = await redis().hgetall(KEY).catch(() => ({}) as Record<string, string>);
+  const raw = await kept.all().catch(() => ({}) as Record<string, string>);
   const list: Brand[] = [];
   for (const [domain, v] of Object.entries(raw)) {
     try {
@@ -29,6 +32,8 @@ export async function listBrands(fresh = false): Promise<Brand[]> {
     }
   }
   list.sort((a, b) => a.domain.localeCompare(b.domain));
+  // Reading a logo is what copies it to its lasting place, so each one is read once here rather than waiting for a report to be opened.
+  for (const b of list) if (b.hasLogo && !logosSeen.has(b.domain)) { logosSeen.add(b.domain); await logoOf(b.domain).get().catch(() => logosSeen.delete(b.domain)); }
   cache = { at: Date.now(), list };
   return list;
 }
@@ -54,31 +59,31 @@ export async function saveBrand(input: { userId: string; domain: unknown; name: 
     if (!LOGO_TYPES.includes(input.logo.type)) throw new BrandError('The logo must be a PNG, JPEG or WebP image.');
     const bytes = Buffer.from(input.logo.base64, 'base64');
     if (!bytes.length || bytes.length > LOGO_MAX_BYTES) throw new BrandError(`The logo must be under ${LOGO_MAX_BYTES / 1024} KB.`);
-    await redis().set(LOGO + domain, JSON.stringify({ type: input.logo.type, b64: bytes.toString('base64') }));
+    await logoOf(domain).set(JSON.stringify({ type: input.logo.type, b64: bytes.toString('base64') }));
     hasLogo = true;
   } else if (previous && previous.domain !== domain && previous.hasLogo) {
     // The account is moving to a new domain: its logo moves with it.
-    const old = await redis().get(LOGO + previous.domain);
+    const old = await logoOf(previous.domain).get();
     if (old) {
-      await redis().set(LOGO + domain, old);
+      await logoOf(domain).set(old);
       hasLogo = true;
     }
   }
   const brand: Brand = { domain, userId: input.userId, name, accent, hasLogo, updatedAt: new Date().toISOString() };
-  await redis().hset(KEY, domain, JSON.stringify(brand));
+  await kept.set({ [domain]: JSON.stringify(brand) });
   if (previous && previous.domain !== domain) await removeBrand(previous.domain);
   cache = null;
   return brand;
 }
 
 export async function removeBrand(domain: string) {
-  await redis().hdel(KEY, domain);
-  await redis().del(LOGO + domain);
+  await kept.del(domain);
+  await logoOf(domain).del();
   cache = null;
 }
 
 export async function brandLogo(domain: string): Promise<{ type: string; data: Buffer } | null> {
-  const raw = await redis().get(LOGO + domain).catch(() => null);
+  const raw = await logoOf(domain).get().catch(() => null);
   if (!raw) return null;
   try {
     const v = JSON.parse(raw);

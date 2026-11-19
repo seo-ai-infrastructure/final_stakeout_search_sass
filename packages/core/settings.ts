@@ -1,4 +1,4 @@
-import { redis } from './redis';
+import { keptHash } from './kept';
 
 /**
  * Settings an admin can change from the Device fleet page without a deploy or a worker restart.
@@ -100,20 +100,21 @@ export function mergeSettings(stored: Record<string, string>, base: Settings): S
   return out;
 }
 
+// Postgres holds the lasting copy; Redis is the one that is read (see kept.ts).
+const kept = keptHash('settings', KEY);
 let cache: { at: number; value: Settings } | null = null;
 
-/** Current settings, read at most every 15 seconds; the defaults if Redis cannot be reached. */
+/** Current settings, read at most every 15 seconds; the defaults if neither Redis nor the database can be reached. */
 export async function getSettings(fresh = false): Promise<Settings> {
   if (!fresh && cache && Date.now() - cache.at < 15000) return cache.value;
-  const stored = await redis().hgetall(KEY).catch(() => ({}) as Record<string, string>);
+  const stored = await kept.all().catch(() => ({}) as Record<string, string>);
   cache = { at: Date.now(), value: mergeSettings(stored, defaultSettings()) };
   return cache.value;
 }
 
 export async function saveSettings(input: Record<string, unknown>): Promise<Settings> {
   const clean = cleanSettings(input);
-  const pairs = Object.entries(clean).flatMap(([k, v]) => [k, JSON.stringify(v)]);
-  if (pairs.length) await redis().hset(KEY, ...pairs);
+  await kept.set(Object.fromEntries(Object.entries(clean).map(([k, v]) => [k, JSON.stringify(v)])));
   return getSettings(true);
 }
 

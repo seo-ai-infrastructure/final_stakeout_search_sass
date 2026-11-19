@@ -1,20 +1,20 @@
-import { redis } from './redis';
+import { keptHash } from './kept';
 import { addMerge, clientKey } from './clientNames';
 
-/** Each account's merged client names, kept in Redis (no schema change): key of the name → name it joins. */
-const key = (userId: string) => 'stakeout:client-merges:' + userId;
+/** Each account's merged client names: key of the name → name it joins. The lasting copy is in Postgres; Redis is the one that is read (see kept.ts). */
+const kept = (userId: string) => keptHash('client-merges:' + userId, 'stakeout:client-merges:' + userId);
 
 export async function clientMerges(userId: string): Promise<Record<string, string>> {
-  return redis().hgetall(key(userId)).catch(() => ({}) as Record<string, string>);
+  return kept(userId).all().catch(() => ({}) as Record<string, string>);
 }
 
 export async function mergeClients(userId: string, from: string, into: string): Promise<boolean> {
   const next = addMerge(await clientMerges(userId), from, into);
   if (!next) return false;
-  await redis().hset(key(userId), clientKey(from), next[clientKey(from)]);
+  await kept(userId).set({ [clientKey(from)]: next[clientKey(from)] });
   return true;
 }
 
 export async function separateClient(userId: string, from: string): Promise<void> {
-  await redis().hdel(key(userId), clientKey(from));
+  await kept(userId).del(clientKey(from));
 }
