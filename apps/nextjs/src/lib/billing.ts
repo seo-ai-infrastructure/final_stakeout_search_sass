@@ -59,6 +59,8 @@ type Session = {
   status?: string;
   payment_status?: string;
   amount_total?: number;
+  /** The price before any promotion code. */
+  amount_subtotal?: number;
   currency?: string;
   client_reference_id?: string;
   metadata?: Record<string, string>;
@@ -74,13 +76,18 @@ export async function fulfill(sessionId: string) {
   const purchase = await db.paymentOrder.findUnique({ where: { id: sessionId } });
   if (!purchase) throw new InputError('Unknown order.', 404);
   const s = await stripe<Session>('/checkout/sessions/' + encodeURIComponent(sessionId));
-  const payment = typeof s.payment_intent === 'string' ? s.payment_intent : (s.payment_intent?.id ?? '');
+  // A promotion code that covers the whole price leaves nothing to pay, and so no payment to name: the checkout stands in for it.
+  const free = s.payment_status === 'no_payment_required' && s.amount_total === 0;
+  const intent = typeof s.payment_intent === 'string' ? s.payment_intent : (s.payment_intent?.id ?? '');
+  const payment = intent || (free ? 'free:' + s.id : '');
+  // What was ordered is the price before a promotion code; what was paid may be less.
+  const paidCents = typeof s.amount_total === 'number' ? s.amount_total : purchase.cents;
   if (
     s.status !== 'complete' ||
-    s.payment_status !== 'paid' ||
+    !(s.payment_status === 'paid' || free) ||
     !payment ||
     s.currency !== 'usd' ||
-    s.amount_total !== purchase.cents ||
+    (s.amount_subtotal ?? s.amount_total) !== purchase.cents ||
     s.client_reference_id !== purchase.userId ||
     s.metadata?.credits !== String(purchase.credits)
   )
@@ -89,7 +96,7 @@ export async function fulfill(sessionId: string) {
   // charged, so a second one is sent straight back and adds nothing.
   let card: string | null = null;
   if (purchase.item === WELCOME.key && purchase.captureId === null) {
-    const pi = await stripe<{ payment_method?: { card?: { fingerprint?: string } } | string | null }>('/payment_intents/' + encodeURIComponent(payment) + '?expand[]=payment_method').catch(() => null);
+    const pi = !intent ? null : await stripe<{ payment_method?: { card?: { fingerprint?: string } } | string | null }>('/payment_intents/' + encodeURIComponent(payment) + '?expand[]=payment_method').catch(() => null);
     card = (pi && typeof pi.payment_method === 'object' ? pi.payment_method?.card?.fingerprint : null) ?? null;
     const had = await db.paymentOrder.findFirst({
       where: { item: WELCOME.key, captureId: { not: null }, refundedAt: null, id: { not: sessionId }, OR: [{ userId: purchase.userId }, ...(card ? [{ cardFingerprint: card }] : [])] },
@@ -97,10 +104,10 @@ export async function fulfill(sessionId: string) {
     });
     if (had) {
       // The money goes back first (asking twice refunds once), then the order is closed without credits.
-      await stripe('/refunds', 'POST', { payment_intent: payment, reason: 'duplicate' }, 'refund-' + payment);
+      if (intent) await stripe('/refunds', 'POST', { payment_intent: intent, reason: 'duplicate' }, 'refund-' + intent);
       const closed = await db.paymentOrder.updateMany({ where: { id: sessionId, captureId: null }, data: { captureId: payment, cardFingerprint: card, refundedAt: new Date() } });
       const user = await db.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
-      if (closed.count) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: purchase.cents, balance: user.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item, refunded: true });
+      if (closed.count) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: paidCents, balance: user.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item, refunded: true });
       return { ...user, credits: 0, fresh: false, refunded: true as const };
     }
   }
@@ -116,6 +123,6 @@ export async function fulfill(sessionId: string) {
     return tx.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
   });
   // Only the first time this payment is recorded: the browser and Stripe's webhook both report it.
-  if (fresh) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: purchase.cents, balance: result.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item });
+  if (fresh) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: paidCents, balance: result.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item });
   return { ...result, credits: purchase.credits, fresh, refunded: false as const };
 }

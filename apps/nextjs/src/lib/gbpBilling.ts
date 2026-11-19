@@ -174,6 +174,8 @@ export async function addListings(u: { id: string; email: string; role: string }
     'POST',
     {
       mode: 'subscription',
+      // A box on Stripe's page for a promotion code made in the Stripe dashboard.
+      allow_promotion_codes: true,
       client_reference_id: u.id,
       ...(mine?.customerId ? { customer: mine.customerId } : { customer_email: u.email }),
       metadata: meta,

@@ -38,6 +38,8 @@ export async function POST(req: Request) {
       'POST',
       {
         mode: 'payment',
+        // A box on Stripe's page for a promotion code made in the Stripe dashboard.
+        allow_promotion_codes: true,
         client_reference_id: u.id,
         customer_email: u.email,
         metadata: { userId: u.id, credits: item.credits, item: item.key },
