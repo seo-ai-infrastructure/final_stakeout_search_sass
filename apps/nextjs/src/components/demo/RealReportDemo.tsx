@@ -107,7 +107,7 @@ export default function RealReportDemo() {
         <section className="border-y border-[#1b2431] bg-[#080b10]">
           <div className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
             <p className={EYEBROW + ' text-center text-[#7aa7ff]'}>Head to head · same keyword · same business · same {theirs.length} points · same time</p>
-            <h2 className="mk-display mx-auto mt-3 max-w-5xl text-center text-4xl font-bold leading-tight sm:text-5xl">A Leading Rank Grid Drew {theirs.length} Numbers. <span className="mk-gold-text">At {grid.singleBusiness} of Those Points, Google Never Showed a Local List.</span></h2>
+            <h2 className="mk-display mx-auto mt-3 max-w-5xl text-center text-4xl font-bold leading-tight sm:text-5xl">A Leading Rank Grid Drew {theirs.length} Numbers. <span className="mk-gold-text">At {grid.singleBusiness} of Those Points, Google Never Showed a Local Map Pack.</span></h2>
             <p className="mx-auto mt-5 max-w-3xl text-center text-lg leading-relaxed text-[#c9d3df]">We ran “{DEMO.keyword}” for {DEMO.business} through a leading map-grid rank tracker and through Stakeout at the same time. The rank tracker returns a position for every point. Stakeout records what a phone at that point was shown.</p>
             <div className="mt-12 grid gap-6 lg:grid-cols-2">
               <figure className="flex flex-col rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-6">
