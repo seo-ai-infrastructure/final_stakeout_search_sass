@@ -38,6 +38,22 @@ export default function RealReportDemo() {
   const lowButNamed = gridPins.filter(p => TRACKER_GRID[p.row][p.col] > 3 && p.aiCited).length;
   const noListNamed = gridPins.filter(p => !p.pack && p.aiCited).length;
 
+  // Proof points: every figure is counted from the Top 25 scan's own pins.
+  const t25 = DEMO.scans.top25, visible = t25.pins.filter(p => p.rank != null || p.aiCited).length;
+  const named = (name: string) => t25.aiNamed.find(a => a.name === name);
+  const me = named(DEMO.business);
+  // The business the AI names most while the local results barely show it, and the local leader the AI names least.
+  const aiOnly = t25.aiNamed.filter(a => a.name !== DEMO.business).sort((a, b) => b.named - b.localFound - (a.named - a.localFound))[0];
+  const packOnly = t25.leaders.filter(l => l.top3 === lead?.top3).map(l => ({ ...l, ai: named(l.name) })).filter(l => l.ai).sort((a, b) => (a.ai?.named ?? 0) - (b.ai?.named ?? 0))[0];
+  const soloText = t25.solos.slice(0, 2).map(x => `${x.name} took ${x.count}`).concat(`${DEMO.business} took ${t25.solos.find(x => x.name === DEMO.business)?.count ?? 0}`).join(', ');
+  const ownRank = t25.sites.findIndex(x => x.domain === DEMO.ownDomain);
+  const proofs: { tag: string; big: string; title: string; text: string }[] = [
+    { tag: 'The client-retention lifesaver', big: `${pct(top.top3, top.n)}% → ${pct(visible, top.n)}%`, title: 'A “Weak” Rank Score Hid Real Visibility', text: `Read as local rank alone, this scan shows ${DEMO.business} not found at ${top.notFound} of ${top.n} points, with a ${pct(top.top3, top.n)}% share of local voice. That is the kind of report that loses clients. Stakeout shows the business was on the screen at ${visible} of ${top.n} points, in the local results or named in the AI answer: Google’s AI Overview recommended it at ${top.notFoundButNamed} of the ${top.notFound} points where it missed the pack${me ? `, and listed it first ${me.first} times (average place #${me.avgPlace})` : ''}.` },
+    { tag: 'The 3-pack is disappearing', big: `${top.singleBusiness} of ${top.n}`, title: 'Google Showed One Business, Not Three', text: `At ${pct(top.singleBusiness, top.n)}% of points Google showed no 3-pack and gave the local result to a single business: ${soloText}. An AI Overview appeared on ${top.aio} of ${top.n} searches.` },
+    ...(packOnly?.ai && aiOnly ? [{ tag: 'Map-pack winners, AI losers', big: `${pct(packOnly.top3, top.n)}% vs ${pct(packOnly.ai.named, top.n)}%`, title: 'Leading the Map Is Not Leading the Answer', text: `${packOnly.name} ${tied ? 'is tied for' : 'has'} the most top-3 placements (${packOnly.top3} of ${top.n}), yet the AI named it in only ${packOnly.ai.named} of ${top.n} answers and ${packOnly.ai.first === 0 ? 'never first' : `first ${packOnly.ai.first} times`} (average place #${packOnly.ai.avgPlace}). ${aiOnly.name} was found in the local results at only ${aiOnly.localFound} of ${top.n} points, yet the AI named it in ${aiOnly.named}.` }] : []),
+    ...(top.rivalSite ? [{ tag: 'AI citations, itemised', big: `${top.rivalSite.count} vs ${top.ownSite}`, title: 'The Exact Sites Feeding the AI Answer', text: `Instead of guessing how to get into the AI answer, you get every site it cited, counted: ${t25.sites.slice(0, 4).map(x => `${x.domain} (${x.count} of ${top.n})`).join(', ')}. ${DEMO.ownDomain} ${ownRank > 0 ? `sits behind ${ownRank} of them` : 'is on that list'}. That gap is the work order.` }] : []),
+  ];
+
   const show = (next: View, nextScan: ScanKey = scanKey, anchor?: string) => {
     setView(next); setScanKey(nextScan);
     const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -173,19 +189,15 @@ export default function RealReportDemo() {
         </section>
 
         <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-          <p className={EYEBROW + ' text-center text-[#7aa7ff]'}>What this report found · {s.n} real Android searches</p>
-          <h2 className="mk-display mx-auto mt-3 max-w-4xl text-center text-4xl font-bold leading-tight sm:text-5xl">Four Things a Rank Tracker Could Not Have Told This Plumber.</h2>
-          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { n: s.top3, of: s.n, title: 'Top 3 in the local results', text: `A standard rank score here: ${pct(s.top3, s.n)}%. On its own, that number says the business is invisible at most of these points.` },
-              { n: s.named, of: s.n, title: 'Named in Google’s AI answer', text: `Google put an AI-written answer on ${s.aio} of ${s.n} searches and recommended ${DEMO.business} by name on ${s.named}, first on ${s.namedFirst}.` },
-              { n: s.singleBusiness, of: s.n, title: 'The local list never appeared', text: `At ${pct(s.singleBusiness, s.n)}% of points Google showed one business under the AI answer instead of a list of local results. There was no “rank” to track.` },
-              { n: s.notFoundButNamed, of: s.notFound, title: '“Not found” was not the whole story', text: `Where a rank grid would report the business missing, Google’s AI answer was recommending it by name ${pct(s.notFoundButNamed, s.notFound)}% of the time.` },
-            ].map(c => (
-              <div key={c.title} className="rounded-2xl border border-[#1b2431] bg-[#0c1118] p-7">
-                <p className="mk-display text-6xl font-bold text-[#f5c451]">{c.n}<span className="ml-2 text-xl font-semibold text-[#9aa7b8]">of {c.of}</span></p>
-                <h3 className="mk-display mt-4 text-xl font-semibold">{c.title}</h3>
-                <p className="mt-2 leading-relaxed text-[#9aa7b8]">{c.text}</p>
+          <p className={EYEBROW + ' text-center text-[#7aa7ff]'}>Proof from the Top 25 scan · {top.n} real Android searches · {t25.date}</p>
+          <h2 className="mk-display mx-auto mt-3 max-w-4xl text-center text-4xl font-bold leading-tight sm:text-5xl">Four Proof Points <span className="mk-gold-text">No Rank Tracker Can Show a Client.</span></h2>
+          <div className="mt-12 grid gap-6 lg:grid-cols-2">
+            {proofs.map((c, i) => (
+              <div key={c.title} className="rounded-2xl border border-[#1b2431] bg-[#0c1118] p-8">
+                <p className={EYEBROW + ' text-[#7aa7ff]'}>{String(i + 1).padStart(2, '0')} · {c.tag}</p>
+                <p className="mk-display mt-3 text-5xl font-bold text-[#f5c451]">{c.big}</p>
+                <h3 className="mk-display mt-3 text-2xl font-semibold">{c.title}</h3>
+                <p className="mt-3 leading-relaxed text-[#c9d3df]">{c.text}</p>
               </div>
             ))}
           </div>

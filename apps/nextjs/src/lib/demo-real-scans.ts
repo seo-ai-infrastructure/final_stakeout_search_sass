@@ -14,7 +14,7 @@ export type RealPin = DemoPin & {
   adsAbove: number | null; advertisers: number; isp: string | null; sources: string[];
 };
 type RawPin = Omit<RealPin, 'rankSouth' | 'rankNorth' | 'aiCited'> & { cited: boolean };
-type RawScan = { shareToken: string; date: string; gridSize: number; spacingMiles: number; device: string; network: string; solv: number; aioTriggerRate: number; aioCitationRate: number; leaders: { name: string; top3: number }[]; pins: RawPin[] };
+type RawScan = { shareToken: string; date: string; gridSize: number; spacingMiles: number; device: string; network: string; solv: number; aioTriggerRate: number; aioCitationRate: number; leaders: { name: string; top3: number }[]; aiNamed: { name: string; named: number; first: number; avgPlace: number; localFound: number }[]; sites: { domain: string; count: number }[]; solos: { name: string; count: number }[]; pins: RawPin[] };
 export type RealScan = Omit<RawScan, 'pins'> & { pins: RealPin[] };
 
 /** Rank value the map uses for "not found", so it lands in the grey band. */
