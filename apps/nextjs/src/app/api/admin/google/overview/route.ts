@@ -70,11 +70,18 @@ export async function POST(req: Request) {
       const sites = await google<{ siteEntry?: { siteUrl: string; permissionLevel?: string }[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites');
       const property = propertyFor(website, sites.siteEntry ?? []);
       if (!property) return NextResponse.json({ source: 'inspect', inspection: null });
-      const key = 'stakeout:inspect:' + createHash('sha256').update(u.id + '|' + property + '|' + page).digest('hex').slice(0, 32);
+      const key = 'stakeout:inspect2:' + createHash('sha256').update(u.id + '|' + property + '|' + page).digest('hex').slice(0, 32);
       const kept = await redis().get(key).then((v) => (v ? JSON.parse(v) : null)).catch(() => null);
       if (kept) return NextResponse.json({ source: 'inspect', page, ...kept, cached: true });
-      const inspection = readInspection(await google(token, 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', { inspectionUrl: page, siteUrl: property, languageCode: 'en-US' }), page);
-      const out = { inspection, checkedAt: new Date().toISOString() };
+      // The page can be reached under several addresses (http or https, with or without www), and all
+      // but one of them only redirect. The one to inspect is the one Google actually shows: the form
+      // of this page with the most impressions in the last 28 days.
+      const recent = exploreRange({ days: 28 }, new Date(), 3);
+      const forms = typeof recent === 'string' ? null : await google<{ rows?: GscRow[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', gscRequest(recent.recent, { page }, 'page', 10)).catch(() => null);
+      const shown = [...(forms?.rows ?? [])].sort((x, y) => (y.impressions ?? 0) - (x.impressions ?? 0) || (y.clicks ?? 0) - (x.clicks ?? 0))[0]?.keys?.[0];
+      const inspected = shown && /^https?:\/\//.test(shown) ? shown : page;
+      const inspection = readInspection(await google(token, 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', { inspectionUrl: inspected, siteUrl: property, languageCode: 'en-US' }), inspected);
+      const out = { inspection, inspected, checkedAt: new Date().toISOString() };
       if (inspection) await redis().set(key, JSON.stringify(out), 'EX', 86400).catch(() => {});
       return NextResponse.json({ source: 'inspect', page, ...out, cached: false });
     }

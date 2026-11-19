@@ -11,7 +11,7 @@ const field = 'rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 tex
  * One listing's search numbers in one place, all for the same dates: Google's own figures for the
  * listing, Search Console for the page it links to, and Analytics for what those visits did.
  */
-export default function SearchInsights({ profile, location, businessName, place, website, above, wholeSite, onOpen }: { /** The listing, when there is one: without it only the website's numbers are shown. */ profile?: string; location?: string; businessName: string; place: string; website: string; /** Shown where the listing's numbers would be. */ above?: ReactNode; /** Start Search Console on the whole website instead of one page. */ wholeSite?: boolean; /** Opens another part of the listing (its reviews, its editor) from the readiness strip. */ onOpen?: (what: 'reviews' | 'edit') => void }) {
+export default function SearchInsights({ profile, location, businessName, place, website, above, below, onUnlock, wholeSite, onOpen }: { /** The listing, when there is one: without it only the website's numbers are shown. */ profile?: string; location?: string; businessName: string; place: string; website: string; /** Shown where the listing's numbers would be. */ above?: ReactNode; /** Shown after Search Console, before Analytics. */ below?: ReactNode; /** No listing on a plan: Search Console offers the way to one, with the account's own numbers. */ onUnlock?: () => void; /** Start Search Console on the whole website instead of one page. */ wholeSite?: boolean; /** Opens another part of the listing (its reviews, its editor) from the readiness strip. */ onOpen?: (what: 'reviews' | 'edit') => void }) {
   const [days, setDays] = useState(30);
   const [custom, setCustom] = useState(false);
   const [from, setFrom] = useState('');
@@ -48,7 +48,7 @@ export default function SearchInsights({ profile, location, businessName, place,
         </nav>
       </div>
       {profile && location ? <div id="insights-listing" className="scroll-mt-16"><GbpInsights profile={profile} location={location} businessName={businessName} place={place} range={query} onOpen={onOpen} /></div> : above}
-      <GoogleSitePanel website={website} businessName={businessName} dates={dates} wholeSite={wholeSite} />
+      <GoogleSitePanel website={website} businessName={businessName} dates={dates} wholeSite={wholeSite} between={below} onUnlock={onUnlock} />
     </div>
   );
 }

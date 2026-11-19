@@ -11,7 +11,7 @@ const bare = (w: string) => w.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/,
  * visitor picks one of the websites their Google login has in Search Console. Where a listing's
  * own numbers would be, `locked` says what the paid plan adds.
  */
-export default function WebsiteInsights({ locked }: { locked?: React.ReactNode }) {
+export default function WebsiteInsights({ locked, onUnlock }: { locked?: React.ReactNode; /** For an account with no listing on a plan: the way to one, offered beside its own numbers. */ onUnlock?: () => void }) {
   const [sites, setSites] = useState<string[] | null>(null);
   const [website, setWebsite] = useState('');
   const [typed, setTyped] = useState('');
@@ -61,7 +61,7 @@ export default function WebsiteInsights({ locked }: { locked?: React.ReactNode }
           )}
         </div>
       )}
-      <SearchInsights businessName="" place="" website={website} above={locked} wholeSite />
+      <SearchInsights businessName="" place="" website={website} below={locked} onUnlock={onUnlock} wholeSite />
     </div>
   );
 }
@@ -71,25 +71,22 @@ export default function WebsiteInsights({ locked }: { locked?: React.ReactNode }
  * paid plan: what is behind the lock, the price, and the way in.
  */
 export function LockedListingCard({ onUpgrade, connected }: { onUpgrade: () => void; connected: boolean }) {
+  const tick = <svg viewBox="0 0 16 16" width="16" height="16" className="mt-0.5 shrink-0 text-emerald-400" aria-hidden><path fill="currentColor" d="M6.4 11.2 3.3 8.1l1.1-1.1 2 2 5.2-5.2 1.1 1.1z" /></svg>;
   return (
     <section className={card}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 flex-1 basis-72">
           <h3 className="flex items-center gap-2 text-base font-semibold text-slate-100"><Lock /> Google Business Profile</h3>
-          <p className="mt-0.5 text-xs text-slate-500">Calls, direction requests and the searches that showed your listing, straight from Google</p>
+          <p className="mt-0.5 text-xs text-slate-500">Your listing on Google Maps and Search, on the Manage plan</p>
+          <ul className="mt-3 grid gap-x-6 gap-y-2 text-sm text-slate-200 sm:grid-cols-2">
+            {['Calls, direction requests and the exact Maps searches', 'The categories, services and attributes rivals outranking you have and you do not', 'Scheduled Google posts and a review inbox', 'A daily watchdog: told when Google or anyone else alters your listing'].map((t) => <li key={t} className="flex items-start gap-2">{tick}<span>{t}</span></li>)}
+          </ul>
         </div>
-        <button type="button" onClick={onUpgrade} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">{connected ? 'Choose a listing' : 'Unlock'} · $29 a month per location</button>
+        <div className="shrink-0">
+          <button type="button" onClick={onUpgrade} className="rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400">{connected ? 'Choose a listing →' : 'Connect Google Business Profile →'}</button>
+          <p className="mt-1.5 text-center text-xs text-slate-500">$29 a month per location · $22 from 10</p>
+        </div>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-hidden>
-        {['Calls', 'Direction requests', 'Website clicks', 'Views on Search and Maps'].map((label) => (
-          <div key={label} className="rounded-lg border border-dashed border-slate-700 bg-slate-950 p-3">
-            <p className="text-xs text-slate-400">{label}</p>
-            <p className="mt-1 flex items-center gap-2 text-2xl font-bold text-slate-700"><Lock /> ···</p>
-            <p className="mt-0.5 text-xs text-slate-600">with the Manage plan</p>
-          </div>
-        ))}
-      </div>
-      <p className="mt-3 text-xs text-slate-500">Manage also lets you edit the listing, schedule posts, answer reviews, get told when something on it changes, and see what the businesses outranking you have that you do not. $22 a location from 10.</p>
     </section>
   );
 }

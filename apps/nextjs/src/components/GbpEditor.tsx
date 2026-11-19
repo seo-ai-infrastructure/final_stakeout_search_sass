@@ -190,6 +190,8 @@ export default function GbpEditor() {
     setConnecting(true); setError('');
     try { await connectGoogle(); } catch (e) { setError(e instanceof Error ? e.message : 'Could not open Google.'); setConnecting(false); }
   };
+  // From the free tab to a paid listing: the picker when a Google account is connected, otherwise connect one (the picker follows).
+  const unlock = () => { if (profiles?.length) setPicking(true); else connect(); };
   // The plan the open listing is on: an admin's listings are always unlocked.
   const openPlan = pick ? profiles?.find((p) => p.id === pick.profile)?.locations.find((l) => l.id === pick.location)?.plan ?? null : null;
   const paidListing = admin || openPlan !== null;
@@ -320,7 +322,7 @@ export default function GbpEditor() {
           ))}
         </div>
       )}
-      {ready && tab === 'website' && !admin && profiles !== null && <WebsiteInsights locked={anyPaid ? undefined : <LockedListingCard connected={profiles.length > 0} onUpgrade={() => { setTab('listing'); window.scrollTo({ top: 0 }); }} />} />}
+      {ready && tab === 'website' && !admin && profiles !== null && <WebsiteInsights onUnlock={anyPaid ? undefined : unlock} locked={anyPaid ? undefined : <LockedListingCard connected={profiles.length > 0} onUpgrade={unlock} />} />}
       {ready && tab === 'listing' && !admin && profiles !== null && profiles.length === 0 && (
         <div className={card}>
           <h2 className="flex items-center gap-2 text-lg font-semibold"><Lock /> Google Business Profile</h2>

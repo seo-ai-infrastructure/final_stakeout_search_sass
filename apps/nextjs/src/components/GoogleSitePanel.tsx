@@ -48,7 +48,7 @@ async function post<T>(body: unknown): Promise<T> {
 const span = (r: Range) => `${shortDate(r.recent.from)} to ${shortDate(r.recent.to)}, against the ${r.days} days before`;
 
 /** Search Console for the page the listing links to (or the whole site): totals, a day-by-day line, top and rising searches. */
-function SearchConsole({ website, host, businessName, dates, wholeSite }: { website: string; host: string; businessName: string; dates: Dates; wholeSite?: boolean }) {
+function SearchConsole({ website, host, businessName, dates, wholeSite, onUnlock }: { website: string; host: string; businessName: string; dates: Dates; wholeSite?: boolean; onUnlock?: () => void }) {
   const [scope, setScope] = useState<'page' | 'site'>(wholeSite ? 'site' : 'page');
   const [device, setDevice] = useState<(typeof DEVICE)[number][0]>('');
   const [d, setD] = useState<Gsc | null>(null);
@@ -147,7 +147,7 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
       {d && d.property === null && <p className="text-sm text-slate-400">The connected Google login has no Search Console property for {host} (it can see {d.properties} other{d.properties === 1 ? '' : 's'}). Ask the client to add it as a user on theirs.</p>}
       {d && d.property && (
         <div className={'space-y-5 ' + (busy ? 'opacity-50' : '')}>
-          {phones?.offer && phones.device && phones.rows[0] && (
+          {!onUnlock && phones?.offer && phones.device && phones.rows[0] && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/40 bg-amber-400/5 px-4 py-3">
               <p className="min-w-0 flex-1 text-sm text-amber-100">
                 {phones.device.why === 'position'
@@ -164,6 +164,26 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
             <Tile big label="Click rate" value={d.recent.ctr} was={d.before.ctr} digits={1} unit="%" />
             <Tile big label="Average position" value={d.recent.position} was={d.before.position} digits={1} spots />
           </div>
+          {onUnlock && d.recent.impressions >= 50 && d.recent.impressions > d.recent.clicks && (() => {
+            // Their own numbers, as a reason to look at the map: the search most worth scanning is the most-shown local one.
+            const missed = d.recent.impressions - d.recent.clicks;
+            const best = phones?.rows[0] ?? null;
+            const query = best?.query ?? queries.filter((r) => !brandedQuery(r.key, host, brand)).sort((x, y) => y.b - x.b)[0]?.key ?? '';
+            return (
+              <div className="rounded-xl border border-emerald-500/50 bg-emerald-500/10 p-4">
+                <p className="text-lg font-bold leading-snug text-slate-50">{fmt(missed)} times in {d.range.days} days, your site was shown in Google and nobody clicked {host}.</p>
+                <p className="mt-1.5 text-sm text-slate-300">With a {d.recent.ctr ?? 0}% click rate{d.recent.position !== null ? ` at an average position of ${d.recent.position}` : ''}, most of those searches end above your link: on the Map Pack, in an AI Overview, or on an ad. Search Console cannot show you who is there. Your Google listing and a real-phone scan can.</p>
+                <div className="mt-3 flex flex-wrap items-start gap-x-4 gap-y-3">
+                  {query && <button type="button" onClick={() => setOffer({ query, why: best ? whyOf(best) : `Your site was shown for this search more than any other local one in the last ${d.range.days} days.` })} className="rounded-lg bg-emerald-400 px-4 py-2.5 text-sm font-extrabold text-slate-950 hover:bg-emerald-300">Run my first 5×5 real-phone map scan{price ? ` · ${price}` : ''}</button>}
+                  <div>
+                    <button type="button" onClick={onUnlock} className="rounded-lg border border-emerald-400/60 px-4 py-2.5 text-sm font-semibold text-emerald-200 hover:bg-emerald-400/10">Unlock my Map calls and competitor gaps →</button>
+                    <p className="mt-1 text-xs text-slate-500">$29 a month per location · $22 from 10</p>
+                  </div>
+                </div>
+                {query && <p className="mt-2 text-xs text-slate-500">The scan starts on “{query}”, your most-shown local search.</p>}
+              </div>
+            );
+          })()}
           <div>
             <h4 className="mb-2 text-sm font-semibold">{metric === 'clicks' ? 'Clicks' : 'Times shown'} by day</h4>
             <MiniChart points={alongside(d.days, d.daysBefore, back(d.range), (x) => x[metric])} beforeName={beforeName(d.range)} name={metric === 'clicks' ? 'Clicks' : 'Times shown'} />
@@ -434,7 +454,7 @@ function Analytics({ host, dates, website, businessName, wholeSite }: { host: st
 }
 
 /** The client's website in Search Console and Analytics, read with the admin's own Google login. `dates` is the tab's date choice. */
-export default function GoogleSitePanel({ website, businessName, dates, wholeSite }: { website: string; businessName: string; dates: Dates; wholeSite?: boolean }) {
+export default function GoogleSitePanel({ website, businessName, dates, wholeSite, between, onUnlock }: { website: string; businessName: string; dates: Dates; wholeSite?: boolean; /** Shown between Search Console and Analytics (and on its own when Google is not connected). */ between?: React.ReactNode; onUnlock?: () => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [notice, setNotice] = useState('');
   const host = (() => { try { return new URL(website).hostname.replace(/^www\./, ''); } catch { return ''; } })();
@@ -453,6 +473,7 @@ export default function GoogleSitePanel({ website, businessName, dates, wholeSit
   if (!status) return null;
   if (!status.configured || !status.connected)
     return (
+      <>
       <section className={card}>
         <h3 className="font-semibold">Website: Search Console and Analytics</h3>
         {notice && <p className="mt-2 text-sm text-sky-300">{notice}</p>}
@@ -465,12 +486,16 @@ export default function GoogleSitePanel({ website, businessName, dates, wholeSit
           </>
         )}
       </section>
+      {between}
+      </>
     );
   return (
     <>
+      {!host && between}
       {!host ? <p className={card + ' text-sm text-slate-400'}>{wholeSite ? 'Pick a website above to see its Search Console and Analytics.' : 'This listing has no website, so there is nothing to look up in Search Console or Analytics.'}</p> : (
         <>
-          {status.searchConsole && <SearchConsole website={website} host={host} businessName={businessName} dates={dates} wholeSite={wholeSite} />}
+          {status.searchConsole && <SearchConsole website={website} host={host} businessName={businessName} dates={dates} wholeSite={wholeSite} onUnlock={onUnlock} />}
+          {between}
           {status.analytics && <Analytics host={host} dates={dates} website={website} businessName={businessName} wholeSite={wholeSite} />}
         </>
       )}
