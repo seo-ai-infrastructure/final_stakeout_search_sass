@@ -1,5 +1,6 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import GbpPostCalendar from '@/components/GbpPostCalendar';
 import { BODY_MAX, CTA, emptyDraft, nextWeeklySlot, postProblem, type GbpPost, type PostDraft, type PostFormat } from '@stakeout/core/gbpPosts';
 
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
@@ -67,6 +68,7 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [sure, setSure] = useState('');
+  const composer = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -118,9 +120,28 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
     }
   };
 
+  // A day picked on the calendar: the form below is set to schedule for it, at the usual time.
+  const writeFor = (day: string) => {
+    let at = new Date(day + 'T' + slot.time + ':00');
+    // Today, with the usual time already gone: an hour from now, on the half hour.
+    if (at.getTime() < Date.now() + 10 * 60000) { at = new Date(Date.now() + 3600000); at.setMinutes(at.getMinutes() < 30 ? 30 : 60, 0, 0); }
+    setLater(true); set('scheduledAt', at.toISOString());
+    composer.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    composer.current?.querySelector('textarea')?.focus({ preventScroll: true });
+  };
+  const scheduleOne = async (draft: PostDraft) => {
+    await call('/api/admin/gbp/posts', 'POST', { profile, location, draft });
+    await load();
+  };
+
   return (
     <section className={card + ' space-y-4'}>
       <h3 className="font-semibold">Posts</h3>
+      {posts !== null && <GbpPostCalendar posts={posts} onDay={writeFor} onSchedule={scheduleOne} onCancel={remove} />}
+
+      <div ref={composer} className="scroll-mt-20 border-t border-slate-800 pt-4">
+        <p className="text-sm font-medium">Write a post</p>
+      </div>
 
       <div className="flex flex-wrap gap-1.5">
         {FORMATS.map(([f, label, hint]) => (

@@ -165,3 +165,26 @@ export function nextWeeklySlot(weekday: number, time: string, taken: string[], n
   }
   return slot;
 }
+
+/** A moment's calendar day where the viewer is, as YYYY-MM-DD. */
+export const localDay = (d: Date) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+/**
+ * The open slots for planning ahead: every chosen weekday (0 Sunday … 6 Saturday) at `time`
+ * (HH:MM, the viewer's own time zone) over the next `weeks` weeks, soonest first, leaving out any
+ * less than an hour away and any day that already has a post (`takenDays`, YYYY-MM-DD). Capped at 40.
+ */
+export function planSlots(weekdays: number[], time: string, weeks: number, takenDays: string[], now: Date = new Date()): Date[] {
+  const [h, m] = (isTime(time) ? time : '09:00').split(':').map(Number);
+  const days = new Set(weekdays.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6));
+  const taken = new Set(takenDays);
+  const out: Date[] = [];
+  const span = Math.min(12, Math.max(1, Math.round(weeks) || 4)) * 7;
+  for (let i = 0; i < span && out.length < 40; i++) {
+    const slot = new Date(now);
+    slot.setDate(slot.getDate() + i);
+    slot.setHours(h, m, 0, 0);
+    if (days.has(slot.getDay()) && slot.getTime() >= now.getTime() + 3600000 && !taken.has(localDay(slot))) out.push(slot);
+  }
+  return out;
+}
