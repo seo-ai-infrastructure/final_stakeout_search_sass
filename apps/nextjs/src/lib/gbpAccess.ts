@@ -32,11 +32,11 @@ export async function allow(u: Account, profile: string, location: string | null
   const account = await db.gbpAccount.findFirst({ where: { userId: u.id, profileId: profile }, select: { id: true } });
   // The same answer whether the account is someone else's or does not exist.
   if (!account) throw new InputError('Unknown profile.', 404);
-  // Through an AI agent, even reading a listing takes the Agent plan.
+  // Through an AI agent, even reading a listing takes a paid plan (agent access comes with Manage).
   if (isAgent() && (location || need !== 'free')) need = 'agent';
   if (need === 'free') return;
   if (!location) throw new InputError('Pick a listing first.');
-  if (!allows(await planOf(u.id, location, profile), need, need === 'agent' && (await hasAddon(u.id)))) throw new InputError(upgradeMessage(need), 402);
+  if (!allows(await planOf(u.id, location, profile), need)) throw new InputError(upgradeMessage(need), 402);
 }
 
 /** Whether an account has the AI agents add-on on a paying subscription. */
@@ -89,18 +89,18 @@ export async function customerWatchScope(): Promise<{ profiles: Set<string>; own
 }
 
 /**
- * Whether an account may use AI agents at all (make a key, call the agent server): admins, and
- * customers with the AI agents add-on (or a listing on the old per-listing Agent plan).
+ * Whether an account may use AI agents at all (make a key, call the agent server): admins,
+ * customers with a listing on a paid plan, and customers with the AI agents add-on.
  */
 export async function agentOpen(u: Account): Promise<boolean> {
   if (u.role === 'ADMIN') return true;
-  return (await hasAddon(u.id)) || [...(await paidLocations(u.id)).values()].includes('AGENT');
+  return (await hasAddon(u.id)) || (await paidLocations(u.id)).size > 0;
 }
-export const AGENT_CLOSED = 'AI agent access needs the AI agents add-on. Add it on the Connected Accounts page, under AI agents.';
+export const AGENT_CLOSED = 'AI agent access comes with any listing on the Manage plan, or as an add-on for an account without one. See the Connected Accounts page, under AI agents.';
 
 /**
  * For reads that are not about one listing (Search Console, Analytics): through an AI agent they
- * need the account to have at least one listing on the Agent plan. On the site they are free.
+ * need agent access: a listing on a paid plan, or the add-on. On the site they are free.
  */
 export async function agentGate(u: Account): Promise<void> {
   if (!isAgent() || u.role === 'ADMIN') return;

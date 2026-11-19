@@ -20,7 +20,7 @@ const tool = (name: string, description: string, properties: Record<string, unkn
 const L = ['profile', 'location'];
 
 export const TOOLS: Tool[] = [
-  tool('list_listings', 'The Google Business listings this account has connected, each with the plan it is on. Listing tools work on listings on the Agent plan.'),
+  tool('list_listings', 'The Google Business listings this account has connected, each with the plan it is on. Listing tools work on listings on the Manage plan.'),
   tool('get_listing', 'A listing as Google has it now: name, address, phone, website, categories, description, hours, and the edits made to it from here.', listing, L),
   tool('get_listing_details', 'A listing’s attributes, services and booking/order links, with what Google allows to be set for its categories.', listing, L),
   tool('get_listing_insights', 'Google’s own numbers for a listing: calls, website clicks, direction requests and views day by day, and the searches people found it with.', { ...listing, days }, L),
@@ -163,7 +163,7 @@ export function rpcAnswer(m: Rpc): object | null | 'call' {
         protocolVersion: MCP_VERSIONS.includes(String(p.protocolVersion)) ? p.protocolVersion : MCP_VERSIONS[0],
         capabilities: { tools: {} },
         serverInfo: { name: 'stakeout-search', title: 'Stakeout Search', version: '1.0.0' },
-        instructions: 'Local rank scans and Google Business Profile management. Start with list_listings or list_scans. Listing tools need the listing to be on the Agent plan. Name, categories, phone, website and address are never editable here.',
+        instructions: 'Local rank scans and Google Business Profile management. Start with list_listings or list_scans. Listing tools need the listing to be on the Manage plan. Name, categories, phone, website and address are never editable here.',
       });
     case 'ping': return rpcResult(m.id, {});
     case 'tools/list':

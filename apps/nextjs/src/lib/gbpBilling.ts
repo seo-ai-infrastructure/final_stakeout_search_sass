@@ -254,6 +254,7 @@ export async function removeListing(userId: string, location: string) {
 export async function addAddon(u: { id: string; email: string; role: string }, origin: string): Promise<{ url?: string; done?: boolean; pay?: string | null }> {
   if (u.role === 'ADMIN') throw new InputError('Admin accounts already have agent access.');
   const mine = await db.gbpSub.findUnique({ where: { userId: u.id } });
+  if (await db.gbpPlan.count({ where: { userId: u.id, status: 'ACTIVE' } })) throw new InputError('Agent access already comes with your listings on the Manage plan: there is nothing to add.', 409);
   const price = await addonPrice();
   if (mine?.subscriptionId) {
     const s = await readSub(mine.subscriptionId);

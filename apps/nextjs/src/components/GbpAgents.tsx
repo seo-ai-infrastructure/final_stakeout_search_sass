@@ -24,11 +24,13 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   // Customers: whether the AI agents add-on is on (admins always have access), and how to pay for it.
-  type Addon = { ready: boolean; addon?: { on: boolean; cents: number }; sub?: { running: boolean; periodEnd: string | null } | null };
+  type Addon = { ready: boolean; counts?: { MANAGE: number; AGENT: number }; addon?: { on: boolean; cents: number }; sub?: { running: boolean; periodEnd: string | null } | null };
   const [bill, setBill] = useState<Addon | null>(null);
   const [payLink, setPayLink] = useState<string | null>(null);
   useEffect(() => { if (!admin) call<Addon>('/api/billing/gbp').then(setBill).catch(() => {}); }, [admin]);
-  const open = admin || Boolean(bill?.addon?.on);
+  // Any listing on a paid plan brings agent access with it; the add-on is for an account without one.
+  const listed = (bill?.counts?.MANAGE ?? 0) + (bill?.counts?.AGENT ?? 0) > 0;
+  const open = admin || listed || Boolean(bill?.addon?.on);
   const buy = async () => {
     setBusy(true); setError('');
     try {
@@ -62,7 +64,7 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
     <div className="space-y-5">
       <div className={card}>
         <h2 className="text-lg font-semibold">Connect your own AI agent</h2>
-        <p className="mt-2 text-sm text-slate-400">Stakeout speaks MCP, so an agent you already use (Claude Code, Cursor, or one you built) can read your scans and listings and do the everyday work on them. It signs in with a key from this page.{!admin && ' It works on every listing you have on the Manage plan, and on your scans, Search Console and Analytics.'}</p>
+        <p className="mt-2 text-sm text-slate-400">Stakeout speaks MCP, so an agent you already use (Claude Code, Cursor, or one you built) can read your scans and listings and do the everyday work on them. It signs in with a key from this page.{!admin && ' It is included with any listing on the Manage plan, and works on every listing you have on it, your scans, Search Console and Analytics.'}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <code className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-emerald-300">{url}</code>
           <button type="button" onClick={() => copy('url', url)} className={btn}>{copied === 'url' ? 'Copied' : 'Copy address'}</button>
@@ -71,11 +73,12 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
       </div>
 
       {error && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p>}
-      {!admin && bill && !bill.addon?.on && (
+      {!admin && bill && !open && (
         <div className="rounded-xl border border-emerald-500/50 bg-emerald-500/5 p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Add-on</p>
-          <h2 className="mt-1 text-lg font-semibold">AI agents · {dollars(AGENT_ADDON.cents)} a month</h2>
-          <p className="mt-2 text-sm text-slate-300">One flat price for the whole account, however many listings you have. Your agent can run and read scans, read Search Console and Analytics, and do the everyday work on every listing that is on the Manage plan: posts, review replies, hours, descriptions, services and attributes.</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Two ways to switch it on</p>
+          <h2 className="mt-1 text-lg font-semibold">Included with the Manage plan</h2>
+          <p className="mt-2 text-sm text-slate-300">Put any Google listing on Manage and agent access comes with it at no extra cost: your agent can then do the everyday work on that listing (posts, review replies, hours, descriptions, services and attributes) as well as run scans and read Search Console and Analytics. <a href="/profiles?tab=plan" className="font-semibold text-emerald-300 underline">Put a listing on Manage</a></p>
+          <p className="mt-3 text-sm text-slate-400">No listing to manage? The add-on gives your agent your scans, Search Console and Analytics for {dollars(AGENT_ADDON.cents)} a month.</p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button type="button" onClick={buy} disabled={busy || bill.ready === false} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{busy ? 'Working…' : `Add AI agents · ${dollars(AGENT_ADDON.cents)} a month`}</button>
             <span className="text-xs text-slate-500">{bill.sub?.running ? 'Added to your subscription; the rest of this month is charged to your card now.' : 'Monthly. You pay on the next page; cancel any time.'}</span>
@@ -84,6 +87,8 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
           {bill.ready === false && <p className="mt-2 text-xs text-amber-300">Checkout is being set up. Email sass@stakeoutsearch.com and we will sort it out.</p>}
         </div>
       )}
+      {!admin && listed && !bill?.addon?.on && <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">Agent access is included with your listings on the Manage plan. Make a key below.</p>}
+      {!admin && bill?.addon?.on && listed && <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">Agent access now comes with your listings on the Manage plan, so you no longer need the add-on. Take it off below to stop paying for it.</p>}
       {!admin && bill?.addon?.on && <p className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"><span>The AI agents add-on is on: {dollars(AGENT_ADDON.cents)} a month.</span><button type="button" onClick={drop} disabled={busy} className="text-xs text-slate-300 hover:text-rose-300">Take it off</button></p>}
 
       {open && <div className={card}>

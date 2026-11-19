@@ -38,11 +38,11 @@ test('a listing is paid only while its subscription is paying or its paid month 
   assert.equal(planNow(null, 'active', now), null);
 });
 
-test('free reads, Manage changes, Agent lets an agent in', () => {
+test('free reads, Manage changes, a paid listing lets an agent in', () => {
   assert.equal(allows(null, 'free'), true);
   assert.equal(allows(null, 'manage'), false);
   assert.equal(allows('MANAGE', 'manage'), true);
-  assert.equal(allows('MANAGE', 'agent'), false);
+  assert.equal(allows('MANAGE', 'agent'), true);
   assert.equal(allows('AGENT', 'manage'), true);
   assert.equal(allows('AGENT', 'agent'), true);
 });
@@ -166,12 +166,11 @@ test('just under a bracket, the nudge to reach it', () => {
   assert.equal(settlePending(8, 8, 0), 'none');
 });
 
-test('the AI agents add-on: agent work on Manage listings, never on free ones', async () => {
+test('agent access comes with a listing on a plan; the add-on is for an account without one', async () => {
   const { addonOn } = await import('../packages/core/gbpPlans');
-  assert.equal(allows('MANAGE', 'agent'), false);
-  assert.equal(allows('MANAGE', 'agent', true), true);
-  assert.equal(allows(null, 'agent', true), false, 'the listing still has to be on a plan');
+  assert.equal(allows('MANAGE', 'agent'), true);
   assert.equal(allows('AGENT', 'agent'), true);
+  assert.equal(allows(null, 'agent'), false, 'a listing that is not on a plan stays closed to agents');
   assert.equal(addonOn({ agentAddon: true, status: 'active' }), true);
   assert.equal(addonOn({ agentAddon: true, status: 'past_due' }), true, 'kept while Stripe retries the card');
   assert.equal(addonOn({ agentAddon: true, status: 'canceled' }), false);
