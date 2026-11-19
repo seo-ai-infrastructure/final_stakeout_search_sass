@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin, readLocation, target } from '@/lib/gbpAdmin';
+import { readLocation } from '@/lib/gbpAdmin';
+import { gate } from '@/lib/gbpAccess';
 import { attributesOf, everything, get, serviceTypesOf } from '@/lib/gbpExtras';
 import { postproxy, gbpPath } from '@/lib/postproxy';
 import { attributePatch, attributeProblem, buildServices, linkProblem, readServices, serviceProblem, type AttrValue, type ServiceWant } from '@stakeout/core/gbpExtras';
@@ -15,9 +16,8 @@ export const maxDuration = 60;
  */
 export async function GET(req: Request) {
   try {
-    await gbpAdmin();
     const q = new URL(req.url).searchParams;
-    return NextResponse.json(await everything(target(q.get('profile'), q.get('location'))));
+    return NextResponse.json(await everything(await gate(q.get('profile'), q.get('location'), 'manage')));
   } catch (e) {
     return errorResponse(e);
   }
@@ -35,9 +35,8 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   try {
-    await gbpAdmin();
     const b = (await req.json()) as Record<string, unknown>;
-    const t = target(b.profile, b.location);
+    const t = await gate(b.profile, b.location, 'manage');
     let changed: string[] = [];
 
     if (b.kind === 'attributes') {

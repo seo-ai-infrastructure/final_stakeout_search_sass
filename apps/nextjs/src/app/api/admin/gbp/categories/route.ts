@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin, target } from '@/lib/gbpAdmin';
+import { gate } from '@/lib/gbpAccess';
 import { postproxy, gbpPath } from '@/lib/postproxy';
 
 /**
@@ -11,9 +11,8 @@ import { postproxy, gbpPath } from '@/lib/postproxy';
  */
 export async function GET(req: Request) {
   try {
-    await gbpAdmin();
     const q = new URL(req.url).searchParams;
-    const t = target(q.get('profile'), q.get('location'));
+    const t = await gate(q.get('profile'), q.get('location'), 'manage');
     const text = String(q.get('q') ?? '').replace(/[^\p{L}\p{N} &'-]/gu, '').trim().slice(0, 60);
     const region = /^[A-Z]{2}$/.test(String(q.get('region'))) ? String(q.get('region')) : 'US';
     if (text.length < 2) throw new InputError('Type at least two letters.');

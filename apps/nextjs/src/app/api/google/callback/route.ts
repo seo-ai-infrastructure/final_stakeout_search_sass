@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { timingSafeEqual } from 'node:crypto';
 import { db } from '@stakeout/db';
-import { gbpAdmin } from '@/lib/gbpAdmin';
+import { getAuthenticatedUser } from '@/lib/auth';
 import { STATE_COOKIE, exchangeCode, sealToken } from '@/lib/googleOAuth';
 
 /**
@@ -11,12 +11,12 @@ import { STATE_COOKIE, exchangeCode, sealToken } from '@/lib/googleOAuth';
  */
 export async function GET(req: Request) {
   const back = (result: string) => {
-    const res = NextResponse.redirect(new URL('/admin/profiles?google=' + result, req.url));
+    const res = NextResponse.redirect(new URL('/profiles?google=' + result, req.url));
     res.cookies.set(STATE_COOKIE, '', { path: '/api/google', maxAge: 0 });
     return res;
   };
   try {
-    const u = await gbpAdmin();
+    const u = await getAuthenticatedUser();
     const q = new URL(req.url).searchParams;
     if (q.get('error')) return back(q.get('error') === 'access_denied' ? 'declined' : 'failed');
     const state = q.get('state') ?? '';

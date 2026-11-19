@@ -109,7 +109,7 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   const remove = async (p: GbpPost) => {
     setBusy(p.id); setError('');
     try {
-      await call(`/api/admin/gbp/posts?id=${encodeURIComponent(p.id)}${p.state === 'published' ? '&google=1' : ''}`, 'DELETE');
+      await call(`/api/admin/gbp/posts?id=${encodeURIComponent(p.id)}&profile=${encodeURIComponent(profile)}${p.state === 'published' ? '&google=1' : ''}`, 'DELETE');
       setSure(''); await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The post was not removed.');

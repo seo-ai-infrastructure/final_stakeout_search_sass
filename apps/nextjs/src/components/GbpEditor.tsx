@@ -6,13 +6,16 @@ import GbpWatch from '@/components/GbpWatch';
 import GbpPosts from '@/components/GbpPosts';
 import GbpExtras from '@/components/GbpExtras';
 import GbpGaps from '@/components/GbpGaps';
+import GbpPlans, { UpgradeCard, connectGoogle } from '@/components/GbpPlans';
+import GbpAgents from '@/components/GbpAgents';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, descriptionWarnings, diff, highScrutiny, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
 } from '@stakeout/core/gbp';
 
 type Cat = { name: string; displayName?: string };
-type Profile = { id: string; name: string; status: string; problem: string | null; locations: { id: string; name: string; placeId: string | null }[] };
+type Profile = { id: string; name: string; status: string; problem: string | null; customer?: boolean; locations: { id: string; name: string; placeId: string | null; plan: string | null }[] };
+type Account = { id: string; profile: string | null; name: string | null };
 type Edit = { id: string; tier: Tier; changes: FieldChange[]; status: string; error: string | null; checkedAt: string | null; createdAt: string };
 type Form = { description: string; websiteUri: string; additionalCategories: Cat[]; additionalPhones: string; regularHours: DayHours[] | null; specialHours: SpecialDay[] | null; pastSpecial: number; title: string; primaryCategory: Cat | null; primaryPhone: string };
 
@@ -31,6 +34,13 @@ const GOOGLE_RESULT: Record<string, string> = {
   declined: 'Google sign-in was cancelled.',
   nopermission: 'Google connected, but neither Search Console nor Analytics was allowed. Connect again and leave the boxes ticked.',
   failed: 'Google sign-in did not complete. Try again from a listing’s website panel.',
+};
+// How connecting a Google Business account went.
+const CONNECT_RESULT: Record<string, string> = {
+  connected: 'Google account connected. Pick a listing to see how it is doing in search.',
+  declined: 'Connecting was cancelled. Nothing was changed.',
+  taken: 'That Google account is already connected to another Stakeout account. Email sass@stakeoutsearch.com if that is a surprise.',
+  failed: 'The Google account did not connect. Try again, and pick the Google login that manages the Business Profile.',
 };
 
 /** Today's date where the admin is, as YYYY-MM-DD. */
@@ -97,7 +107,13 @@ export default function GbpEditor() {
   const [find, setFind] = useState('');
   const [notice, setNotice] = useState('');
   const [live, setLive] = useState<GbpLocation | null>(null);
-  const [tab, setTab] = useState<'listing' | 'reviews' | 'changes'>('listing');
+  const [tab, setTab] = useState<'listing' | 'reviews' | 'changes' | 'plan' | 'agents'>('listing');
+  // Admins: whether a 1–2 star review is emailed the moment it arrives.
+  const [alerts, setAlerts] = useState<{ on: boolean; maxStars: number } | null>(null);
+  // Admins reach every listing. A customer reads the accounts they connected and pays per listing to change one.
+  const [admin, setAdmin] = useState(true);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [connecting, setConnecting] = useState(false);
   const [waiting, setWaiting] = useState(0);
   // Within one listing: its numbers, its edits, its posts, its reviews.
   const [view, setView] = useState<'insights' | 'edit' | 'posts' | 'reviews'>('insights');
@@ -118,22 +134,40 @@ export default function GbpEditor() {
     // The result of a Google sign-in that just came back, shown once and then taken off the address.
     const q = new URLSearchParams(window.location.search);
     const r = q.get('google');
-    if (q.get('tab') === 'changes' || q.get('tab') === 'reviews') setTab(q.get('tab') as 'changes' | 'reviews');
-    if (r) {
-      setNotice(GOOGLE_RESULT[r] ?? '');
-      window.history.replaceState(null, '', window.location.pathname);
+    if (['changes', 'reviews', 'plan', 'agents'].includes(q.get('tab') ?? '')) setTab(q.get('tab') as 'changes' | 'reviews' | 'plan' | 'agents');
+    const g = q.get('gbp'), paid = q.get('plan');
+    if (r) setNotice(GOOGLE_RESULT[r] ?? '');
+    if (g) setNotice(CONNECT_RESULT[g] ?? '');
+    if (paid === 'cancelled') setNotice('Checkout was cancelled. Nothing was charged.');
+    else if (paid) {
+      // Back from Stripe: the listings switch on now (Stripe's own message does the same if this tab is closed first).
+      setTab('plan');
+      api<{ on: boolean }>('/api/billing/gbp', { confirm: paid })
+        .then(() => { setNotice('Payment received. Your listings are on the Manage plan.'); readProfiles(); })
+        .catch(() => setNotice('Payment is still going through. Your listings switch on as soon as it does; reload in a minute.'));
     }
+    if (r || g || paid) window.history.replaceState(null, '', window.location.pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    api<{ ready: boolean; profiles: Profile[] }>('/api/admin/gbp')
+  const readProfiles = useCallback(() =>
+    api<{ ready: boolean; admin: boolean; profiles: Profile[]; accounts: Account[] }>('/api/admin/gbp')
       .then((r) => {
-        setReady(r.ready); setProfiles(r.profiles);
+        setReady(r.ready); setProfiles(r.profiles); setAdmin(r.admin); setAccounts(r.accounts ?? []);
         // How many changes are waiting, for the tab's badge.
         if (r.ready) api<{ open: unknown[] }>('/api/admin/gbp/watch').then((w) => setWaiting(w.open.length)).catch(() => {});
+        if (r.ready && r.admin) api<{ on: boolean; maxStars: number }>('/api/admin/gbp/alerts').then(setAlerts).catch(() => {});
       })
-      .catch((e) => { setError(e.message); setProfiles([]); });
-  }, []);
+      .catch((e) => { setError(e.message); setProfiles([]); }), []);
+  useEffect(() => { readProfiles(); }, [readProfiles]);
+
+  const connect = async () => {
+    setConnecting(true); setError('');
+    try { await connectGoogle(); } catch (e) { setError(e instanceof Error ? e.message : 'Could not open Google.'); setConnecting(false); }
+  };
+  // The plan the open listing is on: an admin's listings are always unlocked.
+  const openPlan = pick ? profiles?.find((p) => p.id === pick.profile)?.locations.find((l) => l.id === pick.location)?.plan ?? null : null;
+  const paidListing = admin || openPlan !== null;
 
   const load = useCallback(async (p: { profile: string; location: string }) => {
     setLive(null); setForm(null); setError(''); setReview(false); setUnlocked(false);
@@ -219,10 +253,11 @@ export default function GbpEditor() {
     <div className="mx-auto max-w-5xl space-y-5 px-5 py-6 text-slate-200">
       <div>
         <h1 className="text-2xl font-bold">Google profiles</h1>
-        <p className="mt-1 text-sm text-slate-400">Each client’s Google Business Profile: how it is doing in search, its edits, posts and reviews.</p>
+        <p className="mt-1 text-sm text-slate-400">{admin ? 'Each client’s Google Business Profile: how it is doing in search, its edits, posts and reviews.' : 'Your Google Business Profiles: how each is doing in search for free, and edits, posts, reviews and a change watchdog on the listings you put on a plan.'}</p>
       </div>
 
-      {!ready && (
+      {!ready && !admin && <div className={card}><p className="font-semibold">Connecting Google accounts is being set up.</p><p className="mt-1 text-sm text-slate-400">Email sass@stakeoutsearch.com and we will tell you the moment it is ready.</p></div>}
+      {!ready && admin && (
         <div className={card}>
           <p className="font-semibold">Not set up yet.</p>
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-400">
@@ -235,24 +270,50 @@ export default function GbpEditor() {
       {notice && <p className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">{notice}</p>}
       {error && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p>}
 
-      {ready && profiles !== null && profiles.length > 0 && (
+      {ready && !admin && profiles !== null && profiles.length === 0 && tab === 'listing' && (
+        <div className={card}>
+          <h2 className="text-lg font-semibold">Connect your Google Business Profile</h2>
+          <p className="mt-2 text-sm text-slate-400">Sign in with the Google login that manages your listings. Connecting is free and nothing on Google changes.</p>
+          <ul className="mt-3 grid gap-1.5 text-sm text-slate-300 sm:grid-cols-2">
+            <li><span className="text-emerald-400">Free:</span> calls, website clicks and direction requests over time</li>
+            <li><span className="text-emerald-400">Free:</span> the searches people found you with</li>
+            <li><span className="text-emerald-400">Free:</span> Search Console and Analytics for the listing’s website</li>
+            <li><span className="text-slate-400">Manage, from $29 a listing:</span> edits, posts, review replies, a change watchdog and competitor gaps</li>
+            <li><span className="text-slate-400">Agent, from $59 a listing:</span> all of that, done by your own AI agent</li>
+          </ul>
+          <button type="button" onClick={connect} disabled={connecting} className="mt-4 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{connecting ? 'Opening Google…' : 'Connect Google account'}</button>
+        </div>
+      )}
+
+      {ready && profiles !== null && (profiles.length > 0 || !admin) && (
         <div role="tablist" className="flex gap-1 border-b border-slate-800">
-          {([['listing', 'Listings'], ['reviews', 'Reviews'], ['changes', 'Changes']] as const).map(([t, label]) => (
+          {(admin ? ([['listing', 'Listings'], ['reviews', 'Reviews'], ['changes', 'Changes'], ['agents', 'AI agents']] as const) : ([['listing', 'Listings'], ['changes', 'Changes'], ['agents', 'AI agents'], ['plan', 'Plan and billing']] as const)).map(([t, label]) => (
             <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={'-mb-px border-b-2 px-4 py-2 text-sm font-semibold ' + (tab === t ? 'border-emerald-500 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200')}>{label}{t === 'changes' && waiting > 0 && <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[11px] text-amber-300">{waiting}</span>}</button>
           ))}
         </div>
       )}
-      {ready && tab === 'reviews' && profiles !== null && profiles.length > 0 && (
+      {ready && tab === 'agents' && profiles !== null && <GbpAgents admin={admin} />}
+      {ready && tab === 'reviews' && admin && alerts && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900 px-4 py-3 text-sm">
+          <span className="text-slate-300">{alerts.on ? `Instant alerts are on: a review of ${alerts.maxStars} star${alerts.maxStars === 1 ? '' : 's'} or fewer is emailed within the hour it is left.` : `Instant alerts are off. Turn them on to be emailed when a review of ${alerts.maxStars} stars or fewer arrives.`}</span>
+          {!alerts.on && <button type="button" onClick={() => api<{ on: boolean; maxStars: number }>('/api/admin/gbp/alerts', {}).then(setAlerts).catch((e) => setError(e instanceof Error ? e.message : 'Could not turn alerts on.'))} className="rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:border-slate-500">Turn on</button>}
+        </div>
+      )}
+      {ready && tab === 'plan' && !admin && profiles !== null && <GbpPlans profiles={profiles} accounts={accounts} onChanged={readProfiles} />}
+      {ready && tab === 'changes' && !admin && profiles !== null && !profiles.some((p) => p.locations.some((l) => l.plan !== null)) && (
+        <div className={card}><p className="font-semibold">The change watchdog runs on listings on the Manage plan.</p><p className="mt-1 text-sm text-slate-400">Every day it reads each listing and tells you when a name, phone, website, hours or category changed without an edit from here, so you can keep it or put it back.</p><button type="button" onClick={() => setTab('plan')} className="mt-3 rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500">See plans</button></div>
+      )}
+      {ready && tab === 'reviews' && admin && profiles !== null && profiles.length > 0 && (
         <GbpReviews profiles={profiles} only={pick} onOpenListing={(p) => { setPick(p); setChoosing(false); setTab('listing'); window.scrollTo({ top: 0 }); }} />
       )}
 
-      {ready && tab === 'changes' && <GbpWatch onCount={setWaiting} onOpenListing={(p) => { setPick(p); setChoosing(false); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
+      {ready && tab === 'changes' && (admin || Boolean(profiles?.some((p) => p.locations.some((l) => l.plan !== null)))) && <GbpWatch onCount={setWaiting} onOpenListing={(p) => { setPick(p); setChoosing(false); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
 
-      {ready && tab === 'listing' && (choosing || !pick) && (
+      {ready && tab === 'listing' && (choosing || !pick) && (admin || profiles === null || profiles.length > 0) && (
         <div className={card}>
           <label className="text-sm font-semibold">Location</label>
           {profiles === null ? <p className="mt-2 text-sm text-slate-400">Loading connected accounts…</p> : profiles.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-400">No Google Business account is connected in Postproxy yet. Connect one there (Profiles → Connect account), then reload this page.</p>
+            <p className="mt-2 text-sm text-slate-400">{admin ? 'No Google Business account is connected in Postproxy yet. Connect one there (Profiles → Connect account), then reload this page.' : 'No Google account connected yet.'}</p>
           ) : (
             <>
               <input className={input + ' mt-2'} placeholder={'Search ' + profiles.reduce((n, p) => n + p.locations.length, 0) + ' locations by name'} value={find} onChange={(e) => setFind(e.target.value)} />
@@ -265,7 +326,7 @@ export default function GbpEditor() {
                       return (
                         <li key={p.id + l.id}>
                           <button type="button" onClick={() => { setPick({ profile: p.id, location: l.id }); setChoosing(false); setFind(''); }} className={'flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-800 ' + (on ? 'bg-emerald-500/10 text-emerald-300' : '')}>
-                            <span className="min-w-0 truncate">{l.name}</span>
+                            <span className="min-w-0 truncate">{l.name}{!admin && <span className={'ml-2 rounded-full border px-1.5 py-0.5 text-[10px] ' + (l.plan ? 'border-emerald-500/40 text-emerald-300' : 'border-slate-700 text-slate-500')}>{l.plan === 'AGENT' ? 'Agent' : l.plan ? 'Manage' : 'Free'}</span>}{admin && p.customer && <span className="ml-2 rounded-full border border-sky-500/40 px-1.5 py-0.5 text-[10px] text-sky-300">customer</span>}</span>
                             {/* Several locations share a name, and one can sit under two Google accounts: the ids tell them apart. */}
                             <span className="shrink-0 font-mono text-[11px] text-slate-500">account …{l.id.split('/')[1].slice(-4)} · location …{l.id.split('/')[3].slice(-5)}</span>
                           </button>
@@ -275,7 +336,7 @@ export default function GbpEditor() {
                 )}
               </ul>
               {profiles.filter((p) => p.status !== 'active' || p.problem).map((p) => (
-                <p key={p.id} className="mt-2 text-xs text-amber-300">{p.name}: {p.problem ?? 'needs reconnecting in Postproxy'}</p>
+                <p key={p.id} className="mt-2 text-xs text-amber-300">{p.name}: {p.problem ?? (admin ? 'needs reconnecting in Postproxy' : 'needs reconnecting: use Plan and billing → Connect another Google account')}</p>
               ))}
             </>
           )}
@@ -301,10 +362,11 @@ export default function GbpEditor() {
           </div>
 
           {view === 'insights' && <SearchInsights profile={pick.profile} location={pick.location} businessName={live.title ?? ''} place={[live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(' ')} website={live.websiteUri ?? ''} />}
-          {view === 'posts' && <GbpPosts profile={pick.profile} location={pick.location} />}
-          {view === 'reviews' && profiles && <GbpReviews key={pick.location} profiles={profiles} only={pick} onOpenListing={(p) => { setPick(p); setView('insights'); }} />}
+          {view !== 'insights' && !paidListing && <UpgradeCard profile={pick.profile} location={pick.location} name={live.title ?? 'this listing'} what={view === 'edit' ? 'Editing' : view === 'posts' ? 'Posting' : 'Reviews'} onDone={() => { readProfiles(); setNotice('This listing is on the Manage plan.'); }} />}
+          {view === 'posts' && paidListing && <GbpPosts profile={pick.profile} location={pick.location} />}
+          {view === 'reviews' && paidListing && profiles && <GbpReviews key={pick.location} profiles={profiles} only={pick} oneListing={!admin} onOpenListing={(p) => { setPick(p); setView('insights'); }} />}
 
-          {view === 'edit' && (
+          {view === 'edit' && paidListing && (
           <>
           <p className="text-xs text-slate-500">Every edit is built on the live profile, logged with the profile as it was, and checked against Google afterwards. Address, map pin, service area and open/closed status are not editable here.</p>
           <GbpGaps profile={pick.profile} location={pick.location} onApplied={() => { setRev((n) => n + 1); refresh(pick); }} />

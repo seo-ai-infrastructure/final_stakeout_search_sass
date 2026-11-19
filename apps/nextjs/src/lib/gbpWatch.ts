@@ -6,21 +6,33 @@ import type { FieldChange, GbpLocation } from '@stakeout/core/gbp';
 import { postproxy } from '@/lib/postproxy';
 import { readLocation } from '@/lib/gbpAdmin';
 import { flushAlerts } from '@/lib/alerts';
+import { customerWatchScope, paidLocations } from '@/lib/gbpAccess';
+import { appUrl, mailerConfigured, sendNoticeEmail } from '@/lib/mailer';
 
-type Place = { profile: string; location: string; name: string };
+/** `owner`: the customer who pays for this listing; absent for the listings we manage ourselves. */
+type Place = { profile: string; location: string; name: string; owner?: string };
 export type WatchRun = { listings: number; fresh: number; changed: number; found: number; problems: number; at: string };
 const RUN_KEY = 'stakeout:gbpwatch:last';
 // Through JSON, so only plain values are stored.
 const plain = (v: unknown) => JSON.parse(JSON.stringify(v));
 const today = () => new Date().toISOString().slice(0, 10);
 
-/** Every listing every connected Google Business account can manage. */
+/**
+ * Every listing to watch: all of those in the accounts we manage, and, in a customer's own Google
+ * account, only the listings that customer has on a paid plan.
+ */
 export async function watchedPlaces(): Promise<Place[]> {
   const all = await postproxy<{ data?: { id: string; platform: string }[] }>('/api/profiles');
+  const scope = await customerWatchScope();
   const out: Place[] = [];
   for (const p of (all.data ?? []).filter((x) => x.platform === 'google_business')) {
     const r = await postproxy<{ data?: { id: string; name: string }[] }>('/api/profiles/' + encodeURIComponent(p.id) + '/placements').catch(() => ({ data: [] }));
-    for (const l of r.data ?? []) if (/^accounts\/[0-9]+\/locations\/[0-9]+$/.test(l.id)) out.push({ profile: p.id, location: l.id, name: l.name });
+    for (const l of r.data ?? []) {
+      if (!/^accounts\/[0-9]+\/locations\/[0-9]+$/.test(l.id)) continue;
+      const owner = scope.profiles.has(p.id) ? scope.owners.get(l.id) : undefined;
+      if (scope.profiles.has(p.id) && !owner) continue;
+      out.push({ profile: p.id, location: l.id, name: l.name, owner });
+    }
   }
   // A listing two accounts can manage is checked once.
   return out.filter((p, i) => out.findIndex((x) => x.location === p.location) === i);
@@ -66,6 +78,7 @@ export async function checkListing(p: Place): Promise<{ fresh: boolean; found: {
 /** Checks every listing (three at a time), emails the admins what was found, and remembers how the run went. */
 export async function checkAllListings(): Promise<WatchRun> {
   const places = await watchedPlaces();
+  const theirs = new Map<string, Found[]>();
   const run: WatchRun = { listings: places.length, fresh: 0, changed: 0, found: 0, problems: 0, at: new Date().toISOString() };
   const found: { title: string; label: string; was: string; now: string }[] = [];
   let next = 0;
@@ -76,7 +89,9 @@ export async function checkAllListings(): Promise<WatchRun> {
           const r = await checkListing(p);
           if (r.fresh) run.fresh++;
           if (r.found.length) run.changed++;
-          found.push(...r.found);
+          // A customer's listing is theirs to hear about, not the admins'.
+          if (p.owner) theirs.set(p.owner, [...(theirs.get(p.owner) ?? []), ...r.found]);
+          else found.push(...r.found);
         } catch (e) {
           run.problems++;
           const problem = (e instanceof Error ? e.message : 'Could not be read.').slice(0, 300);
@@ -85,12 +100,41 @@ export async function checkAllListings(): Promise<WatchRun> {
       }
     }),
   );
-  run.found = found.length;
+  run.found = found.length + [...theirs.values()].reduce((n, f) => n + f.length, 0);
+  for (const [owner, list] of theirs) await tellOwner(owner, list);
   await redis().set(RUN_KEY, JSON.stringify(run), 'EX', 30 * 86400).catch(() => {});
   const alert = driftAlert(found);
   if (alert) {
     await pushAlert('gbp-drift:' + run.at, { ...alert, path: '/admin/profiles?tab=changes' }, 60);
     await flushAlerts().catch((e) => console.error('[gbp-watch] email not sent:', (e as Error).message));
+  }
+  return run;
+}
+
+type Found = { title: string; label: string; was: string; now: string };
+
+/** Emails a customer the changes found on their listings. A failed email never stops the check. */
+async function tellOwner(userId: string, found: Found[]) {
+  const alert = driftAlert(found);
+  if (!alert || !mailerConfigured()) return;
+  const u = await db.user.findUnique({ where: { id: userId }, select: { email: true } });
+  if (u) await sendNoticeEmail(u.email, alert.subject, alert.lines, { label: 'See the changes', url: appUrl('/profiles?tab=changes') }).catch((e) => console.error('[gbp-watch] customer email not sent:', (e as Error).message));
+}
+
+/** Checks one customer's paid listings now. */
+export async function checkOwnListings(userId: string): Promise<WatchRun> {
+  const paid = await paidLocations(userId);
+  const rows = await db.gbpPlan.findMany({ where: { userId, locationId: { in: [...paid.keys()] } }, select: { profileId: true, locationId: true, title: true }, take: 60 });
+  const run: WatchRun = { listings: rows.length, fresh: 0, changed: 0, found: 0, problems: 0, at: new Date().toISOString() };
+  for (const p of rows) {
+    try {
+      const r = await checkListing({ profile: p.profileId, location: p.locationId, name: p.title ?? 'Listing' });
+      if (r.fresh) run.fresh++;
+      if (r.found.length) run.changed++;
+      run.found += r.found.length;
+    } catch {
+      run.problems++;
+    }
   }
   return run;
 }

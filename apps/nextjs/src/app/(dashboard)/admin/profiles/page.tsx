@@ -1,10 +1,8 @@
-import { forbidden } from 'next/navigation';
-import { getAuthenticatedUser } from '@/lib/auth';
-import GbpEditor from '@/components/GbpEditor';
+import { redirect } from 'next/navigation';
 
-export const metadata = { title: 'Google profiles' };
-
-export default async function Profiles() {
-  if ((await getAuthenticatedUser()).role !== 'ADMIN') forbidden();
-  return <GbpEditor />;
+/** The page moved to /profiles, where customers reach it too. Old links (and alert emails) still land. */
+export default async function Profiles({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(await searchParams)) if (typeof v === 'string') q.set(k, v);
+  redirect('/profiles' + (q.size ? '?' + q : ''));
 }

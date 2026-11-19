@@ -135,7 +135,7 @@ function ReviewCard({ profile, review, listing, onChange, onOpenListing }: { pro
  * The review inbox: every connected account's Google reviews, newest first, with what still
  * needs an answer on top. `only` narrows it to the listing that is open.
  */
-export default function GbpReviews({ profiles, only, onOpenListing }: { profiles: Profile[]; only: { profile: string; location: string } | null; onOpenListing: (p: { profile: string; location: string }) => void }) {
+export default function GbpReviews({ profiles, only, onOpenListing, oneListing }: { profiles: Profile[]; only: { profile: string; location: string } | null; onOpenListing: (p: { profile: string; location: string }) => void; /** A customer reads one paid listing at a time: no switch to the whole account. */ oneListing?: boolean }) {
   const [filter, setFilter] = useState<ReviewFilter>('unanswered');
   const [narrow, setNarrow] = useState(Boolean(only));
   const [loaded, setLoaded] = useState<Record<string, Loaded>>({});
@@ -205,7 +205,7 @@ export default function GbpReviews({ profiles, only, onOpenListing }: { profiles
               </button>
             ))}
           </div>
-          {only && (
+          {only && !oneListing && (
             <label className="flex items-center gap-2 text-sm text-slate-300">
               <input type="checkbox" checked={narrow} onChange={(e) => setNarrow(e.target.checked)} className="accent-emerald-500" />
               Only {names.get(only.location) ?? 'the open listing'}

@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin, readLocation, target } from '@/lib/gbpAdmin';
+import { readLocation } from '@/lib/gbpAdmin';
+import { gate } from '@/lib/gbpAccess';
 import { postproxy, gbpPath } from '@/lib/postproxy';
 import { buildPatch, diff, problemWith, redBlock, showing, worst, type GbpChange } from '@stakeout/core/gbp';
 
@@ -18,9 +19,9 @@ export const maxDuration = 60;
  */
 export async function POST(req: Request) {
   try {
-    const u = await gbpAdmin();
     const b = (await req.json()) as { profile?: unknown; location?: unknown; change?: GbpChange; confirm?: unknown };
-    const t = target(b.profile, b.location);
+    const t = await gate(b.profile, b.location, 'manage');
+    const u = t.u;
     const change = (b.change && typeof b.change === 'object' ? b.change : {}) as GbpChange;
 
     const live = await readLocation(t.profile, t.location);

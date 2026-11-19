@@ -3,7 +3,7 @@ import { useState } from 'react';
 import GbpInsights from '@/components/GbpInsights';
 import GoogleSitePanel, { type Dates } from '@/components/GoogleSitePanel';
 
-const PRESETS = [[30, '30 days'], [60, '60 days'], [90, '90 days'], [180, '6 months'], [365, '12 months']] as const;
+const PRESETS = [[30, '30 days'], [60, '60 days'], [90, '90 days'], [180, '6 months'], [365, '12 months'], [540, '18 months']] as const;
 const field = 'rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-500';
 
 /**

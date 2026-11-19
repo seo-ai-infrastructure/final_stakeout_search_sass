@@ -8,7 +8,9 @@ test('a range is read against the same number of days before it', () => {
   assert.deepEqual(exploreRange({ days: 7 }, today, 3), { recent: { from: '2026-11-09', to: '2026-11-15' }, before: { from: '2026-11-02', to: '2026-11-08' }, days: 7 });
   // Any sensible number of days is taken; anything else is 28 days.
   assert.equal((exploreRange({ days: 60 }, today, 1) as any).days, 60);
-  for (const days of [0, -5, 9999, 'soon']) assert.equal((exploreRange({ days }, today, 1) as any).days, 28);
+  for (const days of [0, -5, 'soon']) assert.equal((exploreRange({ days }, today, 1) as any).days, 28);
+  // More than Google keeps is as far back as it goes (16 months).
+  assert.equal((exploreRange({ days: 9999 }, today, 1) as any).days, 480);
   assert.deepEqual(exploreRange({ from: '2026-10-01', to: '2026-10-31' }, today, 3), { recent: { from: '2026-10-01', to: '2026-10-31' }, before: { from: '2026-08-31', to: '2026-09-30' }, days: 31 });
   assert.match(exploreRange({ from: '2026-10-31', to: '2026-10-01' }, today, 3) as string, /before the start/);
   assert.match(exploreRange({ from: '2026-10-01' }, today, 3) as string, /both dates/);

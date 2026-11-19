@@ -254,9 +254,9 @@ export const risingKeywords = (rows: KeywordTrend[], min = 5, limit = 25) =>
   rows.filter((r) => r.gain !== null && r.gain >= min).sort((a, b) => (b.gain as number) - (a.gain as number) || b.total - a.total).slice(0, limit);
 
 /** The months (YYYY-MM) a date range touches, capped at the 12 Google gives in one request (the latest 12). */
-export function monthsOf(from: string, to: string): { from: string; to: string } {
+export function monthsOf(from: string, to: string, keep = 12): { from: string; to: string } {
   const a = from.slice(0, 7), b = to.slice(0, 7);
   const [y, m] = b.split('-').map(Number);
-  const floor = new Date(Date.UTC(y, m - 12, 1)).toISOString().slice(0, 7);
+  const floor = new Date(Date.UTC(y, m - keep, 1)).toISOString().slice(0, 7);
   return { from: a < floor ? floor : a, to: b };
 }

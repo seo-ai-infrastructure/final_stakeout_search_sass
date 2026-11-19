@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin, target } from '@/lib/gbpAdmin';
+import { target } from '@/lib/gbpAdmin';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { allow } from '@/lib/gbpAccess';
 import { postproxy } from '@/lib/postproxy';
 import { readReview, replyProblem, type Review } from '@stakeout/core/gbpReviews';
 
@@ -21,17 +23,19 @@ function ids(profile: unknown, id?: unknown) {
 }
 
 /**
- * GET /api/admin/gbp/reviews?profile=&location=&page= (admins only): one page of a connected
+ * GET /api/admin/gbp/reviews?profile=&location=&page=: one page of a connected
  * account's Google reviews, newest first, each with our reply if it has one. `location` narrows it
  * to one listing. Reviews reach the service from Google twice a day, so a review left in the last
  * few hours may not be here yet.
  */
 export async function GET(req: Request) {
   try {
-    await gbpAdmin();
+    const u = await getAuthenticatedUser();
     const q = new URL(req.url).searchParams;
     const { profile } = ids(q.get('profile'));
     const location = q.get('location') ? target(profile, q.get('location')).location : undefined;
+    // An admin can read a whole account's reviews; a customer reads one paid listing's at a time.
+    await allow(u, profile, location ?? null, 'manage');
     const page = Math.min(500, Math.max(1, Number(q.get('page')) || 1));
     const r = await postproxy<{ total?: number; data?: unknown[] }>(comments(profile), { query: { placement_id: location, page: String(page), per_page: String(PER_PAGE) } });
     const rows = r.data ?? [];
@@ -43,16 +47,16 @@ export async function GET(req: Request) {
 }
 
 /**
- * POST /api/admin/gbp/reviews (admins only) { profile, review, body }: answers a review. The
+ * POST /api/admin/gbp/reviews { profile, review, body }: answers a review. The
  * service accepts it at once and publishes it to Google in the background, so the reply comes back
  * as "pending"; reading the review again shows whether Google took it. A review has one reply: a
  * new one replaces the old.
  */
 export async function POST(req: Request) {
   try {
-    await gbpAdmin();
     const b = (await req.json()) as { profile?: unknown; review?: unknown; body?: unknown };
     const { profile, id } = ids(b.profile, b.review);
+    await mayTouch(profile, id);
     const problem = replyProblem(b.body);
     if (problem) throw new InputError(problem);
     await postproxy(comments(profile), { method: 'POST', body: { parent_id: id, body: String(b.body).trim() } });
@@ -62,29 +66,43 @@ export async function POST(req: Request) {
   }
 }
 
-/** PATCH /api/admin/gbp/reviews (admins only) { profile, review }: the review as the service has it now (has the reply reached Google?). */
+/** PATCH /api/admin/gbp/reviews { profile, review }: the review as the service has it now (has the reply reached Google?). */
 export async function PATCH(req: Request) {
   try {
-    await gbpAdmin();
     const b = (await req.json()) as { profile?: unknown; review?: unknown };
     const { profile, id } = ids(b.profile, b.review);
+    await mayTouch(profile, id);
     return NextResponse.json({ review: await reread(profile, id) });
   } catch (e) {
     return errorResponse(e);
   }
 }
 
-/** DELETE /api/admin/gbp/reviews?profile=&reply= (admins only): takes our reply down. The review itself stays: only Google can remove a review. */
+/** DELETE /api/admin/gbp/reviews?profile=&reply=: takes our reply down. The review itself stays: only Google can remove a review. */
 export async function DELETE(req: Request) {
   try {
-    await gbpAdmin();
     const q = new URL(req.url).searchParams;
     const { profile, id } = ids(q.get('profile'), q.get('reply'));
+    await mayTouch(profile, id);
     await postproxy(comments(profile) + '/' + encodeURIComponent(id), { method: 'DELETE' });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return errorResponse(e);
   }
+}
+
+/**
+ * Whether the signed-in account may act on this review or reply. For a customer, the review itself
+ * says which listing it is on, and that listing has to be one of theirs on a paid plan.
+ */
+async function mayTouch(profile: string, id: string) {
+  const u = await getAuthenticatedUser();
+  if (u.role === 'ADMIN') return;
+  await allow(u, profile, null, 'free');
+  const raw = await postproxy<{ placement_id?: unknown }>(comments(profile) + '/' + encodeURIComponent(id)).catch(() => null);
+  const location = typeof raw?.placement_id === 'string' ? raw.placement_id : '';
+  if (!location) throw new InputError('Unknown review.', 404);
+  await allow(u, profile, location, 'manage');
 }
 
 const reread = (profile: string, id: string) => postproxy(comments(profile) + '/' + encodeURIComponent(id)).then(readReview).catch(() => null);

@@ -2,6 +2,7 @@ import { scrypt, randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { cookies } from 'next/headers';
 import { db } from '@stakeout/db';
+import { acting } from './acting';
 const derive = promisify(scrypt);
 export const SESSION_COOKIE_NAME = 'stakeout_uid';
 const lifetime = 30 * 86400;
@@ -44,6 +45,9 @@ export async function verifyPassword(password: string, value: string) {
   );
 }
 export async function getAuthenticatedUser() {
+  // A request made for an account's AI agent runs as the account its key belongs to.
+  const agent = acting.getStore();
+  if (agent) return agent.user as unknown as NonNullable<Awaited<ReturnType<typeof db.user.findUnique>>>;
   const id = verifySessionToken(
     (await cookies()).get(SESSION_COOKIE_NAME)?.value,
   );

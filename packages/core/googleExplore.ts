@@ -20,7 +20,7 @@ export const PRESETS: { days: number; label: string }[] = [
  * from 1 to 480 is taken; anything else is 28. A custom
  * from/to wins over `days`. Search Console keeps 16 months, so nothing older is asked for.
  */
-export function exploreRange(o: { days?: unknown; from?: unknown; to?: unknown }, today: Date, lag: number): { recent: Range; before: Range; days: number } | string {
+export function exploreRange(o: { days?: unknown; from?: unknown; to?: unknown }, today: Date, lag: number, keptMonths = 16): { recent: Range; before: Range; days: number } | string {
   const end = Date.parse(iso(today.getTime()) + 'T00:00:00Z') - lag * DAY;
   let from: number, to: number;
   if (isDate(o.from) && isDate(o.to)) {
@@ -30,10 +30,11 @@ export function exploreRange(o: { days?: unknown; from?: unknown; to?: unknown }
   } else if (o.from || o.to) return 'Set both dates, as YYYY-MM-DD.';
   else {
     const asked = Math.round(Number(o.days));
-    const days = asked >= 1 && asked <= 480 ? asked : 28;
+    // Asked for more than Google keeps: as far back as it goes.
+    const days = asked > keptMonths * 30 ? keptMonths * 30 : asked >= 1 ? asked : 28;
     to = end; from = end - (days - 1) * DAY;
   }
-  if (from < Date.parse(iso(today.getTime()) + 'T00:00:00Z') - 16 * 31 * DAY) return 'Google keeps 16 months of data: choose a later start date.';
+  if (from < Date.parse(iso(today.getTime()) + 'T00:00:00Z') - keptMonths * 31 * DAY) return `Google keeps ${keptMonths} months of data: choose a later start date.`;
   const days = Math.round((to - from) / DAY) + 1;
   return { recent: { from: iso(from), to: iso(to) }, before: { from: iso(from - days * DAY), to: iso(from - DAY) }, days };
 }

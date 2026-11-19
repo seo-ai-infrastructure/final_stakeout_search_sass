@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin, target } from '@/lib/gbpAdmin';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { allow, gate } from '@/lib/gbpAccess';
 import { postproxy } from '@/lib/postproxy';
 import { emptyDraft, postProblem, postRequest, readPost, type GbpPost, type PostDraft } from '@stakeout/core/gbpPosts';
 
@@ -21,9 +22,8 @@ function draftOf(v: unknown): PostDraft {
  */
 export async function GET(req: Request) {
   try {
-    await gbpAdmin();
     const q = new URL(req.url).searchParams;
-    const t = target(q.get('profile'), q.get('location'));
+    const t = await gate(q.get('profile'), q.get('location'), 'manage');
     const posts: GbpPost[] = [];
     for (let page = 1; page <= 3; page++) {
       const r = await postproxy<{ total?: number; data?: unknown[] }>('/api/posts', { query: { profile_id: t.profile, 'platforms[]': 'google_business', per_page: '100', page: String(page), include_media: 'true' } });
@@ -45,9 +45,8 @@ export async function GET(req: Request) {
 /** POST /api/admin/gbp/posts (admins only) { profile, location, draft }: publishes the post now, or schedules it. */
 export async function POST(req: Request) {
   try {
-    await gbpAdmin();
     const b = (await req.json()) as { profile?: unknown; location?: unknown; draft?: unknown };
-    const t = target(b.profile, b.location);
+    const t = await gate(b.profile, b.location, 'manage');
     const draft = draftOf(b.draft);
     const problem = postProblem(draft);
     if (problem) throw new InputError(problem);
@@ -59,15 +58,23 @@ export async function POST(req: Request) {
 }
 
 /**
- * DELETE /api/admin/gbp/posts?id=&google=1 (admins only): cancels a scheduled post, or with
+ * DELETE /api/admin/gbp/posts?id=&google=1 cancels a scheduled post, or with
  * google=1 also takes a published one off the listing.
  */
 export async function DELETE(req: Request) {
   try {
-    await gbpAdmin();
+    const u = await getAuthenticatedUser();
     const q = new URL(req.url).searchParams;
     const id = String(q.get('id') ?? '');
     if (!/^[A-Za-z0-9_-]{3,80}$/.test(id)) throw new InputError('Unknown post.');
+    if (u.role !== 'ADMIN') {
+      // A customer may only take down a post on one of their own paid listings: the post says which listing it is on.
+      const raw = await postproxy<{ platforms?: { platform?: string; params?: { location_id?: unknown } }[] }>('/api/posts/' + encodeURIComponent(id)).catch(() => null);
+      const g = raw?.platforms?.find((p) => p.platform === 'google_business');
+      const profile = String(q.get('profile') ?? ''), location = String(g?.params?.location_id ?? '');
+      if (!g || !location) throw new InputError('Unknown post.', 404);
+      await allow(u, profile, location, 'manage');
+    }
     await postproxy('/api/posts/' + encodeURIComponent(id), { method: 'DELETE', query: { delete_on_platform: q.get('google') === '1' ? 'true' : undefined } });
     return NextResponse.json({ ok: true });
   } catch (e) {

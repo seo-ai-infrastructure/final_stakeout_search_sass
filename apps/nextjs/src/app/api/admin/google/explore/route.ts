@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin } from '@/lib/gbpAdmin';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { agentGate } from '@/lib/gbpAccess';
 import { google, googleAccess } from '@/lib/googleOAuth';
 import { propertyFor } from '@stakeout/core/googleSite';
 import {
@@ -16,7 +17,7 @@ type GaReport = { rows?: { dimensionValues?: { value?: string }[]; metricValues?
 const text = (v: unknown) => (typeof v === 'string' ? v : undefined);
 
 /**
- * POST /api/admin/google/explore (admins only): a client's website in Search Console or Analytics
+ * POST /api/admin/google/explore : a client's website in Search Console or Analytics
  * for a chosen range against the range before, broken down by one thing, with filters. Read-only.
  *   { source: "gsc", website, by, days | from+to, query, queryMode, page, device, appearance, type }
  *   { source: "ga", property, by, days | from+to, page, device, came }
@@ -24,7 +25,8 @@ const text = (v: unknown) => (typeof v === 'string' ? v : undefined);
  */
 export async function POST(req: Request) {
   try {
-    const u = await gbpAdmin();
+    const u = await getAuthenticatedUser();
+    await agentGate(u);
     const b = (await req.json()) as Record<string, unknown>;
     const token = await googleAccess(u.id);
 

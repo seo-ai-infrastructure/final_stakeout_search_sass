@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
 import { db } from '@stakeout/db';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin, readLocation, target } from '@/lib/gbpAdmin';
+import { readLocation } from '@/lib/gbpAdmin';
+import { gate } from '@/lib/gbpAccess';
 import { weekOf } from '@stakeout/core/gbp';
 
 /** GET /api/admin/gbp/location?profile=&location= (admins only): the live profile and its edit history. */
 export async function GET(req: Request) {
   try {
-    await gbpAdmin();
     const q = new URL(req.url).searchParams;
-    const t = target(q.get('profile'), q.get('location'));
+    const t = await gate(q.get('profile'), q.get('location'), 'free');
     const [location, edits] = await Promise.all([
       readLocation(t.profile, t.location),
       db.gbpEdit.findMany({

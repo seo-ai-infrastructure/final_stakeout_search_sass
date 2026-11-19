@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { gbpOpen } from '@/lib/gbpAccess';
 import { UserSessionBadge } from '@/components/UserSessionBadge';
 import { VerifyEmailBanner } from '@/components/VerifyEmailBanner';
 export default async function DashboardLayout({
@@ -24,7 +25,7 @@ export default async function DashboardLayout({
             <Link href="/admin/devices">Device fleet</Link>
           )}
           {user.role === 'ADMIN' && <Link href="/admin/scans">All scans</Link>}
-          {user.role === 'ADMIN' && <Link href="/admin/profiles">Google profiles</Link>}
+          {gbpOpen(user) && <Link href="/profiles">Google profiles</Link>}
         </nav>
         <UserSessionBadge />
       </header>

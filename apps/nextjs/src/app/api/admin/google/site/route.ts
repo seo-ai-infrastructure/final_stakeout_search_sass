@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin } from '@/lib/gbpAdmin';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { agentGate } from '@/lib/gbpAccess';
 import { google, googleAccess } from '@/lib/googleOAuth';
 import { periods, propertyFor } from '@stakeout/core/googleSite';
 
@@ -11,13 +12,14 @@ type Row = { keys?: string[]; clicks?: number; impressions?: number; ctr?: numbe
 type Range = { from: string; to: string };
 
 /**
- * GET /api/admin/google/site?website= (admins only): Search Console for a client's website, the
+ * GET /api/admin/google/site?website= : Search Console for a client's website, the
  * last 28 days against the 28 before: clicks, times shown, average position, and the top searches.
  * Read-only. `property: null` means the connected Google login has no Search Console property for that site.
  */
 export async function GET(req: Request) {
   try {
-    const u = await gbpAdmin();
+    const u = await getAuthenticatedUser();
+    await agentGate(u);
     const website = String(new URL(req.url).searchParams.get('website') ?? '');
     if (!/^https?:\/\//.test(website)) throw new InputError('This listing has no website.');
     const token = await googleAccess(u.id);

@@ -361,3 +361,59 @@ model RivalProfile {
   posts     Json?
   postsAt   DateTime?
 }
+
+/// A customer's own Google Business account, connected through Postproxy. Each one sits in its own
+/// Postproxy profile group (`groupId`); `profileId` is filled once Google sign-in has finished.
+model GbpAccount {
+  id        String   @id @default(cuid())
+  userId    String
+  groupId   String   @unique
+  profileId String?  @unique
+  name      String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// A listing a customer pays for. `plan`: MANAGE or AGENT. `status`: PENDING (checkout not
+/// finished), ACTIVE (on the subscription), ENDING (taken off; works until `endsAt`).
+model GbpPlan {
+  id         String    @id @default(cuid())
+  userId     String
+  profileId  String
+  locationId String
+  title      String?
+  plan       String
+  status     String    @default("PENDING")
+  endsAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([userId, locationId])
+  @@index([locationId])
+}
+
+/// A customer's monthly Stripe subscription for listings: one per account, one line per plan, the
+/// quantity on each line being how many listings are on that plan. `status` is Stripe's own word.
+model GbpSub {
+  userId         String    @id
+  customerId     String
+  subscriptionId String?   @unique
+  status         String    @default("none")
+  periodEnd      DateTime?
+  updatedAt      DateTime  @default(now())
+}
+
+/// A key an account gives its own AI agent to reach Stakeout (the MCP server at /api/mcp). Only the
+/// SHA-256 of the key is kept; the key itself is shown once, when it is made.
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  prefix     String
+  hash       String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([userId])
+}

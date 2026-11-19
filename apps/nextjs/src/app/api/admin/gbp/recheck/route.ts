@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin, readLocation } from '@/lib/gbpAdmin';
+import { readLocation } from '@/lib/gbpAdmin';
+import { getAuthenticatedUser } from '@/lib/auth';
+import { allow } from '@/lib/gbpAccess';
 import { describe, type FieldChange } from '@stakeout/core/gbp';
 
 /**
@@ -11,10 +13,11 @@ import { describe, type FieldChange } from '@stakeout/core/gbp';
  */
 export async function POST(req: Request) {
   try {
-    await gbpAdmin();
+    const u = await getAuthenticatedUser();
     const { id } = (await req.json()) as { id?: unknown };
     const edit = typeof id === 'string' ? await db.gbpEdit.findUnique({ where: { id } }) : null;
     if (!edit) throw new InputError('Unknown edit.', 404);
+    await allow(u, edit.profileId, edit.locationId, 'manage');
     if (edit.status === 'FAILED') return NextResponse.json({ status: edit.status, waiting: [] });
     const now = await readLocation(edit.profileId, edit.locationId);
     // A field is showing when the live profile reads as the value this edit set. Names are compared

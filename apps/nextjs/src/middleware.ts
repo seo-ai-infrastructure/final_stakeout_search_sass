@@ -2,7 +2,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { allowedOnCustomDomain, hostOf, isPrimaryHost } from '@stakeout/core/brandHost';
-const PROTECTED_PREFIXES = ['/new-scan', '/scans', '/admin'];
+const PROTECTED_PREFIXES = ['/new-scan', '/scans', '/admin', '/profiles'];
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   // A customer's white-label domain: shared reports and what they load, nothing else. No login,

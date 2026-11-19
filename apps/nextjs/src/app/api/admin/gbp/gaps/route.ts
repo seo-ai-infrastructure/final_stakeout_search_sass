@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { db } from '@stakeout/db';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin, readLocation, target } from '@/lib/gbpAdmin';
+import { readLocation } from '@/lib/gbpAdmin';
+import { gate } from '@/lib/gbpAccess';
 import { everything, get } from '@/lib/gbpExtras';
 import { rivalListings, rivalsConfigured } from '@/lib/rivals';
 import { ACTION_TYPES } from '@stakeout/core/gbpExtras';
@@ -21,15 +22,14 @@ export const maxDuration = 60;
  */
 export async function GET(req: Request) {
   try {
-    await gbpAdmin();
     const q = new URL(req.url).searchParams;
-    const t = target(q.get('profile'), q.get('location'));
+    const t = await gate(q.get('profile'), q.get('location'), 'manage');
     const loc = await readLocation(t.profile, t.location);
     const x = await everything(t, loc);
 
     // The newest finished scan of a business with this name (any account: this page is for admins).
     const scan = loc.title
-      ? await db.gridScan.findFirst({ where: { targetBusiness: { equals: loc.title, mode: 'insensitive' }, completedPins: { gt: 0 } }, orderBy: { createdAt: 'desc' }, select: { id: true, keyword: true, createdAt: true, centerLat: true, centerLng: true } })
+      ? await db.gridScan.findFirst({ where: { targetBusiness: { equals: loc.title, mode: 'insensitive' }, completedPins: { gt: 0 }, ...(t.u.role === 'ADMIN' ? {} : { userId: t.u.id }) }, orderBy: { createdAt: 'desc' }, select: { id: true, keyword: true, createdAt: true, centerLat: true, centerLng: true } })
       : null;
     const top = scan ? topRivals(await db.gridPin.findMany({ where: { scanId: scan.id, status: 'COMPLETED' }, select: { status: true, topCompetitors: true } }) as { status: string; topCompetitors: string[] | null }[], loc.title ?? '') : [];
     const listings = scan && top.length ? await rivalListings(top.map((r) => r.name), scan.centerLat, scan.centerLng, q.get('lookup') === '1') : { rivals: [], missing: [], waiting: 0, problem: null, lookedUp: 0 };

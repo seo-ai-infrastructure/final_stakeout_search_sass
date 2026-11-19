@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin } from '@/lib/gbpAdmin';
+import { getAuthenticatedUser } from '@/lib/auth';
 import { google, googleAccess } from '@/lib/googleOAuth';
 import { periods } from '@stakeout/core/googleSite';
 
@@ -14,14 +14,14 @@ type Range = { from: string; to: string };
 const LISTING_CAMPAIGN = 'gbp_listing';
 
 /**
- * GET /api/admin/google/analytics (admins only): the Analytics properties the connected login can read.
+ * GET /api/admin/google/analytics : the Analytics properties the connected login can read.
  * GET /api/admin/google/analytics?property=properties/123: that property's last 28 days against
  * the 28 before: all visits, and the visits and key events that came from the Google listing's
  * tracking tag. Read-only.
  */
 export async function GET(req: Request) {
   try {
-    const u = await gbpAdmin();
+    const u = await getAuthenticatedUser();
     const token = await googleAccess(u.id);
     const property = String(new URL(req.url).searchParams.get('property') ?? '');
 

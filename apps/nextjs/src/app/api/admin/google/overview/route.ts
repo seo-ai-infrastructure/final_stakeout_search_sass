@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
-import { gbpAdmin } from '@/lib/gbpAdmin';
+import { getAuthenticatedUser } from '@/lib/auth';
 import { google, googleAccess } from '@/lib/googleOAuth';
 import { propertyFor } from '@stakeout/core/googleSite';
 import {
@@ -17,7 +17,7 @@ const text = (v: unknown) => (typeof v === 'string' ? v : undefined);
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
- * POST /api/admin/google/overview (admins only): everything the Search insights tab shows for a
+ * POST /api/admin/google/overview : everything the Search insights tab shows for a
  * client's website from Search Console or Analytics, for a range against the range before. Read-only.
  *   { source: "gsc", website, scope: "page" | "site", device, days | from+to }
  *     totals, a figure for each day, the searches (each with its clicks before), and for the whole
@@ -27,7 +27,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
  */
 export async function POST(req: Request) {
   try {
-    const u = await gbpAdmin();
+    const u = await getAuthenticatedUser();
     const b = (await req.json()) as Record<string, unknown>;
     const token = await googleAccess(u.id);
 
