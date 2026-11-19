@@ -2,6 +2,8 @@ import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { postproxy } from '@/lib/postproxy';
 import { removeProfile } from '@/lib/gbpBilling';
+import { pushAlert } from '@stakeout/core/alerts';
+import { flushAlerts } from '@/lib/alerts';
 
 /**
  * A customer connecting their own Google Business account. Each connection gets its own Postproxy
@@ -19,7 +21,15 @@ export async function startConnect(u: { id: string }, origin: string): Promise<s
   let row = mine.find((a) => a.profileId === null) ?? null;
   if (!row) {
     if (mine.length >= MAX_ACCOUNTS) throw new InputError(`An account can connect up to ${MAX_ACCOUNTS} Google accounts. Email us if you need more.`);
-    const g = await postproxy<{ id?: string }>('/api/profile_groups', { method: 'POST', body: { profile_group: { name: 'Stakeout customer ' + u.id + ' #' + (mine.length + 1) } } });
+    const g = await postproxy<{ id?: string }>('/api/profile_groups', { method: 'POST', body: { profile_group: { name: 'Stakeout customer ' + u.id + ' #' + (mine.length + 1) } } }).catch(async (e) => {
+      // Our own plan with the connection service is full: the customer is told to come back, and the admins are told now.
+      if (e instanceof InputError && /plan limit/i.test(e.message)) {
+        await pushAlert('gbp-groups-full', { subject: 'Stakeout: a customer could not connect Google (Postproxy group limit reached)', lines: ['A customer tried to connect a Google Business account and Postproxy refused: every profile group on the plan is in use.', 'Upgrade the Postproxy plan (or free a group by disconnecting an account) so customers can connect.'], path: '/profiles' }, 3600).catch(() => {});
+        await flushAlerts().catch(() => {});
+        throw new InputError('We cannot connect another Google account just now: we are at capacity and have been told. Try again later today, or email sass@stakeoutsearch.com.', 503);
+      }
+      throw e;
+    });
     if (!g.id) throw new InputError('Could not start the connection. Try again in a minute.', 502);
     row = await db.gbpAccount.create({ data: { userId: u.id, groupId: g.id } });
   }

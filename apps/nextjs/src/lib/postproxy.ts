@@ -12,6 +12,8 @@ export const postproxyConfigured = () => Boolean(process.env.POSTPROXY_API_KEY);
 export function postproxyProblem(status: number, body: unknown, retryAfter: string | null): string {
   const said = typeof (body as { error?: unknown })?.error === 'string' ? String((body as { error: string }).error).slice(0, 400) : '';
   if (status === 401) return 'Postproxy rejected the API key. Check POSTPROXY_API_KEY on Vercel.';
+  // The service's own plan limit (profile groups, for one) comes back as a refusal too: it is not Google's.
+  if (status === 403 && /limit reached|upgrade/i.test(said)) return 'Postproxy plan limit: ' + said;
   if (status === 403) return 'Google refused this for the connected account.' + (said ? ' ' + said : '');
   if (status === 404) return 'This location is not reachable from the connected Google account.';
   if (status === 429) return 'Google is rate-limiting this profile. Try again' + (retryAfter ? ` in ${retryAfter} seconds.` : ' in a minute.');
