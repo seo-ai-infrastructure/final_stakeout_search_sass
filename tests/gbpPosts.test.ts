@@ -91,3 +91,46 @@ test('the weekly slot is the next free one', () => {
   assert.equal(nextWeeklySlot(3, '15:00', [], wed).getDate(), 18);
   assert.equal(nextWeeklySlot(3, '09:00', [], wed).getDate(), 25);
 });
+
+import { localDay, planSlots } from '../packages/core/gbpPosts';
+
+test('planning ahead gives every chosen weekday for the weeks asked, skipping days that have a post', () => {
+  const now = new Date(2026, 10, 19, 10, 0, 0); // a Thursday, 10:00 where the viewer is
+  const slots = planSlots([1, 4], '09:00', 4, [], now);
+  // Today's 09:00 has passed, so the first is Monday; four weeks hold four Mondays and three more Thursdays.
+  assert.equal(slots.length, 7);
+  assert.equal(slots[0].getDay(), 1);
+  assert.equal(localDay(slots[0]), '2026-11-23');
+  assert.ok(slots.every((s) => [1, 4].includes(s.getDay()) && s.getHours() === 9 && s.getMinutes() === 0));
+  assert.ok(slots.every((s, i) => i === 0 || s.getTime() > slots[i - 1].getTime()));
+  // Later the same day still counts when it is more than an hour off.
+  assert.equal(localDay(planSlots([4], '15:00', 1, [], now)[0]), '2026-11-19');
+  assert.equal(planSlots([4], '10:30', 1, [], now).length, 0);
+  // A day that already has a post is left alone.
+  assert.equal(planSlots([1, 4], '09:00', 4, ['2026-11-23', '2026-11-26'], now).length, 5);
+  assert.equal(planSlots([], '09:00', 4, [], now).length, 0);
+  assert.equal(planSlots([0, 1, 2, 3, 4, 5, 6], '09:00', 12, [], now).length, 40);
+});
+
+import { calendarWeeks, emptyWeeks } from '../packages/core/gbpPosts';
+
+test('a month is laid out in whole weeks, Sunday first', () => {
+  const nov = calendarWeeks(2026, 10);
+  assert.equal(nov.length, 5);
+  assert.ok(nov.every((w) => w.length === 7));
+  assert.equal(nov[0][0], '2026-11-01'); // November 2026 starts on a Sunday
+  assert.equal(nov[4][6], '2026-12-05');
+  const dec = calendarWeeks(2026, 11);
+  assert.equal(dec[0][0], '2026-11-29');
+  assert.equal(dec[0][2], '2026-12-01');
+  assert.equal(dec[dec.length - 1].includes('2026-12-31'), true);
+  // A February that fits four weeks exactly.
+  assert.deepEqual(calendarWeeks(2026, 1).map((w) => w[0]), ['2026-02-01', '2026-02-08', '2026-02-15', '2026-02-22']);
+});
+
+test('weeks ahead with no post are found', () => {
+  assert.deepEqual(emptyWeeks([], '2026-11-19', 4), ['2026-11-19', '2026-11-26', '2026-12-03', '2026-12-10']);
+  assert.deepEqual(emptyWeeks(['2026-11-19', '2026-12-09'], '2026-11-19', 4), ['2026-11-26', '2026-12-10']);
+  assert.deepEqual(emptyWeeks(['2026-11-25', '2026-11-26', '2026-12-03', '2026-12-16'], '2026-11-19', 4), []);
+  assert.deepEqual(emptyWeeks([], 'soon', 4), []);
+});

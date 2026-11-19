@@ -165,3 +165,63 @@ export function nextWeeklySlot(weekday: number, time: string, taken: string[], n
   }
   return slot;
 }
+
+/** A moment's calendar day where the viewer is, as YYYY-MM-DD. */
+export const localDay = (d: Date) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+/**
+ * The open slots for planning ahead: every chosen weekday (0 Sunday … 6 Saturday) at `time`
+ * (HH:MM, the viewer's own time zone) over the next `weeks` weeks, soonest first, leaving out any
+ * less than an hour away and any day that already has a post (`takenDays`, YYYY-MM-DD). Capped at 40.
+ */
+export function planSlots(weekdays: number[], time: string, weeks: number, takenDays: string[], now: Date = new Date()): Date[] {
+  const [h, m] = (isTime(time) ? time : '09:00').split(':').map(Number);
+  const days = new Set(weekdays.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6));
+  const taken = new Set(takenDays);
+  const out: Date[] = [];
+  const span = Math.min(12, Math.max(1, Math.round(weeks) || 4)) * 7;
+  for (let i = 0; i < span && out.length < 40; i++) {
+    const slot = new Date(now);
+    slot.setDate(slot.getDate() + i);
+    slot.setHours(h, m, 0, 0);
+    if (days.has(slot.getDay()) && slot.getTime() >= now.getTime() + 3600000 && !taken.has(localDay(slot))) out.push(slot);
+  }
+  return out;
+}
+
+const ymd = (d: Date) => localDay(d);
+
+/**
+ * A month laid out as a calendar: whole weeks, Sunday first, each day as YYYY-MM-DD, including the
+ * days of the months either side that fill the first and last week. `month` is 0 for January.
+ */
+export function calendarWeeks(year: number, month: number): string[][] {
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
+  // Noon, so a clock change in the middle of the month never moves a day.
+  const day = new Date(year, month, 1 - first.getDay(), 12);
+  const weeks: string[][] = [];
+  while (day.getTime() <= last.getTime() + 12 * 3600000 || weeks.length === 0) {
+    const week: string[] = [];
+    for (let i = 0; i < 7; i++) { week.push(ymd(day)); day.setDate(day.getDate() + 1); }
+    weeks.push(week);
+  }
+  return weeks;
+}
+
+/**
+ * Which of the next `count` weeks have no post: each week is seven days, the first starting on
+ * `today` (YYYY-MM-DD). `days` are the days that have a post. Returns each empty week's first day.
+ */
+export function emptyWeeks(days: string[], today: string, count: number): string[] {
+  const has = new Set(days);
+  const start = new Date(today + 'T12:00:00');
+  if (Number.isNaN(start.getTime())) return [];
+  const out: string[] = [];
+  for (let w = 0; w < count; w++) {
+    let any = false;
+    for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(d.getDate() + w * 7 + i); if (has.has(ymd(d))) any = true; }
+    if (!any) { const d = new Date(start); d.setDate(d.getDate() + w * 7); out.push(ymd(d)); }
+  }
+  return out;
+}
