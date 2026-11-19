@@ -34,8 +34,8 @@ async function post<T>(body: unknown): Promise<T> {
 const span = (r: Range) => `${shortDate(r.recent.from)} to ${shortDate(r.recent.to)}, against the ${r.days} days before`;
 
 /** Search Console for the page the listing links to (or the whole site): totals, a day-by-day line, top and rising searches. */
-function SearchConsole({ website, host, businessName, dates }: { website: string; host: string; businessName: string; dates: Dates }) {
-  const [scope, setScope] = useState<'page' | 'site'>('page');
+function SearchConsole({ website, host, businessName, dates, wholeSite }: { website: string; host: string; businessName: string; dates: Dates; wholeSite?: boolean }) {
+  const [scope, setScope] = useState<'page' | 'site'>(wholeSite ? 'site' : 'page');
   const [device, setDevice] = useState<(typeof DEVICE)[number][0]>('');
   const [d, setD] = useState<Gsc | null>(null);
   const [error, setError] = useState('');
@@ -47,7 +47,7 @@ function SearchConsole({ website, host, businessName, dates }: { website: string
   const [picked, setPicked] = useState<string[]>([]);
   const key = JSON.stringify(dates);
 
-  useEffect(() => { setD(null); setPicked([]); setScope('page'); setDevice(''); setFind(''); setAll(false); }, [website]);
+  useEffect(() => { setD(null); setPicked([]); setScope(wholeSite ? 'site' : 'page'); setDevice(''); setFind(''); setAll(false); }, [website, wholeSite]);
   useEffect(() => {
     let live = true;
     setBusy(true); setError('');
@@ -66,8 +66,8 @@ function SearchConsole({ website, host, businessName, dates }: { website: string
 
   return (
     <section id="insights-search" className={card + ' scroll-mt-16 space-y-5'}>
-      <SectionHead title="Google Search Console" sub={d && d.property ? <>{d.scope === 'page' ? <>Searches that led to <span className="text-slate-300">{d.page.replace(/^https?:\/\//, '')}</span>, the page the listing links to</> : <>Every page of {host}</>} · {span(d.range)}</> : 'Google searches that led to the website'}>
-        <Segmented label="Which pages" value={scope} onChange={setScope} options={[['page', 'The listing’s page'], ['site', 'Whole website']] as const} />
+      <SectionHead title="Google Search Console" sub={d && d.property ? <>{d.scope === 'page' ? <>Searches that led to <span className="text-slate-300">{d.page.replace(/^https?:\/\//, '')}</span>{wholeSite ? '' : ', the page the listing links to'}</> : <>Every page of {host}</>} · {span(d.range)}</> : 'Google searches that led to the website'}>
+        <Segmented label="Which pages" value={scope} onChange={setScope} options={[['page', wholeSite ? 'Home page only' : 'The listing’s page'], ['site', 'Whole website']] as const} />
         <Segmented label="Device" value={device} onChange={setDevice} options={DEVICE} />
       </SectionHead>
       {error && <p className="text-sm text-amber-300">{error}</p>}
@@ -288,7 +288,7 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
 }
 
 /** The client's website in Search Console and Analytics, read with the admin's own Google login. `dates` is the tab's date choice. */
-export default function GoogleSitePanel({ website, businessName, dates }: { website: string; businessName: string; dates: Dates }) {
+export default function GoogleSitePanel({ website, businessName, dates, wholeSite }: { website: string; businessName: string; dates: Dates; wholeSite?: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [notice, setNotice] = useState('');
   const host = (() => { try { return new URL(website).hostname.replace(/^www\./, ''); } catch { return ''; } })();
@@ -314,7 +314,7 @@ export default function GoogleSitePanel({ website, businessName, dates }: { webs
           <p className="mt-2 text-sm text-slate-400">Google sign-in is not set up yet: add <code className="text-slate-200">GOOGLE_CLIENT_ID</code> and <code className="text-slate-200">GOOGLE_CLIENT_SECRET</code> on Vercel, then redeploy.</p>
         ) : (
           <>
-            <p className="mt-2 text-sm text-slate-400">Connect the Google login that can see your clients’ Search Console and Analytics. Stakeout only reads; it cannot change anything there.</p>
+            <p className="mt-2 text-sm text-slate-400">Connect the Google login that can see your Search Console and Analytics. It is free, and Stakeout only reads; it cannot change anything there.</p>
             <a href="/api/google/connect" className="mt-3 inline-block rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400">Connect Google</a>
           </>
         )}
@@ -322,9 +322,9 @@ export default function GoogleSitePanel({ website, businessName, dates }: { webs
     );
   return (
     <>
-      {!host ? <p className={card + ' text-sm text-slate-400'}>This listing has no website, so there is nothing to look up in Search Console or Analytics.</p> : (
+      {!host ? <p className={card + ' text-sm text-slate-400'}>{wholeSite ? 'Pick a website above to see its Search Console and Analytics.' : 'This listing has no website, so there is nothing to look up in Search Console or Analytics.'}</p> : (
         <>
-          {status.searchConsole && <SearchConsole website={website} host={host} businessName={businessName} dates={dates} />}
+          {status.searchConsole && <SearchConsole website={website} host={host} businessName={businessName} dates={dates} wholeSite={wholeSite} />}
           {status.analytics && <Analytics host={host} dates={dates} />}
         </>
       )}

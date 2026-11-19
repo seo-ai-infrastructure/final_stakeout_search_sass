@@ -4,9 +4,20 @@ import { errorResponse } from '@/lib/api';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { InputError } from '@stakeout/core/grid';
 import { gbpOpen, paidLocations } from '@/lib/gbpAccess';
+import { connectionPaid, unpaidClock } from '@stakeout/core/gbpPlans';
 import { postproxy, postproxyConfigured } from '@/lib/postproxy';
 
 type Profile = { id: string; name: string; platform: string; status: string };
+
+/** How many days a connection has left before it is disconnected for having no paying listing (null: it has one). */
+async function daysLeft(userId: string, a: { profileId: string | null; unpaidSince: Date | null }) {
+  const [rows, sub] = await Promise.all([
+    a.profileId ? db.gbpPlan.findMany({ where: { userId, profileId: a.profileId }, select: { plan: true, status: true, endsAt: true } }) : Promise.resolve([]),
+    db.gbpSub.findUnique({ where: { userId }, select: { status: true } }),
+  ]);
+  const now = new Date();
+  return unpaidClock(connectionPaid(rows, sub?.status, now), a.unpaidSince, now).daysLeft;
+}
 type Placement = { id: string; name: string; metadata?: { place_id?: string } };
 
 /**
@@ -35,7 +46,7 @@ export async function GET() {
           return { id: p.id, name: p.name, status: p.status, customer: own.has(p.id), ...places };
         }),
     );
-    return NextResponse.json({ ready: true, admin, profiles, accounts: admin ? [] : accounts.map((a) => ({ id: a.id, profile: a.profileId, name: a.name })) });
+    return NextResponse.json({ ready: true, admin, profiles, accounts: admin ? [] : await Promise.all(accounts.map(async (a) => ({ id: a.id, profile: a.profileId, name: a.name, daysLeft: await daysLeft(u.id, a) }))) });
   } catch (e) {
     return errorResponse(e);
   }

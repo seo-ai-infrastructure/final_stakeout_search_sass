@@ -22,7 +22,7 @@ const DAY = 86400000;
 export async function GET(req: Request) {
   try {
     const q = new URL(req.url).searchParams;
-    const t = await gate(q.get('profile'), q.get('location'), 'free');
+    const t = await gate(q.get('profile'), q.get('location'), 'manage');
     // Google's listing numbers run about two days behind.
     // Google keeps 18 months of a listing's numbers, so that is how far back a connected listing can be read from day one.
     const range = exploreRange({ days: q.get('days') ?? 30, from: q.get('from') ?? undefined, to: q.get('to') ?? undefined }, new Date(), 2, 18);

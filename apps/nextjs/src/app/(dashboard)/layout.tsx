@@ -12,9 +12,11 @@ export default async function DashboardLayout({
 }) {
   const user = await getAuthenticatedUser().catch(() => null);
   if (!user) redirect('/login');
-  // A customer who has not connected a Google account yet gets a button for it; after that, a plain link.
+  // A customer who has connected nothing yet gets a button for the free part (Search Console and Analytics); after that, a plain link.
   const open = gbpOpen(user);
-  const connected = open && user.role !== 'ADMIN' ? (await db.gbpAccount.count({ where: { userId: user.id, profileId: { not: null } } }).catch(() => 1)) > 0 : true;
+  const connected = open && user.role !== 'ADMIN'
+    ? (await Promise.all([db.googleConnection.count({ where: { userId: user.id } }), db.gbpAccount.count({ where: { userId: user.id } })]).catch(() => [1, 1])).some((n) => n > 0)
+    : true;
   return (
     <div className="min-h-screen">
       <header className="flex min-h-16 flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-5 py-3">
@@ -32,7 +34,7 @@ export default async function DashboardLayout({
           {open && connected && <Link href="/profiles">Google profiles</Link>}
           {open && !connected && (
             <Link href="/profiles" className="rounded-lg bg-emerald-500 px-3.5 py-1.5 font-semibold text-slate-950 hover:bg-emerald-400">
-              Connect your Google account <span className="font-normal opacity-80">· free</span>
+              Connect Search Console and Analytics <span className="font-normal opacity-80">· free</span>
             </Link>
           )}
         </nav>

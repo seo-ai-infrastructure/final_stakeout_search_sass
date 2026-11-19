@@ -132,3 +132,23 @@ test('points can be three miles apart', () => {
   assert.equal(parseSpec({ ...spec, spacingKm: 4.82802 }).spacingKm, 4.82802);
   assert.throws(() => parseSpec({ ...spec, spacingKm: 4 }));
 });
+
+import { connectionPaid, unpaidClock } from '../packages/core/gbpPlans';
+
+test('an unpaid connection gets seven days, and a failed card starts the clock', () => {
+  const now = new Date('2026-11-19T12:00:00Z');
+  const row = (status: string, endsAt: Date | null = null) => ({ plan: 'MANAGE', status, endsAt });
+  assert.equal(connectionPaid([row('ACTIVE')], 'active', now), true);
+  assert.equal(connectionPaid([row('ACTIVE')], 'past_due', now), false);
+  assert.equal(connectionPaid([row('PENDING')], 'active', now), false);
+  assert.equal(connectionPaid([row('ENDING', new Date('2026-11-25T00:00:00Z'))], 'canceled', now), true);
+  assert.equal(connectionPaid([row('ENDING', new Date('2026-11-01T00:00:00Z'))], 'canceled', now), false);
+  assert.equal(connectionPaid([], null, now), false);
+
+  assert.deepEqual(unpaidClock(true, new Date('2026-11-01T00:00:00Z'), now), { unpaidSince: null, disconnect: false, daysLeft: null });
+  // Just stopped paying: the clock starts now.
+  assert.deepEqual(unpaidClock(false, null, now), { unpaidSince: now, disconnect: false, daysLeft: 7 });
+  assert.equal(unpaidClock(false, new Date('2026-11-14T12:00:00Z'), now).daysLeft, 2);
+  assert.equal(unpaidClock(false, new Date('2026-11-12T12:00:00Z'), now).disconnect, true);
+  assert.equal(unpaidClock(false, new Date('2026-11-12T12:00:01Z'), now).disconnect, false);
+});

@@ -9,7 +9,7 @@ import { weekOf } from '@stakeout/core/gbp';
 export async function GET(req: Request) {
   try {
     const q = new URL(req.url).searchParams;
-    const t = await gate(q.get('profile'), q.get('location'), 'free');
+    const t = await gate(q.get('profile'), q.get('location'), 'manage');
     const [location, edits] = await Promise.all([
       readLocation(t.profile, t.location),
       db.gbpEdit.findMany({

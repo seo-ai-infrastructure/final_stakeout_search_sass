@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import GbpInsights from '@/components/GbpInsights';
 import GoogleSitePanel, { type Dates } from '@/components/GoogleSitePanel';
 
@@ -10,7 +10,7 @@ const field = 'rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 tex
  * One listing's search numbers in one place, all for the same dates: Google's own figures for the
  * listing, Search Console for the page it links to, and Analytics for what those visits did.
  */
-export default function SearchInsights({ profile, location, businessName, place, website }: { profile: string; location: string; businessName: string; place: string; website: string }) {
+export default function SearchInsights({ profile, location, businessName, place, website, above, wholeSite }: { /** The listing, when there is one: without it only the website's numbers are shown. */ profile?: string; location?: string; businessName: string; place: string; website: string; /** Shown where the listing's numbers would be. */ above?: ReactNode; /** Start Search Console on the whole website instead of one page. */ wholeSite?: boolean }) {
   const [days, setDays] = useState(30);
   const [custom, setCustom] = useState(false);
   const [from, setFrom] = useState('');
@@ -38,13 +38,13 @@ export default function SearchInsights({ profile, location, businessName, place,
           </>
         )}
         <nav aria-label="Jump to" className="ml-auto flex items-center gap-1 text-xs">
-          {([['insights-listing', 'Listing'], ['insights-search', 'Search Console'], ['insights-analytics', 'Analytics']] as const).map(([id, text]) => (
+          {([['insights-listing', 'Listing'], ['insights-search', 'Search Console'], ['insights-analytics', 'Analytics']] as const).filter(([id]) => id !== 'insights-listing' || Boolean(profile && location)).map(([id, text]) => (
             <a key={id} href={'#' + id} className="rounded-md px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200">{text}</a>
           ))}
         </nav>
       </div>
-      <div id="insights-listing" className="scroll-mt-16"><GbpInsights profile={profile} location={location} businessName={businessName} place={place} range={query} /></div>
-      <GoogleSitePanel website={website} businessName={businessName} dates={dates} />
+      {profile && location ? <div id="insights-listing" className="scroll-mt-16"><GbpInsights profile={profile} location={location} businessName={businessName} place={place} range={query} /></div> : above}
+      <GoogleSitePanel website={website} businessName={businessName} dates={dates} wholeSite={wholeSite} />
     </div>
   );
 }

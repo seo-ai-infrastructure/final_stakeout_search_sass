@@ -1,6 +1,7 @@
 import { redis } from '@stakeout/core/redis';
 import { postproxyConfigured } from '@/lib/postproxy';
 import { checkAllListings } from '@/lib/gbpWatch';
+import { sweepUnpaid } from '@/lib/gbpUnpaid';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -18,8 +19,10 @@ export async function GET(req: Request) {
   const first = await redis().set('stakeout:gbpwatch:ran', '1', 'EX', 6 * 3600, 'NX').catch(() => null);
   if (!first) return Response.json({ skipped: 'already ran in the last six hours' });
   try {
+    // First, connections nobody is paying for are settled, so the check below does not read them.
+    const unpaid = await sweepUnpaid().catch((e) => { console.error('[gbp-unpaid] sweep failed:', (e as Error).message); return null; });
     const { listings, fresh, changed, found, problems } = await checkAllListings();
-    return Response.json({ listings, fresh, changed, found, problems });
+    return Response.json({ listings, fresh, changed, found, problems, unpaid });
   } catch (e) {
     console.error('[gbp-watch] run failed:', (e as Error).message);
     return Response.json({ error: 'The check did not finish.' }, { status: 500 });

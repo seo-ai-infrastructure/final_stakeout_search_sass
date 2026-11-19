@@ -51,15 +51,15 @@ export function UpgradeCard({ profile, location, name, what, onDone }: { profile
     <div className={card}>
       <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Manage plan</p>
       <h3 className="mt-1 text-lg font-semibold">{what} is part of the Manage plan</h3>
-      <p className="mt-2 text-sm text-slate-400">Search insights are free on every listing you connect. Manage adds everything that changes a listing:</p>
+      <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. Manage is everything about the Google listing itself:</p>
       <ul className="mt-3 grid gap-1.5 text-sm text-slate-300 sm:grid-cols-2">
+        <li>Calls, directions and searches, straight from Google</li>
         <li>Edit hours, description, services and attributes</li>
         <li>Publish and schedule Google posts</li>
         <li>Read and answer reviews</li>
         <li>A daily check for changes you did not make</li>
         <li>Gaps against the businesses outranking you</li>
-        <li>Every edit logged and checked on Google</li>
-      </ul>
+              </ul>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button type="button" onClick={upgrade} disabled={busy || billing?.ready === false} className={go}>{busy ? 'Working…' : `Put ${name} on Manage · ${dollars(unitCents('MANAGE', next))} a month`}</button>
         <span className="text-xs text-slate-500">{running ? 'Added to your subscription; the rest of this month is charged to your card now.' : 'Monthly. Cancel any time; it keeps working until the month you paid for ends.'}</span>
@@ -122,7 +122,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           {billing?.sub && <button type="button" onClick={portal} disabled={busy === 'portal'} className={btn}>Card, invoices and cancelling</button>}
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Connected listings</p><p className="mt-1 text-2xl font-bold tabular-nums">{all.length}</p><p className="text-xs text-slate-500">Search insights free on all of them</p></div>
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Connected listings</p><p className="mt-1 text-2xl font-bold tabular-nums">{all.length}</p><p className="text-xs text-slate-500">Search Console and Analytics are free</p></div>
           <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">On a plan</p><p className="mt-1 text-2xl font-bold tabular-nums">{paying}</p><p className="text-xs text-slate-500">{paying ? [counts.MANAGE ? `${counts.MANAGE} Manage at ${dollars(unitCents('MANAGE', counts.MANAGE))}` : '', counts.AGENT ? `${counts.AGENT} Agent at ${dollars(unitCents('AGENT', counts.AGENT))}` : ''].filter(Boolean).join(' · ') : 'None yet'}</p></div>
           <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">This month</p><p className="mt-1 text-2xl font-bold tabular-nums">{dollars(billing?.monthlyCents ?? 0)}</p><p className="text-xs text-slate-500">{billing?.sub?.status === 'past_due' ? <span className="text-rose-300">The last payment failed. Update the card.</span> : billing?.sub?.running && billing.sub.periodEnd ? (paying ? 'Renews ' : 'Ends ') + day(billing.sub.periodEnd) : 'No subscription'}</p></div>
         </div>
@@ -198,7 +198,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           })}
           {accounts.filter((a) => a.profile).length === 0 && <li className="px-3 py-2.5 text-sm text-slate-400">No Google account connected yet.</li>}
         </ul>
-        <p className="mt-2 text-xs text-slate-500">Connecting is free and read-only until you put a listing on a plan. Disconnecting removes our access; nothing changes on Google.</p>
+        <p className="mt-2 text-xs text-slate-500">A connected account with no listing on a plan is removed after 7 days; connecting again takes a minute. Disconnecting removes our access; nothing changes on Google.</p>
       </div>
     </div>
   );

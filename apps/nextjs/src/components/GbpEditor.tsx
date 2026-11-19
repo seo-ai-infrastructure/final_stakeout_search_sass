@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SearchInsights from '@/components/SearchInsights';
 import GbpReviews from '@/components/GbpReviews';
 import GbpWatch from '@/components/GbpWatch';
@@ -10,6 +10,7 @@ import GbpPlans, { UpgradeCard, connectGoogle } from '@/components/GbpPlans';
 import GbpAgents from '@/components/GbpAgents';
 import GbpOverview from '@/components/GbpOverview';
 import GbpAllCalendar from '@/components/GbpAllCalendar';
+import WebsiteInsights, { Lock, LockedListingCard } from '@/components/WebsiteInsights';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, descriptionWarnings, diff, highScrutiny, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
@@ -17,7 +18,8 @@ import {
 
 type Cat = { name: string; displayName?: string };
 type Profile = { id: string; name: string; status: string; problem: string | null; customer?: boolean; locations: { id: string; name: string; placeId: string | null; plan: string | null }[] };
-type Account = { id: string; profile: string | null; name: string | null };
+type Account = { id: string; profile: string | null; name: string | null; daysLeft?: number | null };
+type Tab = 'website' | 'listing' | 'calendar' | 'reviews' | 'changes' | 'plan' | 'agents';
 type Edit = { id: string; tier: Tier; changes: FieldChange[]; status: string; error: string | null; checkedAt: string | null; createdAt: string };
 type Form = { description: string; websiteUri: string; additionalCategories: Cat[]; additionalPhones: string; regularHours: DayHours[] | null; specialHours: SpecialDay[] | null; pastSpecial: number; title: string; primaryCategory: Cat | null; primaryPhone: string };
 
@@ -108,7 +110,9 @@ export default function GbpEditor() {
   const [pick, setPick] = useState<{ profile: string; location: string } | null>(null);
   const [notice, setNotice] = useState('');
   const [live, setLive] = useState<GbpLocation | null>(null);
-  const [tab, setTab] = useState<'listing' | 'calendar' | 'reviews' | 'changes' | 'plan' | 'agents'>('listing');
+  const [tab, setTab] = useState<Tab>('listing');
+  // Whether the address (or a result coming back from Google or Stripe) already chose the tab.
+  const tabChosen = useRef(false);
   // Admins: whether a 1–2 star review is emailed the moment it arrives.
   const [alerts, setAlerts] = useState<{ on: boolean; maxStars: number } | null>(null);
   // Admins reach every listing. A customer reads the accounts they connected and pays per listing to change one.
@@ -135,14 +139,15 @@ export default function GbpEditor() {
     // The result of a Google sign-in that just came back, shown once and then taken off the address.
     const q = new URLSearchParams(window.location.search);
     const r = q.get('google');
-    if (['calendar', 'changes', 'reviews', 'plan', 'agents'].includes(q.get('tab') ?? '')) setTab(q.get('tab') as 'calendar' | 'changes' | 'reviews' | 'plan' | 'agents');
+    const go = (t: Tab) => { tabChosen.current = true; setTab(t); };
+    if (['website', 'listing', 'calendar', 'changes', 'reviews', 'plan', 'agents'].includes(q.get('tab') ?? '')) go(q.get('tab') as Tab);
     const g = q.get('gbp'), paid = q.get('plan');
-    if (r) setNotice(GOOGLE_RESULT[r] ?? '');
-    if (g) setNotice(CONNECT_RESULT[g] ?? '');
+    if (r) { setNotice(GOOGLE_RESULT[r] ?? ''); go('website'); }
+    if (g) { setNotice(CONNECT_RESULT[g] ?? ''); go('listing'); }
     if (paid === 'cancelled') setNotice('Checkout was cancelled. Nothing was charged.');
     else if (paid) {
       // Back from Stripe: the listings switch on now (Stripe's own message does the same if this tab is closed first).
-      setTab('plan');
+      go('plan');
       api<{ on: boolean }>('/api/billing/gbp', { confirm: paid })
         .then(() => { setNotice('Payment received. Your listings are on the Manage plan.'); readProfiles(); })
         .catch(() => setNotice('Payment is still going through. Your listings switch on as soon as it does; reload in a minute.'));
@@ -155,6 +160,10 @@ export default function GbpEditor() {
     api<{ ready: boolean; admin: boolean; profiles: Profile[]; accounts: Account[] }>('/api/admin/gbp')
       .then((r) => {
         setReady(r.ready); setProfiles(r.profiles); setAdmin(r.admin); setAccounts(r.accounts ?? []);
+        // A customer lands on the free part, their website's numbers, unless something already chose a tab.
+        if (!r.admin && !tabChosen.current) { tabChosen.current = true; setTab('website'); }
+        // The website tab is the customers' own: an admin's website numbers sit inside each listing.
+        if (r.admin) setTab((t) => (t === 'website' ? 'listing' : t));
         // How many changes are waiting, for the tab's badge.
         if (r.ready) api<{ open: unknown[] }>('/api/admin/gbp/watch').then((w) => setWaiting(w.open.length)).catch(() => {});
         if (r.ready && r.admin) api<{ on: boolean; maxStars: number }>('/api/admin/gbp/alerts').then(setAlerts).catch(() => {});
@@ -169,6 +178,11 @@ export default function GbpEditor() {
   // The plan the open listing is on: an admin's listings are always unlocked.
   const openPlan = pick ? profiles?.find((p) => p.id === pick.profile)?.locations.find((l) => l.id === pick.location)?.plan ?? null : null;
   const paidListing = admin || openPlan !== null;
+  // Whether this customer has any listing on a paid plan (an admin's are all unlocked).
+  const anyPaid = admin || Boolean(profiles?.some((p) => p.locations.some((l) => l.plan !== null)));
+  const openName = pick ? profiles?.find((p) => p.id === pick.profile)?.locations.find((l) => l.id === pick.location)?.name ?? 'This listing' : '';
+  // The soonest a connection with no paying listing will be removed.
+  const daysLeft = accounts.map((a) => a.daysLeft).filter((d): d is number => typeof d === 'number').sort((a, b) => a - b)[0] ?? null;
 
   const load = useCallback(async (p: { profile: string; location: string }) => {
     setLive(null); setForm(null); setError(''); setReview(false); setUnlocked(false);
@@ -179,7 +193,8 @@ export default function GbpEditor() {
       setError(e instanceof Error ? e.message : 'Could not read the profile.');
     }
   }, []);
-  useEffect(() => { if (pick) load(pick); }, [pick, load]);
+  // A listing's details come with the paid plan: an unpaid one is not read at all.
+  useEffect(() => { if (pick && paidListing) load(pick); }, [pick, load, paidListing]);
   // The listing again, without clearing the page: after a change made from one of its panels.
   const refresh = useCallback(async (p: { profile: string; location: string }) => {
     try {
@@ -254,7 +269,7 @@ export default function GbpEditor() {
     <div className="mx-auto max-w-5xl space-y-5 px-5 py-6 text-slate-200">
       <div>
         <h1 className="text-2xl font-bold">Google profiles</h1>
-        <p className="mt-1 text-sm text-slate-400">{admin ? 'Each client’s Google Business Profile: how it is doing in search, its edits, posts and reviews.' : 'Your Google Business Profiles: how each is doing in search for free, and edits, posts, reviews and a change watchdog on the listings you put on a plan.'}</p>
+        <p className="mt-1 text-sm text-slate-400">{admin ? 'Each client’s Google Business Profile: how it is doing in search, its edits, posts and reviews.' : 'Your website’s Search Console and Analytics, free. Your Google listing’s numbers, edits, posts, reviews and change watchdog on the Manage plan.'}</p>
       </div>
 
       {!ready && !admin && <div className={card}><p className="font-semibold">Connecting Google accounts is being set up.</p><p className="mt-1 text-sm text-slate-400">Email sass@stakeoutsearch.com and we will tell you the moment it is ready.</p></div>}
@@ -271,26 +286,34 @@ export default function GbpEditor() {
       {notice && <p className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">{notice}</p>}
       {error && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</p>}
 
-      {ready && !admin && profiles !== null && profiles.length === 0 && tab === 'listing' && (
-        <div className={card}>
-          <h2 className="text-lg font-semibold">Connect your Google Business Profile</h2>
-          <p className="mt-2 text-sm text-slate-400">Sign in with the Google login that manages your listings. Connecting is free and nothing on Google changes.</p>
-          <ul className="mt-3 grid gap-1.5 text-sm text-slate-300 sm:grid-cols-2">
-            <li><span className="text-emerald-400">Free:</span> calls, website clicks and direction requests over time</li>
-            <li><span className="text-emerald-400">Free:</span> the searches people found you with</li>
-            <li><span className="text-emerald-400">Free:</span> Search Console and Analytics for the listing’s website</li>
-            <li><span className="text-slate-400">Manage, from $29 a listing:</span> edits, posts, review replies, a change watchdog and competitor gaps</li>
-          </ul>
-          <button type="button" onClick={connect} disabled={connecting} className="mt-4 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{connecting ? 'Opening Google…' : 'Connect Google account'}</button>
-        </div>
-      )}
-
       {ready && profiles !== null && (profiles.length > 0 || !admin) && (
         <div role="tablist" className="flex gap-1 overflow-x-auto whitespace-nowrap border-b border-slate-800">
-          {(admin ? ([['listing', 'Listings'], ['calendar', 'Calendar'], ['reviews', 'Reviews'], ['changes', 'Changes'], ['agents', 'AI agents']] as const) : ([['listing', 'Listings'], ['calendar', 'Calendar'], ['changes', 'Changes'], ['agents', 'AI agents'], ['plan', 'Plan and billing']] as const)).map(([t, label]) => (
-            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={'-mb-px border-b-2 px-4 py-2 text-sm font-semibold ' + (tab === t ? 'border-emerald-500 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200')}>{label}{t === 'changes' && waiting > 0 && <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[11px] text-amber-300">{waiting}</span>}</button>
+          {(admin ? ([['listing', 'Listings'], ['calendar', 'Calendar'], ['reviews', 'Reviews'], ['changes', 'Changes'], ['agents', 'AI agents']] as const) : ([['website', 'Website'], ['listing', 'Business Profile'], ['calendar', 'Calendar'], ['changes', 'Changes'], ['agents', 'AI agents'], ['plan', 'Plan and billing']] as const)).map(([t, label]) => (
+            <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={'-mb-px inline-flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-semibold ' + (tab === t ? 'border-emerald-500 text-emerald-300' : 'border-transparent text-slate-400 hover:text-slate-200')}>{t === 'listing' && !anyPaid && <Lock />}{label}{t === 'changes' && waiting > 0 && <span className="ml-1.5 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[11px] text-amber-300">{waiting}</span>}</button>
           ))}
         </div>
+      )}
+      {ready && tab === 'website' && !admin && profiles !== null && <WebsiteInsights locked={anyPaid ? undefined : <LockedListingCard connected={profiles.length > 0} onUpgrade={() => { setTab('listing'); window.scrollTo({ top: 0 }); }} />} />}
+      {ready && tab === 'listing' && !admin && profiles !== null && profiles.length === 0 && (
+        <div className={card}>
+          <h2 className="flex items-center gap-2 text-lg font-semibold"><Lock /> Google Business Profile</h2>
+          <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. Your Google listing is where the Manage plan comes in:</p>
+          <ul className="mt-3 grid gap-1.5 text-sm text-slate-300 sm:grid-cols-2">
+            <li><span className="text-emerald-400">Insights:</span> calls, direction requests and website clicks from the listing, day by day</li>
+            <li><span className="text-emerald-400">Searches:</span> what people typed to find you, and which are rising</li>
+            <li><span className="text-emerald-400">Gaps:</span> categories, services and attributes the businesses outranking you have</li>
+            <li><span className="text-emerald-400">Posts:</span> a calendar to write and schedule Google posts</li>
+            <li><span className="text-emerald-400">Reviews:</span> read and answer them in one place</li>
+            <li><span className="text-emerald-400">Watchdog:</span> told the day anything on the listing changes</li>
+          </ul>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={connect} disabled={connecting} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{connecting ? 'Opening Google…' : 'Connect your Business Profile · $29 a month per location ($22 from 10)'}</button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">You connect first so you can pick which listings to put on the plan, then pay. Nothing on Google changes. A connection with no listing on a plan is removed after 7 days.</p>
+        </div>
+      )}
+      {ready && tab === 'listing' && !admin && profiles !== null && profiles.length > 0 && !anyPaid && daysLeft !== null && (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">Your Business Profile is connected. Put a listing on the Manage plan to see its numbers and work on it. {daysLeft > 0 ? `With no listing on a plan, the connection is removed in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : 'With no listing on a plan, the connection is removed today.'}</p>
       )}
       {ready && tab === 'agents' && profiles !== null && <GbpAgents admin={admin} />}
       {ready && tab === 'calendar' && profiles !== null && <GbpAllCalendar profiles={profiles} admin={admin} onOpen={(p) => { setPick(p); setChoosing(false); setView('posts'); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
@@ -326,7 +349,16 @@ export default function GbpEditor() {
         </div>
       )}
 
-      {tab === 'listing' && pick && !form && !error && <p className="text-sm text-slate-400">Reading the profile from Google…</p>}
+      {tab === 'listing' && pick && paidListing && !form && !error && <p className="text-sm text-slate-400">Reading the profile from Google…</p>}
+      {tab === 'listing' && pick && !paidListing && profiles !== null && (
+        <>
+          <div className={card}>
+            <h2 className="text-lg font-semibold">{openName} {!choosing && <button type="button" onClick={() => { setChoosing(true); window.scrollTo({ top: 0 }); }} className="ml-2 align-middle text-xs font-normal text-sky-400 hover:underline">Change listing</button>}</h2>
+            <p className="mt-0.5 text-xs text-slate-500">On the free plan: its numbers and tools come with Manage.</p>
+          </div>
+          <UpgradeCard profile={pick.profile} location={pick.location} name={openName} what="Everything about this listing" onDone={() => { readProfiles(); setNotice('This listing is on the Manage plan.'); }} />
+        </>
+      )}
 
       {tab === 'listing' && form && live && pick && (
         <>

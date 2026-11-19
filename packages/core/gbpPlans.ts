@@ -85,3 +85,29 @@ export function quantityPlan(rows: { plan: string; status: string }[], current: 
 }
 
 export const dollars = (cents: number) => '$' + (cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2));
+
+/** How long a Google Business connection may go without a paying listing before it is disconnected. */
+export const UNPAID_DAYS = 7;
+/** Subscription states that count as paying for this clock: a failed card (past_due) does not. */
+const SETTLED = new Set(['active', 'trialing']);
+
+/**
+ * Whether a connection has a listing that is being paid for right now. Stricter than `planNow`:
+ * a listing whose card has failed still works while Stripe retries, but the clock on its
+ * connection starts. A listing taken off its plan counts until the month it paid for ends.
+ */
+export function connectionPaid(rows: PlanRow[], subStatus: string | null | undefined, now: Date): boolean {
+  return rows.some((r) => isPlan(r.plan) && ((r.status === 'ACTIVE' && SETTLED.has(subStatus ?? '')) || (r.status === 'ENDING' && r.endsAt !== null && r.endsAt.getTime() > now.getTime())));
+}
+
+/**
+ * What to do with a connection today. `unpaidSince` is when it last stopped having a paying
+ * listing (null: it had one at the last look). Returns the new `unpaidSince`, and whether its
+ * time is up.
+ */
+export function unpaidClock(paid: boolean, unpaidSince: Date | null, now: Date): { unpaidSince: Date | null; disconnect: boolean; daysLeft: number | null } {
+  if (paid) return { unpaidSince: null, disconnect: false, daysLeft: null };
+  const since = unpaidSince ?? now;
+  const left = UNPAID_DAYS - (now.getTime() - since.getTime()) / 86400000;
+  return { unpaidSince: since, disconnect: left <= 0, daysLeft: Math.max(0, Math.ceil(left)) };
+}
