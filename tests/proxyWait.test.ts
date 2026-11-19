@@ -51,3 +51,27 @@ test('traffic low: under the threshold, or less than a day at today’s pace', (
   assert.equal(trafficLow({ leftBytes: 8e9, todayBytes: 9e9 }, 2), true);
   assert.equal(trafficLow({ leftBytes: 8e9, todayBytes: 3e9 }, 2), false);
 });
+
+import { trafficByHour, trafficHourKey } from '../packages/core/proxyWait';
+
+test('data used hour by hour, with the data each search cost', () => {
+  assert.equal(trafficHourKey(new Date('2026-11-18T23:59:59Z')), '2026-11-18T23');
+  const GB = 1e9;
+  const hours = trafficByHour(
+    {
+      '2026-11-18T20': { res: 10 * GB, mob: 5 * GB },
+      '2026-11-18T21': { res: 12 * GB, mob: 4.5 * GB },
+      '2026-11-18T22': { res: 12 * GB, mob: 4.5 * GB },
+      // A new package (used starts again) and a top-up (more left): no guess for that hour.
+      '2026-11-18T23': { res: 1 * GB, mob: 9 * GB },
+      // The worker rested: the next reading is hours later, so 23:00 gets no figure.
+      '2026-11-19T03': { res: 2 * GB, mob: 8 * GB },
+    },
+    { '2026-11-18T20': 50, '2026-11-18T22': 4 },
+  );
+  assert.deepEqual(hours, [
+    { hour: '2026-11-18T20', residentialBytes: 2 * GB, mobileBytes: 0.5 * GB, points: 50, bytesPerPoint: 50e6 },
+    { hour: '2026-11-18T21', residentialBytes: 0, mobileBytes: 0, points: 0, bytesPerPoint: null },
+    { hour: '2026-11-18T22', residentialBytes: null, mobileBytes: null, points: 4, bytesPerPoint: null },
+  ]);
+});

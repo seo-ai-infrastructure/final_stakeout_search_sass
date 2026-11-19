@@ -46,3 +46,56 @@ export function assignIdleProxies(phones: string[], proxyIds: string[], previous
   }
   return { map, without };
 }
+
+/** One phone, as the idle check sees it. Times are epoch milliseconds (0 = not set). */
+export type IdlePhone = {
+  imageId: string;
+  /** A point (or an idle switch) holds the phone right now. */
+  locked: boolean;
+  /** Its last point's evidence is still being pulled from it. */
+  busy: boolean;
+  /** Since when it has been free (first seen without a lock). */
+  freeSince: number;
+  /** When its rest between searches ends. */
+  restEndsAt: number;
+  /** It has an idle proxy and is not on it yet. */
+  wantsIdle: boolean;
+  /** DuoPlus refused its idle proxy: not asked again before this. */
+  refusedUntil: number;
+};
+
+/**
+ * The phones to move to their idle proxy now. A phone moves on its own, as soon as it has been
+ * free for `afterMs`, whatever the rest of the fleet is doing: a paid proxy carries a search and
+ * nothing else. One exception keeps busy scans fast: while points are waiting, a phone whose rest
+ * is over (or ends within `soonMs`) is about to be given a point, so it is left alone, unless it
+ * has been free for `unusedMs` (no waiting point can use it: wrong model, or held back).
+ */
+export function dueForIdle(phones: IdlePhone[], now: number, afterMs: number, runnable: number, soonMs = 45000, unusedMs = 180000): string[] {
+  return phones
+    .filter((p) => p.wantsIdle && !p.locked && !p.busy && p.freeSince > 0 && now - p.freeSince >= afterMs && p.refusedUntil <= now)
+    .filter((p) => runnable <= 0 || p.restEndsAt - now > soonMs || now - p.freeSince >= unusedMs)
+    .map((p) => p.imageId);
+}
+
+/**
+ * The paid proxy lists that can be deleted now: unused for `keepMs` (a scan started straight after
+ * another finds its lists ready) and not needed by any open scan. A list is needed while a scan is
+ * open in its state, or when it was used since the oldest open scan began (every list a new scan
+ * uses is touched when the scan is created, and again by each point that searches through it:
+ * this covers the next state over, for a grid on a state line). With no scan open, only the time counts.
+ */
+export function listsToRelease<T extends { region: string; lastUsedAt: Date }>(
+  lists: T[],
+  open: { regions: Set<string>; oldestAt: Date | null },
+  now: number,
+  keepMs: number,
+): T[] {
+  const marginMs = 10 * 60000; // lists are prepared just before the scan is saved
+  return lists.filter((l) => {
+    const used = l.lastUsedAt.getTime();
+    if (now - used < keepMs) return false;
+    if (open.regions.has(l.region)) return false;
+    return !open.oldestAt || used < open.oldestAt.getTime() - marginMs;
+  });
+}

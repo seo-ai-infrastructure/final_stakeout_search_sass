@@ -10,6 +10,7 @@
 import { cityCoords } from './grid';
 import { db, type ProxyList } from '@stakeout/db';
 import { InputError } from './grid';
+import { listsToRelease } from './idleProxy';
 import {
   extractGeoRows,
   listRotation,
@@ -266,23 +267,32 @@ export async function listsForPin(
 }
 
 /**
- * Proxy-Seller bills bandwidth whenever a phone still points at a list, even while idle. So when
- * no scan is queued or running, every list not used in the last 12 minutes (PROXY_LIST_KEEP_MINUTES;
- * a scan started soon after another finds its lists ready instead of waiting over a minute for new
- * ones, and idle phones are on their own proxy by then) is deleted, in
- * Proxy-Seller and here; the next scan creates fresh lists (ensureList, or listsForPin above).
+ * Proxy-Seller bills bandwidth whenever a phone still points at a list, even while idle. Phones
+ * move to their own idle proxy between points (the worker's idleProxy), and this is the backstop:
+ * a list no open scan needs is deleted 3 minutes after its last use (PROXY_LIST_KEEP_MINUTES; see
+ * listsToRelease), in Proxy-Seller and here, so nothing can stay on it. Home-internet scans only:
+ * a mobile-data scan uses no list. The next scan creates fresh lists (ensureList, or listsForPin
+ * above). `minIdleMs` 0 deletes at once (a phone could not be moved off its paid proxy).
  * Returns how many were deleted.
  */
-export async function releaseIdleProxyLists(minIdleMs = Number(process.env.PROXY_LIST_KEEP_MINUTES ?? 12) * 60000) {
-  const open = () => db.gridScan.count({ where: { status: { in: ['QUEUED', 'RUNNING'] } } });
-  if (await open()) return 0;
-  const lists = await db.proxyList.findMany({
-    where: { lastUsedAt: { lt: new Date(Date.now() - minIdleMs) } },
-    select: { id: true, psListId: true },
-  });
+export async function releaseIdleProxyLists(minIdleMs = Number(process.env.PROXY_LIST_KEEP_MINUTES ?? 3) * 60000) {
+  const open = async () => {
+    const scans = await db.gridScan.findMany({
+      where: { status: { in: ['QUEUED', 'RUNNING'] }, network: { not: 'mobile' }, proxyRegion: { not: null } },
+      select: { proxyRegion: true, createdAt: true },
+    });
+    return {
+      regions: new Set(scans.map((s) => s.proxyRegion as string)),
+      oldestAt: scans.length ? new Date(Math.min(...scans.map((s) => s.createdAt.getTime()))) : null,
+    };
+  };
+  const all = await db.proxyList.findMany({ select: { id: true, psListId: true, region: true, lastUsedAt: true } });
+  if (!all.length) return 0;
+  const lists = listsToRelease(all, await open(), Date.now(), minIdleMs);
   let deleted = 0;
   for (const l of lists) {
-    if (await open()) break; // a scan just started: keep the rest
+    // A scan that started meanwhile may need it: look again before each one.
+    if (!listsToRelease([l], await open(), Date.now(), minIdleMs).length) continue;
     try {
       await psCall('resident/list/delete', { id: l.psListId }, false, 'DELETE');
     } catch (e) {
@@ -294,6 +304,6 @@ export async function releaseIdleProxyLists(minIdleMs = Number(process.env.PROXY
     await db.proxyList.delete({ where: { id: l.id } }).catch(() => {});
     deleted++;
   }
-  if (deleted) console.log(`[proxy] no scans running: deleted ${deleted} proxy list(s), so idle phones use no paid bandwidth`);
+  if (deleted) console.log(`[proxy] deleted ${deleted} proxy list(s) no open scan needs, so nothing stays on paid bandwidth`);
   return deleted;
 }

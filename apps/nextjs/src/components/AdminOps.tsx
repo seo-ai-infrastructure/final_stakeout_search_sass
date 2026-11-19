@@ -12,7 +12,7 @@ type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
   at: string;
   settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number; mobileCreditsPerPoint?: number; mobileForCustomers?: boolean };
-  system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[]; mobileData?: boolean; mobileProvider?: string | null; mobileLogin?: string | null; mobileTraffic?: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null } | null; mobileTrafficLow?: boolean } | null;
+  system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[]; mobileData?: boolean; mobileProvider?: string | null; mobileLogin?: string | null; mobileTraffic?: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null } | null; mobileTrafficLow?: boolean; trafficHours?: { hour: string; residentialBytes: number | null; mobileBytes: number | null; points: number; bytesPerPoint: number | null }[] } | null;
   capacity: {
     completed24h: number; completedLastHour: number; started24h: number; timedPoints: number; medianSeconds: number | null; perPhoneHour: number | null;
     waiting: number; readyPhones: number; etaMinutes: number | null; cost24hUsd: number;
@@ -20,6 +20,23 @@ type Ops = {
   };
   captchas: { today: number; yesterday: number };
 };
+/** Proxy data over the last day against the searches run: what a search costs in data, and the hour that used most. */
+function dataPerSearch(hours: { hour: string; residentialBytes: number | null; mobileBytes: number | null; points: number }[] | undefined): [string, string, string] {
+  const label = 'Proxy data per search, last 24 h';
+  const known = (hours ?? []).filter((h) => h.residentialBytes !== null || h.mobileBytes !== null);
+  if (!known.length) return [label, '—', 'measured hour by hour: the first figures appear after two hours'];
+  const res = known.reduce((n, h) => n + (h.residentialBytes ?? 0), 0);
+  const mob = known.reduce((n, h) => n + (h.mobileBytes ?? 0), 0);
+  const points = known.reduce((n, h) => n + h.points, 0);
+  const idle = known.filter((h) => h.points === 0).reduce((n, h) => n + (h.residentialBytes ?? 0) + (h.mobileBytes ?? 0), 0);
+  const top = [...known].sort((a, b) => (b.residentialBytes ?? 0) + (b.mobileBytes ?? 0) - ((a.residentialBytes ?? 0) + (a.mobileBytes ?? 0)))[0];
+  return [
+    label,
+    points ? Math.round((res + mob) / points / 1e6) + ' MB' : '—',
+    `${gb(res)} home internet · ${gb(mob)} mobile · ${points} searches · ${gb(idle)} in hours with no searches · most in the hour from ${top.hour.slice(11)}:00 UTC (${gb((top.residentialBytes ?? 0) + (top.mobileBytes ?? 0))})`,
+  ];
+}
+
 const gb = (bytes: number | null | undefined) => (bytes == null ? '—' : (bytes / 1e9).toFixed(bytes < 1e10 ? 2 : 1) + ' GB');
 const mins = (seconds: number) => (seconds >= 90 ? `${Math.floor(seconds / 60)} min ${seconds % 60} s` : `${seconds} s`);
 
@@ -204,6 +221,7 @@ export function AdminOps() {
                     : 'set VOIDMOB_API_KEY and VOIDMOB_PROXY_ID on the worker',
                 ],
                 ['Proxy-Seller traffic today', gb(ops.system?.traffic?.todayBytes), ops.system?.traffic ? `${gb(ops.system.traffic.leftBytes)} left of ${gb(ops.system.traffic.limitBytes)}${ops.system.traffic.expires ? ' · expires ' + ops.system.traffic.expires : ''}` : 'not reported by the worker yet'],
+                dataPerSearch(ops.system?.trafficHours),
                 ['Captchas today', String(ops.captchas.today), `${ops.captchas.yesterday} yesterday`],
               ] as [string, string, string][]
             ).map(([label, value, hint]) => (

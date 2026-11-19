@@ -23,7 +23,7 @@ import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
 import { idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
-import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficLow } from '@stakeout/core/proxyWait';
+import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficByHour, trafficHourKey, trafficLow, type TrafficHour, type TrafficReading } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
 import { mobileProvider, voidmobUsage } from '@stakeout/core/voidmob';
@@ -451,6 +451,45 @@ async function noteCaptcha(imageId: string) {
 }
 
 /**
+ * Data used hour by hour (Redis hash stakeout:traffic:hours, three days kept): the first reading
+ * of each hour is saved, and an hour's use is the change to the next hour's. Each finished hour
+ * is logged once with the searches that started in it (and completed), so data per search can be watched.
+ */
+let trafficHours: TrafficHour[] = [];
+let trafficHourLogged = '';
+let trafficHourAt = 0;
+async function noteTrafficHour() {
+  // As often as the packages are read (every 10 minutes), not every minute.
+  if ((!traffic && !mobileTraffic) || Date.now() - trafficHourAt < 9 * 60000) return;
+  trafficHourAt = Date.now();
+  const key = 'stakeout:traffic:hours';
+  const hour = trafficHourKey(new Date());
+  const reading: TrafficReading = { res: traffic?.usedBytes ?? null, mob: mobileTraffic?.leftBytes ?? null };
+  await redis().hsetnx(key, hour, JSON.stringify(reading));
+  const raw = (await redis().hgetall(key)) as Record<string, string>;
+  const readings: Record<string, TrafficReading> = {};
+  for (const [h, v] of Object.entries(raw)) {
+    if (h < trafficHourKey(new Date(Date.now() - 72 * 3600000))) {
+      await redis().hdel(key, h).catch(() => 0);
+      continue;
+    }
+    try {
+      readings[h] = JSON.parse(v);
+    } catch {}
+  }
+  const rows = await db.$queryRaw<{ hour: string; n: bigint }[]>`
+    SELECT to_char(date_trunc('hour', "startedAt"), 'YYYY-MM-DD"T"HH24') AS hour, count(*) AS n
+    FROM "GridPin" WHERE status = 'COMPLETED' AND "startedAt" > now() - interval '26 hours' AND "assignedDeviceId" IS NOT NULL GROUP BY 1`;
+  trafficHours = trafficByHour(readings, Object.fromEntries(rows.map((r) => [r.hour, Number(r.n)]))).slice(-24);
+  const last = trafficHours[trafficHours.length - 1];
+  if (last && last.hour !== trafficHourLogged) {
+    trafficHourLogged = last.hour;
+    const gb = (b: number | null) => (b === null ? 'not known' : (b / 1e9).toFixed(2) + ' GB');
+    console.log('[traffic]', last.hour + ':00 UTC, one hour: home internet', gb(last.residentialBytes) + ', mobile data', gb(last.mobileBytes) + ',', last.points, 'search(es)' + (last.bytesPerPoint !== null ? ', ' + Math.round(last.bytesPerPoint / 1e6) + ' MB per search' : ''));
+  }
+}
+
+/**
  * What the admin page's "System health" card shows: written every minute, so a missing key or
  * template is visible there instead of only in the logs.
  */
@@ -504,6 +543,7 @@ async function reportHealth() {
       traffic = { limitBytes: p.limitBytes, usedBytes: p.usedBytes, leftBytes: p.leftBytes, todayBytes: Math.max(0, p.usedBytes - first), expires: p.expires, at: new Date().toISOString() };
     }
   }
+  await noteTrafficHour().catch((e) => console.warn('[traffic] hour not recorded:', (e as Error).message));
   const template = async (surface: 'chrome' | 'maps' | 'google') => {
     const t = await rpaTemplate(surface).catch(() => null);
     const v = t?.vars.find((x) => x.key === 'template_version')?.value;
@@ -515,6 +555,8 @@ async function reportHealth() {
     searchGapSeconds: (await getSettings()).searchGapSeconds,
     templatesReadAt: new Date(templatesReadAt).toISOString(),
     traffic,
+    // Data used hour by hour for the last day, with the searches finished in each hour.
+    trafficHours,
     // Under PROXY_TRAFFIC_WARN_GB, or less than a day at today's pace: buy more before it runs out.
     trafficLow: trafficLow(traffic),
     // States whose proxies are all down right now, and since when (points there are waiting).
@@ -550,8 +592,8 @@ async function reportHealth() {
     idleProxies: idleProxyReport(),
     concurrencyCeiling: targetConcurrency(readyPhoneCount(), process.env.MOBILE_CONCURRENCY).capped ? Number(process.env.MOBILE_CONCURRENCY) : null,
     proxyLists: await db.proxyList.count(),
-    // How long the longest-idle list has gone unused. Idle lists are deleted after 12 minutes
-    // with no scan open, so only a list idle for much longer than that is a problem.
+    // How long the longest-idle list has gone unused. A list no open scan needs is deleted after
+    // 3 minutes, so with no scan open only a list idle for much longer than that is a problem.
     proxyListIdleSeconds: await db.proxyList
       .aggregate({ _min: { lastUsedAt: true } })
       .then((r) => (r._min.lastUsedAt ? Math.round((Date.now() - r._min.lastUsedAt.getTime()) / 1000) : 0)),
@@ -655,7 +697,7 @@ async function tick() {
       void backfillInsights().catch((e) => console.warn('[insights] backfill skipped:', (e as Error).message));
       void backfillPackRanks().catch((e) => console.warn('[rank] re-read skipped:', (e as Error).message));
     }
-    // Once a minute: with no scan queued or running, proxy lists are deleted (idle phones still use bandwidth).
+    // Once a minute: proxy lists no open scan needs are deleted (nothing can stay on paid bandwidth).
     if (Date.now() - lastProxyRelease > 60000) {
       lastProxyRelease = Date.now();
       await releaseIdleProxyLists().catch((e) => console.warn('[proxy] release skipped:', (e as Error).message));
@@ -672,8 +714,8 @@ async function tick() {
       lastPowerLook = Date.now();
       const changed = await powerTick().catch((e) => (console.warn('[power] skipped:', (e as Error).message), false));
       if (changed) lastFleetSync = 0;
-      // Nothing waiting: idle phones move to their own cheap proxy (IDLE_PROXY_GROUP).
-      await idleProxyTick().catch((e) => console.warn('[idle] skipped:', (e as Error).message));
+      // A free phone moves to its own idle proxy (IDLE_PROXY_GROUP), whatever the others are doing.
+      await idleProxyTick((id) => phoneTails.has(id)).catch((e) => console.warn('[idle] skipped:', (e as Error).message));
     }
     // Picks up newly rented phones (and bootstraps them) without an admin click.
     // Runs in the background so bootstrapping new phones never delays dispatch.

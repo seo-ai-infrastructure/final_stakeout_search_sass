@@ -51,3 +51,33 @@ export function trafficLow(t: { leftBytes: number | null; todayBytes: number | n
   if (!t || t.leftBytes === null) return false;
   return t.leftBytes < warnGb * 1e9 || (t.todayBytes !== null && t.todayBytes > 0 && t.leftBytes < t.todayBytes);
 }
+
+/** One reading an hour: the home-internet package's bytes used so far, the mobile package's bytes left. */
+export type TrafficReading = { res: number | null; mob: number | null };
+export type TrafficHour = { hour: string; residentialBytes: number | null; mobileBytes: number | null; points: number; bytesPerPoint: number | null };
+
+/** The hour a moment falls in, as its key ("2026-11-18T23", UTC). */
+export const trafficHourKey = (at: Date) => at.toISOString().slice(0, 13);
+
+/**
+ * Data used hour by hour, from the first reading of each hour: an hour's use is the change to the
+ * next hour's first reading (so the hour still running has no figure yet). Home internet counts
+ * up (bytes used), mobile counts down (bytes left); a figure that went the wrong way (a new
+ * package, a top-up) is left blank rather than guessed. `points` is the searches finished in each hour.
+ */
+export function trafficByHour(readings: Record<string, TrafficReading>, points: Record<string, number> = {}): TrafficHour[] {
+  const hours = Object.keys(readings).sort();
+  const out: TrafficHour[] = [];
+  for (let i = 0; i + 1 < hours.length; i++) {
+    const a = readings[hours[i]], b = readings[hours[i + 1]];
+    // Only neighbouring hours: a gap (the worker was resting) would spread its use over one hour.
+    const next = trafficHourKey(new Date(Date.parse(hours[i] + ':00:00Z') + 3600000));
+    if (hours[i + 1] !== next) continue;
+    const up = a.res !== null && b.res !== null && b.res >= a.res ? b.res - a.res : null;
+    const down = a.mob !== null && b.mob !== null && a.mob >= b.mob ? a.mob - b.mob : null;
+    const n = points[hours[i]] ?? 0;
+    const total = (up ?? 0) + (down ?? 0);
+    out.push({ hour: hours[i], residentialBytes: up, mobileBytes: down, points: n, bytesPerPoint: n > 0 && (up !== null || down !== null) ? Math.round(total / n) : null });
+  }
+  return out;
+}
