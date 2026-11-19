@@ -298,3 +298,16 @@ export function proxyPlace<P extends PlacedPin>(p: P): P {
   if (!acrossStateLine(p)) return p;
   return { ...p, stateCode: p.scan.stateCode!, city: null, zip: null, lat: p.scan.centerLat ?? p.lat, lng: p.scan.centerLng ?? p.lng };
 }
+
+/**
+ * Reads Proxy-Seller's answer about the package. Like its other answers, the figures sit under
+ * `data`; they are read from there (and from the top level too, in case that ever changes).
+ */
+export function readPackage(raw: unknown) {
+  const top = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const d = (top.data && typeof top.data === 'object' ? top.data : top) as Record<string, unknown>;
+  const n = (v: unknown) => (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : null);
+  const limitBytes = n(d.traffic_limit), usedBytes = n(d.traffic_usage);
+  return { limitBytes, usedBytes, leftBytes: n(d.traffic_left) ?? (limitBytes !== null && usedBytes !== null ? Math.max(0, limitBytes - usedBytes) : null), expires: typeof d.expired_at === 'string' ? d.expired_at : null, active: d.is_active !== false };
+}
+

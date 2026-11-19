@@ -535,7 +535,11 @@ async function reportHealth() {
   }
   if (process.env.PROXY_SELLER_API_KEY && Date.now() - trafficAt > 10 * 60000) {
     trafficAt = Date.now();
-    const p = await residentPackage().catch(() => null);
+    const p = await residentPackage().catch((e) => {
+      console.warn('[traffic] home internet package not read:', (e as Error).message);
+      return null;
+    });
+    if (p && p.usedBytes === null) console.warn('[traffic] home internet package read, but it gave no usage figure');
     if (p && p.usedBytes !== null) {
       const dayKey = 'stakeout:traffic:' + new Date().toISOString().slice(0, 10);
       await redis().set(dayKey, String(p.usedBytes), 'EX', 3 * 86400, 'NX').catch(() => {});

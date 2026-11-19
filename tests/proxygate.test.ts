@@ -128,3 +128,16 @@ test('a point across the state line uses the same proxies as the rest of its gri
   assert.equal(proxyState({ stateCode: 'SC', scan: {} }), 'SC');
   assert.equal(proxyState({ stateCode: 'sc', scan: { stateCode: 'SC' } }), 'sc');
 });
+
+import { readPackage } from '../packages/core/proxyGeo';
+
+test('the package figures are read from under "data", where the proxy service puts them', () => {
+  const p = readPackage({ status: 'success', data: { is_active: true, traffic_limit: 53687091200, traffic_usage: '21474836480', expired_at: '01.12.2026 10:00:00' }, errors: [] });
+  assert.equal(p.limitBytes, 53687091200);
+  assert.equal(p.usedBytes, 21474836480);
+  assert.equal(p.leftBytes, 32212254720); // worked out when the service does not give it
+  assert.equal(p.expires, '01.12.2026 10:00:00');
+  assert.equal(readPackage({ traffic_usage: 5, traffic_left: 7 }).leftBytes, 7);
+  assert.equal(readPackage({ status: 'success', data: {} }).usedBytes, null);
+  assert.equal(readPackage(null).usedBytes, null);
+});
