@@ -195,6 +195,25 @@ export function NewScanWizard() {
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // From a town in Analytics (?near=Lakeland, Florida): the scan is centred there. It waits a moment so a saved business's own centre does not replace it.
+  useEffect(() => {
+    const near = (new URLSearchParams(window.location.search).get('near') ?? '').trim().slice(0, 120);
+    if (!near) return;
+    let live = true;
+    const t = setTimeout(() => {
+      fetch('https://photon.komoot.io/api/?q=' + encodeURIComponent(near) + '&limit=1&lang=en')
+        .then((r) => r.json())
+        .then((d) => {
+          const c = d?.features?.[0]?.geometry?.coordinates;
+          if (!live || !Array.isArray(c) || !Number.isFinite(c[0]) || !Number.isFinite(c[1])) return;
+          setCenterLng(c[0]); setCenterLat(c[1]); setAddressQuery(near);
+          mapRef.current?.flyTo({ center: [c[0], c[1]], zoom: 11, duration: 600 });
+        })
+        .catch(() => {});
+    }, 1200);
+    return () => { live = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   async function saveBusiness() {
     setSaveMsg('');
     const keywords = [...new Set([...keywordList, ...picked, keyword].map((k) => k.trim()).filter(Boolean))];

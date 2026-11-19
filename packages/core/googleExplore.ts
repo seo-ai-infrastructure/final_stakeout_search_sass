@@ -107,7 +107,35 @@ export const GA_SOURCES = { all: 'All visits', listing: 'The Google listing (tag
 export type GaSource = keyof typeof GA_SOURCES;
 export const AI_SOURCE_PATTERN = 'chatgpt|openai|perplexity|gemini|bard\\.google|copilot|claude\\.ai|anthropic|deepseek|grok|meta\\.ai|you\\.com|phind|poe\\.com|mistral';
 export const LISTING_CAMPAIGN = 'gbp_listing';
-export type GaFilters = { page?: string; device?: string; source?: string };
+export type GaFilters = { page?: string; device?: string; source?: string; /** The listing's website: with `scope` "page", only visits that landed on that page. */ website?: string; scope?: string };
+
+/** The tags agencies put on a listing's website link, whichever of campaign, source or medium they put them in. */
+export const LISTING_TAGS = [LISTING_CAMPAIGN, 'gmb', 'gbp', 'google_my_business', 'google-business-profile'];
+/** Values too common to mark a visit as coming from the listing on their own. */
+const COMMON_TAGS = new Set(['google', 'organic', 'cpc', 'referral', 'direct', '(none)', '(direct)', 'search', 'local', 'maps', 'social', 'email', 'website']);
+const reEsc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * What marks a visit as coming from this listing: the tags on its own website link (utm_campaign,
+ * and utm_source or utm_medium when they are not everyday values), plus the usual ones.
+ */
+export function listingTags(website?: string): { campaign: string[]; source: string[]; medium: string[] } {
+  const own = { campaign: '', source: '', medium: '' };
+  try {
+    const q = new URL(website ?? '').searchParams;
+    own.campaign = clean(q.get('utm_campaign'), 100).toLowerCase(); own.source = clean(q.get('utm_source'), 100).toLowerCase(); own.medium = clean(q.get('utm_medium'), 100).toLowerCase();
+  } catch { /* no website: the usual tags only */ }
+  const with_ = (v: string, strict: boolean) => [...new Set([...LISTING_TAGS, ...(v && (!strict || !COMMON_TAGS.has(v)) ? [v] : [])])];
+  return { campaign: with_(own.campaign, false), source: with_(own.source, true), medium: with_(own.medium, true) };
+}
+/** The path a visit landed on, as a pattern that takes it with or without the last slash. '' for no page. */
+export function landingRegex(website?: string): string {
+  try {
+    const path = new URL(website ?? '').pathname.replace(/\/+$/, '');
+    return '^' + reEsc(path) + '/?$';
+  } catch {
+    return '';
+  }
+}
 
 const stringIs = (fieldName: string, matchType: string, value: string) => ({ filter: { fieldName, stringFilter: { matchType, value, caseSensitive: false } } });
 
@@ -116,7 +144,11 @@ export function gaFilters(f: GaFilters) {
   const page = clean(f.page, 500), device = String(f.device ?? '').toLowerCase();
   if (page) all.push(stringIs('landingPagePlusQueryString', 'CONTAINS', page.replace(/^https?:\/\/[^/]+/, '') || '/'));
   if (['desktop', 'mobile', 'tablet'].includes(device)) all.push(stringIs('deviceCategory', 'EXACT', device));
-  if (f.source === 'listing') all.push(stringIs('sessionCampaignName', 'EXACT', LISTING_CAMPAIGN));
+  if (f.scope === 'page' && landingRegex(f.website)) all.push(stringIs('landingPage', 'FULL_REGEXP', landingRegex(f.website)));
+  if (f.source === 'listing') {
+    const t = listingTags(f.website), any = (list: string[]) => '^(' + list.map(reEsc).join('|') + ')$';
+    all.push({ orGroup: { expressions: [stringIs('sessionCampaignName', 'FULL_REGEXP', any(t.campaign)), stringIs('sessionSource', 'FULL_REGEXP', any(t.source)), stringIs('sessionMedium', 'FULL_REGEXP', any(t.medium))] } });
+  }
   if (f.source === 'google') all.push(stringIs('sessionSourceMedium', 'EXACT', 'google / organic'));
   if (f.source === 'ai') all.push(stringIs('sessionSource', 'PARTIAL_REGEXP', AI_SOURCE_PATTERN));
   return all;
@@ -271,15 +303,73 @@ export function gaEventsRequest(range: Range, f: GaFilters, limit = 200) {
   };
 }
 
-export type EventRow = { name: string; count: number; keyEvents: number; wasCount: number | null; call: boolean };
+/** Events Analytics sends by itself for every visit: counted as conversions only when a property is set up wrongly. */
+export const NOISE_EVENTS = ['page_view', 'session_start', 'first_visit', 'user_engagement', 'scroll', 'click', 'file_download'];
+export const isNoiseEvent = (name: string) => NOISE_EVENTS.includes(name.toLowerCase());
+/** An event that is a lead whatever the property calls key: a form sent, a booking, a chat, a quote request. */
+export const isLeadEvent = (name: string) => !isNoiseEvent(name) && /(^|[^a-z])(generate lead|lead|form submit|form submission|submit form|contact|book|booking|appointment|schedule|chat|quote|estimate)([^a-z]|$)/i.test(name.replace(/[_-]+/g, ' '));
+/**
+ * How many real leads one event stands for: none for the automatic ones, every time it happened
+ * for a call or a named lead event, and otherwise as often as the property counted it as key.
+ */
+export const leadCount = (e: { name: string; count: number; keyEvents: number }) => (isNoiseEvent(e.name) ? 0 : isCallEvent(e.name) || isLeadEvent(e.name) ? e.count : e.keyEvents);
+
+export type EventRow = { name: string; count: number; keyEvents: number; wasCount: number | null; call: boolean; /** One of the automatic events, left out of leads. */ noise: boolean; leads: number };
 
 /**
- * The events worth showing: every key event, and every call event whether or not the site has
- * marked it as key (most sites never do). `calls` is the number of call events in each range.
+ * The events worth showing: every key event, and every call or lead event whether or not the site
+ * has marked it as key (most sites never do). `calls` and `leads` are counted for each range.
+ * `audit`: what is wrong with the property's setup, if anything.
  */
-export function gaEventRows(now: GaRow[], was: GaRow[]): { rows: EventRow[]; calls: number; callsBefore: number } {
+export function gaEventRows(now: GaRow[], was: GaRow[]) {
   const read = (r: GaRow) => ({ name: r.dimensionValues?.[0]?.value ?? '', count: num(r, 0), keyEvents: num(r, 1) });
   const before = new Map(was.map(read).map((r) => [r.name, r.count]));
-  const rows = now.map(read).filter((r) => r.name).map((r) => ({ ...r, wasCount: before.has(r.name) ? (before.get(r.name) as number) : null, call: isCallEvent(r.name) })).filter((r) => r.keyEvents > 0 || r.call);
-  return { rows, calls: rows.filter((r) => r.call).reduce((n, r) => n + r.count, 0), callsBefore: was.map(read).filter((r) => isCallEvent(r.name)).reduce((n, r) => n + r.count, 0) };
+  const all = now.map(read).filter((r) => r.name);
+  const rows: EventRow[] = all.map((r) => ({ ...r, wasCount: before.has(r.name) ? (before.get(r.name) as number) : null, call: isCallEvent(r.name), noise: isNoiseEvent(r.name), leads: leadCount(r) })).filter((r) => r.keyEvents > 0 || r.call || r.leads > 0);
+  const sum = (list: { name: string; count: number; keyEvents: number }[]) => list.reduce((n, r) => n + leadCount(r), 0);
+  return {
+    rows, calls: rows.filter((r) => r.call).reduce((n, r) => n + r.count, 0), callsBefore: was.map(read).filter((r) => isCallEvent(r.name)).reduce((n, r) => n + r.count, 0),
+    leads: sum(all), leadsBefore: sum(was.map(read)),
+    audit: { noisy: all.filter((r) => isNoiseEvent(r.name) && r.keyEvents > 0).map((r) => r.name), callsNotKey: all.filter((r) => isCallEvent(r.name) && r.count > 0 && r.keyEvents === 0).map((r) => r.name) },
+  };
+}
+
+/** Events broken down by something else too (a day, a source, a town): the last dimension is the event's name. */
+export function gaCrossRequest(range: Range, f: GaFilters, dimensions: string[], limit = 5000) {
+  const filters = gaFilters(f);
+  return {
+    dateRanges: [{ startDate: range.from, endDate: range.to }],
+    dimensions: [...dimensions, 'eventName'].map((name) => ({ name })),
+    metrics: [{ name: 'eventCount' }, { name: 'keyEvents' }],
+    limit,
+    ...(filters.length ? { dimensionFilter: filters.length === 1 ? filters[0] : { andGroup: { expressions: filters } } } : {}),
+  };
+}
+/** Leads and calls for each value of what the events were broken down by (joined with " / " when by two things). */
+export function leadsBy(rows: GaRow[] | undefined): Map<string, { leads: number; calls: number }> {
+  const out = new Map<string, { leads: number; calls: number }>();
+  for (const r of rows ?? []) {
+    const dims = (r.dimensionValues ?? []).map((d) => d.value ?? '');
+    const name = dims.pop() ?? '';
+    let key = dims.join(' / ');
+    if (dims.length === 1 && /^\d{8}$/.test(key)) key = key.slice(0, 4) + '-' + key.slice(4, 6) + '-' + key.slice(6);
+    const e = { name, count: num(r, 0), keyEvents: num(r, 1) };
+    const x = out.get(key) ?? { leads: 0, calls: 0 };
+    x.leads += leadCount(e);
+    if (isCallEvent(name)) x.calls += e.count;
+    out.set(key, x);
+  }
+  return out;
+}
+/** Visits by two things at once (a town and its state), most first. */
+export function gaPairRequest(range: Range, f: GaFilters, dimensions: [string, string], limit = 10) {
+  const filters = gaFilters(f);
+  return {
+    dateRanges: [{ startDate: range.from, endDate: range.to }],
+    dimensions: dimensions.map((name) => ({ name })),
+    metrics: [{ name: 'sessions' }],
+    orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+    limit,
+    ...(filters.length ? { dimensionFilter: filters.length === 1 ? filters[0] : { andGroup: { expressions: filters } } } : {}),
+  };
 }

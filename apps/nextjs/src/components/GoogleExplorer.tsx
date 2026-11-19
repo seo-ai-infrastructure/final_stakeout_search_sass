@@ -7,7 +7,7 @@ import { DEVICES, GA_DIMENSIONS, GA_SOURCES, GSC_DIMENSIONS, GSC_TYPES, PRESETS,
 type Totals = { a: number; b: number; c: number | null };
 type Result = { by: string; range: { recent: { from: string; to: string }; before: { from: string; to: string }; days: number }; recent: Totals; before: Totals; rows: ExploreRow[]; appearances?: string[] };
 /** What the tab above is showing, so the explorer opens on the same dates and device. */
-type Start = { days: number; from: string; to: string; device: string };
+type Start = { days: number; from: string; to: string; device: string; /** Analytics: only visits that landed on this path. */ page?: string };
 type Props = ({ source: 'gsc'; website: string } | { source: 'ga'; property: string }) & { start?: Start };
 
 const field = 'rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-500';
@@ -47,8 +47,8 @@ export default function GoogleExplorer(props: Props) {
     if (!start || asked) return;
     if (PRESETS.some((p) => p.days === start.days)) { setCustom(false); setDays(start.days); }
     else { setCustom(true); setFrom(start.from); setTo(start.to); }
-    setF((x) => ({ ...x, device: start.device }));
-  }, [start?.days, start?.from, start?.to, start?.device]); // eslint-disable-line react-hooks/exhaustive-deps
+    setF((x) => ({ ...x, device: start.device, page: start.page ?? x.page }));
+  }, [start?.days, start?.from, start?.to, start?.device, start?.page]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!asked) return;
@@ -129,6 +129,7 @@ export default function GoogleExplorer(props: Props) {
                     <tr key={x.key} className="hover:bg-slate-800/40">
                       <td className="max-w-[22rem] truncate px-3 py-1.5 text-slate-200" title={x.key}>
                         {(r.by === 'query' || r.by === 'page' || r.by === 'landingPagePlusQueryString') ? <button type="button" onClick={() => narrow(r.by === 'query' ? 'query' : 'page', x.key)} className="max-w-full truncate text-left hover:text-sky-300" title={'Filter to this: ' + x.key}>{x.key}</button> : r.by === 'device' || r.by === 'searchAppearance' ? words(x.key) : x.key}
+                        {r.by === 'landingPagePlusQueryString' && x.key === '(not set)' && <span className="ml-1.5 cursor-help text-slate-500" title="Visits with no page view: usually a call-tracking or server-side event that arrived on its own, or a visit that started on a page without the Analytics tag. They are real events, but no page can be named for them.">ⓘ</span>}
                       </td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{n(x.a)}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{n(x.b)}</td>

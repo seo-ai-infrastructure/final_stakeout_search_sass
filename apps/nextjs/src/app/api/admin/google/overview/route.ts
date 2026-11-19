@@ -9,7 +9,7 @@ import { catalogFor } from '@/lib/billing';
 import { createHash } from 'node:crypto';
 import { redis } from '@stakeout/core/redis';
 import {
-  competingPages, exploreRange, gaEventRows, gaEventsRequest, gaRequest, gaRows, gaTotals, gscFilters, gscRequest, gscRows, pageOf, readInspection,
+  competingPages, exploreRange, gaCrossRequest, gaEventRows, gaEventsRequest, gaPairRequest, gaRequest, leadsBy, listingTags, gaRows, gaTotals, gscFilters, gscRequest, gscRows, pageOf, readInspection,
   type GaFilters, type GscFilters,
 } from '@stakeout/core/googleExplore';
 
@@ -144,21 +144,35 @@ export async function POST(req: Request) {
       if (!/^properties\/\d+$/.test(property)) throw new InputError('Choose the Analytics property first.');
       const range = exploreRange(b, new Date(), 1);
       if (typeof range === 'string') throw new InputError(range);
-      const f: GaFilters = { device: text(b.device), source: text(b.came) };
-      const ask = (body: unknown) => google<GaReport>(token, 'https://analyticsdata.googleapis.com/v1beta/' + property + ':runReport', body);
-      const [now, was, days, daysWas, sources, sourcesWas, channels, channelsWas, events, eventsWas] = await Promise.all([
-        ask(gaRequest(range.recent, f, null)), ask(gaRequest(range.before, f, null)), ask(gaRequest(range.recent, f, 'date', 500)), ask(gaRequest(range.before, f, 'date', 500)).catch(() => ({ rows: [] } as GaReport)),
-        ask(gaRequest(range.recent, f, 'sessionSourceMedium', 50)), ask(gaRequest(range.before, f, 'sessionSourceMedium', 500)),
-        ask(gaRequest(range.recent, f, 'sessionDefaultChannelGroup', 25)), ask(gaRequest(range.before, f, 'sessionDefaultChannelGroup', 100)),
-        ask(gaEventsRequest(range.recent, f)), ask(gaEventsRequest(range.before, f)),
-      ]);
+      const website = text(b.website);
+      const f: GaFilters = { device: text(b.device), source: text(b.came), website, scope: b.scope === 'page' ? 'page' : 'site' };
+      const ai: GaFilters = { ...f, source: 'ai' };
+      // Analytics takes five reports in one request: twenty reports are four requests.
+      const wanted = [
+        gaRequest(range.recent, f, null), gaRequest(range.before, f, null), gaRequest(range.recent, f, 'date', 500), gaRequest(range.before, f, 'date', 500),
+        gaRequest(range.recent, f, 'sessionSourceMedium', 50), gaRequest(range.before, f, 'sessionSourceMedium', 500), gaRequest(range.recent, f, 'sessionDefaultChannelGroup', 25), gaRequest(range.before, f, 'sessionDefaultChannelGroup', 100),
+        gaEventsRequest(range.recent, f), gaEventsRequest(range.before, f),
+        gaCrossRequest(range.recent, f, ['date']), gaCrossRequest(range.before, f, ['date']), gaCrossRequest(range.recent, f, ['sessionSourceMedium']), gaCrossRequest(range.recent, f, ['sessionDefaultChannelGroup']),
+        gaPairRequest(range.recent, f, ['city', 'region'], 8), gaCrossRequest(range.recent, f, ['city', 'region'], 10000),
+        gaRequest(range.recent, ai, null), gaRequest(range.before, ai, null), gaEventsRequest(range.recent, ai), gaRequest(range.recent, ai, 'landingPagePlusQueryString', 3),
+      ];
+      const groups = Array.from({ length: Math.ceil(wanted.length / 5) }, (_, i) => wanted.slice(i * 5, i * 5 + 5));
+      const got = (await Promise.all(groups.map((requests) => google<{ reports?: GaReport[] }>(token, 'https://analyticsdata.googleapis.com/v1beta/' + property + ':batchRunReports', { requests })))).flatMap((g, i) => Array.from({ length: groups[i].length }, (_, k) => g.reports?.[k] ?? {}));
+      const [now, was, days, daysWas, sources, sourcesWas, channels, channelsWas, events, eventsWas, dayEvents, dayEventsWas, sourceEvents, channelEvents, cities, cityEvents, aiNow, aiWas, aiEvents, aiPages] = got;
+      const byDay = (rows: GaReport, leads: GaReport) => { const l = leadsBy(leads.rows); return gaRows(rows.rows ?? [], [], 'date').map((r) => ({ date: r.key, visits: r.a, keyEvents: r.c ?? 0, leads: l.get(r.key)?.leads ?? 0 })); };
+      const withLeads = (rows: ReturnType<typeof gaRows>, leads: GaReport) => { const l = leadsBy(leads.rows); return rows.map((r) => ({ ...r, leads: l.get(r.key)?.leads ?? 0 })); };
+      const townLeads = leadsBy(cityEvents.rows);
+      const aiE = gaEventRows(aiEvents.rows ?? [], []);
       return NextResponse.json({
         source: 'ga', property, range, recent: gaTotals(now.rows), before: gaTotals(was.rows),
-        days: gaRows(days.rows ?? [], [], 'date').map((r) => ({ date: r.key, visits: r.a, keyEvents: r.c ?? 0 })),
-        daysBefore: gaRows(daysWas.rows ?? [], [], 'date').map((r) => ({ date: r.key, visits: r.a, keyEvents: r.c ?? 0 })),
-        sources: gaRows(sources.rows ?? [], sourcesWas.rows ?? [], 'sessionSourceMedium'),
-        channels: gaRows(channels.rows ?? [], channelsWas.rows ?? [], 'sessionDefaultChannelGroup'),
+        days: byDay(days, dayEvents), daysBefore: byDay(daysWas, dayEventsWas),
+        sources: withLeads(gaRows(sources.rows ?? [], sourcesWas.rows ?? [], 'sessionSourceMedium'), sourceEvents),
+        channels: withLeads(gaRows(channels.rows ?? [], channelsWas.rows ?? [], 'sessionDefaultChannelGroup'), channelEvents),
         events: gaEventRows(events.rows ?? [], eventsWas.rows ?? []),
+        cities: (cities.rows ?? []).map((r) => { const city = r.dimensionValues?.[0]?.value ?? '', region = r.dimensionValues?.[1]?.value ?? ''; const l = townLeads.get(city + ' / ' + region); return { city, region, visits: Number(r.metricValues?.[0]?.value ?? 0) || 0, calls: l?.calls ?? 0, leads: l?.leads ?? 0 }; }).filter((c) => c.city && c.city !== '(not set)'),
+        ai: { visits: gaTotals(aiNow.rows).a, visitsBefore: gaTotals(aiWas.rows).a, leads: aiE.leads, calls: aiE.calls, pages: gaRows(aiPages.rows ?? [], [], 'landingPagePlusQueryString').map((r) => ({ page: r.key, visits: r.a })) },
+        // The tags that count a visit as coming from the listing, so the page can say which.
+        listingTags: listingTags(website).campaign,
       });
     }
     throw new InputError('Unknown source.');

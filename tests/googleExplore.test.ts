@@ -53,7 +53,16 @@ test('Analytics filters and requests', () => {
     ['landingPagePlusQueryString', 'CONTAINS'], ['deviceCategory', 'EXACT'], ['sessionSource', 'PARTIAL_REGEXP'],
   ]);
   assert.equal((gaFilters({ page: 'https://glow.example/botox?x=1' })[0] as any).filter.stringFilter.value, '/botox?x=1');
-  assert.equal((gaFilters({ source: 'listing' })[0] as any).filter.stringFilter.value, 'gbp_listing');
+  const listing = (gaFilters({ source: 'listing', website: 'https://glow.example/botox?utm_source=google&utm_medium=organic&utm_campaign=Denver-GMB-Listing' })[0] as any).orGroup.expressions.map((e: any) => [e.filter.fieldName, e.filter.stringFilter.value]);
+  // The link's own campaign counts; its everyday source and medium do not.
+  assert.deepEqual(listing, [
+    ['sessionCampaignName', '^(gbp_listing|gmb|gbp|google_my_business|google-business-profile|denver-gmb-listing)$'],
+    ['sessionSource', '^(gbp_listing|gmb|gbp|google_my_business|google-business-profile)$'],
+    ['sessionMedium', '^(gbp_listing|gmb|gbp|google_my_business|google-business-profile)$'],
+  ]);
+  assert.deepEqual((gaFilters({ scope: 'page', website: 'https://glow.example/botox/?utm_source=gbp' })[0] as any).filter, { fieldName: 'landingPage', stringFilter: { matchType: 'FULL_REGEXP', value: '^/botox/?$', caseSensitive: false } });
+  assert.equal((gaFilters({ scope: 'page', website: 'https://glow.example' })[0] as any).filter.stringFilter.value, '^/?$');
+  assert.deepEqual(gaFilters({ scope: 'site', website: 'https://glow.example/botox' }), []);
   const range = { from: '2026-10-21', to: '2026-11-17' };
   const totals = gaRequest(range, { source: 'google' }, null) as any;
   assert.equal(totals.dimensions, undefined);
@@ -104,13 +113,15 @@ test('events: key events and calls are kept, with the calls counted', () => {
   const row = (k: string, count: string, key: string) => ({ dimensionValues: [{ value: k }], metricValues: [{ value: count }, { value: key }] });
   const r = gaEventRows([row('form_submit', '12', '12'), row('click_to_call', '30', '0'), row('page_view', '900', '0'), row('', '5', '5')], [row('click_to_call', '21', '0'), row('phone_call', '4', '0')]);
   assert.deepEqual(r.rows, [
-    { name: 'form_submit', count: 12, keyEvents: 12, wasCount: null, call: false },
-    { name: 'click_to_call', count: 30, keyEvents: 0, wasCount: 21, call: true },
+    { name: 'form_submit', count: 12, keyEvents: 12, wasCount: null, call: false, noise: false, leads: 12 },
+    { name: 'click_to_call', count: 30, keyEvents: 0, wasCount: 21, call: true, noise: false, leads: 30 },
   ]);
+  assert.deepEqual([r.leads, r.leadsBefore], [42, 25]);
+  assert.deepEqual(r.audit, { noisy: [], callsNotKey: ['click_to_call'] });
   assert.deepEqual([r.calls, r.callsBefore], [30, 25]);
   const req = gaEventsRequest({ from: '2026-10-01', to: '2026-10-31' }, { source: 'listing' }) as any;
   assert.deepEqual(req.dimensions, [{ name: 'eventName' }]);
-  assert.equal(req.dimensionFilter.filter.stringFilter.value, 'gbp_listing');
+  assert.match(req.dimensionFilter.orGroup.expressions[0].filter.stringFilter.value, /gbp_listing/);
 });
 
 test('exploreRange: against the same days a year earlier (52 weeks back)', () => {
@@ -169,4 +180,21 @@ test('URL inspection, in one line', () => {
   assert.deepEqual(i, { indexed: true, state: 'Submitted and indexed', canonical: 'match', googleCanonical: 'https://www.glow.example/botox', lastCrawl: '2026-11-12T08:00:00Z', crawledAs: 'phone', rich: ['FAQ', 'Local business'], link: 'https://search.google.com/x' });
   assert.equal(readInspection({ inspectionResult: { indexStatusResult: { verdict: 'NEUTRAL', coverageState: 'Crawled - currently not indexed', googleCanonical: 'https://glow.example/' } } }, 'https://glow.example/botox')?.canonical, 'differs');
   assert.equal(readInspection({}, 'https://glow.example/'), null);
+});
+
+import { isLeadEvent, leadCount, leadsBy } from '../packages/core/googleExplore';
+
+test('real leads: automatic events never count, calls and named lead events always do', () => {
+  const row = (dims: string[], count: number, key: number) => ({ dimensionValues: dims.map((value) => ({ value })), metricValues: [{ value: String(count) }, { value: String(key) }] });
+  for (const n of ['generate_lead', 'form_submit', 'contact_form_sent', 'book_appointment', 'chat_started', 'request-a-quote']) assert.ok(isLeadEvent(n), n);
+  for (const n of ['page_view', 'click', 'scroll', 'view_item', 'bookmark']) assert.ok(!isLeadEvent(n), n);
+  assert.equal(leadCount({ name: 'page_view', count: 900, keyEvents: 900 }), 0);
+  assert.equal(leadCount({ name: 'newsletter_signup', count: 9, keyEvents: 4 }), 4, 'a custom key event counts as the property counts it');
+  // A property that marks page_view as key: 364 "conversions" per 100 visits become what really happened.
+  const r = gaEventRows([row(['page_view'], 3640, 3640), row(['session_start'], 1000, 1000), row(['phone_call'], 12, 0), row(['generate_lead'], 5, 5)], []);
+  assert.equal(r.leads, 17);
+  assert.deepEqual(r.audit, { noisy: ['page_view', 'session_start'], callsNotKey: ['phone_call'] });
+  const by = leadsBy([row(['20261101', 'page_view'], 50, 50), row(['20261101', 'phone_call'], 2, 0), row(['20261102', 'form_submit'], 1, 1)]);
+  assert.deepEqual([...by], [['2026-11-01', { leads: 2, calls: 2 }], ['2026-11-02', { leads: 1, calls: 0 }]]);
+  assert.deepEqual([...leadsBy([row(['Lakeland', 'Florida', 'click_to_call'], 3, 0)])], [['Lakeland / Florida', { leads: 3, calls: 3 }]]);
 });

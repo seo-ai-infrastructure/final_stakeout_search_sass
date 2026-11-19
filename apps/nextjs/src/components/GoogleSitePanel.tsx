@@ -19,7 +19,15 @@ type Gsc =
 type Property = { id: string; name: string; account: string };
 type GaTotals = { a: number; b: number; c: number };
 type Phones = { rows: { query: string; clicks: number; impressions: number; position: number | null; ctr: number }[]; fallback: boolean; device: { mobileShare: number; gap: number | null; why: 'share' | 'position' } | null; offer: boolean; balance?: number; packCents?: number | null };
-type Ga = { range: Range; recent: GaTotals; before: GaTotals; days: { date: string; visits: number; keyEvents: number }[]; daysBefore?: { date: string; visits: number; keyEvents: number }[]; sources: ExploreRow[]; channels: ExploreRow[]; events: { rows: EventRow[]; calls: number; callsBefore: number } };
+type GaDay = { date: string; visits: number; keyEvents: number; leads: number };
+type GaRowL = ExploreRow & { leads: number };
+type Ga = {
+  range: Range; recent: GaTotals; before: GaTotals; days: GaDay[]; daysBefore?: GaDay[]; sources: GaRowL[]; channels: GaRowL[];
+  events: { rows: EventRow[]; calls: number; callsBefore: number; leads: number; leadsBefore: number; audit: { noisy: string[]; callsNotKey: string[] } };
+  cities: { city: string; region: string; visits: number; calls: number; leads: number }[];
+  ai: { visits: number; visitsBefore: number; leads: number; calls: number; pages: { page: string; visits: number }[] };
+  listingTags: string[];
+};
 
 const field = 'rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-500';
 const MAX_PICK = 10;
@@ -237,7 +245,10 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
 }
 
 /** Analytics for the website: calls and key events first, then where the visits that convert come from. */
-function Analytics({ host, dates }: { host: string; dates: Dates }) {
+function Analytics({ host, dates, website, businessName, wholeSite }: { host: string; dates: Dates; website: string; businessName: string; wholeSite?: boolean }) {
+  const [scope, setScope] = useState<'page' | 'site'>(wholeSite ? 'site' : 'page');
+  // Real leads (calls, forms, bookings, chats and the property's own key events) or Analytics' raw key-event count.
+  const [real, setReal] = useState(true);
   const [properties, setProperties] = useState<Property[] | null>(null);
   const [property, setProperty] = useState('');
   const [came, setCame] = useState<GaSource>('all');
@@ -246,6 +257,7 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [metric, setMetric] = useState<'keyEvents' | 'visits'>('keyEvents');
+  const NOT_SET = 'Visits with no page view: usually a call-tracking or server-side event that arrived on its own, or a visit that started on a page without the Analytics tag.';
   const [by, setBy] = useState<'sources' | 'channels'>('sources');
   // A new key name: an earlier version could save one site's property under another site.
   const remember = 'stakeout.ga4site.' + host;
@@ -253,7 +265,7 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
 
   useEffect(() => {
     let live = true;
-    setProperties(null); setProperty(''); setD(null); setError(''); setCame('all'); setDevice('');
+    setProperties(null); setProperty(''); setD(null); setError(''); setCame('all'); setDevice(''); setScope(wholeSite ? 'site' : 'page');
     get<{ properties: Property[] }>('/api/admin/google/analytics')
       .then((r) => {
         if (!live) return;
@@ -271,10 +283,10 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
     if (!property) { setD(null); return; }
     let live = true;
     setBusy(true); setError('');
-    post<Ga>({ source: 'ga', property, came, device: device.toLowerCase(), ...dates }).then((j) => { if (live) setD(j); }).catch((e) => { if (live) setError(e.message); }).finally(() => { if (live) setBusy(false); });
+    post<Ga>({ source: 'ga', property, came, device: device.toLowerCase(), website, scope, ...dates }).then((j) => { if (live) setD(j); }).catch((e) => { if (live) setError(e.message); }).finally(() => { if (live) setBusy(false); });
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [property, came, device, key]);
+  }, [property, came, device, key, scope, website]);
 
   // Only a choice made by hand is remembered for this site; a guess is not.
   const choose = (id: string) => {
@@ -282,11 +294,19 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
     try { if (id) window.localStorage.setItem(remember, id); else window.localStorage.removeItem(remember); } catch { /* storage unavailable */ }
   };
   const rows = d ? d[by] : [];
-  const rate = (t: GaTotals) => (t.a ? (t.c / t.a) * 100 : null);
+  // What counts as a conversion: real leads, or whatever the property has marked as key.
+  const won = d ? (real ? d.events.leads : d.recent.c) : 0, wonBefore = d ? (real ? d.events.leadsBefore : d.before.c) : 0;
+  const per100 = (n: number, visits: number) => (visits ? (n / visits) * 100 : null);
+  const wonOf = (r: GaRowL) => (real ? r.leads : r.c ?? 0);
+  const word = real ? 'Leads' : 'Key events';
+  const dayPick = (x: GaDay) => (metric === 'visits' ? x.visits : real ? x.leads : x.keyEvents);
+  const audit = d?.events.audit;
+  const path = (() => { try { return new URL(website).pathname.replace(/\/+$/, '') || '/'; } catch { return '/'; } })();
 
   return (
     <section id="insights-analytics" className={card + ' scroll-mt-16 space-y-5'}>
-      <SectionHead title="Google Analytics" sub={d ? <>What visitors to {host} did · {span(d.range)}</> : 'What visitors to the website did'}>
+      <SectionHead title="Google Analytics" sub={d ? <>{scope === 'page' ? <>Visits that landed on <span className="text-slate-300">{host}{path === '/' ? '' : path}</span>{wholeSite ? '' : ', the page the listing links to'}</> : <>What visitors to {host} did</>} · {span(d.range)}</> : 'What visitors to the website did'}>
+        <Segmented label="Which pages" value={scope} onChange={setScope} options={[['page', wholeSite ? 'Home page only' : 'The listing’s page'], ['site', 'Whole website']] as const} />
         {properties && properties.length > 0 && (
           <select className={field + ' max-w-full'} value={property} onChange={(e) => choose(e.target.value)} aria-label="Analytics property">
             <option value="">Choose the Analytics property for this site…</option>
@@ -304,18 +324,61 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
           <div className="flex flex-wrap items-center gap-2">
             <Segmented label="Where visits came from" value={came} onChange={setCame} options={(Object.keys(GA_SOURCES) as GaSource[]).map((k) => [k, k === 'listing' ? 'Google listing' : k === 'all' ? 'All visits' : GA_SOURCES[k]] as const)} />
             <Segmented label="Device" value={device} onChange={setDevice} options={DEVICE} />
+            <Segmented label="What counts as a conversion" value={real ? 'real' : 'raw'} onChange={(v) => setReal(v === 'real')} options={[['real', 'Real leads only'], ['raw', 'All key events']] as const} />
           </div>
+          {audit && (audit.noisy.length > 0 || audit.callsNotKey.length > 0) && (
+            <p className="rounded-lg border border-amber-400/40 bg-amber-400/5 px-3 py-2 text-xs text-amber-100">
+              <span className="font-semibold">GA4 config notice:</span>{' '}
+              {audit.noisy.length > 0 && <>this property counts {audit.noisy.map((n, i) => <span key={n}>{i ? ', ' : ''}<code>{n}</code></span>)} as key events, which happen on every visit. {real ? 'We left them out, so the rates here reflect real leads and calls.' : 'They are included in the numbers below: switch to “Real leads only” to leave them out.'} </>}
+              {audit.callsNotKey.length > 0 && <><code>{audit.callsNotKey[0]}</code> is not marked as a key event in Analytics; it is counted as a lead here all the same. </>}
+              <span className="text-amber-200/70">Fix it in Analytics under Admin → Events → Key events.</span>
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Tile big label="Calls" value={d.events.calls} was={d.events.callsBefore} note={d.events.calls === 0 && d.events.callsBefore === 0 ? 'no call event found' : undefined} compare={d.events.calls > 0 || d.events.callsBefore > 0} />
-            <Tile big label="Key events (conversions)" value={d.recent.c} was={d.before.c} spark={d.days.map((x) => x.keyEvents)} active={metric === 'keyEvents'} onSelect={() => setMetric('keyEvents')} />
+            <Tile big label={real ? 'Leads (calls, forms, bookings)' : 'Key events (conversions)'} value={won} was={wonBefore} spark={d.days.map((x) => (real ? x.leads : x.keyEvents))} active={metric === 'keyEvents'} onSelect={() => setMetric('keyEvents')} />
             <Tile big label="Visits" value={d.recent.a} was={d.before.a} spark={d.days.map((x) => x.visits)} active={metric === 'visits'} onSelect={() => setMetric('visits')} />
-            <Tile big label="Key events per 100 visits" value={rate(d.recent)} was={rate(d.before)} digits={1} />
+            <Tile big label={word + ' per 100 visits'} value={per100(won, d.recent.a)} was={per100(wonBefore, d.before.a)} digits={1} />
           </div>
           {d.events.calls === 0 && d.events.callsBefore === 0 && <p className="-mt-2 text-xs text-slate-500">Calls are counted from events whose name says call, phone or tel (a tap on the phone number). This site sends none: add a “click to call” event in Analytics or Tag Manager and they appear here.</p>}
 
           <div>
-            <h4 className="mb-2 text-sm font-semibold">{metric === 'keyEvents' ? 'Key events' : 'Visits'} by day</h4>
-            <MiniChart points={alongside(d.days, d.daysBefore, back(d.range), (x) => x[metric])} beforeName={beforeName(d.range)} name={metric === 'keyEvents' ? 'Key events' : 'Visits'} />
+            <h4 className="mb-2 text-sm font-semibold">{metric === 'keyEvents' ? word : 'Visits'} by day</h4>
+            <MiniChart points={alongside(d.days, d.daysBefore, back(d.range), dayPick)} beforeName={beforeName(d.range)} name={metric === 'keyEvents' ? word : 'Visits'} />
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 p-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h4 className="text-sm font-semibold">Visits sent by AI assistants</h4>
+                {came !== 'ai' && d.ai.visits > 0 && <button type="button" onClick={() => setCame('ai')} className="text-xs text-sky-400 hover:underline">Show only these</button>}
+              </div>
+              {d.ai.visits === 0 && d.ai.visitsBefore === 0 ? <p className="mt-2 text-sm text-slate-400">None for these dates. ChatGPT, Perplexity, Gemini, Copilot and the like are counted when they pass a referrer.</p> : (
+                <>
+                  <p className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1"><span className="text-3xl font-bold tabular-nums text-slate-100">{fmt(d.ai.visits)}</span><span className="text-xs"><Change now={d.ai.visits} was={d.ai.visitsBefore} /> <span className="text-slate-500">was {fmt(d.ai.visitsBefore)}</span></span><span className="text-sm text-slate-300"><span className="font-semibold tabular-nums">{fmt(d.ai.leads)}</span> lead{d.ai.leads === 1 ? '' : 's'}, <span className="font-semibold tabular-nums">{fmt(d.ai.calls)}</span> of them call{d.ai.calls === 1 ? '' : 's'}</span></p>
+                  {d.ai.pages.length > 0 && <ul className="mt-3 space-y-1 text-xs">{d.ai.pages.map((x) => <li key={x.page} className="flex items-baseline gap-2"><span className="min-w-0 flex-1 truncate text-slate-300" title={x.page === '(not set)' ? NOT_SET : x.page}>{x.page}{x.page === '(not set)' && <span className="ml-1 cursor-help text-slate-500">ⓘ</span>}</span><span className="tabular-nums text-slate-400">{fmt(x.visits)} visit{x.visits === 1 ? '' : 's'}</span></li>)}</ul>}
+                  <p className="mt-2 text-[11px] text-slate-500">The pages they landed on most. Assistants that pass no referrer show as direct and cannot be told apart.</p>
+                </>
+              )}
+            </div>
+            <div className="min-w-0 rounded-lg border border-slate-800 bg-slate-950 p-3">
+              <h4 className="text-sm font-semibold">Top visitor towns</h4>
+              {d.cities.length === 0 ? <p className="mt-2 text-sm text-slate-400">Analytics named no towns for these dates.</p> : (
+                <table className="mt-2 w-full text-left text-xs">
+                  <thead className="text-slate-500"><tr><th className="py-1 font-medium">Town</th><th className="py-1 text-right font-medium">Visits</th><th className="py-1 text-right font-medium">Calls</th><th className="py-1" aria-label="Scan" /></tr></thead>
+                  <tbody>
+                    {d.cities.slice(0, 6).map((c) => (
+                      <tr key={c.city + c.region} className="group border-t border-slate-800/70">
+                        <td className="max-w-[12rem] truncate py-1.5 text-slate-200" title={c.city + ', ' + c.region}>{c.city}<span className="text-slate-500">{c.region && c.region !== '(not set)' ? ', ' + c.region : ''}</span></td>
+                        <td className="py-1.5 text-right tabular-nums text-slate-200">{fmt(c.visits)}</td>
+                        <td className="py-1.5 text-right tabular-nums text-slate-400">{fmt(c.calls)}</td>
+                        <td className="whitespace-nowrap py-1.5 pl-2 text-right"><a href={'/new-scan?' + new URLSearchParams([...(businessName ? [['name', businessName]] : []), ['near', c.city + (c.region && c.region !== '(not set)' ? ', ' + c.region : '')], ['grid', '5']]).toString()} title={`Start a 5×5 scan centred on ${c.city}`} className="rounded-md border border-emerald-500/50 px-2 py-0.5 font-semibold text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 focus:opacity-100 lg:opacity-0 lg:group-hover:opacity-100">Scan here</a></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
@@ -326,15 +389,15 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
               </div>
               <div className="mt-2 overflow-x-auto rounded-lg border border-slate-800">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-900 text-xs text-slate-400"><tr><th className="px-3 py-2 font-medium">{by === 'sources' ? 'Source / medium' : 'Channel'}</th><th className="px-3 py-2 text-right font-medium">Visits</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Change</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Key events</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium" title="Key events per 100 visits">Rate</th></tr></thead>
+                  <thead className="bg-slate-900 text-xs text-slate-400"><tr><th className="px-3 py-2 font-medium">{by === 'sources' ? 'Source / medium' : 'Channel'}</th><th className="px-3 py-2 text-right font-medium">Visits</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Change</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">{word}</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium" title={word + ' per 100 visits'}>Rate</th></tr></thead>
                   <tbody className="divide-y divide-slate-800/70">
                     {rows.slice(0, 12).map((r) => (
                       <tr key={r.key} className="hover:bg-slate-800/40">
                         <td className="max-w-[14rem] truncate px-3 py-1.5 text-slate-200" title={r.key}>{r.key}</td>
                         <BarCell value={r.a} max={Math.max(1, ...rows.map((x) => x.a))} strong />
                         <td className="px-3 py-1.5 text-right text-xs tabular-nums"><Change now={r.a} was={r.wasA} /></td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmt(r.c ?? 0)}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.a ? (((r.c ?? 0) / r.a) * 100).toFixed(1) : '–'}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmt(wonOf(r))}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.a ? ((wonOf(r) / r.a) * 100).toFixed(1) : '–'}</td>
                       </tr>
                     ))}
                     {!rows.length && <tr><td colSpan={5} className="px-3 py-3 text-sm text-slate-400">No visits for these dates and filters.</td></tr>}
@@ -350,7 +413,7 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
                   <tbody className="divide-y divide-slate-800/70">
                     {d.events.rows.slice(0, 12).map((r) => (
                       <tr key={r.name} className="hover:bg-slate-800/40">
-                        <td className="max-w-[14rem] truncate px-3 py-1.5 text-slate-200" title={r.name}>{r.name}{r.call && <span className="ml-2 rounded-full border border-emerald-500/40 px-1.5 py-0.5 text-[10px] text-emerald-300">call</span>}</td>
+                        <td className="max-w-[14rem] truncate px-3 py-1.5 text-slate-200" title={r.name}>{r.name}{r.call && <span className="ml-2 rounded-full border border-emerald-500/40 px-1.5 py-0.5 text-[10px] text-emerald-300">call</span>}{r.noise && <span className="ml-2 rounded-full border border-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-200" title="Analytics sends this on every visit: it is not a lead, and is left out of “Real leads only”.">not a lead</span>}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmt(r.count)}</td>
                         <td className="px-3 py-1.5 text-right text-xs tabular-nums"><Change now={r.count} was={r.wasCount} /></td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.keyEvents ? fmt(r.keyEvents) : <span title="Not marked as a key event in Analytics">–</span>}</td>
@@ -362,8 +425,8 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-500">“Google listing” counts visits tagged <code>gbp_listing</code>, which the “Add tracking tag” button on the Edit business tab puts on the listing’s website link. “AI assistants” counts visits a chat assistant’s site or app sent; ones it sent with no referrer show as direct.</p>
-          <GoogleExplorer source="ga" property={property} start={d ? { days: d.range.days, from: d.range.recent.from, to: d.range.recent.to, device } : undefined} />
+          <p className="text-xs text-slate-500">“Google listing” counts visits whose campaign, source or medium is one of {d.listingTags.map((t, i) => <span key={t}>{i ? ', ' : ''}<code>{t}</code></span>)}: the tag on this listing’s own website link, the one the “Add tracking tag” button puts there, and the usual agency ones. “AI assistants” counts visits a chat assistant’s site or app sent; ones it sent with no referrer show as direct.</p>
+          <GoogleExplorer source="ga" property={property} start={d ? { days: d.range.days, from: d.range.recent.from, to: d.range.recent.to, device, page: scope === 'page' && path !== '/' ? path : '' } : undefined} />
         </div>
       )}
     </section>
@@ -408,7 +471,7 @@ export default function GoogleSitePanel({ website, businessName, dates, wholeSit
       {!host ? <p className={card + ' text-sm text-slate-400'}>{wholeSite ? 'Pick a website above to see its Search Console and Analytics.' : 'This listing has no website, so there is nothing to look up in Search Console or Analytics.'}</p> : (
         <>
           {status.searchConsole && <SearchConsole website={website} host={host} businessName={businessName} dates={dates} wholeSite={wholeSite} />}
-          {status.analytics && <Analytics host={host} dates={dates} />}
+          {status.analytics && <Analytics host={host} dates={dates} website={website} businessName={businessName} wholeSite={wholeSite} />}
         </>
       )}
       <p className="text-xs text-slate-500">
