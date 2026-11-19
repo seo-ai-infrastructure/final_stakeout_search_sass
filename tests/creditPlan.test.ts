@@ -29,3 +29,15 @@ test('when the plan ends, its unused credits lapse and pack credits stay', () =>
   assert.deepEqual(endPlan({ balance: 490, bucket: 700, packFloor: 40, bought: 0 }), { lapse: 450, balance: 40, bucket: 0, packFloor: 40 });
   assert.deepEqual(endPlan({ balance: 30, bucket: 700, packFloor: 40, bought: 0 }), { lapse: 0, balance: 30, bucket: 0, packFloor: 30 });
 });
+
+test('a downgrade carries over at the new plan’s cap, and one-time purchases are never swept', () => {
+  // Agency (3,500) with 3,000 unused, renewing as Starter (700): 700 carry, 2,300 lapse, 1,400 in hand.
+  const down = renewPlan({ balance: 3000, bucket: 3500, packFloor: 0, bought: 0 }, 700);
+  assert.deepEqual([down.carry, down.lapse, down.bucket, down.balance], [700, 2300, 1400, 1400]);
+  // A three-month bundle (2,100, bought once) on top of a Starter month, nothing used: the bundle is pack credits and stays whole.
+  const s = { balance: 2800, bucket: 700, packFloor: 0, bought: 2100 };
+  assert.equal(planRemaining(s), 700);
+  const r = renewPlan(s, 700);
+  assert.deepEqual([r.carry, r.lapse, r.balance, r.packFloor], [700, 0, 3500, 2100]);
+  assert.deepEqual(endPlan(s), { lapse: 700, balance: 2100, bucket: 0, packFloor: 2100 });
+});
