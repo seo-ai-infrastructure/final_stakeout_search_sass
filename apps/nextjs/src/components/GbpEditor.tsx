@@ -5,8 +5,9 @@ import GbpReviews from '@/components/GbpReviews';
 import GbpWatch from '@/components/GbpWatch';
 import GbpPosts from '@/components/GbpPosts';
 import GbpExtras from '@/components/GbpExtras';
+import GbpGaps from '@/components/GbpGaps';
 import {
-  DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, diff, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
+  DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, descriptionWarnings, diff, highScrutiny, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
 } from '@stakeout/core/gbp';
 
@@ -101,6 +102,8 @@ export default function GbpEditor() {
   // Within one listing: its numbers, its edits, its posts, its reviews.
   const [view, setView] = useState<'insights' | 'edit' | 'posts' | 'reviews'>('insights');
   const [choosing, setChoosing] = useState(true);
+  // Raised when the gaps panel changes the listing, so the panels below read it again.
+  const [rev, setRev] = useState(0);
   const [edits, setEdits] = useState<Edit[]>([]);
   const [form, setForm] = useState<Form | null>(null);
   const [unlocked, setUnlocked] = useState(false);
@@ -142,6 +145,13 @@ export default function GbpEditor() {
     }
   }, []);
   useEffect(() => { if (pick) load(pick); }, [pick, load]);
+  // The listing again, without clearing the page: after a change made from one of its panels.
+  const refresh = useCallback(async (p: { profile: string; location: string }) => {
+    try {
+      const r = await api<{ location: GbpLocation; week: DayHours[] | null; edits: Edit[] }>(`/api/admin/gbp/location?profile=${encodeURIComponent(p.profile)}&location=${encodeURIComponent(p.location)}`);
+      setLive(r.location); setEdits(r.edits); setForm(formOf(r.location, r.week));
+    } catch { /* the panels show their own errors */ }
+  }, []);
 
   // The change the form asks for; identity fields only count while they are unlocked.
   const change = useMemo<GbpChange>(() => {
@@ -297,12 +307,14 @@ export default function GbpEditor() {
           {view === 'edit' && (
           <>
           <p className="text-xs text-slate-500">Every edit is built on the live profile, logged with the profile as it was, and checked against Google afterwards. Address, map pin, service area and open/closed status are not editable here.</p>
+          <GbpGaps profile={pick.profile} location={pick.location} onApplied={() => { setRev((n) => n + 1); refresh(pick); }} />
           <section className={card + ' space-y-5'}>
             <h3 className="flex items-center gap-2 font-semibold">Everyday edits <span className={'rounded-full border px-2 py-0.5 text-[11px] ' + TIER.green.chip}>{TIER.green.text}</span></h3>
 
             <div>
               <label className="text-sm font-medium">Description <span className={'ml-1 text-xs ' + (form.description.length > DESCRIPTION_MAX ? 'text-rose-300' : 'text-slate-500')}>{form.description.length} / {DESCRIPTION_MAX}</span></label>
               <textarea className={input + ' mt-1.5 h-32'} value={form.description} onChange={(e) => set('description', e.target.value)} />
+              {descriptionWarnings(form.description).length > 0 && form.description !== (live.profile?.description ?? '') && <p className="mt-1 text-xs text-amber-300">This has {descriptionWarnings(form.description).join(' and ')} in it. Google often rejects or strips those from a description.</p>}
             </div>
 
             <div>
@@ -399,6 +411,7 @@ export default function GbpEditor() {
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={unlocked} onChange={(e) => { setUnlocked(e.target.checked); if (!e.target.checked && live) setForm((f) => (f ? { ...f, title: live.title ?? '', primaryPhone: live.phoneNumbers?.primaryPhone ?? '', primaryCategory: live.categories?.primaryCategory ?? null } : f)); setReview(false); }} /> Unlock high-risk edits</label>
             </div>
             <p className="text-xs text-slate-400">Changing the name, primary category or primary phone can make Google ask for video verification or suspend the listing. One identity field per save, and one every {RED_COOLDOWN_DAYS} days per profile.</p>
+            {highScrutiny(live.categories?.primaryCategory?.displayName) && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{live.categories?.primaryCategory?.displayName} is a line of business Google checks closely. An identity edit here is more likely to be held, or to hide the listing until a video is sent.</p>}
             <div>
               <label className="text-sm font-medium">Business name</label>
               <input className={input + ' mt-1.5'} value={form.title} disabled={!unlocked} onChange={(e) => set('title', e.target.value)} />
@@ -481,7 +494,7 @@ export default function GbpEditor() {
               </ul>
             )}
           </section>
-          <GbpExtras profile={pick.profile} location={pick.location} />
+          <GbpExtras key={rev} profile={pick.profile} location={pick.location} />
           </>
           )}
         </>

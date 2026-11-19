@@ -408,3 +408,25 @@ export function showing(after: GbpLocation, change: GbpChange, changes: FieldCha
   for (const c of changes) (diff(after, { [c.key]: change[c.key] } as GbpChange).length === 0 ? live : waiting).push(c.key);
   return { live, waiting };
 }
+
+/**
+ * Lines of business where Google checks listings hardest (most fake listings are made in them), so
+ * an identity edit is likelier to be held or to bring a video verification. From the category's name.
+ */
+export function highScrutiny(category: string | undefined | null): boolean {
+  return /plumb|roof|locksmith|tow(ing)?\b|garage door|lawyer|attorney|law firm|legal|bail|rehab|addiction|treatment cent|med(ical)? spa|hvac|heating|air condition|electrician|pest|moving|mover|junk|appliance repair|water damage|tree service|carpet clean/i.test(category ?? '');
+}
+
+/**
+ * What in a description Google tends to reject or strip, or an empty list: links, phone numbers,
+ * markup, and shouting. A warning for the person writing it; the description is sent as written.
+ */
+export function descriptionWarnings(text: string): string[] {
+  const out: string[] = [];
+  if (/https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|io|co|us|biz)\b/i.test(text)) out.push('a web address');
+  if (/(\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/.test(text)) out.push('a phone number');
+  if (/<[a-z][^>]*>/i.test(text)) out.push('HTML');
+  const words = text.split(/\s+/).filter((w) => /[A-Za-z]{4,}/.test(w));
+  if (words.length >= 8 && words.filter((w) => w === w.toUpperCase()).length / words.length > 0.3) out.push('a lot of capital letters');
+  return out;
+}

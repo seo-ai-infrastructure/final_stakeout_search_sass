@@ -346,3 +346,14 @@ model AioPageCheck {
 
   @@unique([scanId, url])
 }
+
+/// A rival's public Google listing as looked up for the competitor gaps panel (categories,
+/// attributes, booking links), kept for 14 days so the same rival is not paid for twice. `key`:
+/// the business name as a key plus where it was looked for. `data`: the lookup's answer, or null
+/// when no matching listing was found.
+model RivalProfile {
+  key       String   @id
+  name      String
+  data      Json?
+  fetchedAt DateTime @default(now())
+}

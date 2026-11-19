@@ -162,3 +162,14 @@ test('holiday hours: read, changed and sent as whole dates, with past dates drop
   // Thanksgiving 2026 is the fourth Thursday of November: the 26th.
   assert.deepEqual(upcomingHolidays(today).map((h) => h.date), ['2026-11-26', '2026-12-24', '2026-12-25', '2026-12-31', '2027-01-01']);
 });
+
+import { descriptionWarnings, highScrutiny } from '../packages/core/gbp';
+
+test('closely checked lines of business, and what Google strips from a description', () => {
+  for (const c of ['Plumber', 'Roofing contractor', 'Locksmith', 'Personal injury attorney', 'Medical spa', 'HVAC contractor', 'Towing service']) assert.equal(highScrutiny(c), true, c);
+  for (const c of ['Coffee shop', 'Bakery', 'Dentist', '', undefined]) assert.equal(highScrutiny(c), false, String(c));
+  assert.deepEqual(descriptionWarnings('Family plumbing in Lakeland since 1998. Licensed and insured.'), []);
+  assert.deepEqual(descriptionWarnings('Call (863) 555-0100 or visit www.acme.com today'), ['a web address', 'a phone number']);
+  assert.deepEqual(descriptionWarnings('<b>Best</b> plumber'), ['HTML']);
+  assert.deepEqual(descriptionWarnings('BEST PLUMBER LAKELAND EMERGENCY SERVICE CALL TODAY licensed insured'), ['a lot of capital letters']);
+});
