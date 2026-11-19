@@ -211,7 +211,7 @@ export function AiCoverageCard({ scan }: { scan: GridScanData }) {
     );
   return (
     <div className={box}>
-      <h2 className="text-sm font-bold text-white">AI Overview coverage</h2>
+      <h2 id="ai-overview-coverage" className="scroll-mt-6 text-sm font-bold text-white">AI Overview coverage</h2>
       <div className="mt-3 grid gap-4 sm:grid-cols-3">
         <div>
           <p className="text-2xl font-extrabold text-white">{s.ai.shown} of {s.ai.points}</p>

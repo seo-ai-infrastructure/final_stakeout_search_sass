@@ -2,7 +2,8 @@ import raw from '@/data/demo-real-scans.json';
 import type { DemoPin } from '@/lib/demographics';
 
 /** Real Stakeout scans behind the public demo. Regenerate the JSON from the share reports; never hand-edit numbers. */
-export type ScanKey = 'tight' | 'wide';
+/** 'top25': one point in each of the highest-income census areas near the business (the wizard's "Top income areas" shape). 'grid': a standard 7×7 grid. */
+export type ScanKey = 'top25' | 'grid';
 export type RealPin = DemoPin & {
   pinId: string; row: number; col: number; zip: string;
   /** Observed local rank, null when the business was not in the local results the phone displayed. */
@@ -13,12 +14,11 @@ export type RealPin = DemoPin & {
   adsAbove: number | null; advertisers: number; isp: string | null; sources: string[];
 };
 type RawPin = Omit<RealPin, 'rankSouth' | 'rankNorth' | 'aiCited'> & { cited: boolean };
-type RawScan = { shareToken: string; date: string; gridSize: number; spacingMiles: number; device: string; network: string; solv: number; aioTriggerRate: number; aioCitationRate: number; pins: RawPin[] };
+type RawScan = { shareToken: string; date: string; gridSize: number; spacingMiles: number; device: string; network: string; solv: number; aioTriggerRate: number; aioCitationRate: number; leaders: { name: string; top3: number }[]; pins: RawPin[] };
 export type RealScan = Omit<RawScan, 'pins'> & { pins: RealPin[] };
 
 /** Rank value the map uses for "not found", so it lands in the grey band. */
 export const NOT_FOUND = 99;
-export const rankLabel = (rank: number) => (rank >= NOT_FOUND ? '–' : String(rank));
 
 const data = raw as unknown as { business: string; ownDomain: string; city: string; keyword: string; scans: Record<ScanKey, RawScan> };
 const toPin = ({ cited, ...p }: RawPin): RealPin => ({ ...p, rankSouth: p.rank ?? NOT_FOUND, rankNorth: p.rank ?? NOT_FOUND, aiCited: cited });
@@ -26,15 +26,12 @@ const toPin = ({ cited, ...p }: RawPin): RealPin => ({ ...p, rankSouth: p.rank ?
 export const DEMO = {
   business: data.business, ownDomain: data.ownDomain, city: data.city, keyword: data.keyword,
   scans: {
-    tight: { ...data.scans.tight, pins: data.scans.tight.pins.map(toPin) },
-    wide: { ...data.scans.wide, pins: data.scans.wide.pins.map(toPin) },
+    top25: { ...data.scans.top25, pins: data.scans.top25.pins.map(toPin) },
+    grid: { ...data.scans.grid, pins: data.scans.grid.pins.map(toPin) },
   } as Record<ScanKey, RealScan>,
 };
 
-export const proofVideoUrl = (scan: RealScan, pin: RealPin) => `/api/proof/${pin.pinId}?kind=video&share=${scan.shareToken}`;
 export const shareReportUrl = (scan: RealScan) => `/share/${scan.shareToken}`;
-export const scanName = (scan: RealScan) => `${scan.spacingMiles}-mile grid · ${scan.pins.length} searches · ${scan.date}`;
-
 const DIRECTORIES = /(^|\.)(google|yelp|thumbtack|angi|bbb|facebook|nextdoor)\./;
 
 /** Every headline number on the demo page comes from here, counted from the scan's own pins. */
@@ -62,12 +59,3 @@ export function scanStats(scan: RealScan) {
   };
 }
 export const pct = (part: number, whole: number) => (whole ? Math.round((100 * part) / whole) : 0);
-
-export function pinBounds(pins: RealPin[]): [[number, number], [number, number]] {
-  const lng = pins.map(p => p.lng), lat = pins.map(p => p.lat);
-  return [[Math.min(...lng), Math.min(...lat)], [Math.max(...lng), Math.max(...lat)]];
-}
-/** Open on the most telling pin: no local list, yet the AI answer names the business first. */
-export function defaultPin(pins: RealPin[]) {
-  return pins.find(p => !p.pack && p.rank == null && p.aiPos === 1) ?? pins.find(p => p.aiCited) ?? pins[0];
-}

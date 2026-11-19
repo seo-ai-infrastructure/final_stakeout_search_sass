@@ -4,12 +4,12 @@ import Link from 'next/link';
 import '@fontsource/ibm-plex-sans/latin-400.css';
 import '@fontsource/ibm-plex-sans/latin-600.css';
 import '@fontsource/ibm-plex-sans-condensed/latin-600.css';
-import DemographicDemo from '@/components/demo/DemographicDemo';
+import RealReportDemo from '@/components/demo/RealReportDemo';
 
 export const metadata: Metadata = {
-  title: 'Real-Device Geo-Grid Demo: Local Rank vs. Google AI Answers | Stakeout Search',
+  title: 'Top 25 Demo Map: Rank Where Your Best Customers Live | Stakeout Search',
   description:
-    'See two real Stakeout scans of “emergency plumber near me” in Lakeland, Florida: where the local list disappeared, where Google’s AI answer named the business, the Census buying power under every pin, and the phone recording behind each result.',
+    'A real Stakeout report for “emergency plumber near me” in Lakeland, Florida: phone searches in the highest-income neighborhoods, local rank next to Google’s AI answer, ads above the business, and a screen recording behind every pin.',
 };
 
 const fonts = {
@@ -18,7 +18,7 @@ const fonts = {
   fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
 } as CSSProperties;
 
-/** Public sales demo: real Census data under two real device scans. No account needed. */
+/** Public sales demo: two real shared reports, embedded as-is. No account needed. */
 export default function DemographicsDemoPage() {
   return (
     <div style={fonts} className="min-h-screen bg-[#102527]">
@@ -33,7 +33,7 @@ export default function DemographicsDemoPage() {
           </Link>
         </nav>
       </header>
-      <DemographicDemo />
+      <RealReportDemo />
     </div>
   );
 }

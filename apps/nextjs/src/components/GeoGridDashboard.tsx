@@ -200,17 +200,25 @@ export type GridScanData = {
 export function GeoGridDashboard({
   identifier,
   shared = false,
+  initialMapMode = 'combined',
+  initialTab = 'overview',
+  initialPin = null,
 }: {
   identifier: string;
   shared?: boolean;
+  /** Which map view opens first; the demo page deep-links to one. */
+  initialMapMode?: 'combined' | 'rank' | 'ai' | 'ads';
+  /** Tab and point that open first; the demo page uses them to land on one point's evidence. */
+  initialTab?: 'overview' | 'evidence';
+  initialPin?: string | null;
 }) {
   const [scan, setScan] = useState<GridScanData | null>(null),
-    [selected, select] = useState<string | null>(null),
+    [selected, select] = useState<string | null>(initialPin),
     [error, setError] = useState(''),
     [share, setShare] = useState(''),
     [projected, project] = useState<CompetitorMarketStat | null>(null),
     [mapWarning, setMapWarning] = useState('');
-  const [tab, setTab] = useState<'overview' | 'evidence'>('overview');
+  const [tab, setTab] = useState<'overview' | 'evidence'>(initialTab);
   const [censusMetric, setCensusMetric] = useState<CensusMetric>(CENSUS_VINTAGE ? 'income' : 'off'),
     [censusLevel, setCensusLevel] = useState<CensusLevel>('auto'),
     [censusArea, setCensusArea] = useState<CensusArea | null>(null),
@@ -220,7 +228,7 @@ export function GeoGridDashboard({
     [view3d, setView3d] = useState(false),
     // What the pins show: the local rank, the business's place in the AI Overview's list, or the
     // number of sponsored results above it.
-    [mapMode, setMapMode] = useState<'combined' | 'rank' | 'ai' | 'ads'>('combined'),
+    [mapMode, setMapMode] = useState<'combined' | 'rank' | 'ai' | 'ads'>(initialMapMode),
     // Combined view: show only the points the AI Overview recommends while the local results leave them out.
     [recommendedOnly, setRecommendedOnly] = useState(false),
     // Combined view: one headline per pin, or each pin split in two (AI Overview over local results).

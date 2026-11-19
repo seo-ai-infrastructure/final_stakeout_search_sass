@@ -332,7 +332,7 @@ export function CompetitorLeaderboard({
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 bg-slate-900/80 px-6">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-bold text-white">Competitor leaderboard</h2>
+            <h2 id="competitor-leaderboard" className="scroll-mt-6 text-sm font-bold text-white">Competitor leaderboard</h2>
             <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs font-semibold text-emerald-400 border">
               {leaderboard.length} businesses
             </span>
