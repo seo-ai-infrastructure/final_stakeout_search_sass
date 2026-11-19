@@ -100,6 +100,8 @@ export type CitedPage = {
   competitors: number;
   score: number;
 };
+/** A website with every page of it that was cited. `top`: its most valuable known page, or null when only the website is known. */
+export type CitedSite = Omit<CitedPage, 'url' | 'pageKnown'> & { pages: CitedPage[]; top: string | null };
 export type PinState = 'you' | 'others' | 'none' | 'pending';
 
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -173,20 +175,40 @@ export function aioRollup(pins: AioPin[], business: string, own: string | null |
     };
   }).sort((a, b) => b.score - a.score || b.pins.length - a.pins.length || a.url.localeCompare(b.url));
 
+  // The same pages by website: a job is about a site (one Yelp job, however many Yelp pages were
+  // cited), and points whose answer was only read as a list of websites count towards their site.
+  const bySite = new Map<string, CitedPage[]>();
+  for (const p of pages) bySite.set(p.site, [...(bySite.get(p.site) ?? []), p]);
+  const sites: CitedSite[] = [...bySite].map(([site, list]) => {
+    const ids = [...new Set(list.flatMap((p) => p.pins))];
+    const slotted = list.filter((p) => p.avgSlot !== null);
+    const slotPins = slotted.reduce((n, p) => n + p.pins.length, 0);
+    const avgSlot = slotPins ? round(slotted.reduce((n, p) => n + (p.avgSlot as number) * p.pins.length, 0) / slotPins) : null;
+    const pinShare = withAi.length ? (100 * ids.length) / withAi.length : 0, powerShare = power(ids);
+    const competitors = Math.max(0, ...list.map((p) => p.competitors));
+    const known = list.filter((p) => p.pageKnown);
+    return {
+      site, name: list[0].name, kind: list.some((p) => p.kind === 'own') ? 'own' : list[0].kind, pins: ids, pinShare: round(pinShare), powerShare: round(powerShare), avgSlot,
+      // On the site if it is on any of its cited pages; not on it only once every known page was looked at.
+      present: list.some((p) => p.present === true) ? true : known.length > 0 && known.every((p) => p.present === false) ? false : null,
+      competitors, score: priorityScore(powerShare, pinShare, avgSlot, competitors),
+      pages: [...known, ...list.filter((p) => !p.pageKnown)], top: known[0]?.url ?? null,
+    };
+  }).sort((a, b) => b.score - a.score || b.pins.length - a.pins.length || a.site.localeCompare(b.site));
+
   const kinds = (Object.keys(KIND_LABEL) as SourceKind[]).map((kind) => {
-    const rows = pages.filter((p) => p.kind === kind);
+    const rows = sites.filter((p) => p.kind === kind);
     const ids = [...new Set(rows.flatMap((r) => r.pins))];
-    return { kind, label: KIND_LABEL[kind], pages: rows.length, pins: ids.length, pinShare: withAi.length ? round((100 * ids.length) / withAi.length) : 0 };
-  }).filter((k) => k.pages > 0).sort((a, b) => b.pins - a.pins);
+    return { kind, label: KIND_LABEL[kind], sites: rows.length, pages: rows.reduce((n, r) => n + r.pages.filter((p) => p.pageKnown).length, 0), pins: ids.length, pinShare: withAi.length ? round((100 * ids.length) / withAi.length) : 0 };
+  }).filter((k) => k.sites > 0).sort((a, b) => b.pins - a.pins);
 
   // The rival website cited at the most points, for "your website against the top rival's".
-  const sites = new Map<string, Set<string>>();
-  for (const p of pages) if (p.kind === 'business') { const s = sites.get(p.site) ?? new Set<string>(); p.pins.forEach((id) => s.add(id)); sites.set(p.site, s); }
-  const rival = [...sites].sort((a, b) => b[1].size - a[1].size)[0];
-  const gaps = pages.filter((p) => p.kind !== 'own' && p.kind !== 'reference' && p.present !== true);
+  const rival = [...sites.filter((x) => x.kind === 'business')].sort((a, b) => b.pins.length - a.pins.length)[0] ?? null;
+  const gaps = sites.filter((p) => p.kind !== 'own' && p.kind !== 'reference' && p.present !== true);
   const top = gaps.slice(0, 6);
   const covered = [...new Set(top.flatMap((p) => p.pins))];
   const pct = (n: number) => (withAi.length ? round((100 * n) / withAi.length) : 0);
+  const rivalPins = [...new Set(sites.filter((x) => x.kind === 'business').flatMap((x) => x.pins))];
   return {
     points: completed.length,
     answers: withAi.length,
@@ -194,10 +216,13 @@ export function aioRollup(pins: AioPin[], business: string, own: string | null |
     /** Share of AI voice: the answers that named the business, plainly and weighted by buying power. */
     named: { pins: namedPins.length, share: pct(namedPins.length), powerShare: round(power(namedPins)) },
     ownSite: { pins: ownPins.length, share: pct(ownPins.length) },
-    rival: rival ? { site: rival[0], pins: rival[1].size, share: pct(rival[1].size) } : null,
+    rival: rival ? { site: rival.site, pins: rival.pins.length, share: pct(rival.pins.length) } : null,
+    /** Every other business's website taken together: the points that cited any of them. */
+    rivals: { pins: rivalPins, pinShare: pct(rivalPins.length), powerShare: round(power(rivalPins)) },
     uncaptured: { pages: top.length, pinShare: pct(covered.length), powerShare: round(power(covered)) },
     weighted: weights.size > 0,
     pages,
+    sites,
     kinds,
     state,
   };
@@ -222,6 +247,9 @@ export type AioTask = {
   draftLabel: string | null;
   /** The pages it concerns, and the points that cited them. */
   pages: CitedPage[];
+  /** How many points, and what share of the answers and of the buying power, the job reaches. */
+  pinShare: number;
+  powerShare: number;
   pins: string[];
   /** Something we can do for the customer: a citation, a post through the profile tools. */
   service: 'CITATION' | 'VIDEO' | 'PROFILE' | null;
@@ -233,17 +261,18 @@ const tierOf = (score: number): Tier => (score >= 70 ? 'CRITICAL' : score >= 45 
 const PLAY: Partial<Record<SourceKind, Playbook>> = { directory: 'CLAIM_LISTING', roundup: 'ASK_TO_BE_LISTED', news: 'PITCH_LOCAL_NEWS', video: 'PUBLISH_VIDEO', community: 'JOIN_THREAD' };
 
 type Ctx = { business: string; keyword: string; place: string; answers: number; weighted: boolean };
-const reach = (p: CitedPage, c: Ctx) =>
+const reach = (p: CitedSite, c: Ctx) =>
   `Cited at ${p.pins.length} of the ${c.answers} points where Google showed an AI answer` + (c.weighted ? `, which hold ${Math.round(p.powerShare)}% of the buying power among them` : '') + (p.avgSlot !== null ? `, on average as source number ${p.avgSlot}` : '') + '.';
-const found = (p: CitedPage) => (p.present === false ? ` ${p.competitors > 0 ? p.competitors + ' of your top rivals are on the page; ' : ''}the business is not.` : p.present === null ? ' Not yet checked whether the business is on it.' : '');
+const found = (p: CitedSite) => (p.present === false ? ` ${p.competitors > 0 ? p.competitors + ' of your top rivals are on the cited page; ' : ''}the business is not.` : p.present === null ? ' Not yet checked whether the business is on it.' : '');
 const where = (c: Ctx) => (c.place ? ' in ' + c.place : '');
 
-function taskFor(p: CitedPage, c: Ctx): AioTask | null {
+function taskFor(p: CitedSite, c: Ctx): AioTask | null {
   const playbook = PLAY[p.kind];
   if (!playbook) return null;
-  const base = { target: p.url, playbook, tier: tierOf(p.score), score: p.score, pages: [p], pins: p.pins, captured: p.present === true };
+  // The job is kept under the website, so it is the same job in the next scan whatever page is cited then.
+  const base = { target: p.site, playbook, tier: tierOf(p.score), score: p.score, pages: p.pages, pins: p.pins, pinShare: p.pinShare, powerShare: p.powerShare, captured: p.present === true };
   const known = knownSite(p.site);
-  const page = p.pageKnown ? p.url : p.site;
+  const page = p.top ?? p.site;
   if (playbook === 'CLAIM_LISTING')
     return {
       ...base, service: 'CITATION', draft: null, draftLabel: null,
@@ -253,7 +282,7 @@ function taskFor(p: CitedPage, c: Ctx): AioTask | null {
         known ? `${known.how}: ${known.url}` : `Create or claim the business’s page on ${p.name}.`,
         'Use exactly the name, address and phone number that are on the Google listing.',
         `Choose the category that matches “${c.keyword}”, and write the services out in full.`,
-        p.pageKnown ? `Then check the cited page itself (${p.url}): if it is a category or “best in town” page, a complete profile with recent reviews is what gets a business onto it.` : 'Add photos, hours and a link to the website, and ask recent customers for a review there.',
+        p.top ? `Then check the cited page itself (${p.top}): if it is a category or “best in town” page, a complete profile with recent reviews is what gets a business onto it.` : 'Add photos, hours and a link to the website, and ask recent customers for a review there.',
       ],
     };
   if (playbook === 'ASK_TO_BE_LISTED')
@@ -296,14 +325,16 @@ function taskFor(p: CitedPage, c: Ctx): AioTask | null {
  */
 export function aioTasks(r: AioRollup, c: { business: string; keyword: string; place: string }, limit = 14): AioTask[] {
   const ctx: Ctx = { ...c, answers: r.answers, weighted: r.weighted };
-  const tasks = r.pages.map((p) => taskFor(p, ctx)).filter((t): t is AioTask => t !== null);
-  const rivals = r.pages.filter((p) => p.kind === 'business');
+  const tasks = r.sites.map((p) => taskFor(p, ctx)).filter((t): t is AioTask => t !== null);
+  const rivals = r.sites.filter((p) => p.kind === 'business');
   if (rivals.length) {
-    const pins = [...new Set(rivals.flatMap((p) => p.pins))];
-    const top = rivals.slice(0, 5);
-    const score = Math.max(...rivals.map((p) => p.score));
+    // Scored as one source: together these pages reach every point that cited any of them.
+    const pins = r.rivals.pins;
+    const top = rivals.flatMap((x) => x.pages.filter((p) => p.pageKnown)).sort((a, b) => b.pins.length - a.pins.length).slice(0, 6);
+    const slotted = rivals.filter((x) => x.avgSlot !== null);
+    const score = priorityScore(r.rivals.powerShare, r.rivals.pinShare, slotted.length ? Math.min(...slotted.map((x) => x.avgSlot as number)) : null, 0);
     tasks.push({
-      target: 'other-business-pages', playbook: 'ANSWER_ON_YOUR_SITE', tier: tierOf(score), score, pages: top, pins, service: 'PROFILE', captured: false, draftLabel: 'Answer block for your page',
+      target: 'other-business-pages', playbook: 'ANSWER_ON_YOUR_SITE', tier: tierOf(score), score, pages: top.length ? top : rivals.slice(0, 6).flatMap((x) => x.pages.slice(0, 1)), pins, pinShare: r.rivals.pinShare, powerShare: r.rivals.powerShare, service: 'PROFILE', captured: false, draftLabel: 'Answer block for your page',
       headline: `Publish the answers Google is quoting from other businesses’ websites`,
       why: `At ${pins.length} of the ${r.answers} points, Google’s answer cited another business’s own page` + (r.ownSite.pins ? `; yours was cited at ${r.ownSite.pins}.` : ', and never yours.') + ' Those pages state plainly what the service is, what it costs and where it is offered.',
       steps: [

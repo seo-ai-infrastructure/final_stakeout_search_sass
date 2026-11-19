@@ -1,6 +1,6 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { aioRollup, aioTasks, type AioTask, type CitedPage, type PageCheck, type PinState, type Tier } from '@stakeout/core/aioChecklist';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { aioRollup, aioTasks, type AioTask, type CitedSite, type PageCheck, type PinState, type Tier } from '@stakeout/core/aioChecklist';
 import { pointShares } from '@/lib/buyingPower';
 import type { GridScanData } from '@/components/GeoGridDashboard';
 
@@ -50,6 +50,7 @@ export default function AiCitationsTab({ scan, shared, identifier, onOpenPin }: 
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [allPages, setAllPages] = useState(false);
+  const [openSite, setOpenSite] = useState<string | null>(null);
   const api = '/api/scans/' + encodeURIComponent(identifier) + '/aio' + (shared ? '?share=1' : '');
 
   useEffect(() => {
@@ -107,7 +108,8 @@ export default function AiCitationsTab({ scan, shared, identifier, onOpenPin }: 
   const rows = [...new Set(scan.pins.map((p) => p.rowIdx))].sort((a, b) => a - b), cols = [...new Set(scan.pins.map((p) => p.colIdx))].sort((a, b) => a - b);
   const at = new Map(scan.pins.map((p) => [p.rowIdx + ':' + p.colIdx, p]));
   const lit = focus ? new Set(focus) : null;
-  const pagesShown = allPages ? r.pages : r.pages.slice(0, 10);
+  const sitesShown = allPages ? r.sites : r.sites.slice(0, 10);
+  const found = (present: boolean | null, competitors: number, url?: string) => present === true ? <span className="text-emerald-300">Yes</span> : present === false ? <span className="text-amber-300">No{competitors ? ` · ${competitors} rival${competitors === 1 ? ' is' : 's are'}` : ''}</span> : url && checks[url]?.note === 'blocked' ? <span className="text-slate-500">site refused</span> : url && checks[url]?.note === 'unreachable' ? <span className="text-slate-500">could not be read</span> : <span className="text-slate-600">not checked</span>;
 
   return (
     <div className="space-y-5">
@@ -138,11 +140,11 @@ export default function AiCitationsTab({ scan, shared, identifier, onOpenPin }: 
 
         <div className={box}>
           <h2 className="text-sm font-bold text-white">Who feeds Google’s AI here</h2>
-          <p className="mt-1 text-xs text-slate-400">The kinds of page the AI answers cited, by how many of the {r.answers} answers used each.</p>
+          <p className="mt-1 text-xs text-slate-400">The kinds of website the AI answers cited, by how many of the {r.answers} answers used each.</p>
           <ul className="mt-3 space-y-2.5">
             {r.kinds.map((k) => (
               <li key={k.kind}>
-                <div className="flex items-baseline justify-between gap-3 text-sm"><span className="text-slate-200">{k.label}</span><span className="tabular-nums text-slate-400">{k.pins} of {r.answers} · {k.pages} page{k.pages === 1 ? '' : 's'}</span></div>
+                <div className="flex items-baseline justify-between gap-3 text-sm"><span className="text-slate-200">{k.label}</span><span className="tabular-nums text-slate-400">{k.pins} of {r.answers} · {k.sites} site{k.sites === 1 ? '' : 's'}</span></div>
                 <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-800" aria-hidden><div className={'h-full rounded-full ' + (k.kind === 'own' ? 'bg-emerald-400' : 'bg-sky-400')} style={{ width: Math.max(3, k.pinShare) + '%' }} /></div>
               </li>
             ))}
@@ -154,7 +156,7 @@ export default function AiCitationsTab({ scan, shared, identifier, onOpenPin }: 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-bold text-white">What to do about it</h2>
-            <p className="mt-1 text-xs text-slate-400">One job per source worth winning, ranked by the buying power of the points that cited it.</p>
+            <p className="mt-1 text-xs text-slate-400">One job per website worth winning, ranked by the buying power of the points that cited it.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span role="group" aria-label="Which jobs" className="inline-flex overflow-hidden rounded-lg border border-slate-700 text-xs">
@@ -168,7 +170,7 @@ export default function AiCitationsTab({ scan, shared, identifier, onOpenPin }: 
         <ul className="mt-4 space-y-2.5">
           {groups[show].map((t) => {
             const k = keyOf(t), s = states[k], isOpen = open === k, status = statusOf(t);
-            const blocked = t.pages.length === 1 && checks[t.pages[0].url]?.note === 'blocked';
+            const blocked = t.pages.some((p) => checks[p.url]?.note === 'blocked') && !t.pages.some((p) => checks[p.url]?.note === 'ok');
             return (
               <li key={k} className="rounded-xl border border-slate-800 bg-slate-950/50">
                 <button type="button" onClick={() => { setOpen(isOpen ? null : k); setFocus(isOpen ? null : t.pins); }} aria-expanded={isOpen} className="flex w-full items-start gap-3 p-4 text-left">
@@ -217,27 +219,45 @@ export default function AiCitationsTab({ scan, shared, identifier, onOpenPin }: 
       </div>
 
       <div className={box}>
-        <h2 className="text-sm font-bold text-white">Every page the AI answers cited</h2>
+        <h2 className="text-sm font-bold text-white">Every website the AI answers cited</h2>
         <div className="mt-3 overflow-x-auto rounded-lg border border-slate-800">
           <table className="w-full text-left text-xs">
-            <thead className="bg-slate-900 text-slate-400"><tr><th className="px-3 py-2 font-medium">Page</th><th className="px-3 py-2 font-medium">Kind</th><th className="px-3 py-2 text-right font-medium">Points</th>{r.weighted && <th className="px-3 py-2 text-right font-medium">Buying power</th>}<th className="px-3 py-2 text-right font-medium">Source no.</th><th className="px-3 py-2 font-medium">Business on it?</th><th className="px-3 py-2 text-right font-medium">Score</th></tr></thead>
+            <thead className="bg-slate-900 text-slate-400"><tr><th className="px-3 py-2 font-medium">Website</th><th className="px-3 py-2 font-medium">Kind</th><th className="px-3 py-2 text-right font-medium">Points</th>{r.weighted && <th className="px-3 py-2 text-right font-medium">Buying power</th>}<th className="px-3 py-2 text-right font-medium">Source no.</th><th className="px-3 py-2 font-medium">Business on it?</th><th className="px-3 py-2 text-right font-medium">Score</th></tr></thead>
             <tbody className="divide-y divide-slate-800/70">
-              {pagesShown.map((p: CitedPage) => (
-                <tr key={p.url} className="hover:bg-slate-800/40" onMouseEnter={() => setFocus(p.pins)} onMouseLeave={() => setFocus(open ? tasks.find((t) => keyOf(t) === open)?.pins ?? null : null)}>
-                  <td className="max-w-[22rem] truncate px-3 py-1.5"><a href={p.url} target="_blank" rel="noreferrer nofollow" className="text-slate-200 hover:text-sky-300" title={p.url}>{short(p.url)}</a></td>
-                  <td className="px-3 py-1.5 text-slate-400">{p.kind === 'own' ? <span className="text-emerald-300">Yours</span> : r.kinds.find((k) => k.kind === p.kind)?.label}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{p.pins.length} <span className="text-slate-500">({pct(p.pinShare)})</span></td>
-                  {r.weighted && <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{pct(p.powerShare)}</td>}
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{p.avgSlot ?? '–'}</td>
-                  <td className="px-3 py-1.5">{p.kind === 'own' ? '' : p.present === true ? <span className="text-emerald-300">Yes</span> : p.present === false ? <span className="text-amber-300">No{p.competitors ? ` · ${p.competitors} rival${p.competitors === 1 ? '' : 's'} are` : ''}</span> : checks[p.url]?.note === 'blocked' ? <span className="text-slate-500">site refused</span> : checks[p.url]?.note === 'unreachable' ? <span className="text-slate-500">could not be read</span> : <span className="text-slate-600">not checked</span>}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{Math.round(p.score)}</td>
-                </tr>
-              ))}
+              {sitesShown.map((x: CitedSite) => {
+                const pages = x.pages.filter((p) => p.pageKnown), isOpen = openSite === x.site;
+                return (
+                  <Fragment key={x.site}>
+                    <tr className="hover:bg-slate-800/40" onMouseEnter={() => setFocus(x.pins)} onMouseLeave={() => setFocus(open ? tasks.find((t) => keyOf(t) === open)?.pins ?? null : null)}>
+                      <td className="max-w-[22rem] truncate px-3 py-1.5">
+                        {pages.length > 0 ? <button type="button" onClick={() => setOpenSite(isOpen ? null : x.site)} aria-expanded={isOpen} className="text-left text-slate-200 hover:text-sky-300"><span className="mr-1.5 inline-block w-2 text-slate-500">{isOpen ? '▾' : '▸'}</span>{x.name}<span className="ml-2 text-slate-500">{pages.length} page{pages.length === 1 ? '' : 's'}</span></button> : <a href={'https://' + x.site} target="_blank" rel="noreferrer nofollow" className="pl-3.5 text-slate-200 hover:text-sky-300">{x.name}</a>}
+                      </td>
+                      <td className="px-3 py-1.5 text-slate-400">{x.kind === 'own' ? <span className="text-emerald-300">Yours</span> : r.kinds.find((k) => k.kind === x.kind)?.label}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{x.pins.length} <span className="text-slate-500">({pct(x.pinShare)})</span></td>
+                      {r.weighted && <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{pct(x.powerShare)}</td>}
+                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{x.avgSlot ?? '–'}</td>
+                      <td className="px-3 py-1.5">{x.kind === 'own' ? '' : found(x.present, x.competitors, pages.length === 1 ? pages[0].url : undefined)}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-300">{Math.round(x.score)}</td>
+                    </tr>
+                    {isOpen && pages.map((p) => (
+                      <tr key={p.url} className="bg-slate-950/40 text-slate-400" onMouseEnter={() => setFocus(p.pins)} onMouseLeave={() => setFocus(null)}>
+                        <td className="max-w-[22rem] truncate py-1.5 pl-9 pr-3"><a href={p.url} target="_blank" rel="noreferrer nofollow" className="hover:text-sky-300" title={p.url}>{short(p.url).slice(x.site.length) || '/'}</a></td>
+                        <td className="px-3 py-1.5" />
+                        <td className="px-3 py-1.5 text-right tabular-nums">{p.pins.length}</td>
+                        {r.weighted && <td className="px-3 py-1.5 text-right tabular-nums">{pct(p.powerShare)}</td>}
+                        <td className="px-3 py-1.5 text-right tabular-nums">{p.avgSlot ?? '–'}</td>
+                        <td className="px-3 py-1.5">{x.kind === 'own' ? '' : found(p.present, p.competitors, p.url)}</td>
+                        <td className="px-3 py-1.5" />
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
-        {r.pages.length > 10 && <button type="button" onClick={() => setAllPages(!allPages)} className="mt-2 text-xs text-sky-400 hover:underline">{allPages ? 'Show fewer' : `Show all ${r.pages.length}`}</button>}
-        <p className="mt-2 text-[11px] text-slate-500">Score, 0 to 100: mostly {r.weighted ? 'the buying power (owner-occupied homes × household income, from the Census) of the points that cited the page' : 'how many points cited the page'}, then how early in the answer it was cited and how many rivals are on it. Points read before November 2026 recorded only the website, not the page.</p>
+        {r.sites.length > 10 && <button type="button" onClick={() => setAllPages(!allPages)} className="mt-2 text-xs text-sky-400 hover:underline">{allPages ? 'Show fewer' : `Show all ${r.sites.length}`}</button>}
+        <p className="mt-2 text-[11px] text-slate-500">Score, 0 to 100: mostly {r.weighted ? 'the buying power (owner-occupied homes × household income, from the Census) of the points that cited the website' : 'how many points cited the website'}, then how early in the answer it was cited and how many rivals are on it. Open a website to see which of its pages were cited. At some points Google’s answer could only be read as a list of websites; those count towards the website, not a page.</p>
       </div>
     </div>
   );

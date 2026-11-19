@@ -50,11 +50,14 @@ test('the rollup: who was cited where, the business’s share of the answers, an
   assert.deepEqual(r.named, { pins: 1, share: 33.3, powerShare: 33.3 });
   assert.deepEqual(r.ownSite, { pins: 1, share: 33.3 });
   assert.deepEqual(r.rival, { site: 'rotorooter.com', pins: 2, share: 66.7 });
-  const yelp = r.pages.find((p) => p.url === 'https://yelp.com/search?cflt=plumbing')!;
-  assert.deepEqual([yelp.pins, yelp.pinShare, yelp.avgSlot, yelp.kind, yelp.name], [['a', 'b'], 66.7, 1.5, 'directory', 'Yelp']);
-  // The same site read only as a website (no page) is its own row, and says so.
-  assert.equal(r.pages.find((p) => p.url === 'https://yelp.com/')!.pageKnown, false);
-  assert.deepEqual(r.kinds.map((k) => [k.kind, k.pins]), [['directory', 3], ['business', 2], ['own', 1], ['community', 1]]);
+  const yelpPage = r.pages.find((p) => p.url === 'https://yelp.com/search?cflt=plumbing')!;
+  assert.deepEqual([yelpPage.pins, yelpPage.pinShare, yelpPage.avgSlot, yelpPage.kind, yelpPage.name], [['a', 'b'], 66.7, 1.5, 'directory', 'Yelp']);
+  // One row per website: the Yelp page and the point that only named Yelp count together.
+  const yelp = r.sites.find((x) => x.site === 'yelp.com')!;
+  assert.deepEqual([yelp.pins, yelp.pinShare, yelp.avgSlot, yelp.top, yelp.pages.map((p) => p.pageKnown)], [['a', 'b', 'c'], 100, 1.5, 'https://yelp.com/search?cflt=plumbing', [true, false]]);
+  assert.equal(r.sites[0].site, 'yelp.com');
+  assert.deepEqual(r.kinds.map((k) => [k.kind, k.pins, k.sites]), [['directory', 3, 1], ['business', 2, 1], ['own', 1, 1], ['community', 1, 1]]);
+  assert.deepEqual(r.rivals, { pins: ['a', 'b'], pinShare: 66.7, powerShare: 66.7 });
   assert.equal(r.weighted, false);
 });
 
@@ -63,7 +66,7 @@ test('buying power decides the order when the Census weights are known', () => {
   const r = aioRollup(pins, 'Acme Plumbing', 'acmeplumbing.com', weights);
   assert.equal(r.weighted, true);
   // Reddit was cited at one point, but that point holds 80% of the buying power.
-  const reddit = r.pages.find((p) => p.site === 'reddit.com')!, roto = r.pages.find((p) => p.site === 'rotorooter.com')!;
+  const reddit = r.sites.find((p) => p.site === 'reddit.com')!, roto = r.sites.find((p) => p.site === 'rotorooter.com')!;
   assert.deepEqual([reddit.powerShare, roto.powerShare], [80, 20]);
   assert.ok(reddit.score > roto.score);
   assert.equal(r.named.powerShare, 10);
@@ -72,20 +75,23 @@ test('buying power decides the order when the Census weights are known', () => {
   assert.equal(priorityScore(50, 50, null, 0), 45);
 });
 
-test('the checklist: a job per page worth acting on, one job for all rival pages, captured pages last', () => {
+test('the checklist: a job per website worth acting on, one job for all rival pages, captured ones last', () => {
   const checks = { 'https://yelp.com/search?cflt=plumbing': { present: false, competitors: 3 }, 'https://reddit.com/': { present: true, competitors: 0 } };
   const r = aioRollup(pins, 'Acme Plumbing', 'acmeplumbing.com', new Map(), checks);
   const tasks = aioTasks(r, { business: 'Acme Plumbing', keyword: 'plumber', place: 'Lakeland, FL' });
-  assert.deepEqual(tasks.map((t) => [t.playbook, t.captured]), [['CLAIM_LISTING', false], ['ANSWER_ON_YOUR_SITE', false], ['CLAIM_LISTING', false], ['JOIN_THREAD', true]]);
+  assert.deepEqual(tasks.map((t) => [t.playbook, t.target, t.captured]), [['CLAIM_LISTING', 'yelp.com', false], ['ANSWER_ON_YOUR_SITE', 'other-business-pages', false], ['JOIN_THREAD', 'reddit.com', true]]);
   const first = tasks[0];
   assert.equal(first.headline, 'Get Acme Plumbing listed on Yelp');
-  assert.match(first.why, /Cited at 2 of the 3 points/);
-  assert.match(first.why, /3 of your top rivals are on the page; the business is not\./);
+  assert.match(first.why, /Cited at 3 of the 3 points/);
+  assert.match(first.why, /3 of your top rivals are on the cited page; the business is not\./);
   assert.equal(first.service, 'CITATION');
+  assert.equal(first.pages.length, 2);
+  // Every rival page together is one source: scored on all the points any of them reached.
   const site = tasks[1];
-  assert.equal(site.target, 'other-business-pages');
-  assert.match(site.why, /yours was cited at 1/);
+  assert.deepEqual([site.pins, site.pinShare], [['a', 'b'], 66.7]);
+  assert.match(site.why, /At 2 of the 3 points.*yours was cited at 1/);
   assert.match(site.draft!, /Plumber in Lakeland, FL/);
+  assert.equal(site.score, 64.7);
   // The business's own pages and government pages are never jobs.
   assert.ok(!tasks.some((t) => t.pages.some((p) => p.kind === 'own' || p.kind === 'reference')));
   assert.equal(aioTasks(aioRollup([], 'X', null), { business: 'X', keyword: 'k', place: '' }).length, 0);
