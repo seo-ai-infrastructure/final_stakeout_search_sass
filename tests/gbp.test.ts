@@ -31,8 +31,10 @@ test('times and weeks are read from every shape Google uses', () => {
   assert.equal(w[5].allDay, true);
   // 24 hours written as midnight to midnight of the next day.
   assert.equal(weekOf({ regularHours: { periods: [{ openDay: 'SUNDAY', openTime: {}, closeDay: 'MONDAY', closeTime: {} }] } })![6].allDay, true);
-  // Split shifts and overnight hours cannot be one row a day: read-only.
-  assert.equal(weekOf({ regularHours: { periods: [{ openDay: 'MONDAY', openTime: '08:00', closeDay: 'MONDAY', closeTime: '12:00' }, { openDay: 'MONDAY', openTime: '13:00', closeDay: 'MONDAY', closeTime: '17:00' }] } }), null);
+  // A split shift is one day with two periods; overnight hours cannot be shown as rows of one day: read-only.
+  const split = weekOf({ regularHours: { periods: [{ openDay: 'MONDAY', openTime: '13:00', closeDay: 'MONDAY', closeTime: '17:00' }, { openDay: 'MONDAY', openTime: '08:00', closeDay: 'MONDAY', closeTime: '12:00' }] } })!;
+  assert.deepEqual(split[0], { day: 'MONDAY', closed: false, allDay: false, open: '08:00', close: '12:00', more: [{ open: '13:00', close: '17:00' }] });
+  assert.deepEqual(periodsOf(split).map((p) => [p.openDay, p.openTime, p.closeTime]), [['MONDAY', '08:00', '12:00'], ['MONDAY', '13:00', '17:00']]);
   assert.equal(weekOf({ regularHours: { periods: [{ openDay: 'FRIDAY', openTime: '18:00', closeDay: 'SATURDAY', closeTime: '02:00' }] } }), null);
   assert.deepEqual(periodsOf(w).map((p) => p.openDay), ['MONDAY', 'SATURDAY']);
   assert.equal(periodsOf(w)[1].closeTime, '24:00');
@@ -65,7 +67,7 @@ test('a change Google would reject is refused before anything is sent', () => {
   assert.match(problemWith(live, { title: '  ' })!, /cannot be empty/);
   const bad = week(); bad[0] = { ...bad[0], open: '18:00', close: '09:00' };
   assert.match(problemWith(live, { regularHours: bad })!, /monday/);
-  assert.match(problemWith({ regularHours: { periods: [{ openDay: 'FRIDAY', openTime: '18:00', closeDay: 'SATURDAY', closeTime: '02:00' }] } }, { regularHours: week() })!, /split or overnight/);
+  assert.match(problemWith({ regularHours: { periods: [{ openDay: 'FRIDAY', openTime: '18:00', closeDay: 'SATURDAY', closeTime: '02:00' }] } }, { regularHours: week() })!, /overnight/);
   assert.equal(problemWith(live, { description: 'Fine.', websiteUri: 'https://acmeplumbing.com/a', additionalPhones: ['863-555-0111'] }), null);
 });
 
@@ -182,3 +184,30 @@ test('nextHoliday: the next closing day and whether hours are set for it', () =>
   assert.equal(nextHoliday({}, '2026-06-01'), null);
 });
 import { nextHoliday } from '../packages/core/gbp';
+
+import { addressOf, openingOf, serviceAreasOf } from '../packages/core/gbp';
+
+test('split shifts, an opening date and an address', () => {
+  const w = weekOf(live)!;
+  const two = w.map((d, i) => (i === 0 ? { ...d, open: '08:00', close: '12:00', more: [{ open: '13:00', close: '17:00' }] } : d));
+  assert.equal(problemWith(live, { regularHours: two }), null);
+  assert.match(diff(live, { regularHours: two })[0].to, /mon 08:00–12:00 and 13:00–17:00/);
+  const overlap = w.map((d, i) => (i === 0 ? { ...d, open: '08:00', close: '14:00', more: [{ open: '13:00', close: '17:00' }] } : d));
+  assert.match(problemWith(live, { regularHours: overlap })!, /overlap/);
+
+  assert.equal(openingOf({ openInfo: { status: 'OPEN', openingDate: { year: 1990, month: 3, day: 1 } } }), '1990-03-01');
+  const d = diff(live, { openingDate: '1990-03-01' });
+  assert.deepEqual(d.map((c) => [c.key, c.tier, c.to]), [['openingDate', 'green', '1990-03-01']]);
+  assert.deepEqual(buildPatch(live, { openingDate: '1990-03-01' }, d).location, { fields: ['openInfo.openingDate'], openInfo: { openingDate: { year: 1990, month: 3, day: 1 } } });
+  assert.match(problemWith(live, { openingDate: '2090-01-01' })!, /one year ahead/);
+  assert.deepEqual(diff(live, { openingDate: '' }), [], 'an empty date on a listing with none is no change');
+
+  const shop: GbpLocation = { ...live, storefrontAddress: { addressLines: ['12 Main St'], locality: 'Lakeland', administrativeArea: 'FL', postalCode: '33801', regionCode: 'US' } };
+  assert.deepEqual(diff(shop, { address: addressOf(shop) }), []);
+  const moved = { ...addressOf(shop), lines: '40 Lake Ave\nSuite 2' };
+  const a = diff(shop, { address: moved });
+  assert.deepEqual(a.map((c) => [c.key, c.tier]), [['address', 'red']]);
+  assert.deepEqual(buildPatch(shop, { address: moved }, a).location, { fields: ['storefrontAddress'], storefrontAddress: { addressLines: ['40 Lake Ave', 'Suite 2'], locality: 'Lakeland', administrativeArea: 'FL', postalCode: '33801', regionCode: 'US' } });
+  assert.match(problemWith({ ...live, storefrontAddress: undefined }, { address: moved })!, /shows no address/);
+  assert.deepEqual(serviceAreasOf({ serviceArea: { places: { placeInfos: [{ placeName: 'Lakeland, FL, USA', placeId: 'x' }] } } }), ['Lakeland, FL, USA']);
+});

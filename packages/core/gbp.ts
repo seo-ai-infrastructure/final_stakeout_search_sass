@@ -30,7 +30,9 @@ export type GbpLocation = {
 } & Record<string, unknown>;
 
 /** One day of the week in the editor: closed, open all day, or one opening period. */
-export type DayHours = { day: string; closed: boolean; allDay: boolean; open: string; close: string };
+export type DayHours = { day: string; closed: boolean; allDay: boolean; open: string; close: string; /** Further opening periods the same day (a split shift), after the first. */ more?: { open: string; close: string }[] };
+/** The address shown on a listing, as the editor holds it. `lines`: the street lines, one per line. */
+export type AddressForm = { lines: string; locality: string; region: string; postalCode: string };
 
 /** One date with its own hours (a holiday): closed all day, or one opening period. `date` is YYYY-MM-DD. */
 export type SpecialDay = { date: string; closed: boolean; open: string; close: string };
@@ -46,6 +48,9 @@ export type GbpChange = {
   title?: string;
   primaryCategory?: Category;
   primaryPhone?: string;
+  /** YYYY-MM-DD: the day the business first opened. */
+  openingDate?: string;
+  address?: AddressForm;
 };
 
 export type FieldChange = { key: keyof GbpChange; label: string; tier: Tier; from: string; to: string; note?: string };
@@ -64,6 +69,8 @@ const LABELS: Record<keyof GbpChange, string> = {
   title: 'Business name',
   primaryCategory: 'Primary category',
   primaryPhone: 'Primary phone',
+  openingDate: 'Opening date',
+  address: 'Address',
 };
 
 /** The site a link belongs to: its host without "www." ('' when it is not a link). */
@@ -90,16 +97,15 @@ export function hhmm(t: Time | undefined): string {
 }
 
 /**
- * The week as the editor shows it, or null when a day has more than one period or a period runs
- * past its own day (split shifts, overnight hours): those cannot be shown as one row a day, and
- * saving them from this editor would lose the second period, so hours are then read-only.
+ * The week as the editor shows it: each day closed, open all day, or one or more opening periods
+ * (a split shift). Null when a period runs past its own day (overnight hours): that cannot be
+ * shown as rows of one day, so hours are then read-only.
  */
 export function weekOf(loc: GbpLocation): DayHours[] | null {
   const periods = loc.regularHours?.periods ?? [];
   const week: DayHours[] = [];
   for (const day of DAYS) {
-    const own = periods.filter((p) => p.openDay === day);
-    if (own.length > 1) return null;
+    const own = periods.filter((p) => p.openDay === day).sort((x, y) => hhmm(x.openTime).localeCompare(hhmm(y.openTime)));
     const p = own[0];
     if (!p) {
       week.push({ day, closed: true, allDay: false, open: '09:00', close: '17:00' });
@@ -108,8 +114,10 @@ export function weekOf(loc: GbpLocation): DayHours[] | null {
     const open = hhmm(p.openTime);
     const close = hhmm(p.closeTime);
     const allDay = open === '00:00' && (close === '24:00' || (close === '00:00' && p.closeDay !== day));
-    if (p.closeDay !== day && !allDay) return null;
-    week.push({ day, closed: false, allDay, open, close });
+    // A period that runs past midnight cannot be shown as a row of its own day.
+    if (own.some((x) => x.closeDay !== day) && !(allDay && own.length === 1)) return null;
+    const more = own.slice(1).map((x) => ({ open: hhmm(x.openTime), close: hhmm(x.closeTime) }));
+    week.push({ day, closed: false, allDay, open, close, ...(more.length ? { more } : {}) });
   }
   return week;
 }
@@ -163,20 +171,33 @@ const specialText = (days: SpecialDay[] | undefined) =>
 export function periodsOf(week: DayHours[]): Period[] {
   return week
     .filter((d) => !d.closed)
-    .map((d) => ({
-      openDay: d.day,
-      openTime: d.allDay ? '00:00' : d.open,
-      closeDay: d.day,
-      closeTime: d.allDay ? '24:00' : d.close,
-    }));
+    .flatMap((d) => (d.allDay ? [{ open: '00:00', close: '24:00' }] : [{ open: d.open, close: d.close }, ...(d.more ?? [])]).map((x) => ({ openDay: d.day, openTime: x.open, closeDay: d.day, closeTime: x.close })));
 }
+const spans = (d: DayHours) => [d.open + '-' + d.close, ...(d.more ?? []).map((x) => x.open + '-' + x.close)];
 
 const weekKey = (week: DayHours[] | null) =>
-  week ? week.map((d) => (d.closed ? d.day + ':closed' : d.allDay ? d.day + ':24h' : d.day + ':' + d.open + '-' + d.close)).join('|') : 'complex';
+  week ? week.map((d) => (d.closed ? d.day + ':closed' : d.allDay ? d.day + ':24h' : d.day + ':' + spans(d).join('+'))).join('|') : 'complex';
 const weekText = (week: DayHours[] | null) =>
   week
-    ? week.map((d) => d.day.slice(0, 3).toLowerCase() + ' ' + (d.closed ? 'closed' : d.allDay ? '24h' : d.open + '–' + d.close)).join(', ')
-    : 'split or overnight hours';
+    ? week.map((d) => d.day.slice(0, 3).toLowerCase() + ' ' + (d.closed ? 'closed' : d.allDay ? '24h' : spans(d).map((x) => x.replace('-', '–')).join(' and '))).join(', ')
+    : 'overnight hours';
+
+/** The day the business first opened, as YYYY-MM-DD ('' when Google has none, or only a year and month). */
+export function openingOf(loc: GbpLocation): string {
+  return iso((loc.openInfo as { openingDate?: GDate } | undefined)?.openingDate);
+}
+/** The listing's shown address as the editor holds it (all empty for a business that shows none). */
+export function addressOf(loc: GbpLocation): AddressForm {
+  const a = loc.storefrontAddress;
+  return { lines: (a?.addressLines ?? []).join('\n'), locality: clean(a?.locality), region: clean(a?.administrativeArea), postalCode: clean(a?.postalCode) };
+}
+const addressLines = (a: AddressForm) => a.lines.split('\n').map((x) => x.trim()).filter(Boolean);
+const addressText = (a: AddressForm) => [addressLines(a).join(' '), clean(a.locality), clean(a.region), clean(a.postalCode)].filter(Boolean).join(', ') || 'none';
+/** The towns and areas a service-area business says it serves, by name. */
+export function serviceAreasOf(loc: GbpLocation): string[] {
+  const places = (loc.serviceArea as { places?: { placeInfos?: { placeName?: unknown }[] } } | undefined)?.places?.placeInfos ?? [];
+  return places.map((x) => (typeof x.placeName === 'string' ? x.placeName : '')).filter(Boolean);
+}
 
 /** Each editable field of a profile in the words the edit history uses for it. */
 export function describe(loc: GbpLocation, today = new Date().toISOString().slice(0, 10)): Record<keyof GbpChange, string> {
@@ -190,6 +211,8 @@ export function describe(loc: GbpLocation, today = new Date().toISOString().slic
     title: clean(loc.title),
     primaryCategory: loc.categories?.primaryCategory?.displayName || loc.categories?.primaryCategory?.name || 'none',
     primaryPhone: clean(loc.phoneNumbers?.primaryPhone) || 'none',
+    openingDate: openingOf(loc) || 'none',
+    address: addressText(addressOf(loc)),
   };
 }
 
@@ -218,11 +241,17 @@ export function problemWith(live: GbpLocation, change: GbpChange, today = new Da
     if (change.additionalPhones.some((p) => digits(p).length < 7)) return 'One of the additional phone numbers is not a phone number.';
   }
   if (change.regularHours !== undefined) {
-    if (!weekOf(live)) return 'This profile has split or overnight hours, which this editor cannot change yet.';
+    if (!weekOf(live)) return 'This profile has overnight hours, which this editor cannot change yet.';
     if (change.regularHours.length !== 7 || change.regularHours.some((d, i) => d.day !== DAYS[i])) return 'The week of opening hours is incomplete.';
-    for (const d of change.regularHours)
-      if (!d.closed && !d.allDay && !(/^\d{2}:\d{2}$/.test(d.open) && /^\d{2}:\d{2}$/.test(d.close) && d.open < d.close))
+    for (const d of change.regularHours) {
+      if (d.closed || d.allDay) continue;
+      const all = [{ open: d.open, close: d.close }, ...(d.more ?? [])];
+      if (all.length > 3) return `On ${d.day.toLowerCase()} there are more opening periods than Google shows well: keep it to three.`;
+      if (all.some((x) => !(/^\d{2}:\d{2}$/.test(x.open) && /^\d{2}:\d{2}$/.test(x.close) && x.open < x.close)))
         return `On ${d.day.toLowerCase()} the closing time must be after the opening time.`;
+      const sorted = [...all].sort((x, y) => x.open.localeCompare(y.open));
+      if (sorted.some((x, i) => i > 0 && x.open < sorted[i - 1].close)) return `On ${d.day.toLowerCase()} two opening periods overlap.`;
+    }
   }
   if (change.specialHours !== undefined) {
     if (!specialOf(live, today)) return 'This profile has holiday hours spanning several days or split in two, which this editor cannot change yet.';
@@ -237,6 +266,18 @@ export function problemWith(live: GbpLocation, change: GbpChange, today = new Da
       if (!d.closed && !all && !(/^\d{2}:\d{2}$/.test(d.open) && /^\d{2}:\d{2}$/.test(d.close) && d.open < d.close))
         return `On ${d.date} the closing time must be after the opening time.`;
     }
+  }
+  if (change.openingDate !== undefined && change.openingDate !== openingOf(live)) {
+    if (!change.openingDate) return 'An opening date cannot be removed from here: change it to the right one instead.';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(change.openingDate) || Number.isNaN(Date.parse(change.openingDate + 'T00:00:00Z'))) return 'The opening date is not a date.';
+    if (change.openingDate < '1700-01-01') return 'The opening date is too far back.';
+    // Google takes an opening date up to a year ahead.
+    if (Date.parse(change.openingDate + 'T00:00:00Z') > Date.parse(today + 'T00:00:00Z') + 366 * 86400000) return 'Google accepts an opening date up to one year ahead.';
+  }
+  if (change.address !== undefined && addressText(change.address) !== addressText(addressOf(live))) {
+    if (!live.storefrontAddress) return 'This listing shows no address. Adding one changes what kind of listing it is, which is done on Google itself.';
+    if (!addressLines(change.address).length || !clean(change.address.locality)) return 'The address needs a street line and a town.';
+    if (addressLines(change.address).length > 5) return 'Google allows up to five address lines.';
   }
   return null;
 }
@@ -298,6 +339,12 @@ export function diff(live: GbpLocation, change: GbpChange, today = new Date().to
       live.categories?.primaryCategory?.displayName || live.categories?.primaryCategory?.name || 'none',
       change.primaryCategory.displayName || change.primaryCategory.name,
     );
+
+  if (change.openingDate !== undefined && change.openingDate && change.openingDate !== openingOf(live))
+    add('openingDate', 'green', openingOf(live) || 'none', change.openingDate);
+
+  if (change.address !== undefined && addressText(change.address) !== addressText(addressOf(live)))
+    add('address', 'red', addressText(addressOf(live)), addressText(change.address), 'Google usually asks for the listing to be verified again after an address change, and may hide it until then.');
 
   if (change.primaryPhone !== undefined && digits(change.primaryPhone) !== digits(live.phoneNumbers?.primaryPhone))
     add('primaryPhone', 'red', clean(live.phoneNumbers?.primaryPhone) || 'none', clean(change.primaryPhone));
@@ -396,6 +443,16 @@ export function buildPatch(live: GbpLocation, change: GbpChange, changes: FieldC
       primaryPhone: has('primaryPhone') ? clean(change.primaryPhone) : live.phoneNumbers?.primaryPhone,
       additionalPhones: has('additionalPhones') ? change.additionalPhones!.map(clean) : (live.phoneNumbers?.additionalPhones ?? []),
     };
+  }
+  if (has('openingDate')) {
+    const [year, month, day] = change.openingDate!.split('-').map(Number);
+    fields.push('openInfo.openingDate');
+    location.openInfo = { openingDate: { year, month, day } };
+  }
+  if (has('address')) {
+    fields.push('storefrontAddress');
+    // Built on the address Google has, so its country and language stay as they are.
+    location.storefrontAddress = { ...(live.storefrontAddress ?? {}), addressLines: addressLines(change.address!), locality: clean(change.address!.locality), administrativeArea: clean(change.address!.region), postalCode: clean(change.address!.postalCode) };
   }
 
   return {

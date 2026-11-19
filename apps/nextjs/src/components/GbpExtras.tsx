@@ -24,7 +24,27 @@ const sameValue = (a: AttrValue, b: AttrValue) => (Array.isArray(a) && Array.isA
 const rowsOf = (list: Service[]): Row[] => list.map((s) => ({ key: s.key, name: s.name, description: s.description, kind: s.kind }));
 
 /** Attributes, services and action links for one listing. Each part saves on its own. */
-export default function GbpExtras({ profile, location }: { profile: string; location: string }) {
+type Pic = { name: string; url: string; thumb: string; added: string | null };
+type Media = { total: number; cover: Pic | null; logo: Pic | null; recent: Pic[]; added?: string };
+/** The social pages Google takes as attributes, pulled out into a row of their own. */
+const SOCIAL: [RegExp, string][] = [[/url_facebook$/, 'Facebook'], [/url_instagram$/, 'Instagram'], [/url_linkedin$/, 'LinkedIn'], [/url_youtube$/, 'YouTube'], [/url_tiktok$/, 'TikTok'], [/url_(twitter|x)$/, 'X (Twitter)'], [/url_pinterest$/, 'Pinterest']];
+const socialName = (a: Attr) => (a.kind === 'URL' ? SOCIAL.find(([re]) => re.test(a.name))?.[1] ?? null : null);
+const BOOKING = ['APPOINTMENT', 'ONLINE_APPOINTMENT'];
+/** A link tagged so Analytics can tell bookings that came from the listing. */
+function tagged(uri: string, campaign: string): string {
+  try {
+    const u = new URL(uri.trim());
+    u.searchParams.set('utm_source', 'google'); u.searchParams.set('utm_medium', 'organic'); u.searchParams.set('utm_campaign', campaign);
+    return u.toString();
+  } catch {
+    return uri;
+  }
+}
+
+export default function GbpExtras({ profile, location, website, onLoaded }: { profile: string; location: string; /** The listing's website, offered as a start for a booking link. */ website?: string; /** Told what the listing has, each time it is read. */ onLoaded?: (x: Extras) => void }) {
+  const [media, setMedia] = useState<Media | null>(null);
+  const [mediaError, setMediaError] = useState('');
+  const [photo, setPhoto] = useState({ url: '', category: 'ADDITIONAL' });
   const [x, setX] = useState<Extras | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
@@ -38,15 +58,36 @@ export default function GbpExtras({ profile, location }: { profile: string; loca
 
   // After a save only the part that was saved starts again from Google: edits waiting in the others are kept.
   const take = useCallback((r: Extras, part?: string) => {
-    setX(r);
-    if (!part || part === 'attributes') setWant({});
+    setX(r); onLoaded?.(r);
+    // Social links and the other attributes share one list on Google but are saved apart here.
+    const isSocial = (name: string) => SOCIAL.some(([re]) => re.test(name));
+    if (!part) setWant({});
+    else if (part === 'attributes' || part === 'social') setWant((w) => Object.fromEntries(Object.entries(w).filter(([k]) => isSocial(k) !== (part === 'social'))));
     if (!part || part === 'services') setRows(rowsOf(r.services.list));
     if (!part || part === 'links') { setUris({}); setLink((l) => ({ ...l, type: r.links.types[0] ?? '', uri: '' })); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     setX(null); setError(''); setDone(null);
     call<Extras>(`/api/admin/gbp/extras?profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}`).then((r) => take(r)).catch((e) => setError(e instanceof Error ? e.message : 'Could not read the listing.'));
-  }, [profile, location, take]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, location]);
+  useEffect(() => {
+    setMedia(null); setMediaError('');
+    call<Media>(`/api/admin/gbp/media?profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}`).then(setMedia).catch((e) => setMediaError(e instanceof Error ? e.message : 'Could not read the photos.'));
+  }, [profile, location]);
+  const addPhoto = async () => {
+    setBusy('photo'); setMediaError(''); setDone(null);
+    try {
+      const r = await call<Media>('/api/admin/gbp/media', { profile, location, url: photo.url, category: photo.category });
+      setMedia(r); setPhoto({ url: '', category: 'ADDITIONAL' });
+      setDone({ part: 'photo', lines: [photo.category === 'COVER' ? 'New cover photo' : photo.category === 'LOGO' ? 'New logo' : 'Photo added'] });
+    } catch (e) {
+      setMediaError(e instanceof Error ? e.message : 'The photo was not added.');
+    } finally {
+      setBusy('');
+    }
+  };
 
   const send = async (part: string, body: Record<string, unknown>) => {
     setBusy(part); setError(''); setDone(null);
@@ -60,7 +101,11 @@ export default function GbpExtras({ profile, location }: { profile: string; loca
     }
   };
 
-  const attrs = x?.attributes.list ?? [];
+  const every = x?.attributes.list ?? [];
+  const social = every.filter((a) => socialName(a));
+  // Social pages have their own row; everything else stays in the attribute list.
+  const attrs = every.filter((a) => !socialName(a));
+  const changedSocial = social.filter((a) => a.name in want && !sameValue(a.value, want[a.name]));
   const changedAttrs = attrs.filter((a) => a.name in want && !sameValue(a.value, want[a.name]));
   const groups = useMemo(() => {
     const q = find.trim().toLowerCase();
@@ -90,12 +135,12 @@ export default function GbpExtras({ profile, location }: { profile: string; loca
   return (
     <section className={card + ' space-y-3'}>
       <div>
-        <h3 className="font-semibold">Attributes, services and links</h3>
-        <p className="mt-1 text-xs text-slate-500">The structured facts Google shows on the listing and draws on for its AI answers. Each part is saved on its own.</p>
+        <h3 className="font-semibold">Structured facts and media</h3>
+        <p className="mt-1 text-xs text-slate-500">What Google shows on the listing and draws on for its AI answers. Each part here has its own Save button and goes to Google at once; it is not part of the changes waiting in the bar at the foot of the page.</p>
       </div>
       {error && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">{error}</p>}
 
-      <details className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+      <details id="gbp-services" className="scroll-mt-20 rounded-lg border border-slate-800 bg-slate-950/40 p-4">
         <summary className="cursor-pointer text-sm font-semibold">Services <span className="ml-1 font-normal text-slate-500">{live.length} listed · {live.filter((s) => !s.description).length} without a description</span></summary>
         {x.services.problem ? <p className="mt-3 text-sm text-amber-300">{x.services.problem}</p> : !x.services.canEdit ? <p className="mt-3 text-sm text-slate-400">Google does not offer a service list for this listing’s category.</p> : (
           <div className="mt-3 space-y-3">
@@ -132,7 +177,61 @@ export default function GbpExtras({ profile, location }: { profile: string; loca
         )}
       </details>
 
-      <details className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+      <details id="gbp-social" open className="scroll-mt-20 rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+        <summary className="cursor-pointer text-sm font-semibold">Social links <span className="ml-1 font-normal text-slate-500">{social.filter((a) => (a.value as string[]).length > 0).length} of {social.length} set</span></summary>
+        {social.length === 0 ? <p className="mt-3 text-sm text-slate-400">Google offers no social links for this listing’s category.</p> : (
+          <div className="mt-3 space-y-2">
+            <div className="grid gap-2 sm:grid-cols-2">
+              {social.map((a) => (
+                <label key={a.name} className="block text-xs text-slate-400">{socialName(a)}
+                  <input className={input + ' mt-1'} placeholder="https://" value={(valueOf(a) as string[])[0] ?? ''} onChange={(e) => setAttr(a, e.target.value.trim() ? [e.target.value.trim()] : [])} />
+                </label>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" disabled={Boolean(busy) || !changedSocial.length} onClick={() => send('social', { kind: 'attributes', want: Object.fromEntries(changedSocial.map((a) => [a.name, want[a.name]])) })} className={save}>{busy === 'social' ? 'Saving…' : 'Save social links'}</button>
+              <span className="text-xs text-slate-500">The business’s own pages only. Google shows them on the listing and uses them to tie the business to its profiles.</span>
+            </div>
+            <Done part="social" />
+          </div>
+        )}
+      </details>
+
+      <details id="gbp-photos" open className="scroll-mt-20 rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+        <summary className="cursor-pointer text-sm font-semibold">Photos: cover and logo <span className="ml-1 font-normal text-slate-500">{media ? `${media.total} photo${media.total === 1 ? '' : 's'} on the listing` : ''}</span></summary>
+        {mediaError && <p className="mt-3 text-sm text-amber-300">{mediaError}</p>}
+        {!media && !mediaError && <p className="mt-3 text-sm text-slate-400">Reading the photos…</p>}
+        {media && (
+          <div className="mt-3 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+              {([['Cover', media.cover, 'aspect-[16/9]'], ['Logo', media.logo, 'aspect-square max-w-40']] as const).map(([name, p, shape]) => (
+                <div key={name}>
+                  <p className="text-xs text-slate-400">{name}{p?.added ? <span className="text-slate-600"> · added {new Date(p.added).toLocaleDateString()}</span> : ''}</p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  {p ? <img src={p.thumb} alt={name + ' photo'} referrerPolicy="no-referrer" className={'mt-1 w-full rounded-lg border border-slate-800 object-cover ' + shape} /> : <div className={'mt-1 flex w-full items-center justify-center rounded-lg border border-dashed border-amber-400/50 text-xs text-amber-200 ' + shape}>No {name.toLowerCase()} set</div>}
+                </div>
+              ))}
+            </div>
+            {media.recent.length > 0 && (
+              <div className="flex gap-1.5 overflow-x-auto">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {media.recent.map((p) => <img key={p.name} src={p.thumb} alt="" referrerPolicy="no-referrer" className="h-14 w-14 shrink-0 rounded-md border border-slate-800 object-cover" />)}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <select aria-label="Where the photo goes" className={input.replace('w-full ', '')} value={photo.category} onChange={(e) => setPhoto({ ...photo, category: e.target.value })}>
+                {[['ADDITIONAL', 'A photo'], ['COVER', 'The cover (replaces it)'], ['LOGO', 'The logo (replaces it)'], ['EXTERIOR', 'Outside'], ['INTERIOR', 'Inside'], ['AT_WORK', 'At work'], ['TEAMS', 'The team'], ['PRODUCT', 'A product']].map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+              </select>
+              <input className={input + ' min-w-0 flex-1'} placeholder="https:// public link to the image" value={photo.url} onChange={(e) => setPhoto({ ...photo, url: e.target.value })} />
+              <button type="button" disabled={Boolean(busy) || !photo.url.trim()} onClick={addPhoto} className={save}>{busy === 'photo' ? 'Sending…' : 'Add photo'}</button>
+            </div>
+            <p className="text-xs text-slate-500">Google downloads the image itself from the link, so it must open without a login: at least 250 × 250 pixels and under 5 MB. A new photo can take a few minutes to show, and Google drops one that breaks its rules without saying so.</p>
+            <Done part="photo" />
+          </div>
+        )}
+      </details>
+
+      <details id="gbp-attributes" className="scroll-mt-20 rounded-lg border border-slate-800 bg-slate-950/40 p-4">
         <summary className="cursor-pointer text-sm font-semibold">Attributes <span className="ml-1 font-normal text-slate-500">{attrs.filter((a) => (Array.isArray(a.value) ? a.value.length : a.value !== null)).length} of {attrs.length} set</span></summary>
         {x.attributes.problem ? <p className="mt-3 text-sm text-amber-300">{x.attributes.problem}</p> : (
           <div className="mt-3 space-y-4">
@@ -177,13 +276,20 @@ export default function GbpExtras({ profile, location }: { profile: string; loca
         )}
       </details>
 
-      <details className="rounded-lg border border-slate-800 bg-slate-950/40 p-4">
+      <details id="gbp-links" className="scroll-mt-20 rounded-lg border border-slate-800 bg-slate-950/40 p-4">
         <summary className="cursor-pointer text-sm font-semibold">Booking and ordering links <span className="ml-1 font-normal text-slate-500">{x.links.list.length || 'none'}</span></summary>
         {x.links.problem ? <p className="mt-3 text-sm text-amber-300">{x.links.problem}</p> : (
           <div className="mt-3 space-y-3">
+            {x.links.types.some((t) => BOOKING.includes(t)) && !x.links.list.some((l) => BOOKING.includes(l.type)) && (
+              <div className="rounded-lg border border-amber-400/40 bg-amber-400/5 p-3">
+                <p className="text-sm font-semibold text-amber-100">No appointment link yet</p>
+                <p className="mt-0.5 text-xs text-amber-200/80">It puts a “Book” button on the listing. Point it at the booking or contact page, tagged so Analytics shows the bookings that came from Google.</p>
+                <button type="button" onClick={() => setLink({ type: x.links.types.find((t) => BOOKING.includes(t)) ?? link.type, uri: tagged(link.uri.trim() || website || '', 'gbp_appointment'), preferred: true })} className={quiet + ' mt-2'}>Start one from the website, tagged</button>
+              </div>
+            )}
             {x.links.list.map((l) => (
               <div key={l.name} className="rounded-lg border border-slate-800 p-3">
-                <p className="text-xs text-slate-400">{ACTION_TYPES[l.type] ?? l.type}{l.preferred && <span className="ml-2 text-emerald-300">shown first</span>}{!l.editable && <span className="ml-2 text-slate-500">added by a booking partner: only they can change it</span>}</p>
+                <p className="text-xs text-slate-400">{ACTION_TYPES[l.type] ?? l.type}{l.preferred && <span className="ml-2 text-emerald-300">shown first</span>}{!l.editable && <span className="ml-2 rounded-full border border-slate-600 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-400" title="Added by a booking partner (Google marks it as third-party): only they can change or remove it.">third party · locked</span>}{l.editable && <span className="ml-2 rounded-full border border-emerald-500/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-emerald-300">yours</span>}</p>
                 <div className="mt-1.5 flex flex-wrap gap-2">
                   <input className={input + ' min-w-0 flex-1'} disabled={!l.editable} value={uris[l.name] ?? l.uri} onChange={(e) => setUris((u) => ({ ...u, [l.name]: e.target.value }))} />
                   {l.editable && <>
@@ -198,6 +304,7 @@ export default function GbpExtras({ profile, location }: { profile: string; loca
               <div className="flex flex-wrap gap-2">
                 <select aria-label="What the link does" className={input.replace('w-full ', '')} value={link.type} onChange={(e) => setLink({ ...link, type: e.target.value })}>{x.links.types.map((t) => <option key={t} value={t}>{ACTION_TYPES[t] ?? t}</option>)}</select>
                 <input className={input + ' min-w-0 flex-1'} placeholder="https:// booking or ordering page" value={link.uri} onChange={(e) => setLink({ ...link, uri: e.target.value })} />
+                <button type="button" disabled={!link.uri.trim()} onClick={() => setLink({ ...link, uri: tagged(link.uri, BOOKING.includes(link.type) ? 'gbp_appointment' : 'gbp_' + link.type.toLowerCase()) })} className={quiet} title="Adds utm_source=google, utm_medium=organic and a campaign for this kind of link">Add tracking tag</button>
                 <button type="button" disabled={Boolean(busy) || !link.uri.trim()} onClick={() => send('links', { kind: 'link-add', uri: link.uri, type: link.type, preferred: link.preferred })} className={save}>{busy === 'links' ? 'Saving…' : 'Add link'}</button>
               </div>
             )}

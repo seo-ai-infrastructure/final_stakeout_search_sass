@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SearchInsights from '@/components/SearchInsights';
 import GbpReviews from '@/components/GbpReviews';
 import GbpWatch from '@/components/GbpWatch';
+import GbpEditTop, { type ExtrasLite } from '@/components/GbpEditTop';
 import GbpPosts from '@/components/GbpPosts';
 import GbpExtras from '@/components/GbpExtras';
 import GbpGaps from '@/components/GbpGaps';
@@ -12,8 +13,8 @@ import GbpOverview from '@/components/GbpOverview';
 import GbpAllCalendar from '@/components/GbpAllCalendar';
 import WebsiteInsights, { Lock, LockedListingCard } from '@/components/WebsiteInsights';
 import {
-  DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, descriptionWarnings, diff, highScrutiny, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
-  type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
+  DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, addressOf, descriptionWarnings, openingOf, serviceAreasOf, diff, highScrutiny, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
+  type AddressForm, type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
 } from '@stakeout/core/gbp';
 
 type Cat = { name: string; displayName?: string };
@@ -21,7 +22,7 @@ type Profile = { id: string; name: string; status: string; problem: string | nul
 type Account = { id: string; profile: string | null; name: string | null; daysLeft?: number | null };
 type Tab = 'website' | 'listing' | 'calendar' | 'reviews' | 'changes' | 'plan' | 'agents';
 type Edit = { id: string; tier: Tier; changes: FieldChange[]; status: string; error: string | null; checkedAt: string | null; createdAt: string };
-type Form = { description: string; websiteUri: string; additionalCategories: Cat[]; additionalPhones: string; regularHours: DayHours[] | null; specialHours: SpecialDay[] | null; pastSpecial: number; title: string; primaryCategory: Cat | null; primaryPhone: string };
+type Form = { openingDate: string; address: AddressForm; description: string; websiteUri: string; additionalCategories: Cat[]; additionalPhones: string; regularHours: DayHours[] | null; specialHours: SpecialDay[] | null; pastSpecial: number; title: string; primaryCategory: Cat | null; primaryPhone: string };
 
 const TIER: Record<Tier, { text: string; chip: string }> = {
   green: { text: 'Safe', chip: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' },
@@ -61,6 +62,8 @@ const formOf = (l: GbpLocation, week: DayHours[] | null): Form => ({
   title: l.title ?? '',
   primaryCategory: l.categories?.primaryCategory ?? null,
   primaryPhone: l.phoneNumbers?.primaryPhone ?? '',
+  openingDate: openingOf(l),
+  address: addressOf(l),
 });
 
 async function api<T>(url: string, body?: unknown): Promise<T> {
@@ -75,22 +78,28 @@ function CategoryPicker({ profile, location, region, onPick, disabled }: { profi
   const [q, setQ] = useState('');
   const [found, setFound] = useState<Cat[] | null>(null);
   const [note, setNote] = useState('');
-  const search = async () => {
-    setNote('Searching…');
-    setFound(null);
-    try {
-      const r = await api<{ categories: Cat[] }>(`/api/admin/gbp/categories?profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}&region=${region}&q=${encodeURIComponent(q)}`);
-      setFound(r.categories);
-      setNote(r.categories.length ? '' : 'No category with that name.');
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : 'Search failed.');
-    }
-  };
+  // Suggestions as the name is typed, a moment after the last key.
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setFound(null); setNote(''); return; }
+    let live = true;
+    const t = setTimeout(async () => {
+      setNote('Searching…');
+      try {
+        const r = await api<{ categories: Cat[] }>(`/api/admin/gbp/categories?profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}&region=${region}&q=${encodeURIComponent(term)}`);
+        if (!live) return;
+        setFound(r.categories);
+        setNote(r.categories.length ? '' : 'No category with that name.');
+      } catch (e) {
+        if (live) setNote(e instanceof Error ? e.message : 'Search failed.');
+      }
+    }, 350);
+    return () => { live = false; clearTimeout(t); };
+  }, [q, profile, location, region]);
   return (
     <div>
       <div className="flex gap-2">
-        <input className={input} placeholder="Search Google’s categories, e.g. plumber" value={q} disabled={disabled} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), search())} />
-        <button type="button" onClick={search} disabled={disabled || q.trim().length < 2} className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40">Search</button>
+        <input className={input} placeholder="Start typing a category, e.g. plumber" value={q} disabled={disabled} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && e.preventDefault()} />
       </div>
       {note && <p className="mt-1.5 text-xs text-slate-400">{note}</p>}
       {found && found.length > 0 && (
@@ -125,6 +134,8 @@ export default function GbpEditor() {
   const [choosing, setChoosing] = useState(true);
   // Raised when the gaps panel changes the listing, so the panels below read it again.
   const [rev, setRev] = useState(0);
+  // What the listing has by way of services, attributes and links, for the gaps at the top of the editor.
+  const [extras, setExtras] = useState<ExtrasLite | null>(null);
   const [edits, setEdits] = useState<Edit[]>([]);
   const [form, setForm] = useState<Form | null>(null);
   const [unlocked, setUnlocked] = useState(false);
@@ -214,10 +225,12 @@ export default function GbpEditor() {
     };
     if (form.regularHours) c.regularHours = form.regularHours;
     if (form.specialHours) c.specialHours = form.specialHours;
+    c.openingDate = form.openingDate;
     if (unlocked) {
       c.title = form.title;
       c.primaryPhone = form.primaryPhone;
       if (form.primaryCategory) c.primaryCategory = form.primaryCategory;
+      if (live?.storefrontAddress) c.address = form.address;
     }
     return c;
   }, [form, unlocked]);
@@ -230,6 +243,16 @@ export default function GbpEditor() {
   const canSend = changes.length > 0 && !problem && !blocked && (tier !== 'red' || (checks.every(Boolean) && typed === 'VERIFY'));
   const region = String(live?.storefrontAddress?.regionCode ?? 'US');
   const set = <K extends keyof Form>(k: K, v: Form[K]) => { setForm((f) => (f ? { ...f, [k]: v } : f)); setReview(false); setResult(null); };
+
+  // The dates whose holiday hours were set to "custom" by hand, so a custom time equal to the usual one stays custom.
+  const [customDates, setCustomDates] = useState<Set<string>>(new Set());
+  /** The regular hours of a date's day of the week (its first period), as holiday hours for that date. */
+  const usualOn = (date: string): Omit<SpecialDay, 'date'> | null => {
+    if (!form?.regularHours || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    const d = form.regularHours[(new Date(date + 'T12:00:00Z').getUTCDay() + 6) % 7];
+    return d.closed ? { closed: true, open: '09:00', close: '17:00' } : { closed: false, open: d.allDay ? '00:00' : d.open, close: d.allDay ? '24:00' : d.close };
+  };
+  const alwaysOpen = Boolean(form?.regularHours?.every((d) => !d.closed && d.allDay));
 
   const send = async () => {
     if (!pick) return;
@@ -383,12 +406,13 @@ export default function GbpEditor() {
 
           {view === 'edit' && paidListing && (
           <>
-          <p className="text-xs text-slate-500">Every edit is built on the live profile, logged with the profile as it was, and checked against Google afterwards. Address, map pin, service area and open/closed status are not editable here.</p>
+          <p className="text-xs text-slate-500">Every edit is built on the live profile, logged with the profile as it was, and checked against Google afterwards. The map pin, service areas and open/closed status are changed on Google itself.</p>
+          <GbpEditTop profile={pick.profile} location={pick.location} live={live} extras={extras} todayIso={today()} onRestored={() => load(pick)} />
           <GbpGaps profile={pick.profile} location={pick.location} onApplied={() => { setRev((n) => n + 1); refresh(pick); }} />
           <section className={card + ' space-y-5'}>
             <h3 className="flex items-center gap-2 font-semibold">Everyday edits <span className={'rounded-full border px-2 py-0.5 text-[11px] ' + TIER.green.chip}>{TIER.green.text}</span></h3>
 
-            <div>
+            <div id="gbp-description" className="scroll-mt-20">
               <label className="text-sm font-medium">Description <span className={'ml-1 text-xs ' + (form.description.length > DESCRIPTION_MAX ? 'text-rose-300' : 'text-slate-500')}>{form.description.length} / {DESCRIPTION_MAX}</span></label>
               <textarea className={input + ' mt-1.5 h-32'} value={form.description} onChange={(e) => set('description', e.target.value)} />
               {descriptionWarnings(form.description).length > 0 && form.description !== (live.profile?.description ?? '') && <p className="mt-1 text-xs text-amber-300">This has {descriptionWarnings(form.description).join(' and ')} in it. Google often rejects or strips those from a description.</p>}
@@ -405,6 +429,19 @@ export default function GbpEditor() {
                   ? <span className="text-rose-300">This moves the link to a different website ({siteOf(live.websiteUri)} → {siteOf(form.websiteUri)}): treated as an identity change.</span>
                   : 'Same website with a new page or tracking tag is safe. A different website is an identity change.'}
               </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium" htmlFor="gbp-opening">Opening date</label>
+                <input id="gbp-opening" type="date" className={input + ' mt-1.5'} value={form.openingDate} max={String(new Date().getFullYear() + 1) + '-12-31'} onChange={(e) => set('openingDate', e.target.value)} />
+                <p className="mt-1 text-xs text-slate-500">{openingOf(live) ? 'The day the business first opened.' : 'Not set. Google shows “X+ years in business” on listings that have one, so give the day the business first opened.'}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium">Service areas <span className="ml-1 text-xs font-normal text-slate-500">read-only</span></p>
+                {serviceAreasOf(live).length ? <p className="mt-1.5 flex flex-wrap gap-1.5">{serviceAreasOf(live).map((a) => <span key={a} className="rounded-full border border-slate-700 bg-slate-950 px-2.5 py-1 text-xs text-slate-300">{a}</span>)}</p> : <p className="mt-1.5 text-sm text-slate-400">None listed.</p>}
+                <p className="mt-1 text-xs text-slate-500">{serviceAreasOf(live).length} of the 20 Google allows. Each area is one of Google’s own places, so they are changed on Google for now.</p>
+              </div>
             </div>
 
             <div>
@@ -424,26 +461,42 @@ export default function GbpEditor() {
             <div>
               <label className="text-sm font-medium">Opening hours</label>
               {!form.regularHours ? (
-                <p className="mt-1.5 text-sm text-slate-400">This profile has split or overnight hours. They are left untouched: this editor handles one opening period a day.</p>
+                <p className="mt-1.5 text-sm text-slate-400">This profile has hours that run past midnight. They are left untouched: this editor handles opening periods that end the day they start.</p>
               ) : (
                 <div className="mt-1.5 space-y-1.5">
                   {form.regularHours.map((d, i) => {
                     const upd = (patch: Partial<DayHours>) => set('regularHours', form.regularHours!.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                    const more = d.more ?? [];
+                    const time = input.replace('w-full ', '') + ' w-32';
                     return (
-                      <div key={d.day} className="flex flex-wrap items-center gap-3 text-sm">
-                        <span className="w-24 capitalize text-slate-300">{DAYS[i].toLowerCase()}</span>
-                        <label className="flex items-center gap-1.5 text-xs text-slate-400"><input type="checkbox" checked={d.closed} onChange={(e) => upd({ closed: e.target.checked })} /> Closed</label>
-                        <label className="flex items-center gap-1.5 text-xs text-slate-400"><input type="checkbox" checked={d.allDay} disabled={d.closed} onChange={(e) => upd({ allDay: e.target.checked })} /> 24 hours</label>
-                        <input type="time" className={input.replace('w-full ', '') + ' w-32'} value={d.open} disabled={d.closed || d.allDay} onChange={(e) => upd({ open: e.target.value })} />
-                        <span className="text-slate-500">to</span>
-                        <input type="time" className={input.replace('w-full ', '') + ' w-32'} value={d.close === '24:00' ? '23:59' : d.close} disabled={d.closed || d.allDay} onChange={(e) => upd({ close: e.target.value })} />
+                      <div key={d.day} className="flex flex-wrap items-start gap-x-3 gap-y-1.5 text-sm">
+                        <span className="w-24 pt-2 capitalize text-slate-300">{DAYS[i].toLowerCase()}</span>
+                        <label className="flex items-center gap-1.5 pt-2 text-xs text-slate-400"><input type="checkbox" checked={d.closed} onChange={(e) => upd({ closed: e.target.checked })} /> Closed</label>
+                        <label className="flex items-center gap-1.5 pt-2 text-xs text-slate-400" title="Sent to Google as midnight to midnight (00:00 to 24:00)"><input type="checkbox" checked={d.allDay} disabled={d.closed} onChange={(e) => upd({ allDay: e.target.checked, ...(e.target.checked ? { more: [] } : {}) })} /> 24 hours</label>
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input type="time" aria-label={d.day.toLowerCase() + ' opens'} className={time} value={d.open} disabled={d.closed || d.allDay} onChange={(e) => upd({ open: e.target.value })} />
+                            <span className="text-slate-500">to</span>
+                            <input type="time" aria-label={d.day.toLowerCase() + ' closes'} className={time} value={d.close === '24:00' ? '23:59' : d.close} disabled={d.closed || d.allDay} onChange={(e) => upd({ close: e.target.value })} />
+                            {!d.closed && !d.allDay && more.length < 2 && <button type="button" onClick={() => upd({ more: [...more, { open: d.close < '13:00' ? '13:00' : '18:00', close: d.close < '13:00' ? '17:00' : '21:00' }] })} className="text-xs text-sky-400 hover:underline">+ Split shift</button>}
+                          </div>
+                          {!d.closed && !d.allDay && more.map((m, k) => (
+                            <div key={k} className="flex flex-wrap items-center gap-2">
+                              <input type="time" aria-label={d.day.toLowerCase() + ' opens again'} className={time} value={m.open} onChange={(e) => upd({ more: more.map((x, y) => (y === k ? { ...x, open: e.target.value } : x)) })} />
+                              <span className="text-slate-500">to</span>
+                              <input type="time" aria-label={d.day.toLowerCase() + ' closes again'} className={time} value={m.close === '24:00' ? '23:59' : m.close} onChange={(e) => upd({ more: more.map((x, y) => (y === k ? { ...x, close: e.target.value } : x)) })} />
+                              <button type="button" onClick={() => upd({ more: more.filter((_, y) => y !== k) })} className="text-xs text-slate-500 hover:text-rose-300">Remove</button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     );
                   })}
+                  <p className="text-xs text-slate-500">“24 hours” is sent to Google as 00:00 to 24:00. Other kinds of hours (online service, delivery, senior hours) are set on Google for now.</p>
                 </div>
               )}
             </div>
-            <div>
+            <div id="gbp-holiday" className="scroll-mt-20">
               <label className="text-sm font-medium">Holiday hours <span className="ml-1 text-xs text-slate-500">dates with their own hours</span></label>
               {!form.specialHours ? (
                 <p className="mt-1.5 text-sm text-slate-400">This profile has holiday hours that span several days or are split in two. They are left untouched: this editor handles one period a date.</p>
@@ -453,13 +506,28 @@ export default function GbpEditor() {
                     {form.specialHours.length === 0 && <p className="text-xs text-slate-500">No upcoming dates set.</p>}
                     {form.specialHours.map((d, i) => {
                       const upd = (patch: Partial<SpecialDay>) => set('specialHours', form.specialHours!.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                      const usual = usualOn(d.date);
+                      const same = (x: SpecialDay, y: Omit<SpecialDay, 'date'>) => x.closed === y.closed && (x.closed || (x.open === y.open && x.close === y.close));
+                      const mode = customDates.has(d.date) ? 'custom' : usual && same(d, usual) && !usual.closed ? 'usual' : d.closed ? 'closed' : 'custom';
+                      const pick3 = (m: 'usual' | 'closed' | 'custom') => {
+                        setCustomDates((c) => { const n = new Set(c); if (m === 'custom') n.add(d.date); else n.delete(d.date); return n; });
+                        upd(m === 'usual' && usual ? usual : m === 'closed' ? { closed: true } : { closed: false });
+                      };
+                      const time = input.replace('w-full ', '') + ' w-32';
                       return (
-                        <div key={i} className="flex flex-wrap items-center gap-3 text-sm">
+                        <div key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm">
                           <input type="date" className={input.replace('w-full ', '') + ' w-40'} value={d.date} min={today()} onChange={(e) => upd({ date: e.target.value })} aria-label="Date" />
-                          <label className="flex items-center gap-1.5 text-xs text-slate-400"><input type="checkbox" checked={d.closed} onChange={(e) => upd({ closed: e.target.checked })} /> Closed</label>
-                          <input type="time" className={input.replace('w-full ', '') + ' w-32'} value={d.open} disabled={d.closed} onChange={(e) => upd({ open: e.target.value })} aria-label="Opens" />
-                          <span className="text-slate-500">to</span>
-                          <input type="time" className={input.replace('w-full ', '') + ' w-32'} value={d.close === '24:00' ? '23:59' : d.close} disabled={d.closed} onChange={(e) => upd({ close: e.target.value })} aria-label="Closes" />
+                          <span role="group" aria-label="Hours that day" className="inline-flex overflow-hidden rounded-lg border border-slate-700 text-xs">
+                            {([['usual', 'Regular hours'], ['closed', 'Closed'], ['custom', 'Custom hours']] as const).map(([m, text]) => (
+                              <button key={m} type="button" aria-pressed={mode === m} disabled={m === 'usual' && (!usual || usual.closed)} title={m === 'usual' ? (usual && !usual.closed ? 'Tells Google the usual hours apply that day, so it does not warn that hours may differ' : 'The business is closed on that day of the week anyway') : undefined} onClick={() => pick3(m)} className={'px-2.5 py-1.5 disabled:opacity-40 ' + (mode === m ? (m === 'closed' ? 'bg-rose-500/30 font-semibold text-rose-100' : 'bg-slate-700 font-semibold text-white') : 'text-slate-400 hover:bg-slate-800')}>{text}</button>
+                            ))}
+                          </span>
+                          {mode === 'custom' && <>
+                            <input type="time" className={time} value={d.open} onChange={(e) => upd({ open: e.target.value })} aria-label="Opens" />
+                            <span className="text-slate-500">to</span>
+                            <input type="time" className={time} value={d.close === '24:00' ? '23:59' : d.close} onChange={(e) => upd({ close: e.target.value })} aria-label="Closes" />
+                          </>}
+                          {mode === 'usual' && <span className="text-xs text-slate-400">{d.open === '00:00' && d.close === '24:00' ? 'open 24 hours' : `${d.open} to ${d.close}`}</span>}
                           <button type="button" onClick={() => set('specialHours', form.specialHours!.filter((_, j) => j !== i))} className="text-xs text-slate-500 hover:text-rose-300">Remove</button>
                         </div>
                       );
@@ -467,15 +535,17 @@ export default function GbpEditor() {
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     {upcomingHolidays(today()).filter((h) => !form.specialHours!.some((d) => d.date === h.date)).map((h) => (
-                      <button key={h.date} type="button" onClick={() => set('specialHours', [...form.specialHours!, { date: h.date, closed: true, open: '09:00', close: '17:00' }].sort((a, b) => a.date.localeCompare(b.date)))} className="rounded-full border border-slate-700 px-2.5 py-1 text-xs hover:border-emerald-500 hover:text-emerald-300">+ {h.name} ({h.date.slice(5)})</button>
+                      <button key={h.date} type="button" onClick={() => set('specialHours', [...form.specialHours!, { date: h.date, ...(alwaysOpen && usualOn(h.date) ? usualOn(h.date)! : { closed: true, open: '09:00', close: '17:00' }) }].sort((a, b) => a.date.localeCompare(b.date)))} className="rounded-full border border-slate-700 px-2.5 py-1 text-xs hover:border-emerald-500 hover:text-emerald-300">+ {h.name} ({h.date.slice(5)})</button>
                     ))}
                     <button type="button" onClick={() => set('specialHours', [...form.specialHours!, { date: '', closed: true, open: '09:00', close: '17:00' }])} className="rounded-full border border-slate-700 px-2.5 py-1 text-xs hover:border-slate-500">+ Another date</button>
                   </div>
-                  <p className="mt-1.5 text-xs text-slate-500">A holiday button adds the date as closed; untick Closed to give it hours.{form.pastSpecial > 0 && ` Google still holds ${form.pastSpecial} past date${form.pastSpecial === 1 ? '' : 's'} for this profile; they are cleared the next time holiday hours are saved.`}</p>
+                  <p className="mt-1.5 text-xs text-slate-500">{alwaysOpen ? 'This business is open around the clock, so a holiday button adds the date with its regular hours: switch it to Closed only if it really closes.' : 'A holiday button adds the date as closed: switch it to Regular hours or Custom hours if the business opens.'}{form.pastSpecial > 0 && ` Google still holds ${form.pastSpecial} past date${form.pastSpecial === 1 ? '' : 's'} for this profile; they are cleared the next time holiday hours are saved.`}</p>
                 </>
               )}
             </div>
           </section>
+
+          <GbpExtras key={rev} profile={pick.profile} location={pick.location} website={live.websiteUri ?? ''} onLoaded={setExtras} />
 
           <section className={card + ' space-y-3'}>
             <h3 className="flex items-center gap-2 font-semibold">Additional phone numbers <span className={'rounded-full border px-2 py-0.5 text-[11px] ' + TIER.amber.chip}>{TIER.amber.text}</span></h3>
@@ -485,7 +555,7 @@ export default function GbpEditor() {
           <section className={card + ' space-y-4 border-rose-500/30'}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="flex items-center gap-2 font-semibold">Identity fields <span className={'rounded-full border px-2 py-0.5 text-[11px] ' + TIER.red.chip}>{TIER.red.text}</span></h3>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={unlocked} onChange={(e) => { setUnlocked(e.target.checked); if (!e.target.checked && live) setForm((f) => (f ? { ...f, title: live.title ?? '', primaryPhone: live.phoneNumbers?.primaryPhone ?? '', primaryCategory: live.categories?.primaryCategory ?? null } : f)); setReview(false); }} /> Unlock high-risk edits</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={unlocked} onChange={(e) => { setUnlocked(e.target.checked); if (!e.target.checked && live) setForm((f) => (f ? { ...f, title: live.title ?? '', primaryPhone: live.phoneNumbers?.primaryPhone ?? '', primaryCategory: live.categories?.primaryCategory ?? null, address: addressOf(live) } : f)); setReview(false); }} /> Unlock high-risk edits</label>
             </div>
             <p className="text-xs text-slate-400">Changing the name, primary category or primary phone can make Google ask for video verification or suspend the listing. One identity field per save, and one every {RED_COOLDOWN_DAYS} days per profile.</p>
             {highScrutiny(live.categories?.primaryCategory?.displayName) && <p className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">{live.categories?.primaryCategory?.displayName} is a line of business Google checks closely. An identity edit here is more likely to be held, or to hide the listing until a video is sent.</p>}
@@ -501,12 +571,47 @@ export default function GbpEditor() {
               <label className="text-sm font-medium">Primary phone</label>
               <input className={input + ' mt-1.5'} value={form.primaryPhone} disabled={!unlocked} onChange={(e) => set('primaryPhone', e.target.value)} />
             </div>
+            <div>
+              <p className="text-sm font-medium">Address</p>
+              {!live.storefrontAddress ? <p className="mt-1.5 text-sm text-slate-400">This listing shows no address (a service-area business). Adding one is done on Google itself.</p> : (
+                <div className="mt-1.5 grid gap-2 sm:grid-cols-6">
+                  <textarea aria-label="Street address" rows={Math.max(1, form.address.lines.split('\n').length)} className={input + ' h-auto sm:col-span-6'} value={form.address.lines} disabled={!unlocked} onChange={(e) => set('address', { ...form.address, lines: e.target.value })} />
+                  <input aria-label="Town" placeholder="Town" className={input + ' sm:col-span-3'} value={form.address.locality} disabled={!unlocked} onChange={(e) => set('address', { ...form.address, locality: e.target.value })} />
+                  <input aria-label="State or region" placeholder="State" className={input + ' sm:col-span-1'} value={form.address.region} disabled={!unlocked} onChange={(e) => set('address', { ...form.address, region: e.target.value })} />
+                  <input aria-label="Postal code" placeholder="ZIP" className={input + ' sm:col-span-2'} value={form.address.postalCode} disabled={!unlocked} onChange={(e) => set('address', { ...form.address, postalCode: e.target.value })} />
+                </div>
+              )}
+              {live.storefrontAddress && <p className="mt-1 text-xs text-slate-500">An address change is the edit most likely to bring a new verification. The map pin is moved on Google.</p>}
+            </div>
           </section>
 
-          <section className={card + ' space-y-4'}>
-            <h3 className="font-semibold">Review and send</h3>
-            {changes.length === 0 ? <p className="text-sm text-slate-400">No changes yet.</p> : (
-              <ul className="space-y-2">
+          <section className={card}>
+            <h3 className="font-semibold">Edit history</h3>
+            {edits.length === 0 ? <p className="mt-2 text-sm text-slate-400">No edits sent from here yet.</p> : (
+              <ul className="mt-3 divide-y divide-slate-800 text-sm">
+                {edits.map((e) => (
+                  <li key={e.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
+                    <div className="min-w-0">
+                      <p>{e.changes.map((c) => c.label).join(', ')} <span className={'ml-1 rounded-full border px-2 py-0.5 text-[11px] ' + TIER[e.tier].chip}>{TIER[e.tier].text}</span></p>
+                      <p className="mt-0.5 text-xs text-slate-500">{new Date(e.createdAt).toLocaleString()}{e.error ? ' · ' + e.error : ''}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={'text-xs font-semibold ' + (STATUS[e.status] ?? '')}>{STATUS_TEXT[e.status] ?? e.status}</span>
+                      {e.status === 'SENT' && <button type="button" onClick={() => recheck(e.id)} className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs hover:border-slate-500">Re-check</button>}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          {(changes.length > 0 || result || problem) && (
+          <section aria-label="Changes waiting to be sent" className="sticky bottom-3 z-30 space-y-3 rounded-xl border border-emerald-500/50 bg-slate-900/95 p-4 shadow-2xl shadow-black/60 backdrop-blur">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold">{changes.length > 0 ? <>{changes.length} unsaved change{changes.length === 1 ? '' : 's'} <span className={'ml-1 rounded-full border px-2 py-0.5 text-[11px] font-normal ' + TIER[tier].chip}>{TIER[tier].text}</span><span className="ml-2 text-xs font-normal text-slate-400">{changes.map((c) => c.label).join(', ')}</span></> : result ? 'Sent' : 'Not ready to send'}</p>
+              {changes.length > 0 && !review && <span className="text-xs text-slate-500">Nothing is sent to Google until you review and send.</span>}
+            </div>
+            {review && changes.length > 0 && (
+              <ul className="max-h-[40vh] space-y-2 overflow-y-auto">
                 {changes.map((c) => (
                   <li key={c.key} className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm">
                     <div className="flex items-center gap-2"><b>{c.label}</b><span className={'rounded-full border px-2 py-0.5 text-[11px] ' + TIER[c.tier].chip}>{TIER[c.tier].text}</span></div>
@@ -520,7 +625,7 @@ export default function GbpEditor() {
             {problem && <p className="text-sm text-rose-300">{problem}</p>}
             {blocked && <p className="text-sm text-rose-300">{blocked}</p>}
 
-            {tier === 'red' && !blocked && !problem && (
+            {review && tier === 'red' && !blocked && !problem && (
               <div className="space-y-2 rounded-lg border border-rose-500/40 bg-rose-500/5 p-4 text-sm">
                 <p className="font-semibold text-rose-200">This edit can trigger Google video verification.</p>
                 {[
@@ -551,27 +656,7 @@ export default function GbpEditor() {
               </p>
             )}
           </section>
-
-          <section className={card}>
-            <h3 className="font-semibold">Edit history</h3>
-            {edits.length === 0 ? <p className="mt-2 text-sm text-slate-400">No edits sent from here yet.</p> : (
-              <ul className="mt-3 divide-y divide-slate-800 text-sm">
-                {edits.map((e) => (
-                  <li key={e.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
-                    <div className="min-w-0">
-                      <p>{e.changes.map((c) => c.label).join(', ')} <span className={'ml-1 rounded-full border px-2 py-0.5 text-[11px] ' + TIER[e.tier].chip}>{TIER[e.tier].text}</span></p>
-                      <p className="mt-0.5 text-xs text-slate-500">{new Date(e.createdAt).toLocaleString()}{e.error ? ' · ' + e.error : ''}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={'text-xs font-semibold ' + (STATUS[e.status] ?? '')}>{STATUS_TEXT[e.status] ?? e.status}</span>
-                      {e.status === 'SENT' && <button type="button" onClick={() => recheck(e.id)} className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs hover:border-slate-500">Re-check</button>}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-          <GbpExtras key={rev} profile={pick.profile} location={pick.location} />
+          )}
           </>
           )}
         </>
