@@ -13,7 +13,7 @@ import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
 import type { PinInsights } from '@stakeout/core/pinInsights';
 import { ReportVerdict, RankDistributionCard, AiCoverageCard } from './ReportSummary';
-import GetListedCard from '@/components/GetListedCard';
+import AiCitationsTab from '@/components/AiCitationsTab';
 import { bandOf, reportSummary, type RankBucket, type FindingKind } from '../lib/reportSummary';
 import { groundOwners, aiPosition, winningRadius } from '../lib/marketInsights';
 import { combinedReading, combinedStyle, combinedTotals, COMBINED_LEGEND } from '../lib/combinedMap';
@@ -209,7 +209,7 @@ export function GeoGridDashboard({
   /** Which map view opens first; the demo page deep-links to one. */
   initialMapMode?: 'combined' | 'rank' | 'ai' | 'ads';
   /** Tab and point that open first; the demo page uses them to land on one point's evidence. */
-  initialTab?: 'overview' | 'evidence';
+  initialTab?: 'overview' | 'ai' | 'evidence';
   initialPin?: string | null;
 }) {
   const [scan, setScan] = useState<GridScanData | null>(null),
@@ -218,7 +218,7 @@ export function GeoGridDashboard({
     [share, setShare] = useState(''),
     [projected, project] = useState<CompetitorMarketStat | null>(null),
     [mapWarning, setMapWarning] = useState('');
-  const [tab, setTab] = useState<'overview' | 'evidence'>(initialTab);
+  const [tab, setTab] = useState<'overview' | 'ai' | 'evidence'>(initialTab);
   const [censusMetric, setCensusMetric] = useState<CensusMetric>(CENSUS_VINTAGE ? 'income' : 'off'),
     [censusLevel, setCensusLevel] = useState<CensusLevel>('auto'),
     [censusArea, setCensusArea] = useState<CensusArea | null>(null),
@@ -734,7 +734,7 @@ export function GeoGridDashboard({
         {rerunNote && <p className="text-xs text-slate-300">{rerunNote}</p>}
       </div>
       <nav aria-label="Report sections" className="flex gap-1 border-b border-slate-800">
-        {([['overview', 'Overview'], ['evidence', 'Evidence']] as const).map(([k, label]) => (
+        {([['overview', 'Overview'], ['ai', 'AI citations'], ['evidence', 'Evidence']] as const).map(([k, label]) => (
           <button
             key={k}
             type="button"
@@ -743,10 +743,11 @@ export function GeoGridDashboard({
             className={`-mb-px flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-bold ${tab === k ? 'border-emerald-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
           >
             {label}
-            {k === 'evidence' && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">NEW</span>}
+            {k === 'ai' && <span className="rounded-full bg-emerald-400/15 px-2 py-0.5 text-[10px] font-bold text-emerald-300">NEW</span>}
           </button>
         ))}
       </nav>
+      {tab === 'ai' && <AiCitationsTab scan={scan} shared={shared} identifier={identifier} onOpenPin={(id) => { select(id); setTab('evidence'); }} />}
       {tab === 'evidence' && (
         <EvidencePanel scan={scan} selected={selected} onSelect={select} shareToken={shared ? identifier : undefined} />
       )}
@@ -1224,7 +1225,6 @@ export function GeoGridDashboard({
       />
       </div>
       <AiCoverageCard scan={scan} />
-      <GetListedCard scan={scan} shared={shared} />
       <MarketInsights scan={scan} />
       </div>
     </div>

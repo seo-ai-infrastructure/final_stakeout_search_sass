@@ -313,3 +313,36 @@ model GbpDrift {
   @@index([status, foundAt])
   @@index([locationId, field, status])
 }
+
+/// Where one job on a business's AI citations checklist stands. The jobs themselves are worked out
+/// from each scan; this keeps what the account did about one, so it carries to the next scan of
+/// the same business. `business`: the name as a key. `target`: the cited page the job is about.
+/// `verifiedScanId`: the later scan that showed the job had worked.
+model AioTaskState {
+  id             String   @id @default(cuid())
+  userId         String
+  business       String
+  target         String
+  playbook       String
+  status         String   @default("OPEN")
+  originScanId   String?
+  verifiedScanId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now())
+
+  @@unique([userId, business, target, playbook])
+}
+
+/// What a look at one page Google's AI cited in a scan found: whether the scanned business is on
+/// it and how many of its top rivals are. `note`: ok, blocked (the site refused us) or unreachable.
+model AioPageCheck {
+  id          String   @id @default(cuid())
+  scanId      String
+  url         String
+  present     Boolean?
+  competitors Int      @default(0)
+  note        String
+  checkedAt   DateTime @default(now())
+
+  @@unique([scanId, url])
+}

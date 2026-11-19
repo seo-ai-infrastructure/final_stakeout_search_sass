@@ -16,6 +16,12 @@ export async function backfillInsights(limit = 500) {
   await db.$executeRaw`
     UPDATE "GridPin" p SET insights = NULL
     WHERE p.insights IS NOT NULL AND p.insights->'ai'->>'shown' = 'true' AND p.insights->>'c' IS NULL AND p."dumpsTarUrl" IS NOT NULL`;
+  // And once more for points read before each cited page's own address was kept (only the website
+  // was): the AI citations checklist needs the pages.
+  await db.$executeRaw`
+    UPDATE "GridPin" p SET insights = NULL
+    WHERE p.insights IS NOT NULL AND p.insights->'ai'->>'shown' = 'true' AND p.insights->>'u' IS NULL AND p."dumpsTarUrl" IS NOT NULL
+      AND p."updatedAt" > now() - interval '120 days'`;
   const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string; target: string }[]>`
     SELECT p.id, p."scanId", p."dumpsTarUrl", s."targetBusiness" AS target
     FROM "GridPin" p JOIN "GridScan" s ON s.id = p."scanId"

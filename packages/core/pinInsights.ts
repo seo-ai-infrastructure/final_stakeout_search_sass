@@ -1,4 +1,5 @@
 import { isGoogleSource } from './googleSource';
+import { canonicalUrl } from './aioChecklist';
 import { isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder, readMapsList, readResultsPage, sameBusiness, uiLabels } from './serpEvidence';
 
 /**
@@ -21,8 +22,14 @@ export type PinInsights = {
   ads: { name: string; where: 'results' | 'local_services' | 'finder' | 'maps' }[];
   /** Ads shown before the business's own card in the Local Finder (null when it is not listed). */
   adsAboveYou: number | null;
-  /** The AI Overview: whether one was shown, the websites it cited (in order) and the businesses it named. */
-  ai: { shown: boolean; sources: string[]; named: string[] };
+  /** Set on a point whose AI Overview was read keeping each cited page's address, not just its website (1). */
+  u?: number;
+  /**
+   * The AI Overview: whether one was shown, the websites it cited (in order) and the businesses it
+   * named. `cites`: the cited pages themselves, in the order the answer numbered them (only when
+   * the answer's own text was copied; a snapshot alone names websites, not pages).
+   */
+  ai: { shown: boolean; sources: string[]; named: string[]; cites?: { n: number; url: string }[] };
 };
 
 /** "0.4 mi" / "850 ft" / "1.2 km" as miles. */
@@ -118,8 +125,13 @@ export function buildPinInsights(input: {
 
   let sources: string[] = [],
     named: string[] = [];
+  const cites: { n: number; url: string }[] = [];
   if (input.aiCopy) {
     const copy = readAiCopy(input.aiCopy);
+    for (const c of copy.citations) {
+      const url = canonicalUrl(c.url);
+      if (url && !isGoogleSource(domainOf(url) ?? '') && !cites.some((x) => x.url === url) && cites.length < 25) cites.push({ n: c.n, url });
+    }
     sources = [...new Set(copy.citations.map((c) => domainOf(c.url)).filter((d): d is string => Boolean(d)))];
     named = copy.businesses.map((b) => b.name);
   }
@@ -137,5 +149,5 @@ export function buildPinInsights(input: {
   const shown = Boolean(
     input.aiCopy?.trim() || (input.aiExpanded && readAiOverview(input.aiExpanded)) || page?.aiPreview || (input.serp && readAiOverview(input.serp)),
   );
-  return { v: 1, ...(maps ? { m: 2 } : {}), ...(shown ? { c: 2 } : {}), finder, you, ads, adsAboveYou, ai: { shown, sources, named } };
+  return { v: 1, ...(maps ? { m: 2 } : {}), ...(shown ? { c: 2, u: 1 } : {}), finder, you, ads, adsAboveYou, ai: { shown, sources, named, ...(cites.length ? { cites } : {}) } };
 }
