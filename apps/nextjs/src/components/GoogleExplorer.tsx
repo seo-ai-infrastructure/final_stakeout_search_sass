@@ -1,11 +1,14 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { pct } from '@stakeout/core/googleSite';
+import { Spots } from '@/components/InsightBits';
 import { DEVICES, GA_DIMENSIONS, GA_SOURCES, GSC_DIMENSIONS, GSC_TYPES, PRESETS, type ExploreRow } from '@stakeout/core/googleExplore';
 
 type Totals = { a: number; b: number; c: number | null };
 type Result = { by: string; range: { recent: { from: string; to: string }; before: { from: string; to: string }; days: number }; recent: Totals; before: Totals; rows: ExploreRow[]; appearances?: string[] };
-type Props = { source: 'gsc'; website: string } | { source: 'ga'; property: string };
+/** What the tab above is showing, so the explorer opens on the same dates and device. */
+type Start = { days: number; from: string; to: string; device: string };
+type Props = ({ source: 'gsc'; website: string } | { source: 'ga'; property: string }) & { start?: Start };
 
 const field = 'rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-500';
 const n = (v: number) => v.toLocaleString('en-US');
@@ -38,12 +41,20 @@ export default function GoogleExplorer(props: Props) {
   const [error, setError] = useState('');
   const [sort, setSort] = useState<'a' | 'b' | 'c'>('a');
   const target = gsc ? props.website : props.property;
+  // Until something has been asked for here, it follows the tab's dates and device.
+  const start = props.start;
+  useEffect(() => {
+    if (!start || asked) return;
+    if (PRESETS.some((p) => p.days === start.days)) { setCustom(false); setDays(start.days); }
+    else { setCustom(true); setFrom(start.from); setTo(start.to); }
+    setF((x) => ({ ...x, device: start.device }));
+  }, [start?.days, start?.from, start?.to, start?.device]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!asked) return;
     let live = true;
     setBusy(true); setError('');
-    fetch('/api/admin/google/explore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...props, by, ...(custom ? { from, to } : { days }), ...f }) })
+    fetch('/api/admin/google/explore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...props, start: undefined, by, ...(custom ? { from, to } : { days }), ...f }) })
       .then(async (x) => { const j = await x.json().catch(() => ({})); if (!x.ok) throw new Error(j.error || 'Request failed.'); return j as Result; })
       .then((j) => { if (live) setR(j); })
       .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not read it.'); })
@@ -100,7 +111,7 @@ export default function GoogleExplorer(props: Props) {
         <div className={'mt-3 ' + (busy ? 'opacity-50' : '')}>
           <p className="text-xs text-slate-400">
             {r.range.recent.from} to {r.range.recent.to}: <span className="text-slate-200">{n(r.recent.a)} {cols[0].toLowerCase()}</span> (<Change now={r.recent.a} was={r.before.a} />), <span className="text-slate-200">{n(r.recent.b)} {cols[1].toLowerCase()}</span> (<Change now={r.recent.b} was={r.before.b} />)
-            {gsc ? r.recent.c !== null && <>, average position <span className="text-slate-200">{r.recent.c}</span> (<Change now={r.recent.c} was={r.before.c} lowerIsBetter />)</> : <>, <span className="text-slate-200">{n(r.recent.c ?? 0)} key events</span> (<Change now={r.recent.c} was={r.before.c} />)</>}
+            {gsc ? r.recent.c !== null && <>, average position <span className="text-slate-200">{r.recent.c}</span> (<Spots now={r.recent.c} was={r.before.c} />)</> : <>, <span className="text-slate-200">{n(r.recent.c ?? 0)} key events</span> (<Change now={r.recent.c} was={r.before.c} />)</>}
             <span className="text-slate-500"> · against {r.range.before.from} to {r.range.before.to}</span>
           </p>
           {rows.length === 0 ? <p className="mt-2 text-sm text-slate-400">Nothing for these dates and filters.</p> : (

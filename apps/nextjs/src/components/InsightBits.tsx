@@ -16,6 +16,14 @@ export function Change({ now, was, lowerIsBetter, fresh = 'new' }: { now: number
   return <span className={good === null ? 'text-slate-500' : good ? 'text-emerald-400' : 'text-rose-400'}>{c > 0 ? '▲' : c < 0 ? '▼' : ''} {Math.abs(c)}%</span>;
 }
 
+/** How far a position moved, in places: up the page (a smaller number) is green with a plus, down is red with a minus. */
+export function Spots({ now, was }: { now: number | null; was: number | null | undefined }) {
+  if (now === null || was === null || was === undefined) return <span className="text-slate-600">–</span>;
+  const s = Math.round((was - now) * 10) / 10;
+  if (s === 0) return <span className="text-slate-500">no change</span>;
+  return <span className={s > 0 ? 'text-emerald-400' : 'text-rose-400'}>{s > 0 ? '▲ +' : '▼ -'}{Math.abs(s).toFixed(1)} spot{Math.abs(s) === 1 ? '' : 's'}</span>;
+}
+
 /** A tiny line with no axes: the shape of a number over the period, nothing more. */
 export function Spark({ values, tone = '#34d399' }: { values: number[]; tone?: string }) {
   if (values.length < 2) return <div className="h-7" aria-hidden />;
@@ -34,13 +42,13 @@ export function Spark({ values, tone = '#34d399' }: { values: number[]; tone?: s
  * is also the switch for the chart below it (`active` when it is the one charted), and `spark`
  * draws the number's shape over the period along its foot.
  */
-export function Tile({ label, value, was, lowerIsBetter, digits = 0, unit = '', big, note, extra, compare = true, spark, active, onSelect }: { label: string; value: number | null; was?: number | null; lowerIsBetter?: boolean; digits?: number; unit?: string; big?: boolean; note?: ReactNode; /** One more line under the change, such as a rate. */ extra?: ReactNode; compare?: boolean; spark?: number[]; active?: boolean; onSelect?: () => void }) {
+export function Tile({ label, value, was, lowerIsBetter, digits = 0, unit = '', big, note, extra, compare = true, spark, active, onSelect, spots }: { label: string; value: number | null; was?: number | null; lowerIsBetter?: boolean; digits?: number; unit?: string; big?: boolean; note?: ReactNode; /** One more line under the change, such as a rate. */ extra?: ReactNode; compare?: boolean; /** A position: the change is given in places moved, up the page in green. */ spots?: boolean; spark?: number[]; active?: boolean; onSelect?: () => void }) {
   const body = (
     <>
       <p className="flex items-center gap-1.5 text-xs text-slate-400">{onSelect && <span className={'h-1.5 w-1.5 rounded-full ' + (active ? 'bg-emerald-400' : 'bg-slate-600')} aria-hidden />}{label}</p>
       <p className={'mt-1 font-bold tabular-nums text-slate-100 ' + (big ? 'text-3xl' : 'text-xl')}>{value === null ? '–' : fmt(value, digits) + unit}</p>
       <p className="mt-0.5 min-h-4 text-xs text-slate-500">
-        {compare && value !== null && was !== null && was !== undefined ? <><Change now={value} was={was} lowerIsBetter={lowerIsBetter} fresh="" /> <span>was {fmt(was, digits)}{unit}</span></> : note ?? ' '}
+        {compare && value !== null && was !== null && was !== undefined ? <>{spots ? <Spots now={value} was={was} /> : <Change now={value} was={was} lowerIsBetter={lowerIsBetter} fresh="" />} <span>was {fmt(was, digits)}{unit}</span></> : note ?? ' '}
       </p>
       {extra && <p className="mt-0.5 text-xs text-slate-400">{extra}</p>}
       {spark && <div className="mt-auto pt-2"><Spark values={spark} tone={active || !onSelect ? '#34d399' : '#64748b'} /></div>}

@@ -6,8 +6,10 @@ import { google, googleAccess } from '@/lib/googleOAuth';
 import { propertyFor } from '@stakeout/core/googleSite';
 import { deviceFlag, lowMobileCtr } from '@stakeout/core/upgradeTriggers';
 import { catalogFor } from '@/lib/billing';
+import { createHash } from 'node:crypto';
+import { redis } from '@stakeout/core/redis';
 import {
-  exploreRange, gaEventRows, gaEventsRequest, gaRequest, gaRows, gaTotals, gscRequest, gscRows, pageOf,
+  competingPages, exploreRange, gaEventRows, gaEventsRequest, gaRequest, gaRows, gaTotals, gscFilters, gscRequest, gscRows, pageOf, readInspection,
   type GaFilters, type GscFilters,
 } from '@stakeout/core/googleExplore';
 
@@ -57,6 +59,53 @@ export async function POST(req: Request) {
         // Admins run scans as they like: the offer is for customers.
         offer: u.role !== 'ADMIN', balance: u.creditBalance, packCents: pack?.cents ?? null,
       });
+    }
+
+    // What Google's own inspection says about the listing's page: indexed or not, the address Google
+    // filed it under, when it last fetched it and as what, and the rich results it found. Kept a day.
+    if (b.source === 'inspect') {
+      const website = String(b.website ?? '');
+      const page = pageOf(website);
+      if (!page) throw new InputError('This listing has no website.');
+      const sites = await google<{ siteEntry?: { siteUrl: string; permissionLevel?: string }[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites');
+      const property = propertyFor(website, sites.siteEntry ?? []);
+      if (!property) return NextResponse.json({ source: 'inspect', inspection: null });
+      const key = 'stakeout:inspect:' + createHash('sha256').update(u.id + '|' + property + '|' + page).digest('hex').slice(0, 32);
+      const kept = await redis().get(key).then((v) => (v ? JSON.parse(v) : null)).catch(() => null);
+      if (kept) return NextResponse.json({ source: 'inspect', page, ...kept, cached: true });
+      const inspection = readInspection(await google(token, 'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', { inspectionUrl: page, siteUrl: property, languageCode: 'en-US' }), page);
+      const out = { inspection, checkedAt: new Date().toISOString() };
+      if (inspection) await redis().set(key, JSON.stringify(out), 'EX', 86400).catch(() => {});
+      return NextResponse.json({ source: 'inspect', page, ...out, cached: false });
+    }
+
+    // Other pages of the same website shown for the listing page's 20 most-shown searches.
+    if (b.source === 'gsc-compete') {
+      const website = String(b.website ?? '');
+      const page = pageOf(website);
+      if (!page) throw new InputError('This listing has no website.');
+      const range = exploreRange(b, new Date(), 3);
+      if (typeof range === 'string') throw new InputError(range);
+      const sites = await google<{ siteEntry?: { siteUrl: string; permissionLevel?: string }[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites');
+      const property = propertyFor(website, sites.siteEntry ?? []);
+      if (!property) return NextResponse.json({ source: 'gsc-compete', competing: {} });
+      const url = 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query';
+      const own = await google<{ rows?: GscRow[] }>(token, url, gscRequest(range.recent, { device: text(b.device), page }, 'query', 500));
+      const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const top: string[] = [];
+      // Twenty at most, and no more than fit in one filter.
+      for (const q of [...(own.rows ?? [])].sort((x, y) => (y.impressions ?? 0) - (x.impressions ?? 0)).map((r) => r.keys?.[0] ?? '').filter(Boolean)) {
+        if (top.length >= 20 || top.map(esc).join('|').length + esc(q).length > 3800) break;
+        top.push(q);
+      }
+      if (!top.length) return NextResponse.json({ source: 'gsc-compete', competing: {} });
+      const device = gscFilters({ device: text(b.device) });
+      const both = await google<{ rows?: GscRow[] }>(token, url, {
+        startDate: range.recent.from, endDate: range.recent.to, type: 'web', dimensions: ['query', 'page'], rowLimit: 2000,
+        dimensionFilterGroups: [{ groupType: 'and', filters: [...device, { dimension: 'query', operator: 'includingRegex', expression: '^(' + top.map(esc).join('|') + ')$' }] }],
+      });
+      const wanted = new Set(top);
+      return NextResponse.json({ source: 'gsc-compete', competing: competingPages((both.rows ?? []).filter((r) => wanted.has(r.keys?.[0] ?? '')).map((r) => ({ query: r.keys?.[0] ?? '', page: r.keys?.[1] ?? '', impressions: r.impressions ?? 0 })), page) });
     }
 
     if (b.source === 'gsc') {

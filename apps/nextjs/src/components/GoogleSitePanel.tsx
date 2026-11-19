@@ -1,6 +1,8 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { GA_SOURCES, risingRows, type EventRow, type ExploreRow, type GaSource } from '@stakeout/core/googleExplore';
+import { GA_SOURCES, risingSearches, samePage, topSearches, type Competing, type EventRow, type ExploreRow, type GaSource, type Inspection } from '@stakeout/core/googleExplore';
+import { brandWord } from '@stakeout/core/gbpInsights';
+import { brandedQuery } from '@stakeout/core/upgradeTriggers';
 import GoogleExplorer from '@/components/GoogleExplorer';
 import ScanOffer from '@/components/ScanOffer';
 import { BarCell, Change, MiniChart, SectionHead, Segmented, Skeleton, Tile, alongside, card, fmt, shortDate } from '@/components/InsightBits';
@@ -44,14 +46,17 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
   const [d, setD] = useState<Gsc | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [metric, setMetric] = useState<'clicks' | 'impressions'>('clicks');
+  // Which of the two is charted: the one chosen, or, until one is, clicks unless there are none.
+  const [chosen, setChosen] = useState<'clicks' | 'impressions' | null>(null);
   const [view, setView] = useState<'top' | 'rising'>('top');
+  const [chip, setChip] = useState<'all' | 'zero' | 'strike' | 'open'>('all');
   const [find, setFind] = useState('');
   const [all, setAll] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const key = JSON.stringify(dates);
 
-  useEffect(() => { setD(null); setPicked([]); setScope(wholeSite ? 'site' : 'page'); setDevice(''); setFind(''); setAll(false); }, [website, wholeSite]);
+  useEffect(() => { setD(null); setPicked([]); setScope(wholeSite ? 'site' : 'page'); setDevice(''); setFind(''); setAll(false); setChip('all'); }, [website, wholeSite]);
+  useEffect(() => { setChosen(null); }, [website, scope, device]);
   useEffect(() => {
     let live = true;
     setBusy(true); setError('');
@@ -74,9 +79,37 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
     ? `On phones over the last 28 days your page was shown ${fmt(r.impressions)} times for this search${r.position !== null ? `, around position ${r.position}` : ''}.`
     : `On phones over the last 28 days your page was shown ${fmt(r.impressions)} times for this search, around position ${r.position}, and clicked ${r.ctr}% of the time. A page that high usually gets more: something above it is taking the clicks.`);
 
-  const queries = d && d.property ? d.queries : [];
-  const rising = useMemo(() => risingRows(queries), [queries]);
-  const list = (view === 'rising' ? rising : queries).filter((r) => !find.trim() || r.key.includes(find.trim().toLowerCase()));
+  // What Google's inspection says about the listing's page (kept a day), and which other pages compete with it.
+  const [inspect, setInspect] = useState<{ inspection: Inspection | null; checkedAt?: string } | null>(null);
+  useEffect(() => {
+    let live = true;
+    setInspect(null);
+    post<{ inspection: Inspection | null; checkedAt?: string }>({ source: 'inspect', website }).then((j) => { if (live) setInspect(j); }).catch(() => {});
+    return () => { live = false; };
+  }, [website]);
+  const [competing, setCompeting] = useState<Record<string, Competing>>({});
+  useEffect(() => {
+    let live = true;
+    setCompeting({});
+    if (scope === 'page') post<{ competing: Record<string, Competing> }>({ source: 'gsc-compete', website, device, ...dates }).then((j) => { if (live) setCompeting(j.competing ?? {}); }).catch(() => {});
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [website, scope, device, key]);
+
+  const metric: 'clicks' | 'impressions' = chosen ?? (d && d.property && d.recent.clicks === 0 && d.recent.impressions > 0 ? 'impressions' : 'clicks');
+  const setMetric = setChosen;
+  const queries = useMemo(() => topSearches(d && d.property ? d.queries : []), [d]);
+  const up = useMemo(() => risingSearches(queries), [queries]);
+  const rising = up.rows;
+  const brand = useMemo(() => brandWord(businessName, queries.map((r) => r.key), ''), [businessName, queries]);
+  const CHIPS = {
+    all: () => true,
+    zero: (r: ExploreRow) => r.a === 0 && r.c !== null && r.c <= 10,
+    strike: (r: ExploreRow) => r.c !== null && r.c >= 4 && r.c <= 20,
+    open: (r: ExploreRow) => !brandedQuery(r.key, host, brand),
+  };
+  const count = (k: keyof typeof CHIPS) => queries.filter(CHIPS[k]).length;
+  const list = (view === 'rising' ? rising : queries).filter(CHIPS[chip]).filter((r) => !find.trim() || r.key.includes(find.trim().toLowerCase()));
   const shown = all || find.trim() ? list : list.slice(0, 15);
   const toggle = (k: string) => setPicked((x) => (x.includes(k) ? x.filter((y) => y !== k) : x.length < MAX_PICK ? [...x, k] : x));
   const scanUrl = '/new-scan?' + new URLSearchParams([['name', businessName], ...picked.map((k) => ['kw', k] as [string, string])]).toString();
@@ -88,6 +121,19 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
         <Segmented label="Which pages" value={scope} onChange={setScope} options={[['page', wholeSite ? 'Home page only' : 'The listing’s page'], ['site', 'Whole website']] as const} />
         <Segmented label="Device" value={device} onChange={setDevice} options={DEVICE} />
       </SectionHead>
+      {inspect?.inspection && (() => {
+        const i = inspect.inspection;
+        const dot = (ok: boolean | null) => <span className={'mr-1.5 inline-block h-2 w-2 rounded-full ' + (ok === null ? 'bg-slate-600' : ok ? 'bg-emerald-400' : 'bg-amber-400')} aria-hidden />;
+        return (
+          <p className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300" title={inspect.checkedAt ? 'Google’s URL inspection of the listing’s page, read ' + new Date(inspect.checkedAt).toLocaleString() + ' (refreshed once a day)' : undefined}>
+            <span>{dot(i.indexed)}{i.indexed ? 'Indexed' : 'Not indexed'}<span className="text-slate-500"> · {i.state}</span></span>
+            <span>{dot(i.canonical === 'unknown' ? null : i.canonical === 'match')}{i.canonical === 'match' ? 'Google files it under this address' : i.canonical === 'differs' ? <>Google files it under another address: <span className="text-amber-200">{(i.googleCanonical ?? '').replace(/^https?:\/\//, '')}</span></> : 'Google has chosen no address for it yet'}</span>
+            <span>{dot(i.lastCrawl ? i.crawledAs !== 'computer' : null)}{i.lastCrawl ? <>Last fetched {shortDate(i.lastCrawl.slice(0, 10))}{i.crawledAs ? ` as a ${i.crawledAs}` : ''}</> : 'Not fetched by Google yet'}</span>
+            <span className="text-slate-400">{i.rich.length ? 'Rich results: ' + i.rich.join(', ') : 'No rich results found'}</span>
+            {i.link && <a href={i.link} target="_blank" rel="noreferrer" className="ml-auto text-sky-400 hover:underline">Open in Search Console</a>}
+          </p>
+        );
+      })()}
       {error && <p className="text-sm text-amber-300">{error}</p>}
       {!d && !error && <Skeleton />}
       {d && d.property === null && <p className="text-sm text-slate-400">The connected Google login has no Search Console property for {host} (it can see {d.properties} other{d.properties === 1 ? '' : 's'}). Ask the client to add it as a user on theirs.</p>}
@@ -108,7 +154,7 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
             <Tile big label="Clicks from Google Search" value={d.recent.clicks} was={d.before.clicks} spark={d.days.map((x) => x.clicks)} active={metric === 'clicks'} onSelect={() => setMetric('clicks')} />
             <Tile big label="Times shown" value={d.recent.impressions} was={d.before.impressions} spark={d.days.map((x) => x.impressions)} active={metric === 'impressions'} onSelect={() => setMetric('impressions')} />
             <Tile big label="Click rate" value={d.recent.ctr} was={d.before.ctr} digits={1} unit="%" />
-            <Tile big label="Average position" value={d.recent.position} was={d.before.position} digits={1} lowerIsBetter />
+            <Tile big label="Average position" value={d.recent.position} was={d.before.position} digits={1} spots />
           </div>
           <div>
             <h4 className="mb-2 text-sm font-semibold">{metric === 'clicks' ? 'Clicks' : 'Times shown'} by day</h4>
@@ -118,8 +164,10 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h4 className="text-sm font-semibold">Searches</h4>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+                {picked.length > 0 && <a href={scanUrl} className="rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400">Scan {picked.length} keyword{picked.length === 1 ? '' : 's'} →</a>}
                 <Segmented label="Which searches" value={view} onChange={setView} options={[['top', 'Top'], ['rising', `Rising${rising.length ? ' · ' + rising.length : ''}`]] as const} />
+                <Segmented label="Filter the searches" value={chip} onChange={(v) => { setChip(v); setAll(false); }} options={[['all', 'All'], ['zero', `Top 10 · 0 clicks · ${count('zero')}`], ['strike', `Striking distance · ${count('strike')}`], ['open', `Non-branded · ${count('open')}`]] as const} />
                 <input className={field + ' w-44 text-xs'} placeholder="Find a search" value={find} onChange={(e) => setFind(e.target.value)} />
               </div>
             </div>
@@ -136,25 +184,26 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
                         <td className="px-3 py-1.5"><input type="checkbox" className="h-4 w-4 accent-emerald-500" aria-label={'Scan ' + r.key} checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.key)} /></td>
                         <td className="max-w-[26rem] px-3 py-1.5 text-slate-200">
                           <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="min-w-0 truncate" title={r.key}>{r.key}</span>
+                            {competing[r.key] && <a href={competing[r.key].page} target="_blank" rel="noreferrer" title={`${competing[r.key].share}% of the times your website was shown for this search, Google showed ${competing[r.key].page} instead of the listing’s page. Two pages are competing for it.`} className="whitespace-nowrap rounded-full border border-violet-400/50 bg-violet-400/10 px-2 py-0.5 text-[11px] font-semibold text-violet-200 hover:bg-violet-400/20">Competing page · {competing[r.key].share}% to {competing[r.key].page.replace(/^https?:\/\/[^/]+/, '').slice(0, 28) || '/'}</a>}
                             {flags.has(r.key) && <button type="button" onClick={() => setOffer({ query: r.key, why: whyOf(flags.get(r.key)!) })} className="whitespace-nowrap rounded-full border border-amber-400/50 bg-amber-400/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200 hover:bg-amber-400/20">{phones?.fallback ? 'Local search' : 'Low phone click rate'} · scan the live results{price ? ` (${price})` : ''}</button>}
                           </span>
                         </td>
                         <BarCell value={r.a} max={topClicks} strong />
                         <td className="px-3 py-1.5 text-right text-xs tabular-nums">{r.wasA === null ? <span className="text-sky-300">new</span> : <><Change now={r.a} was={r.wasA} /> <span className="text-slate-600">({fmt(r.wasA)})</span></>}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{fmt(r.b)}</td>
+                        <td className="whitespace-nowrap px-3 py-1.5 text-right tabular-nums text-slate-400">{fmt(r.b)}{view === 'rising' && up.by === 'shown' && <span className="ml-1.5 text-xs text-emerald-400">+{fmt(r.b - (r.wasB ?? 0))}</span>}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.d == null ? '–' : r.d.toFixed(1) + '%'}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{r.c === null ? <span className="text-slate-600">–</span> : <span className={'inline-block min-w-[2.6rem] rounded-full px-1.5 py-0.5 text-center text-xs ' + (r.c <= 3 ? 'bg-emerald-500/15 text-emerald-300' : r.c <= 10 ? 'bg-slate-700/60 text-slate-200' : 'text-slate-500')} title={r.c <= 3 ? 'In the top three' : r.c <= 10 ? 'On the first page' : 'Past the first page'}>{r.c.toFixed(1)}</span>}</td>
                       </tr>
                     );
                   })}
-                  {!shown.length && <tr><td colSpan={7} className="px-3 py-3 text-sm text-slate-400">{queries.length === 0 ? 'Google reported no searches for these dates.' : view === 'rising' && !find.trim() ? 'No search gained two or more clicks on the period before.' : 'No search matches that.'}</td></tr>}
+                  {!shown.length && <tr><td colSpan={7} className="px-3 py-3 text-sm text-slate-400">{queries.length === 0 ? 'Google reported no searches for these dates.' : view === 'rising' && !find.trim() && chip === 'all' ? 'No search gained clicks or was shown more often than in the period before.' : 'No search matches that.'}</td></tr>}
                 </tbody>
               </table>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <a href={picked.length ? scanUrl : undefined} aria-disabled={!picked.length} className={'rounded-lg px-4 py-2 text-sm font-semibold ' + (picked.length ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400' : 'pointer-events-none bg-slate-800 text-slate-500')}>Scan {picked.length || ''} keyword{picked.length === 1 ? '' : 's'} →</a>
               {list.length > 15 && !find.trim() && <button type="button" onClick={() => setAll((v) => !v)} className="text-sm text-slate-400 hover:text-slate-200">{all ? 'Show fewer' : `Show all ${list.length}`}</button>}
-              <span className="text-xs text-slate-500">Rising: the searches that gained the most clicks. Google leaves out searches made by very few people.</span>
+              <span className="text-xs text-slate-500">{up.by === 'shown' ? 'Rising: no search gained two clicks, so these are the searches the page was shown for more often than before.' : 'Rising: the searches that gained the most clicks.'} Striking distance: positions 4 to 20, close enough to move up. Google leaves out searches made by very few people.</span>
             </div>
           </div>
 
@@ -166,8 +215,8 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
                   <thead className="bg-slate-900 text-xs text-slate-400"><tr><th className="px-3 py-2 font-medium">Page</th><th className="px-3 py-2 text-right font-medium">Clicks</th><th className="px-3 py-2 text-right font-medium">vs before</th><th className="px-3 py-2 text-right font-medium">Times shown</th><th className="px-3 py-2 text-right font-medium">Position</th></tr></thead>
                   <tbody className="divide-y divide-slate-800/70">
                     {d.pages.slice(0, 12).map((r) => (
-                      <tr key={r.key} className={'hover:bg-slate-800/40 ' + (r.key === d.page ? 'bg-emerald-500/5' : '')}>
-                        <td className="max-w-[26rem] truncate px-3 py-1.5 text-slate-200" title={r.key}>{r.key.replace(/^https?:\/\/[^/]+/, '') || '/'}{r.key === d.page && <span className="ml-2 text-xs text-emerald-300">the listing’s page</span>}</td>
+                      <tr key={r.key} className={'hover:bg-slate-800/40 ' + (samePage(r.key, d.page) ? 'bg-emerald-500/5' : '')}>
+                        <td className="max-w-[26rem] truncate px-3 py-1.5 text-slate-200" title={r.key}>{r.key.replace(/^https?:\/\/[^/]+/, '') || '/'}{samePage(r.key, d.page) && <span className="ml-2 text-xs text-emerald-300">the listing’s page</span>}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmt(r.a)}</td>
                         <td className="px-3 py-1.5 text-right text-xs tabular-nums"><Change now={r.a} was={r.wasA} /></td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{fmt(r.b)}</td>
@@ -179,7 +228,7 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
               </div>
             </div>
           )}
-          <GoogleExplorer source="gsc" website={website} />
+          <GoogleExplorer source="gsc" website={website} start={{ days: d.range.days, from: d.range.recent.from, to: d.range.recent.to, device }} />
         </div>
       )}
     {offer && <ScanOffer query={offer.query} why={offer.why} businessName={businessName} onClose={() => setOffer(null)} />}
@@ -314,7 +363,7 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
             </div>
           </div>
           <p className="text-xs text-slate-500">“Google listing” counts visits tagged <code>gbp_listing</code>, which the “Add tracking tag” button on the Edit business tab puts on the listing’s website link. “AI assistants” counts visits a chat assistant’s site or app sent; ones it sent with no referrer show as direct.</p>
-          <GoogleExplorer source="ga" property={property} />
+          <GoogleExplorer source="ga" property={property} start={d ? { days: d.range.days, from: d.range.recent.from, to: d.range.recent.to, device } : undefined} />
         </div>
       )}
     </section>

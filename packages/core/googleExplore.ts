@@ -59,7 +59,8 @@ export function gscFilters(f: GscFilters) {
   const filters: { dimension: string; operator: string; expression: string }[] = [];
   const q = clean(f.query), page = clean(f.page, 500), appearance = clean(f.appearance, 60);
   if (q) filters.push({ dimension: 'query', operator: f.queryMode === 'exact' ? 'equals' : f.queryMode === 'without' ? 'notContains' : 'contains', expression: q.toLowerCase() });
-  if (page) filters.push({ dimension: 'page', operator: /^https?:\/\//.test(page) ? 'equals' : 'contains', expression: page });
+  // A full address matches that page however Google filed it (http or https, www or not, with or without the last slash).
+  if (page) filters.push(/^https?:\/\//.test(page) && pageRegex(page) ? { dimension: 'page', operator: 'includingRegex', expression: pageRegex(page) } : { dimension: 'page', operator: 'contains', expression: page });
   if (DEVICES.includes(String(f.device).toUpperCase() as (typeof DEVICES)[number])) filters.push({ dimension: 'device', operator: 'equals', expression: String(f.device).toUpperCase() });
   if (/^[A-Z_]+$/.test(appearance)) filters.push({ dimension: 'searchAppearance', operator: 'equals', expression: appearance });
   return filters;
@@ -82,14 +83,15 @@ export function gscRequest(range: Range, f: GscFilters, dimension: GscDimension 
   };
 }
 
-export type ExploreRow = { key: string; a: number; b: number; c: number | null; d?: number | null; wasA: number | null };
+export type ExploreRow = { key: string; a: number; b: number; c: number | null; d?: number | null; wasA: number | null; /** Search Console: times shown in the range before (null when it was not there). */ wasB?: number | null };
 
 /** Search Console rows with each row's clicks in the range before (null when it was not there). */
-export function gscRows(now: { keys?: string[]; clicks?: number; impressions?: number; ctr?: number; position?: number }[], was: { keys?: string[]; clicks?: number }[]): ExploreRow[] {
+export function gscRows(now: { keys?: string[]; clicks?: number; impressions?: number; ctr?: number; position?: number }[], was: { keys?: string[]; clicks?: number; impressions?: number }[]): ExploreRow[] {
   const before = new Map(was.map((r) => [r.keys?.[0] ?? '', r.clicks ?? 0]));
+  const shownBefore = new Map(was.map((r) => [r.keys?.[0] ?? '', r.impressions ?? 0]));
   return now.filter((r) => r.keys?.[0]).map((r) => ({
     key: r.keys![0], a: r.clicks ?? 0, b: r.impressions ?? 0, c: typeof r.position === 'number' ? Math.round(r.position * 10) / 10 : null,
-    d: typeof r.ctr === 'number' ? Math.round(r.ctr * 1000) / 10 : null, wasA: before.has(r.keys![0]) ? (before.get(r.keys![0]) as number) : null,
+    d: typeof r.ctr === 'number' ? Math.round(r.ctr * 1000) / 10 : null, wasA: before.has(r.keys![0]) ? (before.get(r.keys![0]) as number) : null, wasB: shownBefore.has(r.keys![0]) ? (shownBefore.get(r.keys![0]) as number) : null,
   }));
 }
 
@@ -154,7 +156,91 @@ export function pageOf(url: string): string {
   }
 }
 
+/** A page's address as one comparable string: no http/https, no www, no tracking tags, no last slash. */
+export function pageKey(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.hostname.toLowerCase().replace(/^www\./, '') + u.pathname.replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
+}
+/** Whether two addresses are the same page, however each was written. */
+export const samePage = (a: string, b: string) => Boolean(pageKey(a)) && pageKey(a) === pageKey(b);
+/** A pattern for Search Console that matches a page under http or https, with or without www and the last slash. '' when the address cannot be read. */
+export function pageRegex(url: string): string {
+  const k = pageKey(url);
+  if (!k) return '';
+  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const cut = k.indexOf('/');
+  return '^https?://(www\\.)?' + esc(cut < 0 ? k : k.slice(0, cut)) + esc(cut < 0 ? '' : k.slice(cut)) + '/?$';
+}
+
+/** Searches, most clicked first; among equals the most shown, then the best placed, so a page with no clicks still leads with what it is seen for. */
+export const topSearches = (rows: ExploreRow[]) => [...rows].sort((x, y) => y.a - x.a || y.b - x.b || (x.c ?? 999) - (y.c ?? 999) || x.key.localeCompare(y.key));
+
+/** How many places a position moved: positive is up the page (a smaller number). Null with nothing to compare. */
+export const spots = (now: number | null | undefined, was: number | null | undefined) => (typeof now === 'number' && typeof was === 'number' ? Math.round((was - now) * 10) / 10 : null);
+
 export type Rising = ExploreRow & { gain: number; fresh: boolean };
+
+/**
+ * The searches on the way up. By clicks gained when any search gained two or more; otherwise (a
+ * page that gets few clicks, as a listing's page often does) by how many more times it was shown.
+ */
+export function risingSearches(rows: ExploreRow[], limit = 25): { rows: Rising[]; by: 'clicks' | 'shown' } {
+  const byClicks = risingRows(rows, 2, limit);
+  if (byClicks.length) return { rows: byClicks, by: 'clicks' };
+  const shown = rows
+    .map((r) => ({ ...r, gain: r.b - (r.wasB ?? 0), fresh: r.wasB === null || r.wasB === undefined }))
+    .filter((r) => r.gain > 0)
+    .sort((x, y) => y.gain - x.gain || y.b - x.b || x.key.localeCompare(y.key))
+    .slice(0, limit);
+  return { rows: shown, by: 'shown' };
+}
+
+export type Competing = { page: string; share: number; shown: number };
+/**
+ * Searches where another page of the same website takes a fair share of the times shown (a fifth
+ * or more): the two pages are competing for it. For each such search, the strongest other page.
+ */
+export function competingPages(rows: { query: string; page: string; impressions: number }[], own: string, min = 0.2): Record<string, Competing> {
+  const by = new Map<string, { total: number; others: Map<string, number> }>();
+  for (const r of rows) {
+    if (!r.query || !r.page || !(r.impressions > 0)) continue;
+    const q = by.get(r.query) ?? { total: 0, others: new Map<string, number>() };
+    q.total += r.impressions;
+    if (!samePage(r.page, own)) q.others.set(r.page, (q.others.get(r.page) ?? 0) + r.impressions);
+    by.set(r.query, q);
+  }
+  const out: Record<string, Competing> = {};
+  for (const [query, q] of by) {
+    const top = [...q.others].sort((a, b) => b[1] - a[1])[0];
+    if (top && top[1] / q.total >= min) out[query] = { page: top[0], share: Math.round((top[1] / q.total) * 100), shown: top[1] };
+  }
+  return out;
+}
+
+export type Inspection = { indexed: boolean; state: string; canonical: 'match' | 'differs' | 'unknown'; googleCanonical: string | null; lastCrawl: string | null; crawledAs: 'phone' | 'computer' | null; rich: string[]; link: string | null };
+/** What Google's URL inspection says about a page, cut down to one line's worth. */
+export function readInspection(j: unknown, url: string): Inspection | null {
+  const r = (j as { inspectionResult?: Record<string, unknown> })?.inspectionResult;
+  const ix = (r?.indexStatusResult ?? null) as Record<string, unknown> | null;
+  if (!r || !ix) return null;
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  const google = str(ix.googleCanonical);
+  const items = ((r.richResultsResult as { detectedItems?: { richResultType?: unknown }[] } | undefined)?.detectedItems ?? []).map((x) => str(x.richResultType)).filter((x): x is string => x !== null);
+  return {
+    indexed: ix.verdict === 'PASS',
+    state: str(ix.coverageState) ?? (ix.verdict === 'PASS' ? 'Indexed' : 'Not indexed'),
+    canonical: google ? (samePage(google, url) ? 'match' : 'differs') : 'unknown',
+    googleCanonical: google,
+    lastCrawl: str(ix.lastCrawlTime),
+    crawledAs: ix.crawledAs === 'MOBILE' ? 'phone' : ix.crawledAs === 'DESKTOP' ? 'computer' : null,
+    rich: [...new Set(items)],
+    link: str(r.inspectionResultLink),
+  };
+}
 
 /**
  * The rows that gained most on their first figure (clicks, or visits) against the range before:

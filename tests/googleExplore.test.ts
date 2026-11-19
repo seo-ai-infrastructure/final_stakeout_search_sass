@@ -22,7 +22,7 @@ test('Search Console filters: a search, a page, a device, an appearance', () => 
   assert.deepEqual(gscFilters({}), []);
   assert.deepEqual(gscFilters({ query: ' Botox Denver ', page: 'https://glow.example/botox', device: 'mobile', appearance: 'AI_OVERVIEW' }), [
     { dimension: 'query', operator: 'contains', expression: 'botox denver' },
-    { dimension: 'page', operator: 'equals', expression: 'https://glow.example/botox' },
+    { dimension: 'page', operator: 'includingRegex', expression: '^https?://(www\\.)?glow\\.example/botox/?$' },
     { dimension: 'device', operator: 'equals', expression: 'MOBILE' },
     { dimension: 'searchAppearance', operator: 'equals', expression: 'AI_OVERVIEW' },
   ]);
@@ -42,8 +42,8 @@ test('a Search Console request breaks down by one thing and never filters on it 
 
 test('rows carry the range before, when the row was there', () => {
   assert.deepEqual(gscRows([{ keys: ['botox denver'], clicks: 12, impressions: 400, ctr: 0.03, position: 4.26 }, { keys: ['lip flip'], clicks: 3, impressions: 90, ctr: 0.0333, position: 9 }, {}], [{ keys: ['botox denver'], clicks: 8 }]), [
-    { key: 'botox denver', a: 12, b: 400, c: 4.3, d: 3, wasA: 8 },
-    { key: 'lip flip', a: 3, b: 90, c: 9, d: 3.3, wasA: null },
+    { key: 'botox denver', a: 12, b: 400, c: 4.3, d: 3, wasA: 8, wasB: 0 },
+    { key: 'lip flip', a: 3, b: 90, c: 9, d: 3.3, wasA: null, wasB: null },
   ]);
 });
 
@@ -122,4 +122,51 @@ test('exploreRange: against the same days a year earlier (52 weeks back)', () =>
   assert.equal(r.compare, 'year');
   const p = exploreRange({ days: 7 }, new Date('2026-11-19T12:00:00Z'), 2, 18);
   assert.ok(typeof p !== 'string' && p.compare === 'previous' && p.before.to === '2026-11-10');
+});
+
+import { competingPages, pageKey, pageRegex, readInspection, risingSearches, samePage, spots, topSearches } from '../packages/core/googleExplore';
+
+test('a page is matched however Google filed it', () => {
+  assert.equal(pageKey('https://www.Glow.example/botox/?utm_source=gbp#top'), 'glow.example/botox');
+  assert.ok(samePage('http://glow.example/botox', 'https://www.glow.example/botox/'));
+  assert.ok(!samePage('https://glow.example/botox', 'https://glow.example/botox-denver'));
+  const re = new RegExp(pageRegex('https://www.glow.example/botox/?utm_source=gbp'));
+  for (const u of ['https://glow.example/botox', 'http://www.glow.example/botox/', 'https://www.glow.example/botox']) assert.ok(re.test(u), u);
+  for (const u of ['https://glow.example/botox-denver', 'https://glow.example/botox/prices', 'https://glowXexample/botox']) assert.ok(!re.test(u), u);
+  // The home page.
+  assert.ok(new RegExp(pageRegex('https://glow.example/')).test('http://www.glow.example') && new RegExp(pageRegex('https://glow.example')).test('https://glow.example/'));
+  assert.equal(pageRegex('not a url'), '');
+});
+
+test('top searches: clicks, then times shown, then position; rising falls back to times shown', () => {
+  const row = (key: string, a: number, b: number, c: number, wasA: number | null = 0, wasB: number | null = 0) => ({ key, a, b, c, wasA, wasB });
+  const rows = [row('aaa', 0, 5, 9), row('zzz big', 0, 400, 12), row('mid', 0, 400, 4), row('one click', 1, 3, 20)];
+  assert.deepEqual(topSearches(rows).map((r) => r.key), ['one click', 'mid', 'zzz big', 'aaa']);
+  // Nothing gained two clicks: by how many more times each was shown.
+  const r = risingSearches([row('up a lot', 0, 300, 5, 0, 100), row('up a bit', 1, 50, 5, 0, 40), row('down', 0, 10, 5, 0, 90), row('new', 0, 70, 5, null, null)]);
+  assert.equal(r.by, 'shown');
+  assert.deepEqual(r.rows.map((x) => [x.key, x.gain]), [['up a lot', 200], ['new', 70], ['up a bit', 10]]);
+  assert.equal(risingSearches([row('clicked', 9, 100, 3, 2, 500), row('up a lot', 0, 300, 5, 0, 100)]).by, 'clicks');
+  assert.equal(spots(3.1, 8.2), 5.1);
+  assert.equal(spots(12.9, 8), -4.9);
+  assert.equal(spots(3, null), null);
+});
+
+test('competing pages: another page takes a fifth or more of a search', () => {
+  const own = 'https://glow.example/botox/';
+  const c = competingPages([
+    { query: 'botox denver', page: 'https://glow.example/botox', impressions: 600 },
+    { query: 'botox denver', page: 'https://glow.example/blog/botox-cost', impressions: 300 },
+    { query: 'botox denver', page: 'https://glow.example/', impressions: 100 },
+    { query: 'lip filler', page: 'http://www.glow.example/botox/', impressions: 90 },
+    { query: 'lip filler', page: 'https://glow.example/fillers', impressions: 10 },
+  ], own);
+  assert.deepEqual(c, { 'botox denver': { page: 'https://glow.example/blog/botox-cost', share: 30, shown: 300 } });
+});
+
+test('URL inspection, in one line', () => {
+  const i = readInspection({ inspectionResult: { inspectionResultLink: 'https://search.google.com/x', indexStatusResult: { verdict: 'PASS', coverageState: 'Submitted and indexed', lastCrawlTime: '2026-11-12T08:00:00Z', crawledAs: 'MOBILE', googleCanonical: 'https://www.glow.example/botox', userCanonical: 'https://glow.example/botox/' }, richResultsResult: { detectedItems: [{ richResultType: 'FAQ' }, { richResultType: 'Local business' }, { richResultType: 'FAQ' }] } } }, 'https://glow.example/botox/');
+  assert.deepEqual(i, { indexed: true, state: 'Submitted and indexed', canonical: 'match', googleCanonical: 'https://www.glow.example/botox', lastCrawl: '2026-11-12T08:00:00Z', crawledAs: 'phone', rich: ['FAQ', 'Local business'], link: 'https://search.google.com/x' });
+  assert.equal(readInspection({ inspectionResult: { indexStatusResult: { verdict: 'NEUTRAL', coverageState: 'Crawled - currently not indexed', googleCanonical: 'https://glow.example/' } } }, 'https://glow.example/botox')?.canonical, 'differs');
+  assert.equal(readInspection({}, 'https://glow.example/'), null);
 });
