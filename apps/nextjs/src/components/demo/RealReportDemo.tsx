@@ -126,6 +126,35 @@ export default function RealReportDemo() {
           ))}
         </section>
 
+        <section className="border-t border-[#1b2431]">
+          <div className="mx-auto grid max-w-7xl items-start gap-12 px-5 py-24 sm:px-8 lg:grid-cols-[1fr_1.1fr]">
+            <div>
+              <p className={EYEBROW + ' text-[#f5c451]'}><span className="mr-2 rounded bg-[#f5c451] px-2 py-0.5 font-bold text-[#06080c]">New</span>Google profiles</p>
+              <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">Rank Is the Cause. <span className="mk-gold-text">Calls Are the Proof.</span></h2>
+              <p className="mt-4 text-lg leading-relaxed text-[#c9d3df]">Each client’s Google Business Profile, Search Console and Google Analytics on one page, next to their scans. Show the client what the visibility work turned into.</p>
+              <ul className="mt-6 space-y-3 text-[#c9d3df]">
+                {[
+                  ['Search insights', 'Calls, website clicks and direction requests from the listing, each set against the period before.'],
+                  ['Searches that showed the listing', 'The real searches customers used, month by month, with one click to scan the top ones.'],
+                  ['Search Console and Analytics', 'Clicks, position, conversions and calls, including visits sent by AI assistants.'],
+                  ['Edit business, Posts and Reviews', 'Update the listing, schedule Google posts and reply to reviews from one inbox.'],
+                  ['Changes', 'A daily watch on each listing, so an unwanted edit is caught the day it happens.'],
+                ].map(([name, text]) => (
+                  <li key={name} className="flex gap-3"><span className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#3ddc97]" /><span><b className="text-white">{name}.</b> {text}</span></li>
+                ))}
+              </ul>
+              <Link href={SPRINT_URL} className="mt-8 inline-block rounded-xl border border-[#f5c451]/50 px-5 py-3 font-semibold text-[#f5c451] hover:bg-[#f5c451]/10">Get this for your market</Link>
+            </div>
+            <figure>
+              <a href={IMG + 'google-profiles-search-insights.jpg'} target="_blank" rel="noreferrer" aria-label="Open the full Google profiles screenshot" className="group relative block max-h-[640px] cursor-zoom-in overflow-hidden rounded-xl border border-[#1b2431] shadow-[0_20px_60px_rgba(0,0,0,0.5)]">
+                <img src={IMG + 'google-profiles-search-insights.jpg'} alt="Google profiles: Search insights for a listing, with Google Business Profile calls and clicks, Search Console searches and Google Analytics conversions" loading="lazy" className="block w-full" />
+                <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#06080c] via-[#06080c]/85 to-transparent pb-4 pt-16 text-center text-sm font-semibold text-white">See the full page ↗</span>
+              </a>
+              <figcaption className="mt-3 text-sm text-[#9aa7b8]">Shown with a sample account. Your own page fills with Google’s numbers for your listings.</figcaption>
+            </figure>
+          </div>
+        </section>
+
         <section ref={report} className="scroll-mt-20 border-y border-[#1b2431] bg-[#080b10]">
           <div className="mx-auto max-w-[1600px] px-3 py-16 sm:px-6">
             <p className={EYEBROW + ' text-center text-[#f5c451]'}>The live report · nothing simulated</p>
