@@ -44,18 +44,19 @@ export async function POST(req: Request) {
       const f: GscFilters = { device: text(b.device), page: scope === 'page' ? page : undefined };
       const ask = (body: unknown) => google<{ rows?: GscRow[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', body);
       const none = Promise.resolve({ rows: [] as GscRow[] });
-      const [now, was, days, queries, queriesWas, pages, pagesWas] = await Promise.all([
-        ask(gscRequest(range.recent, f, null)), ask(gscRequest(range.before, f, null)), ask(gscRequest(range.recent, f, 'date', 500)),
+      const [now, was, days, daysWas, queries, queriesWas, pages, pagesWas] = await Promise.all([
+        ask(gscRequest(range.recent, f, null)), ask(gscRequest(range.before, f, null)), ask(gscRequest(range.recent, f, 'date', 500)), ask(gscRequest(range.before, f, 'date', 500)).catch(() => ({ rows: [] as GscRow[] })),
         ask(gscRequest(range.recent, f, 'query', 500)), ask(gscRequest(range.before, f, 'query', 2000)),
         scope === 'site' ? ask(gscRequest(range.recent, f, 'page', 100)) : none, scope === 'site' ? ask(gscRequest(range.before, f, 'page', 500)) : none,
       ]);
+      const byDay = (rows?: GscRow[]) => (rows ?? []).map((r) => ({ date: r.keys?.[0] ?? '', clicks: r.clicks ?? 0, impressions: r.impressions ?? 0 })).filter((r) => r.date);
       const total = (x: { rows?: GscRow[] }) => {
         const r = x.rows?.[0];
         return { clicks: r?.clicks ?? 0, impressions: r?.impressions ?? 0, ctr: r?.impressions ? round1(((r.clicks ?? 0) / r.impressions) * 100) : null, position: typeof r?.position === 'number' ? round1(r.position) : null };
       };
       return NextResponse.json({
         source: 'gsc', property, page, scope, range, recent: total(now), before: total(was),
-        days: (days.rows ?? []).map((r) => ({ date: r.keys?.[0] ?? '', clicks: r.clicks ?? 0, impressions: r.impressions ?? 0 })).filter((r) => r.date),
+        days: byDay(days.rows), daysBefore: byDay(daysWas.rows),
         queries: gscRows(queries.rows ?? [], queriesWas.rows ?? []),
         pages: gscRows(pages.rows ?? [], pagesWas.rows ?? []),
       });
@@ -68,8 +69,8 @@ export async function POST(req: Request) {
       if (typeof range === 'string') throw new InputError(range);
       const f: GaFilters = { device: text(b.device), source: text(b.came) };
       const ask = (body: unknown) => google<GaReport>(token, 'https://analyticsdata.googleapis.com/v1beta/' + property + ':runReport', body);
-      const [now, was, days, sources, sourcesWas, channels, channelsWas, events, eventsWas] = await Promise.all([
-        ask(gaRequest(range.recent, f, null)), ask(gaRequest(range.before, f, null)), ask(gaRequest(range.recent, f, 'date', 500)),
+      const [now, was, days, daysWas, sources, sourcesWas, channels, channelsWas, events, eventsWas] = await Promise.all([
+        ask(gaRequest(range.recent, f, null)), ask(gaRequest(range.before, f, null)), ask(gaRequest(range.recent, f, 'date', 500)), ask(gaRequest(range.before, f, 'date', 500)).catch(() => ({ rows: [] } as GaReport)),
         ask(gaRequest(range.recent, f, 'sessionSourceMedium', 50)), ask(gaRequest(range.before, f, 'sessionSourceMedium', 500)),
         ask(gaRequest(range.recent, f, 'sessionDefaultChannelGroup', 25)), ask(gaRequest(range.before, f, 'sessionDefaultChannelGroup', 100)),
         ask(gaEventsRequest(range.recent, f)), ask(gaEventsRequest(range.before, f)),
@@ -77,6 +78,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         source: 'ga', property, range, recent: gaTotals(now.rows), before: gaTotals(was.rows),
         days: gaRows(days.rows ?? [], [], 'date').map((r) => ({ date: r.key, visits: r.a, keyEvents: r.c ?? 0 })),
+        daysBefore: gaRows(daysWas.rows ?? [], [], 'date').map((r) => ({ date: r.key, visits: r.a, keyEvents: r.c ?? 0 })),
         sources: gaRows(sources.rows ?? [], sourcesWas.rows ?? [], 'sessionSourceMedium'),
         channels: gaRows(channels.rows ?? [], channelsWas.rows ?? [], 'sessionDefaultChannelGroup'),
         events: gaEventRows(events.rows ?? [], eventsWas.rows ?? []),

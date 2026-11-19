@@ -23,7 +23,7 @@ export default function SearchInsights({ profile, location, businessName, place,
     <div className="space-y-5">
       <div className="sticky top-0 z-20 -mx-1 flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-950/95 px-3 py-2 backdrop-blur">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Dates</span>
-        <span role="group" aria-label="Dates" className="inline-flex overflow-hidden rounded-lg border border-slate-700 text-xs">
+        <span role="group" aria-label="Dates" className="inline-flex max-w-full overflow-x-auto whitespace-nowrap rounded-lg border border-slate-700 text-xs">
           {PRESETS.map(([d, label]) => (
             <button key={d} type="button" aria-pressed={!custom && days === d} onClick={() => { setCustom(false); setDays(d); }} className={'px-2.5 py-1.5 ' + (!custom && days === d ? 'bg-slate-700 font-semibold text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200')}>{label}</button>
           ))}
@@ -37,9 +37,13 @@ export default function SearchInsights({ profile, location, businessName, place,
             {(!from || !to) && <span className="text-xs text-slate-500">Set both dates.</span>}
           </>
         )}
-        <span className="ml-auto text-xs text-slate-500">Every figure is set against the same number of days before.</span>
+        <nav aria-label="Jump to" className="ml-auto flex items-center gap-1 text-xs">
+          {([['insights-listing', 'Listing'], ['insights-search', 'Search Console'], ['insights-analytics', 'Analytics']] as const).map(([id, text]) => (
+            <a key={id} href={'#' + id} className="rounded-md px-2 py-1 text-slate-400 hover:bg-slate-800 hover:text-slate-200">{text}</a>
+          ))}
+        </nav>
       </div>
-      <GbpInsights profile={profile} location={location} businessName={businessName} place={place} range={query} />
+      <div id="insights-listing" className="scroll-mt-16"><GbpInsights profile={profile} location={location} businessName={businessName} place={place} range={query} /></div>
       <GoogleSitePanel website={website} businessName={businessName} dates={dates} />
     </div>
   );

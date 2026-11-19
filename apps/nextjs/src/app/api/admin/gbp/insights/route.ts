@@ -46,7 +46,9 @@ export async function GET(req: Request) {
         const parts = await Promise.all(pieces.map((p) => postproxy<{ data?: { records?: Row[] } }>(profile + '/daily_stats', { query: { placement_id: t.location, from: p.from, to: p.to } })));
         const records = parts.flatMap((d) => d.data?.records ?? []);
         const series = dailySeries(records, range.recent.from, range.recent.to);
-        if (series.known.length) return { kind: 'daily' as const, ...series };
+        // The same days of the period before, for the dashed line on the chart (only when all of it was read).
+        const previous = range.before.from >= from ? dailySeries(records, range.before.from, range.before.to).days : [];
+        if (series.known.length) return { kind: 'daily' as const, ...series, previous };
         // No daily figures (yet): the newest snapshot of trailing 30-day totals, if there is one.
         const snaps = await postproxy<{ data?: { records?: Row[] } }>(profile + '/stats', { query: { placement_id: t.location } });
         const snap = latestSnapshot(snaps.data?.records ?? []);

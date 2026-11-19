@@ -16,23 +16,92 @@ export function Change({ now, was, lowerIsBetter, fresh = 'new' }: { now: number
   return <span className={good === null ? 'text-slate-500' : good ? 'text-emerald-400' : 'text-rose-400'}>{c > 0 ? '▲' : c < 0 ? '▼' : ''} {Math.abs(c)}%</span>;
 }
 
-/** One headline number. `big` is for the three or four a section is about. */
-export function Tile({ label, value, was, lowerIsBetter, digits = 0, unit = '', big, note, compare = true }: { label: string; value: number | null; was?: number | null; lowerIsBetter?: boolean; digits?: number; unit?: string; big?: boolean; note?: ReactNode; compare?: boolean }) {
+/** A tiny line with no axes: the shape of a number over the period, nothing more. */
+export function Spark({ values, tone = '#34d399' }: { values: number[]; tone?: string }) {
+  if (values.length < 2) return <div className="h-7" aria-hidden />;
+  const max = Math.max(1, ...values), w = 100, h = 28;
+  const pts = values.map((v, i) => `${((i / (values.length - 1)) * w).toFixed(1)},${(h - 2 - (v / max) * (h - 4)).toFixed(1)}`).join(' ');
   return (
-    <div className={'rounded-lg border bg-slate-950 p-3 ' + (big ? 'border-slate-700' : 'border-slate-800')}>
-      <p className="text-xs text-slate-400">{label}</p>
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="h-7 w-full" aria-hidden>
+      <polyline points={`0,${h} ${pts} ${w},${h}`} fill={tone} opacity="0.12" stroke="none" />
+      <polyline points={pts} fill="none" stroke={tone} strokeWidth="1.5" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/**
+ * One headline number. `big` is for the three or four a section is about. With `onSelect` the tile
+ * is also the switch for the chart below it (`active` when it is the one charted), and `spark`
+ * draws the number's shape over the period along its foot.
+ */
+export function Tile({ label, value, was, lowerIsBetter, digits = 0, unit = '', big, note, compare = true, spark, active, onSelect }: { label: string; value: number | null; was?: number | null; lowerIsBetter?: boolean; digits?: number; unit?: string; big?: boolean; note?: ReactNode; compare?: boolean; spark?: number[]; active?: boolean; onSelect?: () => void }) {
+  const body = (
+    <>
+      <p className="flex items-center gap-1.5 text-xs text-slate-400">{onSelect && <span className={'h-1.5 w-1.5 rounded-full ' + (active ? 'bg-emerald-400' : 'bg-slate-600')} aria-hidden />}{label}</p>
       <p className={'mt-1 font-bold tabular-nums text-slate-100 ' + (big ? 'text-3xl' : 'text-xl')}>{value === null ? '–' : fmt(value, digits) + unit}</p>
       <p className="mt-0.5 min-h-4 text-xs text-slate-500">
         {compare && value !== null && was !== null && was !== undefined ? <><Change now={value} was={was} lowerIsBetter={lowerIsBetter} fresh="" /> <span>was {fmt(was, digits)}{unit}</span></> : note ?? ' '}
       </p>
+      {spark && <div className="mt-2"><Spark values={spark} tone={active || !onSelect ? '#34d399' : '#64748b'} /></div>}
+    </>
+  );
+  const box = 'rounded-lg border bg-slate-950 p-3 text-left ';
+  if (!onSelect) return <div className={box + (big ? 'border-slate-700' : 'border-slate-800')}>{body}</div>;
+  return (
+    <button type="button" aria-pressed={active} onClick={onSelect} title={'Chart ' + label.toLowerCase()} className={box + 'transition-colors ' + (active ? 'border-emerald-500/70 shadow-[inset_0_2px_0_0_rgb(52_211_153)]' : 'border-slate-800 hover:border-slate-600')}>
+      {body}
+    </button>
+  );
+}
+
+/** A section's heading: what it is, one line on what it covers, and its controls on the right. */
+export function SectionHead({ title, sub, children }: { title: string; sub?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <div className="min-w-0">
+        <h3 className="text-base font-semibold text-slate-100">{title}</h3>
+        {sub && <p className="mt-0.5 text-xs text-slate-500">{sub}</p>}
+      </div>
+      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
     </div>
   );
+}
+
+/** Grey shapes where a section's numbers will be, while they are read. */
+export function Skeleton({ tiles = 4 }: { tiles?: number }) {
+  return (
+    <div className="animate-pulse space-y-4" role="status" aria-label="Loading">
+      <div className={'grid grid-cols-2 gap-3 ' + (tiles === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-4')}>{Array.from({ length: tiles }, (_, i) => <div key={i} className="h-24 rounded-lg bg-slate-800/60" />)}</div>
+      <div className="h-44 rounded-lg bg-slate-800/40" />
+    </div>
+  );
+}
+
+/** A number in a table with a thin bar under it, as long as its share of the column's largest. */
+export function BarCell({ value, max, strong }: { value: number; max: number; strong?: boolean }) {
+  return (
+    <td className="w-28 px-3 py-1.5 text-right tabular-nums">
+      <span className={strong ? 'text-slate-100' : 'text-slate-300'}>{fmt(value)}</span>
+      <span className="mt-0.5 block h-[3px] rounded-full bg-slate-800" aria-hidden>
+        <span className="ml-auto block h-full rounded-full bg-emerald-400/70" style={{ width: (max > 0 ? Math.max(value > 0 ? 3 : 0, (value / max) * 100) : 0) + '%' }} />
+      </span>
+    </td>
+  );
+}
+
+/** Lines one period's days up with the same day of the period before, for a chart that shows both. */
+export function alongside<T extends { date: string }>(now: T[], before: T[] | undefined, days: number, pick: (d: T) => number): ChartPoint[] {
+  const was = new Map((before ?? []).map((d) => [d.date, pick(d)]));
+  return now.map((d) => {
+    const prior = new Date(Date.parse(d.date + 'T00:00:00Z') - days * 86400000).toISOString().slice(0, 10);
+    return { label: shortDate(d.date), value: pick(d), before: was.get(prior) ?? null };
+  });
 }
 
 /** A row of choices where one is on. */
 export function Segmented<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: readonly (readonly [T, string])[]; label: string }) {
   return (
-    <span role="group" aria-label={label} className="inline-flex overflow-hidden rounded-lg border border-slate-700 text-xs">
+    <span role="group" aria-label={label} className="inline-flex max-w-full overflow-x-auto whitespace-nowrap rounded-lg border border-slate-700 text-xs">
       {options.map(([v, text]) => (
         <button key={v} type="button" aria-pressed={value === v} onClick={() => onChange(v)} className={'px-2.5 py-1.5 ' + (value === v ? 'bg-slate-700 font-semibold text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200')}>{text}</button>
       ))}
@@ -109,6 +178,7 @@ export function MiniChart({ points, name, height = 190 }: { points: ChartPoint[]
             })}
             {labels.map((i, n) => <text key={i} x={geo.x(i)} y={height - 6} textAnchor={n === 0 ? 'start' : n === labels.length - 1 ? 'end' : 'middle'} fontSize="11" fill="#64748b">{points[i].label}</text>)}
             {hasBefore && <polyline points={geo.was} fill="none" stroke="#64748b" strokeWidth="1.5" strokeDasharray="4 4" strokeLinejoin="round" />}
+            {points.length > 1 && geo.now && <polygon points={`${geo.x(0).toFixed(1)},${geo.y(0).toFixed(1)} ${geo.now} ${geo.x(points.length - 1).toFixed(1)},${geo.y(0).toFixed(1)}`} fill="#34d399" opacity="0.08" />}
             <polyline points={geo.now} fill="none" stroke="#34d399" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
             {points.length === 1 && <circle cx={geo.x(0)} cy={geo.y(points[0].value)} r="4" fill="#34d399" />}
             {p && at !== null && (

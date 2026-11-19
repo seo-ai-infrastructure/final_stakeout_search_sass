@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { GA_SOURCES, risingRows, type EventRow, type ExploreRow, type GaSource } from '@stakeout/core/googleExplore';
 import GoogleExplorer from '@/components/GoogleExplorer';
-import { Change, MiniChart, Segmented, Tile, card, fmt, shortDate } from '@/components/InsightBits';
+import { BarCell, Change, MiniChart, SectionHead, Segmented, Skeleton, Tile, alongside, card, fmt, shortDate } from '@/components/InsightBits';
 
 export type Dates = { days: number } | { from: string; to: string };
 type Status = { configured: boolean; connected: boolean; email: string | null; searchConsole: boolean; analytics: boolean };
@@ -10,10 +10,10 @@ type Range = { recent: { from: string; to: string }; before: { from: string; to:
 type GscTotals = { clicks: number; impressions: number; ctr: number | null; position: number | null };
 type Gsc =
   | { property: null; properties: number }
-  | { property: string; page: string; scope: 'page' | 'site'; range: Range; recent: GscTotals; before: GscTotals; days: { date: string; clicks: number; impressions: number }[]; queries: ExploreRow[]; pages: ExploreRow[] };
+  | { property: string; page: string; scope: 'page' | 'site'; range: Range; recent: GscTotals; before: GscTotals; days: { date: string; clicks: number; impressions: number }[]; daysBefore?: { date: string; clicks: number; impressions: number }[]; queries: ExploreRow[]; pages: ExploreRow[] };
 type Property = { id: string; name: string; account: string };
 type GaTotals = { a: number; b: number; c: number };
-type Ga = { range: Range; recent: GaTotals; before: GaTotals; days: { date: string; visits: number; keyEvents: number }[]; sources: ExploreRow[]; channels: ExploreRow[]; events: { rows: EventRow[]; calls: number; callsBefore: number } };
+type Ga = { range: Range; recent: GaTotals; before: GaTotals; days: { date: string; visits: number; keyEvents: number }[]; daysBefore?: { date: string; visits: number; keyEvents: number }[]; sources: ExploreRow[]; channels: ExploreRow[]; events: { rows: EventRow[]; calls: number; callsBefore: number } };
 
 const field = 'rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-500';
 const MAX_PICK = 10;
@@ -62,34 +62,28 @@ function SearchConsole({ website, host, businessName, dates }: { website: string
   const shown = all || find.trim() ? list : list.slice(0, 15);
   const toggle = (k: string) => setPicked((x) => (x.includes(k) ? x.filter((y) => y !== k) : x.length < MAX_PICK ? [...x, k] : x));
   const scanUrl = '/new-scan?' + new URLSearchParams([['name', businessName], ...picked.map((k) => ['kw', k] as [string, string])]).toString();
+  const topClicks = Math.max(1, ...queries.map((r) => r.a));
 
   return (
-    <section className={card + ' space-y-5'}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">Google Search Console</h3>
-        <div className="flex flex-wrap items-center gap-2">
-          <Segmented label="Which pages" value={scope} onChange={setScope} options={[['page', 'The listing’s page'], ['site', 'Whole website']] as const} />
-          <Segmented label="Device" value={device} onChange={setDevice} options={DEVICE} />
-        </div>
-      </div>
+    <section id="insights-search" className={card + ' scroll-mt-16 space-y-5'}>
+      <SectionHead title="Google Search Console" sub={d && d.property ? <>{d.scope === 'page' ? <>Searches that led to <span className="text-slate-300">{d.page.replace(/^https?:\/\//, '')}</span>, the page the listing links to</> : <>Every page of {host}</>} · {span(d.range)}</> : 'Google searches that led to the website'}>
+        <Segmented label="Which pages" value={scope} onChange={setScope} options={[['page', 'The listing’s page'], ['site', 'Whole website']] as const} />
+        <Segmented label="Device" value={device} onChange={setDevice} options={DEVICE} />
+      </SectionHead>
       {error && <p className="text-sm text-amber-300">{error}</p>}
-      {!d && !error && <p className="text-sm text-slate-400">Reading Search Console…</p>}
+      {!d && !error && <Skeleton />}
       {d && d.property === null && <p className="text-sm text-slate-400">The connected Google login has no Search Console property for {host} (it can see {d.properties} other{d.properties === 1 ? '' : 's'}). Ask the client to add it as a user on theirs.</p>}
       {d && d.property && (
         <div className={'space-y-5 ' + (busy ? 'opacity-50' : '')}>
-          <p className="-mt-2 text-xs text-slate-500">{d.scope === 'page' ? <>Searches that led to <span className="text-slate-300">{d.page}</span>, the page the Google listing links to</> : <>Every page of {host}</>} · {span(d.range)}</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Tile big label="Clicks from Google Search" value={d.recent.clicks} was={d.before.clicks} />
-            <Tile big label="Times shown" value={d.recent.impressions} was={d.before.impressions} />
-            <Tile label="Click rate" value={d.recent.ctr} was={d.before.ctr} digits={1} unit="%" />
-            <Tile label="Average position" value={d.recent.position} was={d.before.position} digits={1} lowerIsBetter />
+            <Tile big label="Clicks from Google Search" value={d.recent.clicks} was={d.before.clicks} spark={d.days.map((x) => x.clicks)} active={metric === 'clicks'} onSelect={() => setMetric('clicks')} />
+            <Tile big label="Times shown" value={d.recent.impressions} was={d.before.impressions} spark={d.days.map((x) => x.impressions)} active={metric === 'impressions'} onSelect={() => setMetric('impressions')} />
+            <Tile big label="Click rate" value={d.recent.ctr} was={d.before.ctr} digits={1} unit="%" />
+            <Tile big label="Average position" value={d.recent.position} was={d.before.position} digits={1} lowerIsBetter />
           </div>
           <div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h4 className="text-sm font-semibold">{metric === 'clicks' ? 'Clicks' : 'Times shown'} by day</h4>
-              <Segmented label="What to chart" value={metric} onChange={setMetric} options={[['clicks', 'Clicks'], ['impressions', 'Times shown']] as const} />
-            </div>
-            <MiniChart points={d.days.map((x) => ({ label: shortDate(x.date), value: x[metric] }))} name={metric === 'clicks' ? 'Clicks' : 'Times shown'} />
+            <h4 className="mb-2 text-sm font-semibold">{metric === 'clicks' ? 'Clicks' : 'Times shown'} by day</h4>
+            <MiniChart points={alongside(d.days, d.daysBefore, d.range.days, (x) => x[metric])} name={metric === 'clicks' ? 'Clicks' : 'Times shown'} />
           </div>
 
           <div>
@@ -103,20 +97,20 @@ function SearchConsole({ website, host, businessName, dates }: { website: string
             <div className="mt-2 overflow-x-auto rounded-lg border border-slate-800">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-900 text-xs text-slate-400">
-                  <tr><th className="w-8 px-3 py-2" /><th className="px-3 py-2 font-medium">Search</th><th className="px-3 py-2 text-right font-medium">Clicks</th><th className="px-3 py-2 text-right font-medium">vs before</th><th className="px-3 py-2 text-right font-medium">Times shown</th><th className="px-3 py-2 text-right font-medium">Click rate</th><th className="px-3 py-2 text-right font-medium">Position</th></tr>
+                  <tr><th className="w-8 px-3 py-2" /><th className="px-3 py-2 font-medium">Search</th><th className="px-3 py-2 text-right font-medium">Clicks</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Change</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Times shown</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Click rate</th><th className="px-3 py-2 text-right font-medium">Position</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/70">
                   {shown.map((r) => {
                     const on = picked.includes(r.key);
                     return (
                       <tr key={r.key} className={'hover:bg-slate-800/40 ' + (on ? 'bg-emerald-500/5' : '')}>
-                        <td className="px-3 py-1.5"><input type="checkbox" aria-label={'Scan ' + r.key} checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.key)} /></td>
+                        <td className="px-3 py-1.5"><input type="checkbox" className="h-4 w-4 accent-emerald-500" aria-label={'Scan ' + r.key} checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.key)} /></td>
                         <td className="max-w-[20rem] truncate px-3 py-1.5 text-slate-200" title={r.key}>{r.key}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmt(r.a)}</td>
+                        <BarCell value={r.a} max={topClicks} strong />
                         <td className="px-3 py-1.5 text-right text-xs tabular-nums">{r.wasA === null ? <span className="text-sky-300">new</span> : <><Change now={r.a} was={r.wasA} /> <span className="text-slate-600">({fmt(r.wasA)})</span></>}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{fmt(r.b)}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.d == null ? '–' : r.d.toFixed(1) + '%'}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.c === null ? '–' : r.c.toFixed(1)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{r.c === null ? <span className="text-slate-600">–</span> : <span className={'inline-block min-w-[2.6rem] rounded-full px-1.5 py-0.5 text-center text-xs ' + (r.c <= 3 ? 'bg-emerald-500/15 text-emerald-300' : r.c <= 10 ? 'bg-slate-700/60 text-slate-200' : 'text-slate-500')} title={r.c <= 3 ? 'In the top three' : r.c <= 10 ? 'On the first page' : 'Past the first page'}>{r.c.toFixed(1)}</span>}</td>
                       </tr>
                     );
                   })}
@@ -208,58 +202,53 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
   const rate = (t: GaTotals) => (t.a ? (t.c / t.a) * 100 : null);
 
   return (
-    <section className={card + ' space-y-5'}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="font-semibold">Google Analytics</h3>
+    <section id="insights-analytics" className={card + ' scroll-mt-16 space-y-5'}>
+      <SectionHead title="Google Analytics" sub={d ? <>What visitors to {host} did · {span(d.range)}</> : 'What visitors to the website did'}>
         {properties && properties.length > 0 && (
           <select className={field + ' max-w-full'} value={property} onChange={(e) => choose(e.target.value)} aria-label="Analytics property">
             <option value="">Choose the Analytics property for this site…</option>
             {properties.map((p) => <option key={p.id} value={p.id}>{p.name}{p.account ? ' · ' + p.account : ''}</option>)}
           </select>
         )}
-      </div>
+      </SectionHead>
       {error && <p className="text-sm text-amber-300">{error}</p>}
-      {!error && !properties && <p className="text-sm text-slate-400">Reading Analytics…</p>}
+      {!error && !properties && <Skeleton />}
       {properties && properties.length === 0 && <p className="text-sm text-slate-400">The connected Google login cannot see any Analytics properties.</p>}
       {properties && properties.length > 0 && !property && <p className="text-sm text-slate-400">Pick the property for {host}. The choice is remembered on this computer.</p>}
-      {property && !d && !error && <p className="text-sm text-slate-400">Reading Analytics…</p>}
+      {property && !d && !error && <Skeleton />}
       {d && (
         <div className={'space-y-5 ' + (busy ? 'opacity-50' : '')}>
           <div className="flex flex-wrap items-center gap-2">
             <Segmented label="Where visits came from" value={came} onChange={setCame} options={(Object.keys(GA_SOURCES) as GaSource[]).map((k) => [k, k === 'listing' ? 'Google listing' : k === 'all' ? 'All visits' : GA_SOURCES[k]] as const)} />
             <Segmented label="Device" value={device} onChange={setDevice} options={DEVICE} />
-            <span className="text-xs text-slate-500">{span(d.range)}</span>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Tile big label="Calls" value={d.events.calls} was={d.events.callsBefore} note={d.events.calls === 0 && d.events.callsBefore === 0 ? 'no call event found' : undefined} compare={d.events.calls > 0 || d.events.callsBefore > 0} />
-            <Tile big label="Key events (conversions)" value={d.recent.c} was={d.before.c} />
-            <Tile label="Visits" value={d.recent.a} was={d.before.a} />
-            <Tile label="Key events per 100 visits" value={rate(d.recent)} was={rate(d.before)} digits={1} />
+            <Tile big label="Key events (conversions)" value={d.recent.c} was={d.before.c} spark={d.days.map((x) => x.keyEvents)} active={metric === 'keyEvents'} onSelect={() => setMetric('keyEvents')} />
+            <Tile big label="Visits" value={d.recent.a} was={d.before.a} spark={d.days.map((x) => x.visits)} active={metric === 'visits'} onSelect={() => setMetric('visits')} />
+            <Tile big label="Key events per 100 visits" value={rate(d.recent)} was={rate(d.before)} digits={1} />
           </div>
           {d.events.calls === 0 && d.events.callsBefore === 0 && <p className="-mt-2 text-xs text-slate-500">Calls are counted from events whose name says call, phone or tel (a tap on the phone number). This site sends none: add a “click to call” event in Analytics or Tag Manager and they appear here.</p>}
 
           <div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <h4 className="text-sm font-semibold">{metric === 'keyEvents' ? 'Key events' : 'Visits'} by day</h4>
-              <Segmented label="What to chart" value={metric} onChange={setMetric} options={[['keyEvents', 'Key events'], ['visits', 'Visits']] as const} />
-            </div>
-            <MiniChart points={d.days.map((x) => ({ label: shortDate(x.date), value: x[metric] }))} name={metric === 'keyEvents' ? 'Key events' : 'Visits'} />
+            <h4 className="mb-2 text-sm font-semibold">{metric === 'keyEvents' ? 'Key events' : 'Visits'} by day</h4>
+            <MiniChart points={alongside(d.days, d.daysBefore, d.range.days, (x) => x[metric])} name={metric === 'keyEvents' ? 'Key events' : 'Visits'} />
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <div>
+            <div className="min-w-0">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h4 className="text-sm font-semibold">Where visits came from</h4>
                 <Segmented label="Group by" value={by} onChange={setBy} options={[['sources', 'Source'], ['channels', 'Channel']] as const} />
               </div>
               <div className="mt-2 overflow-x-auto rounded-lg border border-slate-800">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-900 text-xs text-slate-400"><tr><th className="px-3 py-2 font-medium">{by === 'sources' ? 'Source / medium' : 'Channel'}</th><th className="px-3 py-2 text-right font-medium">Visits</th><th className="px-3 py-2 text-right font-medium">vs before</th><th className="px-3 py-2 text-right font-medium">Key events</th><th className="px-3 py-2 text-right font-medium">per 100</th></tr></thead>
+                  <thead className="bg-slate-900 text-xs text-slate-400"><tr><th className="px-3 py-2 font-medium">{by === 'sources' ? 'Source / medium' : 'Channel'}</th><th className="px-3 py-2 text-right font-medium">Visits</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Change</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Key events</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium" title="Key events per 100 visits">Rate</th></tr></thead>
                   <tbody className="divide-y divide-slate-800/70">
                     {rows.slice(0, 12).map((r) => (
                       <tr key={r.key} className="hover:bg-slate-800/40">
                         <td className="max-w-[14rem] truncate px-3 py-1.5 text-slate-200" title={r.key}>{r.key}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmt(r.a)}</td>
+                        <BarCell value={r.a} max={Math.max(1, ...rows.map((x) => x.a))} strong />
                         <td className="px-3 py-1.5 text-right text-xs tabular-nums"><Change now={r.a} was={r.wasA} /></td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{fmt(r.c ?? 0)}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.a ? (((r.c ?? 0) / r.a) * 100).toFixed(1) : '–'}</td>
@@ -270,11 +259,11 @@ function Analytics({ host, dates }: { host: string; dates: Dates }) {
                 </table>
               </div>
             </div>
-            <div>
+            <div className="min-w-0">
               <h4 className="text-sm font-semibold">Conversions and calls, by event</h4>
               <div className="mt-2 overflow-x-auto rounded-lg border border-slate-800">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-900 text-xs text-slate-400"><tr><th className="px-3 py-2 font-medium">Event</th><th className="px-3 py-2 text-right font-medium">Times</th><th className="px-3 py-2 text-right font-medium">vs before</th><th className="px-3 py-2 text-right font-medium">Key events</th></tr></thead>
+                  <thead className="bg-slate-900 text-xs text-slate-400"><tr><th className="px-3 py-2 font-medium">Event</th><th className="px-3 py-2 text-right font-medium">Times</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Change</th><th className="whitespace-nowrap px-3 py-2 text-right font-medium">Key events</th></tr></thead>
                   <tbody className="divide-y divide-slate-800/70">
                     {d.events.rows.slice(0, 12).map((r) => (
                       <tr key={r.name} className="hover:bg-slate-800/40">

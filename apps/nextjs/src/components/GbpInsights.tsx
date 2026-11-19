@@ -1,12 +1,12 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { DAILY, SURFACES, brandWord, byWeek, risingKeywords, scannable, type DailyKey, type Day, type KeywordTrend } from '@stakeout/core/gbpInsights';
-import { Change, MiniChart, Segmented, SplitBar, Tile, card, fmt, shortDate } from '@/components/InsightBits';
+import { BarCell, Change, MiniChart, SectionHead, Segmented, Skeleton, Spark, SplitBar, Tile, card, fmt, shortDate } from '@/components/InsightBits';
 
 type Totals = Record<DailyKey, number>;
 type Range = { recent: { from: string; to: string }; before: { from: string; to: string }; days: number };
 type Performance =
-  | { kind: 'daily'; days: Day[]; totals: Totals; before: Totals; known: DailyKey[]; daysWithData: number; daysBefore: number; length: number }
+  | { kind: 'daily'; days: Day[]; previous?: Day[]; totals: Totals; before: Totals; known: DailyKey[]; daysWithData: number; daysBefore: number; length: number }
   | { kind: 'snapshot'; totals: Partial<Totals>; known: string[]; recordedAt: string }
   | { kind: 'none' }
   | { kind: 'problem'; problem: string };
@@ -15,7 +15,6 @@ type Insights = { range: Range; performance: Performance; keywords: { rows: Keyw
 const label = (k: DailyKey) => DAILY.find((m) => m.key === k)!.label;
 const monthName = (m: string) => new Date(m + '-15T00:00:00Z').toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 const CHART: DailyKey[] = ['calls', 'websiteClicks', 'directions', 'views'];
-const HERO: DailyKey[] = ['calls', 'websiteClicks', 'directions'];
 const MAX_PICK = 10;
 
 /**
@@ -53,9 +52,14 @@ export default function GbpInsights({ profile, location, businessName, place, ra
   const points = useMemo(() => {
     if (!daily || !shownMetric) return [];
     const weekly = daily.length > 92;
-    const rows = weekly ? byWeek(daily.days, DAILY.map((m) => m.key)) : daily.days;
-    return rows.map((d) => ({ label: (weekly ? 'Week of ' : '') + shortDate(d.date), value: d[shownMetric] }));
-  }, [daily, shownMetric]);
+    const keys = DAILY.map((m) => m.key);
+    const rows = weekly ? byWeek(daily.days, keys) : daily.days;
+    // The period before, point for point, when Google has all of it.
+    const prior = compare && daily.previous?.length === daily.days.length ? (weekly ? byWeek(daily.previous, keys) : daily.previous) : [];
+    return rows.map((d, i) => ({ label: (weekly ? 'Week of ' : '') + shortDate(d.date), value: d[shownMetric], before: prior.length === rows.length ? prior[i][shownMetric] : null }));
+  }, [daily, shownMetric, compare]);
+  // Each headline number's shape over the period, for the line along its tile (by week once there are many days).
+  const sparkOf = (k: DailyKey) => (daily ? (daily.length > 92 ? byWeek(daily.days, DAILY.map((m) => m.key)) : daily.days).map((d) => d[k]) : []);
   const actions = daily ? (['calls', 'websiteClicks', 'directions', 'conversations', 'bookings', 'foodOrders'] as DailyKey[]).filter((k) => daily.known.includes(k)).reduce((n, k) => n + daily.totals[k], 0) : 0;
   const actionsBefore = daily ? (['calls', 'websiteClicks', 'directions', 'conversations', 'bookings', 'foodOrders'] as DailyKey[]).filter((k) => daily.known.includes(k)).reduce((n, k) => n + daily.before[k], 0) : 0;
 
@@ -66,25 +70,23 @@ export default function GbpInsights({ profile, location, businessName, place, ra
   const rising = useMemo(() => risingKeywords(rows), [rows]);
   const list = (view === 'rising' ? rising : rows).filter((r) => !find.trim() || r.keyword.includes(find.trim().toLowerCase()));
   const shown = all || find.trim() ? list : list.slice(0, 15);
+  const top = Math.max(1, ...rows.map((r) => r.latest ?? 0));
   const toggle = (k: string) => setPicked((x) => (x.includes(k) ? x.filter((y) => y !== k) : x.length < MAX_PICK ? [...x, k] : x));
   const scanUrl = '/new-scan?' + new URLSearchParams([['name', businessName], ...picked.map((k) => ['kw', k] as [string, string])]).toString();
 
   return (
     <section className={card + ' space-y-5'}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="font-semibold">Google Business Profile</h3>
-        <span className="text-xs text-slate-500">{data ? `${shortDate(data.range.recent.from)} to ${shortDate(data.range.recent.to)}, ${data.range.days} days · ` : ''}Google’s own numbers for this listing</span>
-      </div>
+      <SectionHead title="Google Business Profile" sub={<>Google’s own numbers for this listing{data ? ` · ${shortDate(data.range.recent.from)} to ${shortDate(data.range.recent.to)}, against the ${data.range.days} days before` : ''}</>} />
       {error && <p className="text-sm text-rose-300">{error}</p>}
-      {!data && !error && <p className="text-sm text-slate-400">Reading Google’s numbers…</p>}
+      {!data && !error && <Skeleton />}
 
       {daily && (
         <div className={'space-y-5 ' + (busy ? 'opacity-50' : '')}>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {HERO.filter((k) => daily.known.includes(k)).map((k) => <Tile key={k} big label={label(k)} value={daily.totals[k]} was={daily.before[k]} compare={compare} />)}
+          {/* The headline numbers are also the switch for the chart under them. */}
+          <div className={'grid grid-cols-2 gap-3 ' + (chartKeys.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-4')}>
+            {chartKeys.map((k) => <Tile key={k} big label={k === 'views' ? 'Views on Search and Maps' : label(k)} value={daily.totals[k]} was={daily.before[k]} compare={compare} spark={sparkOf(k)} active={shownMetric === k} onSelect={() => setMetric(k)} />)}
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {daily.known.includes('views') && <Tile label="Views on Search and Maps" value={daily.totals.views} was={daily.before.views} compare={compare} />}
             {daily.totals.views > 0 && <Tile label="Actions per 100 views" value={(actions / daily.totals.views) * 100} was={daily.before.views ? (actionsBefore / daily.before.views) * 100 : null} digits={1} compare={compare} note="calls, clicks, directions and more" />}
             {(['conversations', 'bookings', 'foodOrders', 'menuClicks'] as DailyKey[]).filter((k) => daily.known.includes(k) && (daily.totals[k] > 0 || daily.before[k] > 0)).map((k) => <Tile key={k} label={label(k)} value={daily.totals[k]} was={daily.before[k]} compare={compare} />)}
           </div>
@@ -92,10 +94,7 @@ export default function GbpInsights({ profile, location, businessName, place, ra
 
           {shownMetric && (
             <div>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <h4 className="text-sm font-semibold">{label(shownMetric)} {daily.length > 92 ? 'by week' : 'by day'}</h4>
-                <Segmented label="What to chart" value={shownMetric} onChange={setMetric} options={chartKeys.map((k) => [k, k === 'directions' ? 'Directions' : label(k)] as const)} />
-              </div>
+              <h4 className="mb-2 text-sm font-semibold">{label(shownMetric)} {daily.length > 92 ? 'by week' : 'by day'}</h4>
               <MiniChart points={points} name={label(shownMetric)} />
             </div>
           )}
@@ -145,6 +144,7 @@ export default function GbpInsights({ profile, location, businessName, place, ra
                       <th className="px-3 py-2 text-right font-medium">{months.length ? monthName(months[months.length - 1]) : 'Latest'}</th>
                       {months.length > 1 && <th className="px-3 py-2 text-right font-medium">{monthName(months[months.length - 2])}</th>}
                       {months.length > 1 && <th className="px-3 py-2 text-right font-medium">Change</th>}
+                      {months.length > 2 && <th className="w-28 px-3 py-2 font-medium">Trend</th>}
                       {months.length > 2 && <th className="px-3 py-2 text-right font-medium">{months.length} months</th>}
                     </tr>
                   </thead>
@@ -153,16 +153,17 @@ export default function GbpInsights({ profile, location, businessName, place, ra
                       const ok = scannable(r.keyword, brand), on = picked.includes(r.keyword);
                       return (
                         <tr key={r.keyword} className={'hover:bg-slate-800/40 ' + (on ? 'bg-emerald-500/5' : '')}>
-                          <td className="px-3 py-1.5"><input type="checkbox" aria-label={'Scan ' + r.keyword} checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.keyword)} /></td>
+                          <td className="px-3 py-1.5"><input type="checkbox" className="h-4 w-4 accent-emerald-500" aria-label={'Scan ' + r.keyword} checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.keyword)} /></td>
                           <td className={'max-w-[20rem] truncate px-3 py-1.5 ' + (ok ? 'text-slate-200' : 'text-slate-500')} title={ok ? r.keyword : 'A search for the business by name, or a job search'}>{r.keyword}</td>
-                          <td className="px-3 py-1.5 text-right tabular-nums text-slate-200">{r.latestText || '–'}</td>
+                          {r.latest !== null ? <BarCell value={r.latest} max={top} strong /> : <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.latestText || '–'}</td>}
                           {months.length > 1 && <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.previous === null ? '–' : fmt(r.previous)}</td>}
                           {months.length > 1 && <td className="px-3 py-1.5 text-right text-xs tabular-nums">{r.latest === null ? <span className="text-slate-600">–</span> : <Change now={r.latest} was={r.previous} />}</td>}
+                          {months.length > 2 && <td className="px-3 py-1"><Spark values={r.byMonth.map((v) => v ?? 0)} tone={r.latest !== null && r.previous !== null && r.latest < r.previous ? '#fb7185' : '#34d399'} /></td>}
                           {months.length > 2 && <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.exact ? fmt(r.total) : '–'}</td>}
                         </tr>
                       );
                     })}
-                    {!shown.length && <tr><td colSpan={6} className="px-3 py-3 text-sm text-slate-400">{view === 'rising' && !find.trim() ? 'No search grew by five or more in the latest month.' : 'No search matches that.'}</td></tr>}
+                    {!shown.length && <tr><td colSpan={7} className="px-3 py-3 text-sm text-slate-400">{view === 'rising' && !find.trim() ? 'No search grew by five or more in the latest month.' : 'No search matches that.'}</td></tr>}
                   </tbody>
                 </table>
               </div>
