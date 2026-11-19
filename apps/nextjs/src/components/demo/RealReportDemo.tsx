@@ -207,7 +207,7 @@ export default function RealReportDemo() {
           <div className="mx-auto max-w-4xl px-5 py-20 text-center sm:px-8">
             <h2 className="mk-display text-4xl font-bold leading-tight sm:text-5xl">Want This Report for Your Market, <span className="mk-gold-text">With Live Phone Receipts?</span></h2>
             <p className="mx-auto mt-4 max-w-2xl text-[#9aa7b8]">Find out what mobile searchers see in the neighborhoods you most want to serve, then bring the gaps and the evidence into a focused 30-day visibility sprint.</p>
-            <Link href={SPRINT_URL} className="mk-btn-primary mt-8 inline-block rounded-xl px-8 py-4 text-lg font-semibold">Apply for 1 of 12 DFY Sprint Spots ($297/mo) →</Link>
+            <Link href={SPRINT_URL} className="mk-btn-primary mt-8 inline-block rounded-xl px-8 py-4 text-lg font-semibold">Apply for 1 of 12 White Label SEO Services Spots ($297/mo) →</Link>
             <p className="mt-4 text-sm text-[#9aa7b8]">Or <Link href="/login?mode=register" className="text-[#7aa7ff] hover:underline">run live grids on your own account</Link>.</p>
           </div>
         </section>
