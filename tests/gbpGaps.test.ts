@@ -20,8 +20,10 @@ test('a rival’s listing is read: categories by Google’s ids, what it says it
   // A lookup by name that landed on some other business is not the rival.
   assert.equal(readRival(item({ title: 'Mr. Rooter Plumbing' }), 'Roto-Rooter'), null);
   assert.equal(readRival({}, 'Roto-Rooter'), null);
-  // An id with no name beside it still reads.
+  // An id with no name beside it still reads, and so does a name with no id (the id is looked up later).
   assert.equal(readRival(item({ category: '', additional_categories: [] }), 'Roto-Rooter')!.categories[1].name, 'Drainage service');
+  assert.deepEqual(readRival(item({ category: 'Attorney', category_ids: null, additional_categories: null }), 'Roto-Rooter')!.categories, [{ id: '', name: 'Attorney' }]);
+  assert.deepEqual(readRival(item({ services: [{ title: 'Drain cleaning', snippet: 'x' }, { title: 'Hydro jetting' }, { title: '' }, { title: 'Drain cleaning' }] }), 'Roto-Rooter')!.services, ['Drain cleaning', 'Hydro jetting']);
   assert.equal(gcid('gcid:plumber'), 'categories/gcid:plumber');
   assert.equal(gcid('categories/gcid:plumber'), 'categories/gcid:plumber');
 });
@@ -33,12 +35,12 @@ test('the top rivals are the ones in the top three at the most points', () => {
     { status: 'COMPLETED', topCompetitors: ['Roto-Rooter', 'Mr. Rooter', 'Acme Plumbing LLC'] },
     { status: 'FAILED', topCompetitors: ['Never Counted', 'Never Counted', 'Never Counted'] },
   ];
-  assert.deepEqual(topRivals(pins, 'Acme Plumbing'), [{ name: 'Roto-Rooter', points: 3 }, { name: 'Benjamin Franklin', points: 2 }, { name: 'Mr. Rooter', points: 2 }]);
+  assert.deepEqual(topRivals(pins, 'Acme Plumbing', 3), [{ name: 'Roto-Rooter', points: 3 }, { name: 'Benjamin Franklin', points: 2 }, { name: 'Mr. Rooter', points: 2 }]);
 });
 
 test('gaps: what rivals have that the listing lacks, rival-backed first', () => {
   const A = (name: string, label: string, value: boolean | null, kind: Attr['kind'] = 'BOOL'): Attr => ({ name: 'attributes/' + name, label, group: 'G', kind, value, options: [], canSayNo: true });
-  const rivals = [readRival(item(), 'Roto-Rooter')!, readRival(item({ title: 'Benjamin Franklin Plumbing', category_ids: ['plumber', 'drainage_service', 'hvac_contractor'], additional_categories: ['Drainage service', 'HVAC contractor'], attributes: { available_attributes: { payments: ['pay_credit_card'] } }, local_business_links: [] }), 'Benjamin Franklin Plumbing')!];
+  const rivals = [readRival(item({ services: [{ title: 'drain cleaning' }, { title: 'Hydro jetting' }, { title: 'Leak Repair' }] }), 'Roto-Rooter')!, readRival(item({ title: 'Benjamin Franklin Plumbing', category_ids: ['plumber', 'drainage_service', 'hvac_contractor'], additional_categories: ['Drainage service', 'HVAC contractor'], attributes: { available_attributes: { payments: ['pay_credit_card'] } }, local_business_links: [] }), 'Benjamin Franklin Plumbing')!];
   const g = findGaps({
     primaryCategory: 'categories/gcid:plumber', additionalCategories: ['categories/gcid:water_damage_restoration_service'],
     attributes: [A('pay_credit_card', 'Credit cards', null), A('has_wheelchair_accessible_entrance', 'Wheelchair entrance', null), A('pay_debit_card', 'Debit cards', true), A('has_restroom', 'Restroom', null), A('url_facebook', 'Facebook', [] as unknown as null, 'URL')],
@@ -51,7 +53,8 @@ test('gaps: what rivals have that the listing lacks, rival-backed first', () => 
   assert.equal(g.categoryRoom, 8);
   // Attributes: unanswered yes/no ones; answered ones and links are not gaps here.
   assert.deepEqual(g.attributes.map((a) => [a.label, a.rivals.length]), [['Credit cards', 2], ['Wheelchair entrance', 1], ['Restroom', 0]]);
-  assert.deepEqual(g.services.map((s) => s.label), ['Drain cleaning']);
+  // Google's own service a rival also lists is marked; a rival's own wording can be added as the business's own; one already listed is left out.
+  assert.deepEqual(g.services.map((s) => [s.id, s.label, s.rivals.length]), [['job_type_id:drain_cleaning', 'Drain cleaning', 1], ['free:Hydro jetting', 'Hydro jetting', 1]]);
   assert.deepEqual(g.links, [{ id: 'APPOINTMENT', label: 'Book an appointment', rivals: ['Roto-Rooter Plumbing & Water Cleanup'] }]);
   // With no rival looked up there are no category suggestions, and the rest is still listed.
   const alone = findGaps({ primaryCategory: 'categories/gcid:plumber', additionalCategories: [], attributes: [A('has_restroom', 'Restroom', null)], suggestedServices: [], services: [], links: [], linkTypes: [] }, []);

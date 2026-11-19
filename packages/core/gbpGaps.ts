@@ -13,8 +13,10 @@ const norm = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/\b(l
 
 export type Rival = {
   name: string;
-  /** Google's category ids ("plumber", "drainage_service"), the first one the primary. */
+  /** Its categories, the first one the primary. `id` is Google's ("plumber") or '' when only the name is known. */
   categories: { id: string; name: string }[];
+  /** The services it lists in its own words. */
+  services: string[];
   /** The attributes the listing says it has ("has_wheelchair_accessible_entrance"). */
   attributes: string[];
   /** Booking, ordering and menu links on the listing. */
@@ -38,10 +40,13 @@ export function readRival(item: unknown, asked: string): Rival | null {
   if (!name) return null;
   const a = norm(asked), b = norm(name);
   if (!(a === b || (a.length > 4 && b.includes(a)) || (b.length > 4 && a.includes(b)))) return null;
-  const ids = (Array.isArray(i.category_ids) ? i.category_ids : []).map(str).filter(Boolean);
-  // Names come as the primary ("category") followed by the additional ones, in the ids' order.
-  const names = [str(i.category), ...(Array.isArray(i.additional_categories) ? i.additional_categories : []).map(str)];
-  const categories = ids.map((id, n) => ({ id: id.replace(/^gcid:/, ''), name: names[n] || title(id) }));
+  const ids = (Array.isArray(i.category_ids) ? i.category_ids : []).map(str).filter(Boolean).map((id) => id.replace(/^gcid:/, ''));
+  // Names come as the primary ("category") followed by the additional ones, in the ids' order. A
+  // listing is often returned with names and no ids, or with fewer ids than names: every category
+  // named is kept, with its id when there is one.
+  const names = [str(i.category), ...(Array.isArray(i.additional_categories) ? i.additional_categories : []).map(str)].filter(Boolean);
+  const categories = Array.from({ length: Math.max(ids.length, names.length) }, (_, n) => ({ id: ids[n] ?? '', name: names[n] || title(ids[n] ?? '') })).filter((c) => c.id || c.name);
+  const services = [...new Set((Array.isArray(i.services) ? i.services : []).map((x) => str(obj(x).title)).filter((t) => t.length > 1 && t.length <= 120))];
   const available = obj(obj(i.attributes).available_attributes);
   const attributes = [...new Set(Object.values(available).flatMap((v) => (Array.isArray(v) ? v : [])).map(str).filter(Boolean))];
   const links: Rival['links'] = [];
@@ -56,11 +61,11 @@ export function readRival(item: unknown, asked: string): Rival | null {
   if (str(i.book_online_url)) add('reservation', i.book_online_url);
   const rating = obj(i.rating);
   const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-  return { name, categories, attributes, links, photos: n(i.total_photos), rating: n(rating.value), reviews: n(rating.votes_count) };
+  return { name, categories, services, attributes, links, photos: n(i.total_photos), rating: n(rating.value), reviews: n(rating.votes_count) };
 }
 
 /** The businesses that most often rank in the top three across a scan's points, the client left out. */
-export function topRivals(pins: { status: string; topCompetitors?: string[] | null }[], client: string, limit = 3): { name: string; points: number }[] {
+export function topRivals(pins: { status: string; topCompetitors?: string[] | null }[], client: string, limit = 5): { name: string; points: number }[] {
   const seen = new Map<string, { name: string; points: number }>();
   for (const p of pins) {
     if (p.status !== 'COMPLETED') continue;
@@ -99,16 +104,18 @@ const LINK_KIND: Record<string, Rival['links'][number]['type']> = {
  * a category is only ever suggested because a rival uses it.
  */
 export function findGaps(
-  client: { primaryCategory?: string | null; additionalCategories: string[]; attributes: Attr[]; suggestedServices: { typeId: string; name: string }[]; services: Service[]; links: ActionLink[]; linkTypes: string[] },
+  client: { primaryCategory?: string | null; additionalCategories: string[]; categoryNames?: string[]; attributes: Attr[]; suggestedServices: { typeId: string; name: string }[]; services: Service[]; links: ActionLink[]; linkTypes: string[] },
   rivals: Rival[],
   linkLabels: Record<string, string> = {},
 ): Gaps {
   const have = new Set([client.primaryCategory, ...client.additionalCategories].filter(Boolean).map((c) => gcid(String(c))));
+  const haveNames = new Set((client.categoryNames ?? []).map(norm));
   const cats = new Map<string, Gap>();
   for (const r of rivals)
     for (const c of r.categories) {
+      // A category known only by name cannot be sent to Google: the caller looks its id up first.
+      if (!c.id || have.has(gcid(c.id)) || haveNames.has(norm(c.name))) continue;
       const id = gcid(c.id);
-      if (have.has(id)) continue;
       const g = cats.get(id) ?? { id, label: c.name, rivals: [] };
       if (!g.rivals.includes(r.name)) g.rivals.push(r.name);
       cats.set(id, g);
@@ -119,8 +126,22 @@ export function findGaps(
     .filter((a) => a.kind === 'BOOL' && a.value === null)
     .map((a) => ({ id: a.name, label: a.label, group: a.group, rivals: who((r) => r.attributes.includes(a.name.replace(/^attributes\//, ''))) }))
     .sort(byRivals);
+  // Services: Google's own for the listing's categories that are not on it, then what rivals list
+  // in their own words. A rival's service that is one of Google's marks that one; the rest can be
+  // added as the business's own wording ("free:" + name).
   const listed = new Set(client.services.map((s) => s.key));
-  const services = client.suggestedServices.filter((s) => !listed.has('s:' + s.typeId)).map((s) => ({ id: s.typeId, label: s.name, rivals: [] as string[] }));
+  const listedNames = new Set(client.services.map((s) => norm(s.name)));
+  const offered = client.suggestedServices.filter((s) => !listed.has('s:' + s.typeId)).map((s) => ({ id: s.typeId, label: s.name, rivals: [] as string[] }));
+  const own = new Map<string, Gap>();
+  for (const r of rivals)
+    for (const name of r.services) {
+      const k = norm(name);
+      if (!k || listedNames.has(k)) continue;
+      const g = offered.find((o) => norm(o.label) === k) ?? own.get(k) ?? { id: 'free:' + name, label: name, rivals: [] };
+      if (!g.rivals.includes(r.name)) g.rivals.push(r.name);
+      if (!offered.includes(g)) own.set(k, g);
+    }
+  const services = [...offered, ...own.values()].sort((a, b) => b.rivals.length - a.rivals.length || Number(a.id.startsWith('free:')) - Number(b.id.startsWith('free:')) || a.label.localeCompare(b.label));
   const links = client.linkTypes
     .filter((t) => !client.links.some((l) => l.type === t))
     .map((t) => ({ id: t, label: linkLabels[t] ?? t, rivals: who((r) => r.links.some((l) => l.type === LINK_KIND[t])) }))

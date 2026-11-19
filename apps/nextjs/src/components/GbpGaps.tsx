@@ -6,9 +6,9 @@ type Data = {
   gaps: Gaps;
   scan: { id: string; keyword: string; at: string } | null;
   top: { name: string; points: number }[];
-  rivals: { name: string; categories: number; attributes: number; photos: number | null; rating: number | null; reviews: number | null }[];
+  rivals: { name: string; categories: string[]; services: number; attributes: number; photos: number | null; rating: number | null; reviews: number | null }[];
   missing: string[];
-  lookup: { ready: boolean; problem: string | null; lookedUp: number };
+  lookup: { ready: boolean; problem: string | null; lookedUp: number; waiting: number };
   current: { additionalCategories: { name: string; displayName?: string }[] };
   problems: string[];
 };
@@ -66,7 +66,7 @@ export default function GbpGaps({ profile, location, onApplied }: { profile: str
       }
       if (picked.services.length) {
         const x = await call<{ services: { list: { key: string; description: string }[] } }>(`/api/admin/gbp/extras?profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}`);
-        const add = d.gaps.services.filter((s) => picked.services.includes(s.id)).map((s) => ({ typeId: s.id, name: s.label, description: '' }));
+        const add = d.gaps.services.filter((s) => picked.services.includes(s.id)).map((s) => (s.id.startsWith('free:') ? { name: s.label, description: '' } : { typeId: s.id, name: s.label, description: '' }));
         await call('/api/admin/gbp/extras', { profile, location, kind: 'services', want: [...x.services.list.map((s) => ({ key: s.key, description: s.description })), ...add] });
         said.push(`${add.length} service${add.length === 1 ? '' : 's'} added`);
       }
@@ -123,19 +123,19 @@ export default function GbpGaps({ profile, location, onApplied }: { profile: str
           <h3 className="font-semibold">Gaps against your top rivals</h3>
           <p className="mt-1 text-xs text-slate-500">
             {!d.scan ? 'No finished scan of this business yet, so there are no rivals to compare with. Listed below is what Google offers this listing that it has not filled in.' : (
-              <>From the scan for “{d.scan.keyword}” on {new Date(d.scan.at).toLocaleDateString()}: {d.top.map((t) => `${t.name} (top 3 at ${t.points} point${t.points === 1 ? '' : 's'})`).join(', ') || 'no rivals ranked in the top three'}.</>
+              <>From the scan for “{d.scan.keyword}” on {new Date(d.scan.at).toLocaleDateString()}: the businesses most often in the top three there{d.top.length ? '' : ' (none ranked)'}.</>
             )}
           </p>
         </div>
-        {d.scan && d.top.length > 0 && d.lookup.ready && (of < d.top.length) && <button type="button" onClick={lookUp} disabled={Boolean(busy)} className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40">{busy === 'lookup' ? 'Reading their listings…' : `Read ${d.top.length - of} rival listing${d.top.length - of === 1 ? '' : 's'}`}</button>}
+        {d.scan && d.lookup.ready && d.lookup.waiting > 0 && <button type="button" onClick={lookUp} disabled={Boolean(busy)} className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40">{busy === 'lookup' ? 'Reading their listings…' : `Read ${d.lookup.waiting} rival listing${d.lookup.waiting === 1 ? '' : 's'}`}</button>}
       </div>
 
       {d.scan && d.top.length > 0 && !d.lookup.ready && <p className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-xs text-slate-400">Rival listings are not being read yet: add <code className="text-slate-200">DATAFORSEO_LOGIN</code> and <code className="text-slate-200">DATAFORSEO_PASSWORD</code> on Vercel and redeploy. Until then this shows what Google offers the listing, without saying which rivals have it, and suggests no categories.</p>}
       {d.lookup.problem && <p className="text-xs text-amber-300">{d.lookup.problem}</p>}
-      {of > 0 && d.missing.length > 0 && <p className="text-xs text-slate-500">No matching listing was found for {d.missing.join(', ')}.</p>}
+      {d.missing.length > 0 && <p className="text-xs text-slate-500">No matching listing was found for {d.missing.join(', ')}{of >= 3 ? ', so the next business down the list was used' : ''}.</p>}
       {of > 0 && (
         <ul className="flex flex-wrap gap-2 text-xs text-slate-400">
-          {d.rivals.map((r) => <li key={r.name} className="rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1.5"><span className="text-slate-200">{r.name}</span> · {r.categories} categor{r.categories === 1 ? 'y' : 'ies'} · {r.attributes} attributes{r.reviews !== null ? ` · ${r.rating ?? '–'}★ from ${r.reviews.toLocaleString('en-US')}` : ''}{r.photos !== null ? ` · ${r.photos} photos` : ''}</li>)}
+          {d.rivals.map((r) => <li key={r.name} className="rounded-lg border border-slate-800 bg-slate-950/60 px-2.5 py-1.5"><span className="text-slate-200">{r.name}</span> · {r.categories.length ? r.categories.join(', ') : 'no category given'} · {r.attributes} attributes{r.services ? ` · ${r.services} services` : ''}{r.reviews !== null ? ` · ${r.rating ?? '–'}★ from ${r.reviews.toLocaleString('en-US')}` : ''}{r.photos !== null ? ` · ${r.photos} photos` : ''}</li>)}
         </ul>
       )}
       {d.problems.map((p) => <p key={p} className="text-xs text-amber-300">{p}</p>)}
@@ -143,6 +143,8 @@ export default function GbpGaps({ profile, location, onApplied }: { profile: str
       {done && <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">Sent to Google: {done.join(', ')}.</p>}
 
       {total === 0 && <p className="text-sm text-slate-400">Nothing missing: every service, attribute and link Google offers this listing is filled in{of ? ', and it has every category its top rivals use' : ''}.</p>}
+
+      {of > 0 && d.gaps.categories.length === 0 && <p className="text-xs text-slate-500">Categories: the rival listings read show no category this listing lacks. Rivals’ additional categories are often not given by the lookup, so this is not proof they have none.</p>}
 
       {d.gaps.categories.length > 0 && (
         <div>
@@ -153,8 +155,8 @@ export default function GbpGaps({ profile, location, onApplied }: { profile: str
       )}
       {d.gaps.services.length > 0 && (
         <div>
-          <h4 className="text-sm font-semibold">Services Google offers these categories <span className="ml-1 font-normal text-slate-500">{d.gaps.services.length} not on the listing</span></h4>
-          <p className="mt-1 text-xs text-slate-500">Rivals’ own service lists are not public, so these are not marked by rival. Add descriptions afterwards under Services.</p>
+          <h4 className="text-sm font-semibold">Services not on the listing <span className="ml-1 font-normal text-slate-500">{d.gaps.services.length}</span></h4>
+          <p className="mt-1 text-xs text-slate-500">Google’s own services for this listing’s categories, and the services rivals list in their own words. Add descriptions afterwards under Services.</p>
           <List part="services" items={d.gaps.services} />
         </div>
       )}

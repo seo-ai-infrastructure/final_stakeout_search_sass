@@ -29,18 +29,23 @@ async function lookUp(name: string, lat: number, lng: number): Promise<unknown |
 }
 
 /**
- * The listings of these rivals near a place: from what was kept when it is fresh, looked up
- * otherwise (only when `mayLookUp`). A rival whose listing could not be found or matched is left
- * out; `problem` says so when a lookup itself failed.
+ * The listings of up to three of these rivals near a place, tried in order (so when the top rival's
+ * listing cannot be found, the next one down stands in): from what was kept when it is fresh,
+ * looked up otherwise (only when `mayLookUp`). `missing`: looked for and not found, or found under
+ * a different name. `waiting`: how many more would have to be looked up to have three. `problem`
+ * says so when a lookup itself failed.
  */
-export async function rivalListings(names: string[], lat: number, lng: number, mayLookUp: boolean): Promise<{ rivals: Rival[]; missing: string[]; problem: string | null; lookedUp: number }> {
+export async function rivalListings(names: string[], lat: number, lng: number, mayLookUp: boolean): Promise<{ rivals: Rival[]; missing: string[]; waiting: number; problem: string | null; lookedUp: number }> {
   const rivals: Rival[] = [], missing: string[] = [];
-  let problem: string | null = null, lookedUp = 0;
-  for (const name of names.slice(0, 3)) {
+  let problem: string | null = null, lookedUp = 0, waiting = 0;
+  for (const name of names) {
+    if (rivals.length + waiting >= 3) break;
     const key = keyOf(name, lat, lng);
     const kept = await db.rivalProfile.findUnique({ where: { key } });
+    const fresh = kept !== null && Date.now() - kept.fetchedAt.getTime() <= KEEP_MS;
     let data: unknown = kept?.data ?? null;
-    if ((!kept || Date.now() - kept.fetchedAt.getTime() > KEEP_MS) && mayLookUp && rivalsConfigured()) {
+    if (!fresh) {
+      if (!mayLookUp || !rivalsConfigured() || problem) { waiting++; continue; }
       try {
         data = await lookUp(name, lat, lng);
         lookedUp++;
@@ -48,11 +53,12 @@ export async function rivalListings(names: string[], lat: number, lng: number, m
         await db.rivalProfile.upsert({ where: { key }, update: { name, data: json ?? undefined, fetchedAt: new Date() }, create: { key, name, ...(json ? { data: json } : {}) } });
       } catch (e) {
         problem = e instanceof Error ? e.message : 'The rival lookup failed.';
-        data = kept?.data ?? null;
+        waiting++;
+        continue;
       }
     }
     const r = data ? readRival(data, name) : null;
     if (r) rivals.push(r); else missing.push(name);
   }
-  return { rivals, missing, problem, lookedUp };
+  return { rivals, missing, waiting, problem, lookedUp };
 }
