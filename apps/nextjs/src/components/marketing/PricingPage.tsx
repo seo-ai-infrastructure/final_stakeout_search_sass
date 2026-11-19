@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { OFFERED_GRID_SIZES } from '@stakeout/core/gridSizes';
 import { SiteHeader, SiteFooter, SIGNUPS_OPEN } from './SiteChrome';
-import { ONBOARDING, PACKS, PLANS, PREPAID, PROMO, WHITE_LABEL, perCredit, promoLive, usd } from '@/lib/pricing';
+import { ONBOARDING, PACKS, PLANS, WELCOME, PREPAID, PROMO, WHITE_LABEL, perCredit, promoLive, usd } from '@/lib/pricing';
 import './marketing.css';
 
 const BRANDING = 'mailto:sass@stakeoutsearch.com?subject=White%20label%20setup';
@@ -30,8 +30,8 @@ const FAQ: [string, string][] = [
   ['What does a credit buy?', 'One pin: a real phone moved to that spot, the search run and recorded, and a receipt with the results, the location Google used and a fingerprint of the evidence. AI Overview tracking is included.'],
   ['Do credits expire?', 'No. Credits you buy stay on your account until you use them, on packs and plans alike.'],
   ['What happens if a pin fails?', 'Its credit goes straight back to your balance, and you can run it again with one click.'],
-  ['Do I have to pay for onboarding?', `No. Start with a pack from ${usd(PACKS[0].cents)} and run a scan today. Onboarding (${usd(ONBOARDING.cents)}, with ${ONBOARDING.credits.toLocaleString('en-US')} credits) is there if you want us to set you up and run your first audit with you.`],
-  ['Why do packs cost more per credit than plans?', `A pack is for trying it, or for a one-off job. Once you scan every week, a plan costs about half as much per credit: ${usd(Math.round(perCredit(PLANS[0]) * 100))} on ${PLANS[0].name} against ${usd(Math.round(perCredit(PACKS[1]) * 100))} on the ${PACKS[1].name}.`],
+  ['Do I have to pay for onboarding?', `No. Your first pack is ${usd(WELCOME.cents)} for ${WELCOME.credits} credits (one per account and card): run a scan today. Onboarding (${usd(ONBOARDING.cents)}, with ${ONBOARDING.credits.toLocaleString('en-US')} credits) is there if you want us to set you up and run your first audit with you.`],
+  ['Why do packs cost more per credit than plans?', `A pack is for trying it, or for a one-off job. Once you scan every week, a plan costs less per credit: ${usd(Math.round(perCredit(PLANS[0]) * 100))} on ${PLANS[0].name} against ${usd(Math.round(perCredit(PACKS[1]) * 100))} on the ${PACKS[1].name}.`],
   ['Is there a contract?', 'No. Plans are bought a month at a time from your account, and you can change plan or stop whenever you like.'],
   ['Can I put my own brand on reports?', `Yes. Every scan has a share link your client can open without an account. For a one-time ${usd(WHITE_LABEL.cents)} setup, all your reporting carries your logo on your own domain, share links included.`],
 ];
@@ -89,7 +89,7 @@ export default function PricingPage() {
           <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-[#9aa7b8]">
             Other grid trackers give you a number. We send a real phone to every pin, run the search in Google Search or the Maps app, and record it, so every ranking comes with proof your client can watch.
           </p>
-          <p className="mk-display mt-8 text-2xl font-bold text-[#eef2f7]">1 credit = 1 pin. Start for {usd(PACKS[0].cents)}.</p>
+          <p className="mk-display mt-8 text-2xl font-bold text-[#eef2f7]">1 credit = 1 pin. Start for {usd(WELCOME.cents)}.</p>
           <AccessButton className="mk-btn-primary mt-6 inline-block rounded-xl px-8 py-4 text-lg font-semibold" />
           <ul className="mx-auto mt-6 flex max-w-3xl flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-[#c9d3df]">
             {TRUST.map((t) => (
@@ -106,7 +106,16 @@ export default function PricingPage() {
         <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#f5c451]">Step 1 · try it today</p>
         <h2 className="mk-display mx-auto mt-3 max-w-3xl text-center text-4xl font-bold leading-tight sm:text-5xl">Start with a pack.</h2>
         <p className="mx-auto mt-4 max-w-2xl text-center text-[#9aa7b8]">Paid once. No plan, no setup fee, no call. Your first recording is minutes away.</p>
-        <div className="mt-12 grid items-stretch gap-6 lg:grid-cols-3">
+        <div className="mx-auto mt-10 flex max-w-3xl flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-[#3ddc97] bg-[#0c1118] p-6">
+          <div className="min-w-0">
+            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#3ddc97]">Your first scan</p>
+            <h3 className="mk-display mt-1 text-2xl font-bold">{WELCOME.name}: {usd(WELCOME.cents)}</h3>
+            <p className="mt-1 text-sm text-[#9aa7b8]">{WELCOME.credits} credits, enough for one 5×5 scan with a recording of every pin. One per account and per card.</p>
+          </div>
+          <AccessButton label={'Run my first scan for ' + usd(WELCOME.cents)} className="mk-btn-primary block rounded-xl px-6 py-3.5 text-center font-semibold" />
+        </div>
+        <p className="mx-auto mt-10 max-w-2xl text-center text-sm text-[#9aa7b8]">After that, top up whenever you like:</p>
+        <div className="mt-6 grid items-stretch gap-6 lg:grid-cols-3">
           {PACKS.map((p) => (
             <div key={p.key} className={'relative flex flex-col rounded-2xl border bg-[#0c1118] p-8 ' + (p.featured ? 'border-2 border-[#f5c451] lg:-my-3 lg:py-11' : 'border-[#1b2431]')}>
               {p.featured && <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#f5c451] px-4 py-1 text-xs font-bold text-[#06080c]">Most popular</span>}
@@ -171,7 +180,7 @@ export default function PricingPage() {
 
       <section className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
         <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#f5c451]">Step 2 · when you scan every week</p>
-        <h2 className="mk-display mx-auto mt-3 max-w-3xl text-center text-4xl font-bold leading-tight sm:text-5xl">Then cut your price per pin in half.</h2>
+        <h2 className="mk-display mx-auto mt-3 max-w-3xl text-center text-4xl font-bold leading-tight sm:text-5xl">Then pay less for every pin.</h2>
         <p className="mx-auto mt-4 max-w-2xl text-center text-[#9aa7b8]">Monthly plans, no contract. Change or stop whenever you like.</p>
         <div className="mt-12 grid items-stretch gap-6 lg:grid-cols-3">
           {PLANS.map((p) => {
@@ -290,7 +299,7 @@ export default function PricingPage() {
       <section className="border-t border-[#1b2431] bg-[#080b10]">
         <div className="mx-auto max-w-4xl px-5 py-20 text-center sm:px-8">
           <h2 className="mk-display text-4xl font-bold leading-tight sm:text-5xl">
-            See your first pin on video <span className="mk-gold-text">for {usd(PACKS[0].cents)}.</span>
+            See your first pin on video <span className="mk-gold-text">for {usd(WELCOME.cents)}.</span>
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-[#9aa7b8]">
             {live ? `No setup fee. ${PROMO.name} plan pricing ends ${PROMO.endsText}.` : 'No setup fee, no contract, and credits that never expire.'}

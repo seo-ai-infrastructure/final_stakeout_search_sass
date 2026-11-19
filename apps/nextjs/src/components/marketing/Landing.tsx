@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { PACKS, PLANS, PREPAID, PROMO, promoLive, usd, DEMO_REPORT_URL, WHITE_LABEL } from '@/lib/pricing';
+import { PACKS, PLANS, WELCOME, PREPAID, PROMO, promoLive, usd, DEMO_REPORT_URL, WHITE_LABEL } from '@/lib/pricing';
 import { SiteHeader, SiteFooter, JoinLink } from './SiteChrome';
 import { WALL, rankStyle } from './demoData';
 import ReceiptPrinter from './ReceiptPrinter';
@@ -556,7 +556,7 @@ function Pricing() {
             ))}
           </dl>
           <p className="mt-4 text-sm leading-relaxed text-[#9aa7b8]">
-            Try it with a credit pack from {usd(PACKS[0].cents)}: no onboarding fee. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 5×5 is 25, with AI Overview tracking included.{' '}
+            Try it with a credit pack from {usd(WELCOME.cents)}: no onboarding fee. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 5×5 is 25, with AI Overview tracking included.{' '}
             <Link href="/pricing" className="font-semibold text-[#7aa7ff] hover:underline">See pricing</Link>
           </p>
         </div>
@@ -608,7 +608,7 @@ function AgencyUses() {
           ))}
         </div>
         <div className="mt-10 text-center">
-          <Link href="/pricing" className="mk-btn-primary inline-block rounded-xl px-6 py-3.5 font-semibold">Run your first scan for {usd(PACKS[0].cents)} →</Link>
+          <Link href="/pricing" className="mk-btn-primary inline-block rounded-xl px-6 py-3.5 font-semibold">Run your first scan for {usd(WELCOME.cents)} →</Link>
         </div>
       </div>
     </section>
@@ -620,7 +620,7 @@ export default function Landing() {
     <div className="mk min-h-screen overflow-x-hidden">
       {promoLive() && (
         <Link href="/pricing" className="block bg-[#f5c451] px-4 py-2.5 text-center text-sm font-semibold text-[#06080c] hover:bg-[#ffd76a]">
-          {PROMO.name}: no onboarding fee. Try a real scan from {usd(PACKS[0].cents)}, or take 3 months of any plan and save up to {usd(Math.max(...PREPAID.map((x) => x.saves)))}. Ends {PROMO.endsText} →
+          {PROMO.name}: no onboarding fee. Try a real scan from {usd(WELCOME.cents)}, or take 3 months of any plan and save up to {usd(Math.max(...PREPAID.map((x) => x.saves)))}. Ends {PROMO.endsText} →
         </Link>
       )}
       <SiteHeader />
@@ -646,7 +646,7 @@ export default function Landing() {
               At every point of your grid, a real Android phone moves its GPS to that spot, searches on a real residential or mobile connection, and records the whole search. You get the rank, plus the video, the screen data and a fingerprint that proves it.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link href="/pricing" className="mk-btn-primary rounded-xl px-6 py-3.5 text-base font-semibold">Run your first scan for {usd(PACKS[0].cents)} →</Link>
+              <Link href="/pricing" className="mk-btn-primary rounded-xl px-6 py-3.5 text-base font-semibold">Run your first scan for {usd(WELCOME.cents)} →</Link>
               <Link href="/demo" className="rounded-xl border border-[#2a3442] bg-[#0c1118] px-6 py-3.5 text-base font-semibold hover:border-[#3a4658]">Watch a recorded search</Link>
             </div>
             <p className="mt-3 text-sm text-[#9aa7b8]">Credits never expire. Failed points are credited back.</p>

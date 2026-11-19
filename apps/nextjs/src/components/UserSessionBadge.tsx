@@ -25,7 +25,7 @@ export function UserSessionBadge() {
     fetch('/api/billing/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id }) })
       .then(async (r) => ({ ok: r.ok, d: await r.json() }))
       .then(({ ok, d }) => {
-        setPaid(ok ? `Payment received: ${Number(d.credits).toLocaleString()} credits added.` : d.error || 'Your payment is still being confirmed. Your credits will appear shortly.');
+        setPaid(ok && d.refunded ? 'The welcome pack is one per account and per card, and this one has already been used. Your payment was refunded in full; no credits were added.' : ok ? `Payment received: ${Number(d.credits).toLocaleString()} credits added.` : d.error || 'Your payment is still being confirmed. Your credits will appear shortly.');
         window.dispatchEvent(new Event('balance-change'));
       })
       .catch(() => setPaid('Your payment is still being confirmed. Your credits will appear shortly.'));

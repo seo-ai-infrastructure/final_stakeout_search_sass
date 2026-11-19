@@ -19,14 +19,17 @@ export async function GET() {
 const safePath = (v: unknown) => (typeof v === 'string' && /^\/[A-Za-z0-9\-._~/?=&%]*$/.test(v) && !v.startsWith('//') ? v.split('?')[0] : '/scans');
 
 /**
- * Starts a Stripe Checkout for one item of the price list (told apart by its credits) and returns
+ * Starts a Stripe Checkout for one item of the price list (named by its key) and returns
  * the address of Stripe's payment page. The price comes from the price list here, never the browser.
  */
 export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser(),
-      { credits, returnTo } = await req.json(),
-      item = (await catalogFor(u)).find((p) => p.credits === credits);
+      { item: key, credits, returnTo } = await req.json(),
+      catalog = await catalogFor(u),
+      // By its key; a page loaded before keys were sent names its credits instead, which only counts when one item has that many.
+      byCredits = catalog.filter((p) => p.credits === credits),
+      item = typeof key === 'string' ? catalog.find((p) => p.key === key) : byCredits.length === 1 ? byCredits[0] : undefined;
     if (!item) throw new InputError('That is not available for this account.');
     const origin = new URL(req.url).origin,
       back = origin + safePath(returnTo);
@@ -45,7 +48,7 @@ export async function POST(req: Request) {
       },
       randomUUID(),
     );
-    await db.paymentOrder.create({ data: { id: session.id, userId: u.id, credits: item.credits, cents: item.cents } });
+    await db.paymentOrder.create({ data: { id: session.id, userId: u.id, credits: item.credits, cents: item.cents, item: item.key } });
     return Response.json({ url: session.url });
   } catch (e) {
     return errorResponse(e);

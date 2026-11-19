@@ -1,7 +1,6 @@
 /**
  * The one price list: the pricing page and the checkout both read it, so they cannot disagree.
- * Amounts are in US cents. Each item is identified at checkout by its credit count, so every
- * item must carry a different number of credits.
+ * Amounts are in US cents. Each item is identified at checkout by its key.
  */
 export type PriceItem = { key: string; name: string; credits: number; cents: number; blurb: string };
 
@@ -18,14 +17,19 @@ export const ONBOARDING: PriceItem = {
 };
 
 /**
- * Credit packs, bought once: the way in, and top-ups later. Three on purpose: a taste, the one
- * most people should take, and a large one. Each costs more per credit than any plan, so a plan is
- * the obvious next step.
+ * The way in: 25 credits (one 5×5 scan) for $5, once per account and once per card. It is priced
+ * below every plan on purpose, so it is only for a first purchase.
+ */
+export const WELCOME: PriceItem = { key: 'welcome', name: 'First-Scan Welcome Pack', credits: 25, cents: 500, blurb: 'One time, for a first purchase: 25 credits, enough for one 5×5 scan.' };
+
+/**
+ * Credit packs, bought once and as often as wanted: top-ups, and one-off jobs. Each costs more per
+ * credit than any plan, so a plan is the obvious next step.
  */
 export const PACKS: (PriceItem & { fits: string; featured?: boolean })[] = [
-  { key: 'pack-25', name: 'Sample', credits: 25, cents: 2500, blurb: 'One-time pack: 25 credits.', fits: 'A first look' },
-  { key: 'pack-100', name: 'Starter Pack', credits: 100, cents: 4900, blurb: 'One-time pack: 100 credits.', fits: 'Room to test properly', featured: true },
-  { key: 'pack-300', name: 'Pro Pack', credits: 300, cents: 12900, blurb: 'One-time pack: 300 credits.', fits: 'A few clients, a few keywords each' },
+  { key: 'pack-25', name: 'Single Scan', credits: 25, cents: 900, blurb: 'One-time pack: 25 credits.', fits: 'One more 5×5 scan' },
+  { key: 'pack-100', name: 'Starter Pack', credits: 100, cents: 3500, blurb: 'One-time pack: 100 credits.', fits: 'Room to test properly', featured: true },
+  { key: 'pack-300', name: 'Pro Pack', credits: 300, cents: 9900, blurb: 'One-time pack: 300 credits.', fits: 'A few clients, a few keywords each' },
 ];
 
 /** Bought each month; no contract. */
@@ -53,20 +57,53 @@ export const PREPAID: (PriceItem & { plan: string; saves: number })[] = [
  */
 export const ADMIN_TEST: PriceItem = { key: 'admin-test', name: 'Live payment test (admin only)', credits: 5, cents: 100, blurb: 'A real $1 charge to check that payments work. Adds 5 credits.' };
 
-export const ALL_ITEMS: PriceItem[] = [ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ADMIN_TEST];
+/**
+ * For an account on a plan that runs short before the month is out: more credits at its plan's own
+ * price per credit, so nobody on a plan pays pack prices.
+ */
+export const TOPUPS: (PriceItem & { plan: string })[] = [
+  { key: 'topup-starter', plan: 'starter', name: 'Starter top-up', credits: 25, cents: 700, blurb: 'At your plan’s price: 25 more credits.' },
+  { key: 'topup-growth', plan: 'growth', name: 'Growth top-up', credits: 100, cents: 2500, blurb: 'At your plan’s price: 100 more credits.' },
+  { key: 'topup-agency', plan: 'agency', name: 'Agency top-up', credits: 100, cents: 2000, blurb: 'At your plan’s price: 100 more credits.' },
+];
+
+export const ALL_ITEMS: PriceItem[] = [ONBOARDING, WELCOME, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS, ADMIN_TEST];
 
 /**
- * What an account can buy: the packs and the plans, always; the three-month offer while it runs;
- * onboarding (optional) until it has been bought or waived. An admin also gets the $1 payment test.
+ * What a recorded purchase was. Purchases made before items were recorded by key are told apart by
+ * their credits, which were all different then.
  */
-export function itemsFor(state: { onboarded: boolean; admin?: boolean; now?: number }): PriceItem[] {
-  const items: PriceItem[] = [...PACKS, ...PLANS, ...(promoLive(state.now) ? PREPAID : []), ...(state.onboarded ? [] : [ONBOARDING])];
+const BEFORE_KEYS: Record<number, string> = { 25: 'pack-25', 100: 'pack-100', 300: 'pack-300', 700: 'starter', 1600: 'growth', 3500: 'agency', 2100: 'starter-3', 4800: 'growth-3', 10500: 'agency-3', 1000: 'onboarding', 5: 'admin-test' };
+export const itemKeyOf = (o: { item?: string | null; credits: number }): string => o.item ?? BEFORE_KEYS[o.credits] ?? '';
+
+/**
+ * The plan an account is on, from what it has paid for: its most recent monthly plan bought in the
+ * last 35 days, or three-month offer bought in the last 95. Null when neither.
+ */
+export function currentPlan(paid: { item?: string | null; credits: number; createdAt: Date }[], now = Date.now()): string | null {
+  const DAY = 86400000;
+  const live = paid
+    .map((o) => { const key = itemKeyOf(o); const pre = PREPAID.find((x) => x.key === key); const plan = pre ? pre.plan : PLANS.some((x) => x.key === key) ? key : null; return plan ? { plan, at: o.createdAt.getTime(), until: o.createdAt.getTime() + (pre ? 95 : 35) * DAY } : null; })
+    .filter((x): x is { plan: string; at: number; until: number } => x !== null && x.until > now)
+    .sort((a, b) => b.at - a.at);
+  return live[0]?.plan ?? null;
+}
+
+/**
+ * What an account can buy: the welcome pack until it has paid for anything; its plan's top-up while
+ * it is on a plan; the packs and the plans, always; the three-month offer while it runs; onboarding
+ * (optional) until it has been bought or waived. An admin also gets the $1 payment test.
+ */
+export function itemsFor(state: { onboarded: boolean; admin?: boolean; now?: number; /** Has never paid for anything. */ firstPurchase?: boolean; /** The plan it is on now, if any. */ plan?: string | null }): PriceItem[] {
+  const items: PriceItem[] = [...(state.firstPurchase ? [WELCOME] : []), ...TOPUPS.filter((t) => t.plan === state.plan), ...PACKS, ...PLANS, ...(promoLive(state.now) ? PREPAID : []), ...(state.onboarded ? [] : [ONBOARDING])];
   return state.admin ? [...items, ADMIN_TEST] : items;
 }
 
 /** The email an admin gets when a payment is recorded: who paid, for what, and what to do next. */
-export function paymentNotice(p: { buyer: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; sandbox: boolean }) {
-  const item = ALL_ITEMS.find((i) => i.credits === p.credits);
+export function paymentNotice(p: { buyer: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; sandbox: boolean; item?: string | null; /** Paid for a second welcome pack: refunded, no credits. */ refunded?: boolean }) {
+  const key = itemKeyOf(p);
+  const item = ALL_ITEMS.find((i) => i.key === key);
+  if (p.refunded) return { subject: `${p.sandbox ? '[Test] ' : ''}Refunded: second welcome pack, ${p.buyer}`, lines: [`${p.buyer} paid ${usd(p.cents)} for the welcome pack, but this account or this card has already had one. The payment was refunded and no credits were added.`, `Stripe checkout ${p.orderId}, payment ${p.captureId}.`] };
   const name = item?.name ?? p.credits + ' credits';
   const lines = [
     `${p.buyer} paid ${usd(p.cents)} for ${name} (${p.credits.toLocaleString('en-US')} credits). Their balance is now ${p.balance.toLocaleString('en-US')}.`,

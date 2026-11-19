@@ -177,6 +177,14 @@ model PaymentOrder {
   cents     Int
   captureId String?  @unique
   createdAt DateTime @default(now())
+  /// The price-list key of what was bought (null on purchases made before keys were recorded).
+  item            String?
+  /// Stripe's fingerprint of the card, kept for the welcome pack only: one per card.
+  cardFingerprint String?
+  /// Set when the payment was sent back (a second welcome pack): no credits were added.
+  refundedAt      DateTime?
+
+  @@index([item, cardFingerprint])
 }
 
 /// Single-use email links: account verification (grants starter credits) and teaser confirmation.

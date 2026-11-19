@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ALL_ITEMS, ONBOARDING, PACKS, PLANS, PREPAID, PROMO, itemsFor, perCredit, promoLive, scans5x5, usd } from '../apps/nextjs/src/lib/pricing';
+import { ALL_ITEMS, ONBOARDING, PACKS, PLANS, PREPAID, PROMO, TOPUPS, WELCOME, currentPlan, itemKeyOf, itemsFor, perCredit, promoLive, scans5x5, usd } from '../apps/nextjs/src/lib/pricing';
 
-test('pricing: the agreed prices, and every item identifiable by its credit count', () => {
+test('pricing: the agreed prices, and every item identifiable by its key', () => {
   assert.deepEqual([ONBOARDING.cents, ONBOARDING.credits, ONBOARDING.name], [99700, 1000, 'Onboarding']);
-  assert.deepEqual(PACKS.map((p) => [p.name, p.cents, p.credits]), [['Sample', 2500, 25], ['Starter Pack', 4900, 100], ['Pro Pack', 12900, 300]]);
+  assert.deepEqual(PACKS.map((p) => [p.name, p.cents, p.credits]), [['Single Scan', 900, 25], ['Starter Pack', 3500, 100], ['Pro Pack', 9900, 300]]);
   assert.deepEqual(PLANS.map((p) => [p.name, p.cents, p.credits]), [['Starter', 19700, 700], ['Growth', 39700, 1600], ['Agency', 69700, 3500]]);
-  assert.equal(new Set(ALL_ITEMS.map((i) => i.credits)).size, ALL_ITEMS.length, 'checkout tells items apart by credits');
-  assert.deepEqual(PACKS.map((p) => perCredit(p).toFixed(2)), ['1.00', '0.49', '0.43'], 'a bigger pack costs less per credit');
+  assert.equal(new Set(ALL_ITEMS.map((i) => i.key)).size, ALL_ITEMS.length, 'checkout tells items apart by key');
+  assert.deepEqual([WELCOME.cents, WELCOME.credits], [500, 25]);
+  assert.deepEqual(PACKS.map((p) => perCredit(p).toFixed(2)), ['0.36', '0.35', '0.33'], 'a bigger pack costs less per credit');
   assert.deepEqual(PLANS.map((p) => perCredit(p).toFixed(2)), ['0.28', '0.25', '0.20'], 'the rate falls as the plan grows');
   assert.ok(Math.min(...PACKS.map(perCredit)) > Math.max(...PLANS.map(perCredit)), 'any pack costs more per credit than any plan');
   // Three months paid once: three times the plan's credits, for less than three months of it.
@@ -155,4 +156,32 @@ test('a customer receipt carries only receipt fields, never how the run was done
   assert.equal(r.internetProvider, 'Frontier Communications');
   assert.equal(r.evidence.fingerprint, 'a00e1b611e59');
   assert.deepEqual(r.point, { row: 4, column: 1, latitude: 27.9, longitude: -82, city: 'Lakeland', state: 'FL', zip: '33811' });
+});
+
+test('pricing: the welcome pack is for a first purchase; a plan brings its own top-up at the plan rate', () => {
+  const keys = (s: Parameters<typeof itemsFor>[0]) => itemsFor(s).map((i) => i.key);
+  assert.equal(keys({ onboarded: true, firstPurchase: true })[0], 'welcome');
+  assert.ok(!keys({ onboarded: true, firstPurchase: false }).includes('welcome'));
+  assert.ok(!keys({ onboarded: true }).some((k) => k.startsWith('topup')), 'no top-up without a plan');
+  assert.deepEqual(keys({ onboarded: true, plan: 'growth' }).filter((k) => k.startsWith('topup')), ['topup-growth']);
+  // A top-up costs what the plan costs per credit, to the cent, and less than any pack.
+  for (const t of TOPUPS) {
+    const plan = PLANS.find((p) => p.key === t.plan)!;
+    assert.equal(perCredit(t).toFixed(2), perCredit(plan).toFixed(2), t.key);
+    assert.ok(perCredit(t) < Math.min(...PACKS.map(perCredit)), t.key);
+  }
+});
+
+test('pricing: the plan an account is on comes from what it paid for, and lapses', () => {
+  const now = Date.parse('2026-11-19T00:00:00Z'), ago = (d: number) => new Date(now - d * 86400000);
+  assert.equal(currentPlan([], now), null);
+  assert.equal(currentPlan([{ item: 'pack-100', credits: 100, createdAt: ago(1) }], now), null, 'a pack is not a plan');
+  assert.equal(currentPlan([{ item: 'starter', credits: 700, createdAt: ago(10) }], now), 'starter');
+  assert.equal(currentPlan([{ item: 'starter', credits: 700, createdAt: ago(36) }], now), null, 'a month and a few days on, it has lapsed');
+  assert.equal(currentPlan([{ item: 'agency-3', credits: 10500, createdAt: ago(80) }], now), 'agency', 'three months paid at once');
+  assert.equal(currentPlan([{ item: 'starter', credits: 700, createdAt: ago(20) }, { item: 'growth', credits: 1600, createdAt: ago(2) }], now), 'growth', 'the latest counts');
+  // Purchases recorded before keys were kept are told apart by their credits.
+  assert.equal(currentPlan([{ item: null, credits: 1600, createdAt: ago(5) }], now), 'growth');
+  assert.equal(itemKeyOf({ item: null, credits: 1000 }), 'onboarding');
+  assert.equal(itemKeyOf({ item: 'welcome', credits: 25 }), 'welcome');
 });

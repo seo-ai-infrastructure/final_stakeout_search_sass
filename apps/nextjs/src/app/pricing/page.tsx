@@ -12,7 +12,7 @@ export const revalidate = 3600;
 export const metadata: Metadata = {
   title: 'Pricing | Stakeout Search',
   description:
-    'Credit packs from $25, monthly plans from $197, no onboarding fee. One credit is one grid point searched on a real phone, with its recording and receipt.',
+    'Your first scan for $5, credit packs from $9, monthly plans from $197, no onboarding fee. One credit is one grid point searched on a real phone, with its recording and receipt.',
 };
 
 export default function Pricing() {

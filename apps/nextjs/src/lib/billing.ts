@@ -1,7 +1,7 @@
 import { db } from '@stakeout/db';
 import { stripe, stripeTestMode } from './stripe';
 import { InputError } from '@stakeout/core/grid';
-import { ONBOARDING, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
+import { ONBOARDING, WELCOME, currentPlan, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
 
 /** Accounts created before this pricing took effect, and admins, go straight to the plans. */
@@ -23,19 +23,23 @@ export async function onboardingOf(users: { id: string; role: string; createdAt:
 }
 
 /**
- * What this account can buy now: credit packs and monthly plans, the three-month offer while it
- * runs, and the optional onboarding until it is paid for or waived. Prices live in lib/pricing.ts.
+ * What this account can buy now: the welcome pack before its first purchase, its plan's top-up while
+ * it is on a plan, credit packs and monthly plans, the three-month offer while it runs, and the
+ * optional onboarding until it is paid for or waived. Prices live in lib/pricing.ts.
  */
 export async function catalogFor(user: { id: string; role: string; createdAt: Date }): Promise<PriceItem[]> {
-  const onboarded = (await onboardingOf([user])).get(user.id) !== 'no';
-  return itemsFor({ onboarded, admin: user.role === 'ADMIN' });
+  const [onboarding, paid] = await Promise.all([
+    onboardingOf([user]),
+    db.paymentOrder.findMany({ where: { userId: user.id, captureId: { not: null }, refundedAt: null }, select: { item: true, credits: true, createdAt: true } }),
+  ]);
+  return itemsFor({ onboarded: onboarding.get(user.id) !== 'no', admin: user.role === 'ADMIN', firstPurchase: paid.length === 0, plan: currentPlan(paid) });
 }
 
 /**
  * Tells the admins a payment was recorded (to PAYMENT_ALERT_EMAIL if set, otherwise every admin
  * account). Never throws: a failed email must not undo or block a payment that went through.
  */
-async function alertPayment(p: { userId: string; credits: number; cents: number; balance: number; orderId: string; captureId: string }) {
+async function alertPayment(p: { userId: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; item?: string | null; refunded?: boolean }) {
   try {
     if (!mailerConfigured()) return;
     const buyer = await db.user.findUnique({ where: { id: p.userId }, select: { email: true } });
@@ -81,9 +85,29 @@ export async function fulfill(sessionId: string) {
     s.metadata?.credits !== String(purchase.credits)
   )
     throw new InputError('Payment is pending or could not be matched to this purchase.', 409);
+  // The welcome pack is one per account and one per card. Stripe cannot refuse a card before it is
+  // charged, so a second one is sent straight back and adds nothing.
+  let card: string | null = null;
+  if (purchase.item === WELCOME.key && purchase.captureId === null) {
+    const pi = await stripe<{ payment_method?: { card?: { fingerprint?: string } } | string | null }>('/payment_intents/' + encodeURIComponent(payment) + '?expand[]=payment_method').catch(() => null);
+    card = (pi && typeof pi.payment_method === 'object' ? pi.payment_method?.card?.fingerprint : null) ?? null;
+    const had = await db.paymentOrder.findFirst({
+      where: { item: WELCOME.key, captureId: { not: null }, refundedAt: null, id: { not: sessionId }, OR: [{ userId: purchase.userId }, ...(card ? [{ cardFingerprint: card }] : [])] },
+      select: { id: true },
+    });
+    if (had) {
+      // The money goes back first (asking twice refunds once), then the order is closed without credits.
+      await stripe('/refunds', 'POST', { payment_intent: payment, reason: 'duplicate' }, 'refund-' + payment);
+      const closed = await db.paymentOrder.updateMany({ where: { id: sessionId, captureId: null }, data: { captureId: payment, cardFingerprint: card, refundedAt: new Date() } });
+      const user = await db.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
+      if (closed.count) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: purchase.cents, balance: user.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item, refunded: true });
+      return { ...user, credits: 0, fresh: false, refunded: true as const };
+    }
+  }
+  if (purchase.refundedAt) return { ...(await db.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } })), credits: 0, fresh: false, refunded: true as const };
   let fresh = false;
   const result = await db.$transaction(async (tx) => {
-    const claimed = await tx.paymentOrder.updateMany({ where: { id: sessionId, captureId: null }, data: { captureId: payment } });
+    const claimed = await tx.paymentOrder.updateMany({ where: { id: sessionId, captureId: null }, data: { captureId: payment, ...(card ? { cardFingerprint: card } : {}) } });
     if (claimed.count) {
       fresh = true;
       await tx.creditLedger.create({ data: { userId: purchase.userId, amount: purchase.credits, reason: 'STRIPE_TOPUP', externalEventId: 'stripe:' + payment } });
@@ -92,6 +116,6 @@ export async function fulfill(sessionId: string) {
     return tx.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
   });
   // Only the first time this payment is recorded: the browser and Stripe's webhook both report it.
-  if (fresh) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: purchase.cents, balance: result.creditBalance, orderId: sessionId, captureId: payment });
-  return { ...result, credits: purchase.credits, fresh };
+  if (fresh) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: purchase.cents, balance: result.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item });
+  return { ...result, credits: purchase.credits, fresh, refunded: false as const };
 }
