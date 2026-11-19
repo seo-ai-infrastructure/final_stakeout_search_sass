@@ -123,15 +123,15 @@ export const TOOLS: Tool[] = [
   tool('inspect_url', 'What Google’s own index says about one page: indexed or not and why, the address Google filed it under, when it last fetched it, and the rich results it found. The answer is kept for 24 hours.', { url: str('The page’s full address, with https://. Its website has to be in the connected Search Console.') }, ['url']),
   tool('website_properties', 'Which Search Console property and Analytics properties the connected Google login has for a website.', { website: str('The website address, with https://.') }, ['website']),
   tool('list_scans', 'This account’s rank scans, newest first: keyword, business, status and share of local voice.'),
-  tool('get_scan', 'One scan: where the business ranked at each point of the grid; the three businesses most often above it, with their categories, rating and review count where known; and, when AI answers were recorded, how often Google gave one, how often it cited the business, and the sites it cited most.', { scanId: str('The scan’s `id` from list_scans.') }, ['scanId']),
-  tool('start_scan', 'Starts a rank scan: a grid of points around a place, each searched on a real phone. Costs one credit per point: 25 for the default 5×5. A larger grid is only run when gridSize is given, and every scan counts against the monthly credit limit the account sets for its agents.', {
+  tool('get_scan', 'One scan: where the business ranked at each point of the grid; the three businesses most often above it, with their categories, rating and review count where known; and how often Google gave an AI answer, how often it cited the business or its website, and the sites it cited most. A scan run in the Google Maps app has no AI answers to record, and says so.', { scanId: str('The scan’s `id` from list_scans.') }, ['scanId']),
+  tool('start_scan', 'Starts a rank scan: a grid of points around a place, each searched in Google on a real phone. Google’s AI Overview is recorded at every point, at no extra cost. Costs one credit per point: 25 for the default 5×5. A larger grid is only run when gridSize is given, and every scan counts against the monthly credit limit the account sets for its agents.', {
     keyword: str('The search to track, e.g. "plumber near me".'),
     business: str('The business name exactly as on Google.'),
     lat: { type: 'number', description: 'Centre of the grid.' },
     lng: { type: 'number', description: 'Centre of the grid.' },
     gridSize: { type: 'integer', enum: AGENT_GRIDS, description: 'Points per side. Default 5 (25 credits). 7 is 49 credits, 9 is 81, 11 is 121.' },
     spacingMiles: { type: 'number', enum: [0.5, 1, 2, 3, 5], description: 'Distance between points. Default 1.' },
-    trackAiOverviews: { type: 'boolean', description: 'Also record Google’s AI answer at each point. Default false.' },
+    website: str('The business’s own website, e.g. stuartsplumbing.com, so the report can tell when an AI answer cites it. Left out, it is taken from the account’s earlier scans of the business or its listing, when one is known.'),
   }, ['keyword', 'business', 'lat', 'lng']),
 ];
 
@@ -246,7 +246,7 @@ export function toolCall(name: string, a: Record<string, unknown>): Call | strin
       // 5×5 unless a size is named: a scan is never made larger than asked for.
       const gridSize = a.gridSize === undefined || a.gridSize === null ? AGENT_GRID : Number(a.gridSize);
       if (!AGENT_GRIDS.includes(gridSize)) return 'gridSize must be 3, 5, 7, 9 or 11.';
-      return { route: 'scan-create', method: 'POST', body: { keyword: s(a.keyword), targetBusiness: s(a.business), centerLat: a.lat, centerLng: a.lng, gridSize, spacingKm, trackAiOverviews: a.trackAiOverviews === true, targetType: 'mobile_chrome' } };
+      return { route: 'scan-create', method: 'POST', body: { keyword: s(a.keyword), targetBusiness: s(a.business), centerLat: a.lat, centerLng: a.lng, gridSize, spacingKm, targetType: 'mobile_chrome', ...(s(a.website).trim() ? { targetDomain: s(a.website).trim() } : {}) } };
     }
     default: return 'Unknown tool.';
   }

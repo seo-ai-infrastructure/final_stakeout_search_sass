@@ -1,3 +1,4 @@
+import { siteFromScans } from '@/lib/businessSite';
 import { db, Prisma } from '@stakeout/db';
 import { ispLabel } from './ispLabel';
 import { InputError } from '@stakeout/core/grid';
@@ -90,8 +91,11 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
   const s = await db.gridScan.findFirst({ where, select: reportSelect });
   if (!s) throw new InputError('Report unavailable.', 404);
   await fillCensus(s.pins);
+  // A scan made before websites were saved borrows the one from the account's other scans of the same business.
+  const borrowed = s.targetDomain ? null : await db.gridScan.findUnique({ where: { id: s.id }, select: { userId: true } }).then((o) => (o ? siteFromScans(o.userId, s.targetBusiness) : null)).catch(() => null);
   return {
     ...s,
+    ...(borrowed ? { targetDomain: borrowed } : {}),
     pins: s.pins.map((p) => {
       const m = p.proxyMeta as Record<string, unknown> | null;
       const token =

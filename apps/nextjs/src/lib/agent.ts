@@ -24,6 +24,7 @@ import { needsReply, isLow, type Review } from '@stakeout/core/gbpReviews';
 import type { GbpChange } from '@stakeout/core/gbp';
 import type { GbpPost } from '@stakeout/core/gbpPosts';
 import { keptRivals } from '@/lib/rivals';
+import { siteFromScans } from '@/lib/businessSite';
 import { agentBudget, reserveAgentCredits } from '@/lib/agentLimits';
 import { postproxy } from '@/lib/postproxy';
 import { appUrl } from '@/lib/mailer';
@@ -66,7 +67,7 @@ const ROUTES: Record<string, Handler> = {
 async function scanSummary(user: ActingUser, id: string) {
   const scan = await db.gridScan.findFirst({
     where: { id, ...(user.role === 'ADMIN' ? {} : { userId: user.id }) },
-    select: { id: true, keyword: true, targetBusiness: true, targetDomain: true, centerLat: true, centerLng: true, status: true, solv: true, gridSize: true, spacingKm: true, city: true, stateCode: true, totalPins: true, completedPins: true, failedPins: true, createdAt: true, trackAiOverviews: true },
+    select: { id: true, userId: true, targetType: true, keyword: true, targetBusiness: true, targetDomain: true, centerLat: true, centerLng: true, status: true, solv: true, gridSize: true, spacingKm: true, city: true, stateCode: true, totalPins: true, completedPins: true, failedPins: true, createdAt: true, trackAiOverviews: true },
   });
   if (!scan) throw new InputError('Unknown scan.', 404);
   const pins = await db.gridPin.findMany({ where: { scanId: id }, orderBy: [{ rowIdx: 'asc' }, { colIdx: 'asc' }], select: { rowIdx: true, colIdx: true, city: true, status: true, rankFound: true, topCompetitors: true, hasAiOverview: true, targetCitedInAi: true, aiCitations: true } });
@@ -76,13 +77,20 @@ async function scanSummary(user: ActingUser, id: string) {
   // Categories, rating and review count for the three most often above the business, from what is already kept.
   const known = await keptRivals(rivals.slice(0, 3).map((r) => r.name), scan.centerLat, scan.centerLng).catch(() => ({}) as Awaited<ReturnType<typeof keptRivals>>);
   const answered = done.filter((p) => p.hasAiOverview);
-  const cited = getListed(done, scan.targetDomain);
+  const maps = scan.targetType === 'mobile_maps';
+  const { userId: _owner, targetDomain: _site, targetType: _type, trackAiOverviews: _ai, centerLat: _lat, centerLng: _lng, ...shown } = scan;
+  // A scan with no website of its own borrows the one from the account's other scans of the same business.
+  const website = scan.targetDomain ?? (await siteFromScans(scan.userId, scan.targetBusiness).catch(() => null));
+  const cited = getListed(done, website);
   return {
-    ...scan,
+    ...shown,
+    website,
+    searchedIn: maps ? 'Google Maps app' : 'Google search in Chrome',
     points: pins.map((p) => ({ row: p.rowIdx, col: p.colIdx, city: p.city, status: p.status, rank: p.rankFound, ...(scan.trackAiOverviews ? { aiAnswer: p.hasAiOverview, citedInAi: p.targetCitedInAi } : {}) })),
     averageRank: ranked.length ? Math.round((ranked.reduce((n, p) => n + (p.rankFound ?? 0), 0) / ranked.length) * 10) / 10 : null,
     notFoundAt: done.length - ranked.length,
     topRivals: rivals.map((r, i) => (i < 3 ? { ...r, ...(known[r.name] ?? { details: 'Not looked up yet: a person can open this scan’s rival comparison on the site to fetch them.' }) } : r)),
+    ...(maps ? { aiAnswers: 'Not applicable: this scan searched the Google Maps app, which shows no AI Overview. A scan in Google search (the default) always records them.' } : {}),
     ...(scan.trackAiOverviews ? { aiAnswers: { pointsWithAnAnswer: answered.length, pointsCitingTheBusiness: answered.filter((p) => p.targetCitedInAi).length, ownSiteCitedAt: cited.ownAnswers, mostCitedSites: [...cited.act, ...cited.others].sort((a, b) => b.answers - a.answers).slice(0, 10).map((c) => ({ site: c.site, name: c.name, answers: c.answers, share: c.share })) } } : {}),
   };
 }

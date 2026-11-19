@@ -261,3 +261,28 @@ test('the playbooks are offered as MCP prompts', () => {
   for (const b of PLAYBOOKS) for (const m of playbookText(b).matchAll(/\b([a-z]+(?:_[a-z]+)+)\b/g)) if (!/^(utm|gbp)_/.test(m[1])) assert.ok(TOOLS.some((t) => t.name === m[1]), b.name + ' names ' + m[1]);
   assert.match(playbookText(PLAYBOOKS[0]), /my business/);
 });
+
+import { sameBusiness, siteDomain } from '../packages/core/businessSite';
+import { parseSpec } from '../packages/core/grid';
+
+test('a scan keeps the business’s website as a bare domain', () => {
+  for (const [typed, want] of [['stuartsplumbing.com', 'stuartsplumbing.com'], ['https://www.StuartsPlumbing.com/', 'stuartsplumbing.com'], ['http://stuartsplumbing.com/contact?utm_source=google#top', 'stuartsplumbing.com'], ['WWW.stuartsplumbing.com:443', 'stuartsplumbing.com'], ['book.stuartsplumbing.co.uk', 'book.stuartsplumbing.co.uk']] as const)
+    assert.equal(siteDomain(typed), want, typed);
+  for (const bad of ['', 'stuarts plumbing', 'localhost', 'not a site', 'http://', '12345', undefined, 42]) assert.equal(siteDomain(bad), null, String(bad));
+  assert.equal(sameBusiness("Stuart's Plumbing", 'STUARTS  PLUMBING'), true);
+  assert.equal(sameBusiness('Stuart’s Plumbing', "Stuart's Plumbing"), true);
+  assert.equal(sameBusiness("Stuart's Plumbing", "Stuart's Plumbing & Air"), false);
+  assert.equal(sameBusiness('', ''), false);
+  const base = { keyword: 'plumber near me', targetBusiness: "Stuart's Plumbing", centerLat: 28.03, centerLng: -81.94, targetType: 'mobile_chrome' };
+  assert.equal(parseSpec({ ...base, targetDomain: 'https://www.stuartsplumbing.com/' }).targetDomain, 'stuartsplumbing.com');
+  assert.equal(parseSpec(base).targetDomain, null);
+  assert.throws(() => parseSpec({ ...base, targetDomain: 'stuarts plumbing' }), /website as a domain/);
+  // AI Overviews are recorded on every Google search scan whatever is asked; the Maps app has none.
+  assert.equal(parseSpec({ ...base, trackAiOverviews: false }).trackAiOverviews, true);
+  assert.equal(parseSpec({ ...base, targetType: 'mobile_maps' }).trackAiOverviews, false);
+  // An agent's scan passes the website through, and no longer offers AI tracking as a choice.
+  const call = toolCall('start_scan', { keyword: 'plumber near me', business: "Stuart's Plumbing", lat: 28.03, lng: -81.94, website: 'stuartsplumbing.com' }) as { body: Record<string, unknown> };
+  assert.equal(call.body.targetDomain, 'stuartsplumbing.com');
+  assert.equal('trackAiOverviews' in call.body, false);
+  assert.equal('trackAiOverviews' in (TOOLS.find((t) => t.name === 'start_scan')!.inputSchema.properties), false);
+});

@@ -40,6 +40,8 @@ export function NewScanWizard() {
   // The keyword being typed; chosen keywords live in `picked`.
   const [keyword, setKeyword] = useState('');
   const [targetBusiness, setTargetBusiness] = useState('');
+  // Optional: the business's own website, so the report can tell when an AI answer cites it.
+  const [website, setWebsite] = useState('');
   const [centerLat, setCenterLat] = useState<number>(28.039465);
   const [centerLng, setCenterLng] = useState<number>(-81.949804);
   const [gridSize, setGridSize] = useState<number>(5);
@@ -743,6 +745,7 @@ export function NewScanWizard() {
         body: JSON.stringify({
           keyword: kw,
           targetBusiness: targetBusiness.trim(),
+          ...(website.trim() ? { targetDomain: website.trim() } : {}),
           centerLat,
           centerLng,
           // No ISP targeting: the network choice replaces it.
@@ -859,6 +862,17 @@ export function NewScanWizard() {
                 onChange={(e) => setTargetBusiness(e.target.value)}
                 className={field}
               />
+              <input
+                type="text"
+                inputMode="url"
+                autoCapitalize="none"
+                aria-label="The business’s website (optional)"
+                placeholder="Website, e.g. stuartsplumbing.com (optional)"
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                className={field}
+              />
+              <p className="-mt-1 text-xs text-slate-500">Lets the report tell when Google’s AI answer cites the business’s own site. Left empty, it is taken from your earlier scans of this business or its listing, when one is known.</p>
               {shownKeywords.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {shownKeywords.map((k) => (

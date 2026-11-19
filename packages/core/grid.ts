@@ -1,3 +1,4 @@
+import { siteDomain } from './businessSite';
 import { asScanNetwork, placedLayout } from './network';
 import { createHash } from 'node:crypto';
 import zipcodes from 'zipcodes';
@@ -84,9 +85,14 @@ export function parseSpec(input: Record<string, unknown>) {
     throw new InputError('Choose a supported Android surface.');
   if (!['once', 'daily', 'weekly'].includes(scheduleType))
     throw new InputError('Invalid schedule.');
+  // Optional: the business's own website, kept as a bare domain. Anything given must be readable as one.
+  const typedSite = typeof input.targetDomain === 'string' ? input.targetDomain.trim() : '';
+  const targetDomain = siteDomain(typedSite);
+  if (typedSite && !targetDomain) throw new InputError('Enter the website as a domain, such as stuartsplumbing.com.');
   return {
     keyword: keyword.trim(),
     targetBusiness: targetBusiness.trim(),
+    targetDomain,
     centerLat,
     centerLng,
     gridSize,

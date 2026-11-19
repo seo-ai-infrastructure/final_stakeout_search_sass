@@ -12,6 +12,7 @@ import { requestKeyValid } from '@stakeout/core/requestKey';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { redis } from '@stakeout/core/redis';
+import { knownSite } from '@/lib/businessSite';
 
 // Preparing proxy lists for every city in a new grid can take many Proxy-Seller calls.
 export const maxDuration = 300;
@@ -62,6 +63,8 @@ export async function POST(req: Request) {
     // Points the customer left out on the map (water, empty land) are not created or charged.
     const skip = skippedPoints(body.skip, s.gridSize);
     const pins = placed ? placed.pins : skip.size ? buildGrid(s).filter((p) => !skip.has(p.rowIdx + '_' + p.colIdx)) : undefined;
+    // The business's own website, when none was given: taken from what the account already has, so the report can tell when an AI answer cites it.
+    if (!s.targetDomain) s.targetDomain = await knownSite(u.id, s.targetBusiness);
     const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins);
     await wakeWorker('new scan');
     // A customer just started a scan: if the worker has gone quiet, the admins hear about it now.
