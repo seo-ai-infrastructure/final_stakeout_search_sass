@@ -135,10 +135,19 @@ export function NewScanWizard() {
         .catch(() => []);
       if (!live) return;
       setSaved(list);
-      const q = new URLSearchParams(window.location.search);
+      let q = new URLSearchParams(window.location.search);
+      // Back from paying for a scan offered elsewhere: what it was for is waiting here (kept an hour).
+      try {
+        const kept = window.sessionStorage.getItem('stakeout.scanPrefill');
+        if (kept) {
+          window.sessionStorage.removeItem('stakeout.scanPrefill');
+          const k = JSON.parse(kept) as { q?: string; at?: number };
+          if (!q.getAll('kw').length && !q.get('business') && !q.get('from') && typeof k.q === 'string' && Date.now() - Number(k.at) < 3600000) q = new URLSearchParams(k.q);
+        }
+      } catch { /* nothing kept */ }
       const b = q.get('business') && list.find((x) => x.id === q.get('business'));
       if (b) return applyBusiness(b);
-      // From a Google profile's search terms (?name=…&kw=…&kw=…[&lat=&lng=&grid=]): the saved business of that name if
+      // From a Google profile's search terms (?name=…&kw=…&kw=…[&lat=&lng=&grid=&miles=]): the saved business of that name if
       // there is one, with those keywords added and picked. Without one, the keywords wait in the list
       // while the business is searched for as usual.
       const kws = [...new Set(q.getAll('kw').map((k) => k.trim().slice(0, 120)).filter(Boolean))].slice(0, 10);
@@ -159,6 +168,8 @@ export function NewScanWizard() {
           }
         }
         if (q.get('grid')) setGridSize(offeredSize(Number(q.get('grid'))));
+        const km = ({ '0.5': 0.80467, '1': 1.60934, '2': 3.21868, '3': 4.82802, '5': 8.04672 } as Record<string, number>)[q.get('miles') ?? ''];
+        if (km) setSpacingKm(km);
         return;
       }
       const from = q.get('from');

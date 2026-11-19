@@ -171,6 +171,8 @@ export type GridScanData = {
   brand?: { name: string; accent: string | null; logo: string | null } | null;
   /** Set when an admin is reading another account's scan: that account's email. */
   viewingFor?: string;
+  /** For the owner of a finished 5×5 scan of a business with no paid listing: the points it was weak on. */
+  bridge?: { weak: number; total: number; why: 'rank' | 'ai'; business: string; monthly: string } | null;
   id: string;
   targetBusiness: string;
   /** The business's own website (a bare domain), when it was given. */
@@ -645,6 +647,15 @@ export function GeoGridDashboard({
         <div className="rounded-lg border border-amber-500/40 bg-amber-950/30 px-4 py-2 text-sm text-amber-200">
           Quality-control view: this scan belongs to {scan.viewingFor}. You can read it and stop it; re-runs, sharing and schedules stay with the owner.{' '}
           <a href="/admin/scans" className="underline">All scans</a>
+        </div>
+      )}
+      {!shared && scan.bridge && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-4 py-3">
+          <p className="min-w-0 flex-1 text-sm text-slate-200">
+            <span className="font-semibold text-slate-50">{scan.bridge.business} {scan.bridge.why === 'rank' ? 'missed the top 3' : 'was left out of the AI Overview'} on {scan.bridge.weak} of {scan.bridge.total} points.</span>{' '}
+            <span className="text-slate-400">Put its Google listing on the Manage plan ({scan.bridge.monthly} a month) for Business Profile insights, the gaps against the competitors above it, and scheduled posts.</span>
+          </p>
+          <a href="/profiles?tab=listing" className="whitespace-nowrap rounded-lg bg-emerald-500 px-3.5 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-400">Manage this listing · {scan.bridge.monthly}/mo</a>
         </div>
       )}
       {shared && scan.brand && (

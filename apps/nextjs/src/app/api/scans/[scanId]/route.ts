@@ -6,10 +6,30 @@ import { report } from '@/lib/reports';
 import { getAuthenticatedUser, readScope } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { InputError, scheduleCron } from '@stakeout/core/grid';
+import { scanBridge } from '@stakeout/core/upgradeTriggers';
+import { dollars, unitCents } from '@stakeout/core/gbpPlans';
+import { gbpOpen, paidLocations } from '@/lib/gbpAccess';
 import { requestRerun, stopScan } from '@stakeout/core/scans';
 import { deleteScanFiles } from '@stakeout/core/r2';
 import { removeStakeoutSchedule } from '@stakeout/core/scheduleHelper';
 type C = { params: Promise<{ scanId: string }> };
+
+/**
+ * For a customer's own finished 5×5 scan of a business that has no listing on the Manage plan: how
+ * many points it missed the top three on, so the page can point at what would move them.
+ */
+async function bridgeFor(id: string, me: { id: string; role: string; email?: string }) {
+  if (me.role === 'ADMIN' || !gbpOpen(me)) return null;
+  const scan = await db.gridScan.findFirst({ where: { id, userId: me.id }, select: { status: true, totalPins: true, trackAiOverviews: true, targetBusiness: true, pins: { select: { status: true, rankFound: true, hasAiOverview: true, targetCitedInAi: true } } } });
+  if (!scan) return null;
+  const found = scanBridge(scan, scan.pins);
+  if (!found) return null;
+  const name = scan.targetBusiness.trim().toLowerCase();
+  const paid = await paidLocations(me.id);
+  const plans = paid.size ? await db.gbpPlan.findMany({ where: { userId: me.id, locationId: { in: [...paid.keys()] } }, select: { title: true } }) : [];
+  if (plans.some((p) => (p.title ?? '').trim().toLowerCase() === name)) return null;
+  return { ...found, business: scan.targetBusiness, monthly: dollars(unitCents('MANAGE', 1)) };
+}
 export async function GET(_: Request, c: C) {
   try {
     const id = (await c.params).scanId,
@@ -17,7 +37,8 @@ export async function GET(_: Request, c: C) {
       data = await report({ id, ...readScope(me) }, { admin: me.role === 'ADMIN' });
     // An admin reading someone else's scan is told whose it is, so the page can say so.
     const owner = me.role === 'ADMIN' ? await db.gridScan.findUnique({ where: { id }, select: { userId: true, user: { select: { email: true } } } }) : null;
-    return Response.json(owner && owner.userId !== me.id ? { ...data, viewingFor: owner.user.email } : data);
+    if (owner && owner.userId !== me.id) return Response.json({ ...data, viewingFor: owner.user.email });
+    return Response.json({ ...data, bridge: await bridgeFor(id, me).catch(() => null) });
   } catch (e) {
     return errorResponse(e);
   }

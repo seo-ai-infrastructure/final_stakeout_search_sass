@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { GA_SOURCES, risingRows, type EventRow, type ExploreRow, type GaSource } from '@stakeout/core/googleExplore';
 import GoogleExplorer from '@/components/GoogleExplorer';
+import ScanOffer from '@/components/ScanOffer';
 import { BarCell, Change, MiniChart, SectionHead, Segmented, Skeleton, Tile, alongside, card, fmt, shortDate } from '@/components/InsightBits';
 
 export type Dates = ({ days: number } | { from: string; to: string }) & { /** Hold the range against the same days a year earlier instead of the days right before it. */ compare?: 'year' };
@@ -15,6 +16,7 @@ type Gsc =
   | { property: string; page: string; scope: 'page' | 'site'; range: Range; recent: GscTotals; before: GscTotals; days: { date: string; clicks: number; impressions: number }[]; daysBefore?: { date: string; clicks: number; impressions: number }[]; queries: ExploreRow[]; pages: ExploreRow[] };
 type Property = { id: string; name: string; account: string };
 type GaTotals = { a: number; b: number; c: number };
+type Phones = { rows: { query: string; clicks: number; impressions: number; position: number | null; ctr: number }[]; fallback: boolean; device: { mobileShare: number; gap: number | null; why: 'share' | 'position' } | null; offer: boolean; balance?: number; packCents?: number | null };
 type Ga = { range: Range; recent: GaTotals; before: GaTotals; days: { date: string; visits: number; keyEvents: number }[]; daysBefore?: { date: string; visits: number; keyEvents: number }[]; sources: ExploreRow[]; channels: ExploreRow[]; events: { rows: EventRow[]; calls: number; callsBefore: number } };
 
 const field = 'rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-500';
@@ -57,6 +59,20 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [website, scope, device, key]);
+  // What phones saw over the last 28 days: the searches a scan would explain. Read on its own, and only shown to customers.
+  const [phones, setPhones] = useState<Phones | null>(null);
+  const [offer, setOffer] = useState<{ query: string; why: string } | null>(null);
+  useEffect(() => {
+    let live = true;
+    setPhones(null);
+    post<Phones>({ source: 'gsc-mobile', website, scope }).then((j) => { if (live) setPhones(j); }).catch(() => {});
+    return () => { live = false; };
+  }, [website, scope]);
+  const flags = useMemo(() => new Map((phones?.offer ? phones.rows : []).map((r) => [r.query, r])), [phones]);
+  const price = phones ? ((phones.balance ?? 0) >= 25 ? '25 credits' : phones.packCents ? '$' + phones.packCents / 100 : '') : '';
+  const whyOf = (r: Phones['rows'][number]) => (phones?.fallback
+    ? `On phones over the last 28 days your page was shown ${fmt(r.impressions)} times for this search${r.position !== null ? `, around position ${r.position}` : ''}.`
+    : `On phones over the last 28 days your page was shown ${fmt(r.impressions)} times for this search, around position ${r.position}, and clicked ${r.ctr}% of the time. A page that high usually gets more: something above it is taking the clicks.`);
 
   const queries = d && d.property ? d.queries : [];
   const rising = useMemo(() => risingRows(queries), [queries]);
@@ -77,6 +93,17 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
       {d && d.property === null && <p className="text-sm text-slate-400">The connected Google login has no Search Console property for {host} (it can see {d.properties} other{d.properties === 1 ? '' : 's'}). Ask the client to add it as a user on theirs.</p>}
       {d && d.property && (
         <div className={'space-y-5 ' + (busy ? 'opacity-50' : '')}>
+          {phones?.offer && phones.device && phones.rows[0] && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-400/40 bg-amber-400/5 px-4 py-3">
+              <p className="min-w-0 flex-1 text-sm text-amber-100">
+                {phones.device.why === 'position'
+                  ? <>On phones your page sits <span className="font-semibold">{phones.device.gap} places lower</span> than on computers, and phones are {phones.device.mobileShare}% of the times it is shown.</>
+                  : <><span className="font-semibold">{phones.device.mobileShare}% of the times your page is shown are on a phone</span>, where the map pack and AI Overviews take the top of the screen.</>}
+                {' '}<span className="text-amber-200/70">See what a phone in your area is shown for “{phones.rows[0].query}”.</span>
+              </p>
+              <button type="button" onClick={() => setOffer({ query: phones.rows[0].query, why: whyOf(phones.rows[0]) })} className="whitespace-nowrap rounded-lg bg-amber-400 px-3.5 py-2 text-sm font-bold text-slate-950 hover:bg-amber-300">Scan it on real phones{price ? ` · ${price}` : ''}</button>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Tile big label="Clicks from Google Search" value={d.recent.clicks} was={d.before.clicks} spark={d.days.map((x) => x.clicks)} active={metric === 'clicks'} onSelect={() => setMetric('clicks')} />
             <Tile big label="Times shown" value={d.recent.impressions} was={d.before.impressions} spark={d.days.map((x) => x.impressions)} active={metric === 'impressions'} onSelect={() => setMetric('impressions')} />
@@ -107,7 +134,11 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
                     return (
                       <tr key={r.key} className={'hover:bg-slate-800/40 ' + (on ? 'bg-emerald-500/5' : '')}>
                         <td className="px-3 py-1.5"><input type="checkbox" className="h-4 w-4 accent-emerald-500" aria-label={'Scan ' + r.key} checked={on} disabled={!on && picked.length >= MAX_PICK} onChange={() => toggle(r.key)} /></td>
-                        <td className="max-w-[20rem] truncate px-3 py-1.5 text-slate-200" title={r.key}>{r.key}</td>
+                        <td className="max-w-[26rem] px-3 py-1.5 text-slate-200">
+                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="min-w-0 truncate" title={r.key}>{r.key}</span>
+                            {flags.has(r.key) && <button type="button" onClick={() => setOffer({ query: r.key, why: whyOf(flags.get(r.key)!) })} className="whitespace-nowrap rounded-full border border-amber-400/50 bg-amber-400/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200 hover:bg-amber-400/20">{phones?.fallback ? 'Local search' : 'Low phone click rate'} · scan the live results{price ? ` (${price})` : ''}</button>}
+                          </span>
+                        </td>
                         <BarCell value={r.a} max={topClicks} strong />
                         <td className="px-3 py-1.5 text-right text-xs tabular-nums">{r.wasA === null ? <span className="text-sky-300">new</span> : <><Change now={r.a} was={r.wasA} /> <span className="text-slate-600">({fmt(r.wasA)})</span></>}</td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{fmt(r.b)}</td>
@@ -151,6 +182,7 @@ function SearchConsole({ website, host, businessName, dates, wholeSite }: { webs
           <GoogleExplorer source="gsc" website={website} />
         </div>
       )}
+    {offer && <ScanOffer query={offer.query} why={offer.why} businessName={businessName} onClose={() => setOffer(null)} />}
     </section>
   );
 }

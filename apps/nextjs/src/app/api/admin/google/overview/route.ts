@@ -4,6 +4,8 @@ import { errorResponse } from '@/lib/api';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { google, googleAccess } from '@/lib/googleOAuth';
 import { propertyFor } from '@stakeout/core/googleSite';
+import { deviceFlag, lowMobileCtr } from '@stakeout/core/upgradeTriggers';
+import { catalogFor } from '@/lib/billing';
 import {
   exploreRange, gaEventRows, gaEventsRequest, gaRequest, gaRows, gaTotals, gscRequest, gscRows, pageOf,
   type GaFilters, type GscFilters,
@@ -30,6 +32,32 @@ export async function POST(req: Request) {
     const u = await getAuthenticatedUser();
     const b = (await req.json()) as Record<string, unknown>;
     const token = await googleAccess(u.id);
+
+    // What phones see, over the last 28 days whatever dates are on screen: the searches shown near
+    // the top and not clicked, and whether phones deserve their own look. For the scan offer.
+    if (b.source === 'gsc-mobile') {
+      const website = String(b.website ?? '');
+      if (!/^https?:\/\//.test(website)) throw new InputError('This listing has no website.');
+      const range = exploreRange({ days: 28 }, new Date(), 3);
+      if (typeof range === 'string') throw new InputError(range);
+      const sites = await google<{ siteEntry?: { siteUrl: string; permissionLevel?: string }[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites');
+      const property = propertyFor(website, sites.siteEntry ?? []);
+      if (!property) return NextResponse.json({ source: 'gsc-mobile', rows: [], fallback: true, device: null, offer: false });
+      const page = pageOf(website);
+      const at = b.scope === 'site' || !page ? undefined : page;
+      const ask = (body: unknown) => google<{ rows?: GscRow[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', body);
+      const [queries, devices, catalog] = await Promise.all([ask(gscRequest(range.recent, { device: 'MOBILE', page: at }, 'query', 1000)), ask(gscRequest(range.recent, { page: at }, 'device', 10)), catalogFor(u)]);
+      const pos = (r: GscRow) => (typeof r.position === 'number' ? round1(r.position) : null);
+      const flagged = lowMobileCtr((queries.rows ?? []).map((r) => ({ query: r.keys?.[0] ?? '', clicks: r.clicks ?? 0, impressions: r.impressions ?? 0, position: pos(r) })), new URL(website).hostname, text(b.brand) ?? '');
+      // What the scan would cost this account: nothing more when it has the credits, otherwise its cheapest pack.
+      const pack = catalog.find((i) => i.key === 'welcome') ?? catalog.find((i) => i.key === 'pack-25');
+      return NextResponse.json({
+        source: 'gsc-mobile', ...flagged,
+        device: deviceFlag((devices.rows ?? []).map((r) => ({ device: r.keys?.[0] ?? '', impressions: r.impressions ?? 0, position: pos(r) }))),
+        // Admins run scans as they like: the offer is for customers.
+        offer: u.role !== 'ADMIN', balance: u.creditBalance, packCents: pack?.cents ?? null,
+      });
+    }
 
     if (b.source === 'gsc') {
       const website = String(b.website ?? '');
