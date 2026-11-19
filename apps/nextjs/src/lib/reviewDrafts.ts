@@ -1,30 +1,23 @@
-import { redis } from '@stakeout/core/redis';
+import { db } from '@stakeout/db';
 
 /**
  * Replies an account's AI agent has written to a low-rated review. They are not sent to Google:
  * they wait here for a person, who reads them in the review inbox and sends, edits or drops them.
- * Kept 60 days, one per review (a newer draft replaces the older).
+ * One per review (a newer draft replaces the older), kept until it is sent or discarded.
  */
 export type ReviewDraft = { text: string; at: string };
-const key = (profile: string) => 'stakeout:reviewdrafts:' + profile;
-const KEEP = 60 * 86400;
 
 export async function saveDraft(profile: string, review: string, text: string): Promise<ReviewDraft> {
-  const draft = { text: text.trim(), at: new Date().toISOString() };
-  await redis().hset(key(profile), review, JSON.stringify(draft));
-  await redis().expire(key(profile), KEEP).catch(() => {});
-  return draft;
+  const now = new Date();
+  await db.reviewDraft.upsert({ where: { profileId_reviewId: { profileId: profile, reviewId: review } }, update: { text: text.trim(), createdAt: now }, create: { profileId: profile, reviewId: review, text: text.trim(), createdAt: now } });
+  return { text: text.trim(), at: now.toISOString() };
 }
 
 /** The waiting drafts for these reviews, by review id. A failed read shows none, never an error. */
 export async function draftsFor(profile: string, reviews: string[]): Promise<Record<string, ReviewDraft>> {
   if (!reviews.length) return {};
-  const got = await redis().hmget(key(profile), ...reviews).catch(() => [] as (string | null)[]);
-  const out: Record<string, ReviewDraft> = {};
-  reviews.forEach((id, i) => { try { if (got[i]) out[id] = JSON.parse(got[i] as string) as ReviewDraft; } catch { /* unreadable: no draft */ } });
-  return out;
+  const rows: { reviewId: string; text: string; createdAt: Date }[] = await db.reviewDraft.findMany({ where: { profileId: profile, reviewId: { in: reviews } }, select: { reviewId: true, text: true, createdAt: true } }).catch(() => []);
+  return Object.fromEntries(rows.map((r) => [r.reviewId, { text: r.text, at: r.createdAt.toISOString() }]));
 }
 
-export const dropDraft = (profile: string, review: string) => redis().hdel(key(profile), review).then(() => {}).catch(() => {});
-/** How many drafts are waiting in one connected account. */
-export const draftCount = (profile: string) => redis().hlen(key(profile)).catch(() => 0);
+export const dropDraft = (profile: string, review: string) => db.reviewDraft.deleteMany({ where: { profileId: profile, reviewId: review } }).then(() => {}).catch(() => {});

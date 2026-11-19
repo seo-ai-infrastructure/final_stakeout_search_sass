@@ -252,7 +252,7 @@ test('the playbooks are offered as MCP prompts', () => {
   const init = rpcAnswer({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) as { result: { capabilities: Record<string, unknown> } };
   assert.ok(init.result.capabilities.prompts);
   const list = rpcAnswer({ jsonrpc: '2.0', id: 2, method: 'prompts/list' }) as { result: { prompts: { name: string }[] } };
-  assert.deepEqual(list.result.prompts.map((p) => p.name), ['weekly_listing_check', 'reply_to_new_reviews', 'find_why_i_dropped', 'monthly_client_report']);
+  assert.deepEqual(list.result.prompts.map((p) => p.name), ['weekly_listing_check', 'reply_to_new_reviews', 'find_why_i_dropped', 'monthly_client_report', 'optimize-vs-top-rivals']);
   const got = rpcAnswer({ jsonrpc: '2.0', id: 3, method: 'prompts/get', params: { name: 'weekly_listing_check', arguments: { business: 'Acme Plumbing' } } }) as { result: { messages: { role: string; content: { type: string; text: string } }[] } };
   assert.equal(got.result.messages[0].role, 'user');
   assert.match(got.result.messages[0].content.text, /Acme Plumbing/);

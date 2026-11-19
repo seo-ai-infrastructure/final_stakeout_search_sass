@@ -171,14 +171,14 @@ async function briefing(user: ActingUser, invoke: Invoke) {
       });
     }),
     part(() => agentBudget(user.id).then((b) => ({ scanCreditsLeftThisMonth: b.left, monthlyLimit: b.cap, usedThisMonth: b.used }))),
-    // The service's own tally of the last week, for a customer's own connected accounts. Left out when it cannot be read.
+    // The service's own tally of the last week: every connected account for an admin, a customer's own otherwise. Left out when it cannot be read.
     (async () => {
-      if (user.role === 'ADMIN') return null;
-      const groups = await db.gbpAccount.findMany({ where: { userId: user.id, profileId: { not: null } }, select: { groupId: true }, take: 3 }).catch(() => []);
-      if (groups.length !== 1) return null;
-      type Sum = { posts?: { published?: number; published_previous?: number; failed?: number; scheduled_ahead?: number; next_scheduled_at?: string | null }; reviews?: { received?: number; awaiting_reply?: number } };
-      const r = await postproxy<Sum>('/api/summary', { query: { window: '7d', profile_group_id: groups[0].groupId } }).catch(() => null);
-      return r?.posts ? { last7Days: { postsPublished: r.posts.published ?? 0, postsPublishedTheWeekBefore: r.posts.published_previous ?? null, postsFailed: r.posts.failed ?? 0 }, reviewsAwaitingReplyOnTheWholeGoogleAccount: r.reviews?.awaiting_reply ?? null } : null;
+      type Sum = { posts?: { published?: number; published_previous?: number | null; failed?: number }; reviews?: { awaiting_reply?: number } };
+      const groups = user.role === 'ADMIN' ? [undefined] : (await db.gbpAccount.findMany({ where: { userId: user.id, profileId: { not: null } }, select: { groupId: true }, take: 5 }).catch(() => [])).map((g: { groupId: string }) => g.groupId);
+      const got = (await Promise.all(groups.map((g: string | undefined) => postproxy<Sum>('/api/summary', { query: { window: '7d', profile_group_id: g } }).catch(() => null)))).filter((r): r is Sum => Boolean(r?.posts));
+      if (!got.length) return null;
+      const sum = (f: (r: Sum) => number | null | undefined) => got.reduce((n, r) => n + (Number(f(r)) || 0), 0);
+      return { last7Days: { postsPublished: sum((r) => r.posts?.published), postsPublishedTheWeekBefore: sum((r) => r.posts?.published_previous), postsFailed: sum((r) => r.posts?.failed) }, reviewsAwaitingReplyOnTheWholeGoogleAccount: sum((r) => r.reviews?.awaiting_reply) };
     })(),
   ]);
   return {

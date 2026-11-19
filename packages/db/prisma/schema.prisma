@@ -446,3 +446,83 @@ model ApiKey {
 
   @@index([userId])
 }
+
+/// An AI app that registered itself to sign people in (OAuth Dynamic Client Registration). An app
+/// that identifies itself by a metadata address instead has no row here.
+model OAuthClient {
+  id           String   @id
+  name         String
+  redirectUris Json
+  /// SHA-256 of the app's secret, for one that asked for a secret.
+  secretHash   String?
+  uri          String?
+  createdAt    DateTime @default(now())
+}
+
+/// An app a person has approved to act as their account through the MCP server. `clientId`: an
+/// OAuthClient id, or the app's metadata address. Revoking it ends every token issued under it.
+model OAuthGrant {
+  id         String    @id @default(cuid())
+  userId     String
+  clientId   String
+  clientName String
+  /// The MCP server address the tokens are for.
+  resource   String
+  scope      String
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([userId])
+  @@index([clientId])
+}
+
+/// A one-time sign-in code, kept as its hash, bound to the app, its callback and its PKCE challenge.
+model OAuthCode {
+  hash          String    @id
+  grantId       String
+  clientId      String
+  redirectUri   String
+  codeChallenge String
+  resource      String
+  scope         String
+  expiresAt     DateTime
+  usedAt        DateTime?
+
+  @@index([grantId])
+}
+
+/// An access or refresh token, kept as its hash only. `rotatedAt`: when a refresh token was swapped for a new one.
+model OAuthToken {
+  hash      String    @id
+  grantId   String
+  kind      String
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  rotatedAt DateTime?
+
+  @@index([grantId])
+  @@index([expiresAt])
+}
+
+/// A reply an account's AI agent wrote to a low-rated review. It is never sent by itself: a person
+/// reads it in the review inbox and sends or discards it.
+model ReviewDraft {
+  id        String   @id @default(cuid())
+  profileId String
+  reviewId  String
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, reviewId])
+}
+
+/// How many scan credits an account's AI agents may spend in a month (null: the default), and how
+/// many they have spent in `month` (YYYY-MM).
+model AgentLimit {
+  userId         String   @id
+  monthlyCredits Int?
+  month          String   @default("")
+  used           Int      @default(0)
+  updatedAt      DateTime @default(now())
+}

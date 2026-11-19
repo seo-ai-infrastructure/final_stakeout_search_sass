@@ -24,7 +24,8 @@ function LoginFormContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const requested = searchParams.get('next') ?? '';
-  const nextPath = /^\/(scans|new-scan|admin)(\/|\?|$)/.test(requested)
+  // Only pages of this site: the dashboard, and the page where an AI app is approved (which sends people here to sign in first).
+  const nextPath = /^\/(scans|new-scan|admin|profiles|oauth\/authorize)(\/|\?|$)/.test(requested)
     ? requested
     : '/scans';
   // New accounts are closed unless NEXT_PUBLIC_SIGNUPS_OPEN=true (the server enforces SIGNUPS_OPEN too).

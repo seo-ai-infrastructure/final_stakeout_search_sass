@@ -54,6 +54,15 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
     setBusy(true); setError('');
     try { const b = await call<Budget>('/api/agent/limits', 'POST', { cap: Number(cap) }); setBudget(b); setCap(String(b.cap)); setCopied('cap'); setTimeout(() => setCopied(''), 1500); } catch (e) { setError(e instanceof Error ? e.message : 'The limit was not saved.'); } finally { setBusy(false); }
   };
+  // Apps that were connected by signing in (Claude, ChatGPT and the like), each of which can be disconnected.
+  type App = { id: string; name: string; from: string | null; createdAt: string; lastUsedAt: string | null };
+  const [apps, setApps] = useState<App[] | null>(null);
+  const readApps = useCallback(() => call<{ apps: App[] }>('/api/oauth/grants').then((r) => setApps(r.apps)).catch(() => setApps([])), []);
+  useEffect(() => { readApps(); }, [readApps]);
+  const disconnect = async (a: App) => {
+    if (!window.confirm(`Disconnect “${a.name}”? It stops working at once and has to be approved again to come back.`)) return;
+    try { await call('/api/oauth/grants?id=' + encodeURIComponent(a.id), 'DELETE'); await readApps(); } catch (e) { setError(e instanceof Error ? e.message : 'Could not disconnect it.'); }
+  };
   const read = useCallback(() => call<{ keys: Key[] }>('/api/keys').then((r) => setKeys(r.keys)).catch((e) => setError(e.message)), []);
   useEffect(() => { read(); }, [read]);
   const url = typeof window === 'undefined' ? '' : window.location.origin + '/api/mcp';
@@ -73,7 +82,7 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
     <div className="space-y-5">
       <div className={card}>
         <h2 className="text-lg font-semibold">Connect your own AI agent</h2>
-        <p className="mt-2 text-sm text-slate-400">Stakeout speaks MCP, so an agent you already use (Claude Code, Cursor, or one you built) can read your scans and listings and do the everyday work on them. It signs in with a key from this page.{!admin && ' It is included with any listing on the Manage plan, and works on every listing you have on it, your scans, Search Console and Analytics.'}</p>
+        <p className="mt-2 text-sm text-slate-400">Stakeout speaks MCP, so an agent you already use (Claude Code, Cursor, or one you built) can read your scans and listings and do the everyday work on them. It connects by signing you in here, or with a key from this page.{!admin && ' It is included with any listing on the Manage plan, and works on every listing you have on it, your scans, Search Console and Analytics.'}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <code className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-emerald-300">{url}</code>
           <button type="button" onClick={() => copy('url', url)} className={btn}>{copied === 'url' ? 'Copied' : 'Copy address'}</button>
@@ -100,8 +109,28 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
       {!admin && bill?.addon?.on && listed && <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">Agent access now comes with your listings on the Manage plan, so you no longer need the add-on. Take it off below to stop paying for it.</p>}
       {!admin && bill?.addon?.on && <p className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"><span>The AI agents add-on is on: {dollars(AGENT_ADDON.cents)} a month.</span><button type="button" onClick={drop} disabled={busy} className="text-xs text-slate-300 hover:text-rose-300">Take it off</button></p>}
 
+      <div className={card}>
+        <h2 className="text-lg font-semibold">Connect Claude or ChatGPT by signing in</h2>
+        <p className="mt-2 text-sm text-slate-400">No key to copy. Add Stakeout to your AI app as a custom connector with the address below. The app sends you here to sign in and approve it, and stays connected until you disconnect it.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <code className="break-all rounded bg-slate-950 px-2 py-1.5 text-sm text-slate-100">{url}</code>
+          <button type="button" onClick={() => copy('url', url)} className={btn}>{copied === 'url' ? 'Copied' : 'Copy address'}</button>
+        </div>
+        <h3 className="mt-5 text-sm font-semibold text-slate-200">Connected apps</h3>
+        <ul className="mt-2 divide-y divide-slate-800 rounded-lg border border-slate-800">
+          {apps === null ? <li className="px-3 py-2.5 text-sm text-slate-400">Loading…</li> : apps.length === 0 ? <li className="px-3 py-2.5 text-sm text-slate-400">No apps connected yet.</li> : apps.map((a) => (
+            <li key={a.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 text-sm">
+              <span className="min-w-0 break-words">{a.name}{a.from && <span className="ml-1 text-xs text-slate-500">{a.from}</span>}</span>
+              <span className="flex items-center gap-4 text-xs text-slate-500">connected {day(a.createdAt)} · last used {day(a.lastUsedAt)}<button type="button" onClick={() => disconnect(a)} className="rounded-md border border-slate-700 px-2 py-1 text-slate-300 hover:border-rose-400 hover:text-rose-300">Disconnect</button></span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-xs text-slate-500">A connected app acts as your account, within the limits below. It never sees your password.</p>
+      </div>
+
       {open && <div className={card}>
         <h2 className="text-lg font-semibold">Keys</h2>
+        <p className="mt-1 text-sm text-slate-400">For an agent that cannot sign in through a browser, or one you built yourself.</p>
         {fresh && (
           <div className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4">
             <p className="text-sm font-semibold text-emerald-200">Copy this key now. It is not shown again.</p>

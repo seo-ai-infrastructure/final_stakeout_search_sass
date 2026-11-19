@@ -5,6 +5,8 @@ import { accountOfKey } from '@/lib/apiKeys';
 import { runTool } from '@/lib/agent';
 import type { ActingUser } from '@/lib/acting';
 import { AGENT_CLOSED, agentOpen } from '@/lib/gbpAccess';
+import { challenge } from '@stakeout/core/oauth';
+import { accountOfToken, originOf } from '@/lib/oauth';
 
 export const dynamic = 'force-dynamic';
 // Starting a scan prepares proxies for every city in the grid, which can take minutes.
@@ -15,13 +17,21 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
 
 /**
  * POST /api/mcp: the MCP server for an account's own AI agents (Streamable HTTP, one JSON answer
- * per request, no session to keep). The agent sends its key as "Authorization: Bearer stk_…".
- * Each tool runs as the key's account through the site's own handlers.
+ * per request, no session to keep). An agent signs in one of two ways, both as
+ * "Authorization: Bearer …": a key made on the site (stk_…), or an access token an app got by
+ * sending its person through the sign-in (sto_…, OAuth). Without either, the answer is a 401 that
+ * says where an app finds out how to sign in. Each tool runs as that account through the site's own handlers.
  */
 export async function POST(req: Request) {
   const key = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
-  const account = key ? await accountOfKey(key).catch(() => null) : null;
-  if (!account) return json(rpcError(null, -32001, 'Send your Stakeout key as "Authorization: Bearer stk_…". Keys are made on the Connected Accounts page, under AI agents.'), 401, { 'WWW-Authenticate': 'Bearer' });
+  const site = originOf(req);
+  const account = !key ? null : key.startsWith('sto_') ? (site ? await accountOfToken(key, site).catch(() => null) : null) : await accountOfKey(key).catch(() => null);
+  if (!account)
+    return json(rpcError(null, -32001, 'Sign in to use Stakeout: connect this app (it will send you to Stakeout to approve it), or send a key as "Authorization: Bearer stk_…". Keys are made on the Connected Accounts page, under AI agents.'), 401, {
+      // An app reads this to find the sign-in. A token that was sent and refused is said to be invalid, so the app gets a new one.
+      'WWW-Authenticate': site ? challenge(site, key ? { error: 'invalid_token', description: 'The access token is unknown, expired or revoked.' } : undefined) : 'Bearer',
+      'Access-Control-Expose-Headers': 'WWW-Authenticate',
+    });
   // A key made before agent access was taken off an account does nothing.
   if (!(await agentOpen(account.user as unknown as { id: string; role: string }).catch(() => false))) return json(rpcError(null, -32003, AGENT_CLOSED), 403);
   // A runaway agent is slowed down before it runs up Google's limits or the account's credits.
