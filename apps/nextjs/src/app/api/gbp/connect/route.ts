@@ -10,7 +10,7 @@ import { disconnect, startConnect } from '@/lib/gbpConnect';
 export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser();
-    if (!gbpOpen(u)) throw new InputError('Google profiles are not open on this account yet.', 403);
+    if (!gbpOpen(u)) throw new InputError('Connected Accounts is not open on this account yet.', 403);
     if (u.role === 'ADMIN') throw new InputError('Admin accounts connect Google accounts in Postproxy.');
     if (!postproxyConfigured()) throw new InputError('Connecting Google accounts is being set up. Email sass@stakeoutsearch.com and we will sort it out.', 503);
     return NextResponse.json({ url: await startConnect(u, new URL(req.url).origin) });

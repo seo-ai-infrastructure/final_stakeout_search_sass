@@ -84,6 +84,17 @@ export async function customerWatchScope(): Promise<{ profiles: Set<string>; own
 }
 
 /**
+ * Whether an account may use AI agents at all (make a key, call the agent server): admins, and
+ * customers with a listing on the Agent plan. Agent access is not on sale at the moment, so for
+ * now that is admins only.
+ */
+export async function agentOpen(u: Account): Promise<boolean> {
+  if (u.role === 'ADMIN') return true;
+  return [...(await paidLocations(u.id)).values()].includes('AGENT');
+}
+export const AGENT_CLOSED = 'AI agent access is not part of your plan. It is coming back as an add-on: email sass@stakeoutsearch.com to be told when.';
+
+/**
  * For reads that are not about one listing (Search Console, Analytics): through an AI agent they
  * need the account to have at least one listing on the Agent plan. On the site they are free.
  */

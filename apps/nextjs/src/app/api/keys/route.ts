@@ -3,6 +3,7 @@ import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { isAgent } from '@/lib/acting';
 import { createKey, listKeys, revokeKey } from '@/lib/apiKeys';
+import { AGENT_CLOSED, agentOpen } from '@/lib/gbpAccess';
 
 /** Keys are managed by a person signed in on the site, never by an agent holding one. */
 async function person() {
@@ -23,6 +24,8 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const u = await person();
+    // A key is only worth having with agent access: without it, none is made.
+    if (!(await agentOpen(u))) throw new InputError(AGENT_CLOSED, 402);
     const b = (await req.json().catch(() => ({}))) as { name?: unknown };
     return Response.json(await createKey(u.id, b.name));
   } catch (e) {

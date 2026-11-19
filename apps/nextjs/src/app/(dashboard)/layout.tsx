@@ -31,7 +31,7 @@ export default async function DashboardLayout({
             <Link href="/admin/devices">Device fleet</Link>
           )}
           {user.role === 'ADMIN' && <Link href="/admin/scans">All scans</Link>}
-          {open && connected && <Link href="/profiles">Google profiles</Link>}
+          {open && connected && <Link href="/profiles">Connected Accounts</Link>}
           {open && !connected && (
             <Link href="/profiles" className="rounded-lg bg-emerald-500 px-3.5 py-1.5 font-semibold text-slate-950 hover:bg-emerald-400">
               Connect Search Console and Analytics <span className="font-normal opacity-80">· free</span>

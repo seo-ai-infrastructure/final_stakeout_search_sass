@@ -4,6 +4,7 @@ import { rpcAnswer, rpcError, rpcResult, type Rpc } from '@stakeout/core/agentTo
 import { accountOfKey } from '@/lib/apiKeys';
 import { runTool } from '@/lib/agent';
 import type { ActingUser } from '@/lib/acting';
+import { AGENT_CLOSED, agentOpen } from '@/lib/gbpAccess';
 
 export const dynamic = 'force-dynamic';
 // Starting a scan prepares proxies for every city in the grid, which can take minutes.
@@ -20,7 +21,9 @@ const json = (body: unknown, status = 200, headers: Record<string, string> = {})
 export async function POST(req: Request) {
   const key = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
   const account = key ? await accountOfKey(key).catch(() => null) : null;
-  if (!account) return json(rpcError(null, -32001, 'Send your Stakeout key as "Authorization: Bearer stk_…". Keys are made on the Google profiles page, under AI agents.'), 401, { 'WWW-Authenticate': 'Bearer' });
+  if (!account) return json(rpcError(null, -32001, 'Send your Stakeout key as "Authorization: Bearer stk_…". Keys are made on the Connected Accounts page, under AI agents.'), 401, { 'WWW-Authenticate': 'Bearer' });
+  // A key made before agent access was taken off an account does nothing.
+  if (!(await agentOpen(account.user as unknown as { id: string; role: string }).catch(() => false))) return json(rpcError(null, -32003, AGENT_CLOSED), 403);
   // A runaway agent is slowed down before it runs up Google's limits or the account's credits.
   const minute = 'stakeout:mcp:' + account.keyId + ':' + Math.floor(Date.now() / 60000);
   const used = await redis().incr(minute).catch(() => 0);

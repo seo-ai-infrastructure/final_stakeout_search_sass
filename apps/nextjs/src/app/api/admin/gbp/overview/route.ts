@@ -17,7 +17,7 @@ export const maxDuration = 60;
 export async function GET() {
   try {
     const u = await getAuthenticatedUser();
-    if (!gbpOpen(u)) throw new InputError('Google profiles are not open on this account yet.', 403);
+    if (!gbpOpen(u)) throw new InputError('Connected Accounts is not open on this account yet.', 403);
     if (!postproxyConfigured()) return NextResponse.json({ rows: [] });
     let ids: string[];
     // A customer's listing numbers come with the paid plan: only those listings have totals here.
