@@ -556,7 +556,7 @@ function Pricing() {
             ))}
           </dl>
           <p className="mt-4 text-sm leading-relaxed text-[#9aa7b8]">
-            Try it with a credit pack from {usd(WELCOME.cents)}: no onboarding fee. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits. A 3×3 grid is 9 credits and a 5×5 is 25, with AI Overview tracking included.{' '}
+            Your first 5×5 scan is {usd(WELCOME.cents)}: no onboarding fee. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits and roll unused credits over a month. Seeing your Search Console and Analytics is free, and managing a Google listing is $29 a location a month.{' '}
             <Link href="/pricing" className="font-semibold text-[#7aa7ff] hover:underline">See pricing</Link>
           </p>
         </div>

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { OFFERED_GRID_SIZES } from '@stakeout/core/gridSizes';
 import { SiteHeader, SiteFooter, SIGNUPS_OPEN } from './SiteChrome';
+import { PLANS as LISTING_PLANS, AGENT_ADDON, dollars } from '@stakeout/core/gbpPlans';
 import { ONBOARDING, PACKS, PLANS, WELCOME, PREPAID, PROMO, WHITE_LABEL, perCredit, promoLive, usd } from '@/lib/pricing';
 import './marketing.css';
 
@@ -33,6 +34,9 @@ const FAQ: [string, string][] = [
   ['Do I have to pay for onboarding?', `No. Your first pack is ${usd(WELCOME.cents)} for ${WELCOME.credits} credits (one per account and card): run a scan today. Onboarding (${usd(ONBOARDING.cents)}, with ${ONBOARDING.credits.toLocaleString('en-US')} credits) is there if you want us to set you up and run your first audit with you.`],
   ['Why do packs cost more per credit than plans?', `A pack is for trying it, or for a one-off job. Once you scan every week, a plan costs less per credit: ${usd(Math.round(perCredit(PLANS[0]) * 100))} on ${PLANS[0].name} against ${usd(Math.round(perCredit(PACKS[1]) * 100))} on the ${PACKS[1].name}.`],
   ['Is there a contract?', 'No. A plan renews each month on the card you paid with, and you can change plan or cancel whenever you like from your account. A change of plan starts at the next renewal.'],
+  ['What is free?', 'Connecting your Google login to see your website’s Search Console and Analytics in one place: clicks, searches, positions, leads and where visits came from. No card, no trial clock.'],
+  ['What is the Manage plan?', `It is for your Google Business listing, priced per location per month: ${dollars(LISTING_PLANS.MANAGE.tiers[0].cents)} each, less as you add locations. You get the listing’s own numbers from Google (calls, direction requests, the searches that showed it), edits, scheduled posts, a review inbox, a daily check for changes you did not make, and the gaps against the businesses outranking you. You connect Google first, see your listings, and pay only for the ones you pick.`],
+  ['Can my own AI agent use it?', `Yes. Agent access is included with any listing on Manage: your agent can run scans, read your numbers and do the everyday work on those listings. It can never change a listing’s name, categories, phone, website or address. With no listing on Manage, agent access for scans and website numbers is ${dollars(AGENT_ADDON.cents)} a month.`],
   ['Can I put my own brand on reports?', `Yes. Every scan has a share link your client can open without an account. For a one-time ${usd(WHITE_LABEL.cents)} setup, all your reporting carries your logo on your own domain, share links included.`],
 ];
 
@@ -48,7 +52,7 @@ function AccessButton({ className, label = 'Run your first scan' }: { className:
 /** What agencies complain about in grid trackers, and what we do about each. */
 const ANSWERS: [string, string, string][] = [
   ['“The tracker says #1. My client says that’s not what they see.”', 'Show them the video.', 'Every pin is a real phone at that spot, screen-recorded from the search to the last result, with the location Google itself reported. The argument ends when you press play.'],
-  ['“My credits vanish at the end of the month.”', 'Yours never expire.', 'Buy credits once and use them when the work comes in. A pin that fails is credited back automatically.'],
+  ['“My credits vanish at the end of the month.”', 'Packs never expire. Plans roll over.', 'Credits from a pack stay until you use them. On a monthly plan, what you do not use carries into the next month. A pin that fails is credited back automatically.'],
   ['“I can’t hand this report to a client.”', 'A report built to be shown.', `One link, no login: the map, the competitors, the AI Overview and the recording behind every pin. White label is a one-time ${usd(WHITE_LABEL.cents)} setup: your logo, your domain, share links included.`],
 ];
 
@@ -61,7 +65,7 @@ const VERSUS: [string, string, string][] = [
   ['Paid ads in the results', 'Can be counted as rankings', 'Labelled as ads, kept apart from your rank'],
   ['A link your client can open', 'Often a higher-priced tier', 'On every pack and plan, no login'],
   ['AI Overview tracking', 'Extra, or not offered', 'Included with every Chrome pin'],
-  ['Unused credits', 'Often expire each month', 'Never expire'],
+  ['Unused credits', 'Often expire each month', 'Packs never expire; plan credits roll over a month'],
   ['A pin that fails', 'Varies', 'Credited back automatically'],
 ];
 
@@ -211,6 +215,45 @@ export default function PricingPage() {
               </div>
             );
           })}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-5 pb-20 sm:px-8">
+        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#3ddc97]">Your Google listing · per location</p>
+        <h2 className="mk-display mx-auto mt-3 max-w-3xl text-center text-4xl font-bold leading-tight sm:text-5xl">Free to see. {dollars(LISTING_PLANS.MANAGE.tiers[0].cents)} a month to manage.</h2>
+        <p className="mx-auto mt-4 max-w-2xl text-center text-[#9aa7b8]">Scans show where you rank. This is everything you do about it, without spending a credit.</p>
+        <div className="mt-12 grid items-stretch gap-6 lg:grid-cols-2">
+          <div className="flex flex-col rounded-2xl border border-[#1b2431] bg-[#0c1118] p-8">
+            <h3 className="mk-display text-2xl font-bold">Free</h3>
+            <p className="mt-1 text-sm text-[#9aa7b8]">Your website, from your own Google login</p>
+            <p className="mt-5"><span className="mk-display text-6xl font-bold text-[#eef2f7]">$0</span></p>
+            <ul className="mt-6 flex-1 space-y-2 text-sm text-[#c9d3df]">
+              <li>Search Console: clicks, searches, positions, pages</li>
+              <li>Whether Google has indexed your page, and under which address</li>
+              <li>Analytics: real leads and calls, not inflated key events</li>
+              <li>Visits sent by AI assistants, and your top visitor towns</li>
+              <li>The searches where you are seen and not clicked</li>
+              <li>No card. No trial clock.</li>
+            </ul>
+            <AccessButton label="Connect Search Console and Analytics" className="mt-8 block rounded-xl border border-[#2a3442] px-6 py-3.5 text-center font-semibold text-[#eef2f7] hover:bg-[#111823]" />
+          </div>
+          <div className="relative flex flex-col rounded-2xl border-2 border-[#3ddc97] bg-[#0c1118] p-8">
+            <h3 className="mk-display text-2xl font-bold">Manage</h3>
+            <p className="mt-1 text-sm text-[#9aa7b8]">Your Google Business Profile, per location</p>
+            <p className="mt-5"><span className="mk-display text-6xl font-bold text-[#eef2f7]">{dollars(LISTING_PLANS.MANAGE.tiers[0].cents)}</span><span className="text-[#9aa7b8]"> / location / month</span></p>
+            <p className="mk-mono mt-2 text-sm text-[#3ddc97]">{LISTING_PLANS.MANAGE.tiers.slice(1).map((t, i) => `${dollars(t.cents)} from ${(LISTING_PLANS.MANAGE.tiers[i].upTo ?? 0) + 1}`).join(' · ')}</p>
+            <ul className="mt-6 flex-1 space-y-2 text-sm text-[#c9d3df]">
+              <li>Calls, direction requests and the exact searches that showed your listing</li>
+              <li>The categories, services and attributes rivals outranking you have and you do not</li>
+              <li>Edit hours, description, services, attributes, photos and links</li>
+              <li>Schedule Google posts, and answer reviews from one inbox</li>
+              <li>A daily watchdog: told when Google or anyone else changes your listing</li>
+              <li>Access for your own AI agents, included</li>
+              <li>Connect first, see your listings, pay only for the ones you pick</li>
+            </ul>
+            <AccessButton label="Connect my Google Business Profile" className="mk-btn-primary mt-8 block rounded-xl px-6 py-3.5 text-center font-semibold" />
+            <p className="mt-2 text-center text-xs text-[#9aa7b8]">Every location gets the lower price once you pass a bracket. Cancel any time.</p>
+          </div>
         </div>
       </section>
 
