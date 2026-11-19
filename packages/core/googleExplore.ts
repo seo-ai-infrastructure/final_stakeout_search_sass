@@ -83,7 +83,7 @@ export function gscRequest(range: Range, f: GscFilters, dimension: GscDimension 
   };
 }
 
-export type ExploreRow = { key: string; a: number; b: number; c: number | null; d?: number | null; wasA: number | null; /** Search Console: times shown in the range before (null when it was not there). */ wasB?: number | null };
+export type ExploreRow = { key: string; /** The second thing it is broken down by, when there are two. */ key2?: string; a: number; b: number; c: number | null; d?: number | null; wasA: number | null; /** Search Console: times shown in the range before (null when it was not there). */ wasB?: number | null };
 
 /** Search Console rows with each row's clicks in the range before (null when it was not there). */
 export function gscRows(now: { keys?: string[]; clicks?: number; impressions?: number; ctr?: number; position?: number }[], was: { keys?: string[]; clicks?: number; impressions?: number }[]): ExploreRow[] {
@@ -95,11 +95,31 @@ export function gscRows(now: { keys?: string[]; clicks?: number; impressions?: n
   }));
 }
 
+/** Dimensions that can be paired in one breakdown (Google does not let "how it appeared" be combined). */
+export const GSC_PAIRABLE: GscDimension[] = ['query', 'page', 'device', 'country', 'date'];
+/** Search Console rows by two dimensions at once (searches by page, pages by device…). Every filter holds. */
+export function gscPairRequest(range: Range, f: GscFilters, dims: [GscDimension, GscDimension], rowLimit = 250) {
+  const filters = gscFilters(f);
+  return {
+    startDate: range.from, endDate: range.to, type: f.type && f.type in GSC_TYPES ? f.type : 'web', dimensions: dims, rowLimit,
+    ...(filters.length ? { dimensionFilterGroups: [{ groupType: 'and', filters }] } : {}),
+  };
+}
+/** Rows by two dimensions, each with its clicks and times shown in the range before. */
+export function gscPairRows(now: { keys?: string[]; clicks?: number; impressions?: number; ctr?: number; position?: number }[], was: { keys?: string[]; clicks?: number; impressions?: number }[]): ExploreRow[] {
+  const id = (r: { keys?: string[] }) => (r.keys?.[0] ?? '') + '\u0001' + (r.keys?.[1] ?? '');
+  const before = new Map(was.map((r) => [id(r), r]));
+  return now.filter((r) => r.keys?.[0] && r.keys?.[1]).map((r) => ({
+    key: r.keys![0], key2: r.keys![1], a: r.clicks ?? 0, b: r.impressions ?? 0, c: typeof r.position === 'number' ? Math.round(r.position * 10) / 10 : null,
+    d: typeof r.ctr === 'number' ? Math.round(r.ctr * 1000) / 10 : null, wasA: before.has(id(r)) ? before.get(id(r))!.clicks ?? 0 : null, wasB: before.has(id(r)) ? before.get(id(r))!.impressions ?? 0 : null,
+  }));
+}
+
 /* ───────────── Analytics ───────────── */
 
 export const GA_DIMENSIONS = {
   landingPagePlusQueryString: 'Landing pages', sessionSourceMedium: 'Where visits came from', sessionDefaultChannelGroup: 'Channels',
-  deviceCategory: 'Devices', city: 'Cities', date: 'Days',
+  deviceCategory: 'Devices', city: 'Cities', sessionCampaignName: 'Campaigns', date: 'Days',
 } as const;
 export type GaDimension = keyof typeof GA_DIMENSIONS;
 /** Ready-made "came from" filters. AI assistants: visits sent by a chat assistant's own site or app. */
@@ -107,7 +127,7 @@ export const GA_SOURCES = { all: 'All visits', listing: 'The Google listing (tag
 export type GaSource = keyof typeof GA_SOURCES;
 export const AI_SOURCE_PATTERN = 'chatgpt|openai|perplexity|gemini|bard\\.google|copilot|claude\\.ai|anthropic|deepseek|grok|meta\\.ai|you\\.com|phind|poe\\.com|mistral';
 export const LISTING_CAMPAIGN = 'gbp_listing';
-export type GaFilters = { page?: string; device?: string; source?: string; /** The listing's website: with `scope` "page", only visits that landed on that page. */ website?: string; scope?: string };
+export type GaFilters = { page?: string; device?: string; source?: string; /** The listing's website: with `scope` "page", only visits that landed on that page. */ website?: string; scope?: string; /** Only visits tagged with this campaign (utm_campaign), exactly. */ campaign?: string };
 
 /** The tags agencies put on a listing's website link, whichever of campaign, source or medium they put them in. */
 export const LISTING_TAGS = [LISTING_CAMPAIGN, 'gmb', 'gbp', 'google_my_business', 'google-business-profile'];
@@ -149,6 +169,7 @@ export function gaFilters(f: GaFilters) {
     const t = listingTags(f.website), any = (list: string[]) => '^(' + list.map(reEsc).join('|') + ')$';
     all.push({ orGroup: { expressions: [stringIs('sessionCampaignName', 'FULL_REGEXP', any(t.campaign)), stringIs('sessionSource', 'FULL_REGEXP', any(t.source)), stringIs('sessionMedium', 'FULL_REGEXP', any(t.medium))] } });
   }
+  if (clean(f.campaign, 200)) all.push(stringIs('sessionCampaignName', 'EXACT', clean(f.campaign, 200)));
   if (f.source === 'google') all.push(stringIs('sessionSourceMedium', 'EXACT', 'google / organic'));
   if (f.source === 'ai') all.push(stringIs('sessionSource', 'PARTIAL_REGEXP', AI_SOURCE_PATTERN));
   return all;
@@ -161,6 +182,17 @@ export function gaRequest(range: Range, f: GaFilters, dimension: GaDimension | n
     dateRanges: [{ startDate: range.from, endDate: range.to }],
     metrics: [{ name: 'sessions' }, { name: 'engagedSessions' }, { name: 'keyEvents' }],
     ...(dimension ? { dimensions: [{ name: dimension }], limit, orderBys: [dimension === 'date' ? { dimension: { dimensionName: 'date' } } : { metric: { metricName: 'sessions' }, desc: true }] } : {}),
+    ...(filters.length ? { dimensionFilter: filters.length === 1 ? filters[0] : { andGroup: { expressions: filters } } } : {}),
+  };
+}
+
+/** Analytics rows by two dimensions at once (landing pages by campaign, sources by device…). */
+export function gaPairBreakdown(range: Range, f: GaFilters, dims: [GaDimension, GaDimension], limit = 250) {
+  const filters = gaFilters(f);
+  return {
+    dateRanges: [{ startDate: range.from, endDate: range.to }],
+    metrics: [{ name: 'sessions' }, { name: 'engagedSessions' }, { name: 'keyEvents' }],
+    dimensions: dims.map((name) => ({ name })), limit, orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
     ...(filters.length ? { dimensionFilter: filters.length === 1 ? filters[0] : { andGroup: { expressions: filters } } } : {}),
   };
 }
@@ -372,4 +404,12 @@ export function gaPairRequest(range: Range, f: GaFilters, dimensions: [string, s
     limit,
     ...(filters.length ? { dimensionFilter: filters.length === 1 ? filters[0] : { andGroup: { expressions: filters } } } : {}),
   };
+}
+
+/** Analytics rows by two dimensions, each with its visits in the range before. A day reads as a date. */
+export function gaPairRows(now: GaRow[], was: GaRow[], dims: [GaDimension, GaDimension]): ExploreRow[] {
+  const val = (r: GaRow, i: number) => { const v = r.dimensionValues?.[i]?.value ?? ''; return dims[i] === 'date' && /^\d{8}$/.test(v) ? v.slice(0, 4) + '-' + v.slice(4, 6) + '-' + v.slice(6) : v || '(not set)'; };
+  const id = (r: GaRow) => val(r, 0) + '\u0001' + val(r, 1);
+  const before = new Map(was.map((r) => [id(r), num(r, 0)]));
+  return now.map((r) => ({ key: val(r, 0), key2: val(r, 1), a: num(r, 0), b: num(r, 1), c: num(r, 2), wasA: dims.includes('date') ? null : before.has(id(r)) ? (before.get(id(r)) as number) : null }));
 }

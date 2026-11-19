@@ -4,7 +4,13 @@
  * what Google will not accept as a reply. Reviews reach Postproxy from Google twice a day.
  */
 
-export type ReviewReply = { id: string; text: string; status: string; error: string | null; postedAt: string | null };
+export type ReviewReply = {
+  id: string; text: string; status: string; error: string | null; postedAt: string | null;
+  /** Google's own check of the reply: pending, approved or rejected (null when it has not said). */
+  moderation: 'pending' | 'approved' | 'rejected' | null;
+  /** Why Google rejected it (its policy name in plain words), when it did. */
+  policyReason: string | null;
+};
 export type Review = {
   id: string;
   location: string;
@@ -18,6 +24,12 @@ export type Review = {
   replyUrl: string | null;
   permalink: string | null;
   reply: ReviewReply | null;
+  /** The review is no longer on Google (the reviewer or Google took it down). */
+  deleted: boolean;
+  /** A reply was there and has been taken down on Google itself. */
+  replyRemoved: boolean;
+  /** A reply the account's AI agent wrote that waits for a person to send it (never sent by itself). */
+  agentDraft?: { text: string; at: string } | null;
 };
 export type ReviewFilter = 'unanswered' | 'low' | 'all';
 
@@ -28,14 +40,21 @@ type Raw = Record<string, unknown>;
 const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
 const link = (v: unknown) => (typeof v === 'string' && /^https:\/\//.test(v) ? v : null);
 
+const gone = (r: unknown) => /delet/i.test(String((r as Raw)?.status ?? ''));
 /** A reply that is on Google, on its way there, or that failed. A deleted one is no reply. */
 function replyOf(list: unknown): ReviewReply | null {
   if (!Array.isArray(list)) return null;
-  const kept = list.filter((r): r is Raw => Boolean(r) && typeof r === 'object' && !/delet/i.test(String((r as Raw).status ?? '')));
+  const kept = list.filter((r): r is Raw => Boolean(r) && typeof r === 'object' && !gone(r));
   // The newest is the one that counts (a review has one reply; a re-sent one replaces it).
   const r = kept[kept.length - 1];
   if (!r || !str(r.id)) return null;
-  return { id: String(r.id), text: String(r.body ?? ''), status: String(r.status ?? ''), error: str(r.error), postedAt: str(r.posted_at) ?? str(r.created_at) };
+  const pd = (r.platform_data && typeof r.platform_data === 'object' ? r.platform_data : {}) as Raw;
+  const state = String(pd.reply_state ?? '').toLowerCase();
+  return {
+    id: String(r.id), text: String(r.body ?? ''), status: String(r.status ?? ''), error: str(r.error), postedAt: str(r.posted_at) ?? str(r.created_at),
+    moderation: state === 'pending' || state === 'approved' || state === 'rejected' ? state : null,
+    policyReason: str(pd.policy_violation)?.replace(/_/g, ' ').toLowerCase() ?? null,
+  };
 }
 
 /** One review from a Postproxy comment, or null when it is not a review (no id, or itself a reply). */
@@ -56,11 +75,15 @@ export function readReview(raw: unknown): Review | null {
     replyUrl: link(pd.review_reply_url),
     permalink: link(r.permalink),
     reply: replyOf(r.replies),
+    deleted: gone(r),
+    replyRemoved: Array.isArray(r.replies) && r.replies.some(gone) && !replyOf(r.replies),
   };
 }
 
-/** Still needs an answer: no reply, or the reply never reached Google. */
-export const needsReply = (r: Review) => !r.reply || /^failed/i.test(r.reply.status);
+/** Still needs an answer: no reply, the reply never reached Google, or Google rejected it. */
+export const needsReply = (r: Review) => !r.deleted && (!r.reply || /^failed/i.test(r.reply.status) || r.reply.moderation === 'rejected');
+/** An agent's answer to this review waits for a person: three stars or fewer, or no rating to go by. */
+export const draftFirst = (stars: number | null) => stars === null || stars <= 3;
 /** Three stars or fewer: the ones a business most needs to see. */
 export const isLow = (r: Review) => r.stars !== null && r.stars <= 3;
 

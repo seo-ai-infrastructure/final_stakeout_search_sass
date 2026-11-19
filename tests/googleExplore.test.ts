@@ -198,3 +198,27 @@ test('real leads: automatic events never count, calls and named lead events alwa
   assert.deepEqual([...by], [['2026-11-01', { leads: 2, calls: 2 }], ['2026-11-02', { leads: 1, calls: 0 }]]);
   assert.deepEqual([...leadsBy([row(['Lakeland', 'Florida', 'click_to_call'], 3, 0)])], [['Lakeland / Florida', { leads: 3, calls: 3 }]]);
 });
+
+import { gaPairBreakdown, gaPairRows, gscPairRequest, gscPairRows } from '../packages/core/googleExplore';
+
+test('a breakdown by two things at once, with each pair’s figure before', () => {
+  const range = { from: '2026-10-01', to: '2026-10-30' };
+  const req = gscPairRequest(range, { device: 'mobile', page: 'https://acme.com/plumbing' }, ['query', 'page']);
+  assert.deepEqual(req.dimensions, ['query', 'page']);
+  // Both filters hold, including one on a dimension being broken down.
+  assert.deepEqual(req.dimensionFilterGroups?.[0].filters.map((f) => f.dimension).sort(), ['device', 'page']);
+  const rows = gscPairRows(
+    [{ keys: ['plumber', 'https://acme.com/'], clicks: 9, impressions: 100, ctr: 0.09, position: 3.26 }, { keys: ['plumber', 'https://acme.com/drains'], clicks: 2, impressions: 40, ctr: 0.05, position: 8 }],
+    [{ keys: ['plumber', 'https://acme.com/'], clicks: 5, impressions: 80 }],
+  );
+  assert.deepEqual(rows[0], { key: 'plumber', key2: 'https://acme.com/', a: 9, b: 100, c: 3.3, d: 9, wasA: 5, wasB: 80 });
+  // The same search on another page is its own row, new this time.
+  assert.deepEqual([rows[1].key2, rows[1].wasA], ['https://acme.com/drains', null]);
+
+  const ga = gaPairBreakdown(range, { campaign: 'gbp_listing' }, ['landingPagePlusQueryString', 'sessionCampaignName']);
+  assert.deepEqual(ga.dimensions, [{ name: 'landingPagePlusQueryString' }, { name: 'sessionCampaignName' }]);
+  assert.deepEqual(ga.dimensionFilter, { filter: { fieldName: 'sessionCampaignName', stringFilter: { matchType: 'EXACT', value: 'gbp_listing', caseSensitive: false } } });
+  const cell = (a: string, b: string, n: number) => ({ dimensionValues: [{ value: a }, { value: b }], metricValues: [{ value: String(n) }, { value: '1' }, { value: '0' }] });
+  const got = gaPairRows([cell('/book', 'gbp_listing', 12), cell('/', '', 4)], [cell('/book', 'gbp_listing', 7)], ['landingPagePlusQueryString', 'sessionCampaignName']);
+  assert.deepEqual(got.map((r) => [r.key, r.key2, r.a, r.wasA]), [['/book', 'gbp_listing', 12, 7], ['/', '(not set)', 4, null]]);
+});

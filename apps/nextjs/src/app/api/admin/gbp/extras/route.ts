@@ -5,7 +5,7 @@ import { readLocation } from '@/lib/gbpAdmin';
 import { gate } from '@/lib/gbpAccess';
 import { attributesOf, everything, get, serviceTypesOf } from '@/lib/gbpExtras';
 import { postproxy, gbpPath } from '@/lib/postproxy';
-import { attributePatch, attributeProblem, buildServices, linkProblem, readServices, serviceProblem, type AttrValue, type ServiceWant } from '@stakeout/core/gbpExtras';
+import { attributePatch, attributeProblem, buildServices, linkProblem, mergeServices, readServices, serviceProblem, type AttrValue, type ServiceWant } from '@stakeout/core/gbpExtras';
 
 export const maxDuration = 60;
 
@@ -28,6 +28,8 @@ export async function GET(req: Request) {
  * what Google has at this moment, never on what the browser last saw, and sends the smallest request.
  *   kind "attributes"  { want: { "attributes/…": true | false | null | [values] } }
  *   kind "services"    { want: [{ key?, name?, typeId?, description }] }  (the whole list, in order)
+ *   kind "services-patch" { upsert: [{ key?, typeId?, name?, description? }], remove: [key | typeId | name] }
+ *                      (merged into the live list: a service not named stays)
  *   kind "link-add"    { uri, type, preferred }
  *   kind "link-update" { name, uri, preferred }
  *   kind "link-delete" { name }
@@ -48,20 +50,31 @@ export async function POST(req: Request) {
       if (!patch) throw new InputError('Nothing to change: the listing already has these values.');
       await postproxy(gbpPath(t.profile, 'update_attributes'), { method: 'PATCH', body: { location_id: t.location, attributes: patch.attributes, attribute_mask: patch.attribute_mask } });
       changed = patch.changed.map((c) => `${c.label}: ${c.from} → ${c.to}`);
-    } else if (b.kind === 'services') {
-      const want = (Array.isArray(b.want) ? b.want : []).map((w) => {
-        const x = (w && typeof w === 'object' ? w : {}) as Record<string, unknown>;
-        const s = (k: string) => (typeof x[k] === 'string' ? (x[k] as string) : undefined);
-        return { key: s('key'), name: s('name'), typeId: s('typeId'), description: s('description') ?? '' } as ServiceWant;
-      });
-      const problem = serviceProblem(want);
-      if (problem) throw new InputError(problem);
+    } else if (b.kind === 'services' || b.kind === 'services-patch') {
+      const text = (x: Record<string, unknown>, k: string) => (typeof x[k] === 'string' ? (x[k] as string) : undefined);
+      const rows = (v: unknown) => (Array.isArray(v) ? v : []).map((w) => (w && typeof w === 'object' ? w : {}) as Record<string, unknown>);
       const [loc, live] = await Promise.all([readLocation(t.profile, t.location), get<{ serviceItems?: unknown[] }>(t, 'service_list')]);
       if (loc.metadata?.canModifyServiceList !== true) throw new InputError('Google does not let this listing’s services be edited (its category has no service list).', 409);
       const category = loc.categories?.primaryCategory?.name;
       if (!category) throw new InputError('This listing has no primary category to file a service under.', 409);
+      const types = await serviceTypesOf(t, loc);
+      let want: ServiceWant[];
+      if (b.kind === 'services-patch') {
+        // A patch is merged into the list Google has at this moment, so a service that is not named is never lost.
+        const has = readServices(live.serviceItems ?? [], Object.fromEntries(types.map((x) => [x.typeId, x.name])));
+        const upsert = rows(b.upsert).map((x) => ({ key: text(x, 'key'), typeId: text(x, 'typeId'), name: text(x, 'name'), description: text(x, 'description') }));
+        const remove = (Array.isArray(b.remove) ? b.remove : []).filter((x): x is string => typeof x === 'string' && Boolean(x.trim())).map((x) => x.trim());
+        if (!upsert.length && !remove.length) throw new InputError('Name at least one service to add, change or remove.');
+        const merged = mergeServices(has, upsert, remove);
+        if (merged.unknown.length) throw new InputError('This listing has no service called ' + merged.unknown.map((x) => '“' + x + '”').join(', ') + '. It has: ' + (has.map((x) => x.name).join(', ') || 'none') + '.');
+        want = merged.want;
+      } else {
+        want = rows(b.want).map((x) => ({ key: text(x, 'key'), name: text(x, 'name'), typeId: text(x, 'typeId'), description: text(x, 'description') ?? '' }) as ServiceWant);
+      }
+      const problem = serviceProblem(want);
+      if (problem) throw new InputError(problem);
       // A structured service must be one Google offers for the listing's categories.
-      const offered = new Set((await serviceTypesOf(t, loc)).map((x) => x.typeId));
+      const offered = new Set(types.map((x) => x.typeId));
       const have = new Set(readServices(live.serviceItems ?? []).map((s) => s.key));
       const stray = want.find((w) => w.typeId && !have.has('s:' + w.typeId) && !offered.has(w.typeId));
       if (stray) throw new InputError('“' + (stray.name ?? stray.typeId) + '” is not a service Google offers for this listing’s categories.');

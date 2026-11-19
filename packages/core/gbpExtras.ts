@@ -180,6 +180,37 @@ export function buildServices(live: unknown[], want: ServiceWant[], category: st
   return { serviceItems, changed };
 }
 
+/** One service to change or add without sending the whole list. */
+export type ServicePatch = { key?: string; typeId?: string; name?: string; description?: string };
+
+/**
+ * The whole list to send for a patch: every service the listing has stays, in its order, unless it
+ * is named in `remove`; a service named in `upsert` gets its new description, and one the listing
+ * does not have is added at the end. A service is named by its key, by Google's type id, or by its
+ * name (any capitals). `unknown`: names in `remove` that match nothing, so nothing is guessed.
+ */
+export function mergeServices(live: Service[], upsert: ServicePatch[], remove: string[]): { want: ServiceWant[]; unknown: string[]; added: number; edited: number; removed: number } {
+  const low = (v: string | undefined) => (v ?? '').trim().toLowerCase();
+  const find = (p: ServicePatch) =>
+    live.find((s) => (p.key && s.key === p.key) || (p.typeId && s.key === 's:' + p.typeId)) ?? (low(p.name) ? live.find((s) => low(s.name) === low(p.name) || s.key === 'f:' + low(p.name)) : undefined);
+  const gone = new Set<string>(), unknown: string[] = [];
+  for (const r of remove) {
+    const hit = find({ key: r, typeId: r.replace(/^s:/, ''), name: r });
+    if (hit) gone.add(hit.key); else unknown.push(r);
+  }
+  const next = new Map<string, string>(), fresh: ServiceWant[] = [];
+  for (const u of upsert) {
+    const hit = find(u);
+    if (hit) { if (typeof u.description === 'string') next.set(hit.key, u.description); }
+    else fresh.push({ ...(u.typeId ? { typeId: u.typeId } : {}), name: (u.name ?? '').trim() || undefined, description: u.description ?? '' } as ServiceWant);
+  }
+  const kept = live.filter((s) => !gone.has(s.key));
+  return {
+    want: [...kept.map((s) => ({ key: s.key, description: next.get(s.key) ?? s.description }) as ServiceWant), ...fresh],
+    unknown, added: fresh.length, edited: kept.filter((s) => next.has(s.key) && next.get(s.key) !== s.description).length, removed: gone.size,
+  };
+}
+
 /* ───────────── Action links ───────────── */
 
 export type ActionLink = { name: string; uri: string; type: string; preferred: boolean; editable: boolean };
@@ -201,4 +232,21 @@ export function linkProblem(uri: unknown, type: unknown, allowed: string[]): str
   if (typeof type !== 'string' || !(type in ACTION_TYPES)) return 'Choose what the link does.';
   if (allowed.length && !allowed.includes(type)) return 'Google does not offer “' + ACTION_TYPES[type] + '” for this listing’s category.';
   return null;
+}
+
+/**
+ * A link with the tags that let Analytics tell a click on the listing's button from any other
+ * visit. Tags the link already carries are kept; a link that is not a web address is returned as it is.
+ */
+export function withUtm(uri: string, type: string): string {
+  try {
+    const u = new URL(uri.trim());
+    if (!/^https?:$/.test(u.protocol)) return uri;
+    const set = (k: string, v: string) => { if (!u.searchParams.has(k)) u.searchParams.set(k, v); };
+    set('utm_source', 'google'); set('utm_medium', 'organic'); set('utm_campaign', 'gbp_listing');
+    if (/^[A-Z_]+$/.test(type)) set('utm_content', type.toLowerCase());
+    return u.toString();
+  } catch {
+    return uri;
+  }
 }

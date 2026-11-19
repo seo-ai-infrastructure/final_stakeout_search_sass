@@ -1,3 +1,4 @@
+import { categoryFilter } from '@/lib/postproxy';
 import { NextResponse } from 'next/server';
 import { db } from '@stakeout/db';
 import { errorResponse } from '@/lib/api';
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
         if (c.id || !c.name) continue;
         const k = c.name.toLowerCase();
         if (!ids.has(k)) {
-          const found = await get<{ categories?: { name: string; displayName?: string }[] }>(t, 'available_location_categories', { region_code: region, language_code: 'en', filter: 'displayName=' + c.name.replace(/[^\p{L}\p{N} &'-]/gu, ' ').trim(), page_size: '20' }).catch(() => null);
+          const found = await get<{ categories?: { name: string; displayName?: string }[] }>(t, 'available_location_categories', { region_code: region, language_code: 'en', filter: categoryFilter(c.name.replace(/[^\p{L}\p{N} &'-]/gu, ' ')), page_size: '20' }).catch(() => null);
           ids.set(k, found?.categories?.find((x) => (x.displayName ?? '').toLowerCase() === k)?.name.replace(/^categories\/gcid:/, '') ?? '');
         }
         c.id = ids.get(k) ?? '';

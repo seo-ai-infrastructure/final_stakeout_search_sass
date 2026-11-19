@@ -64,11 +64,22 @@ function ReviewCard({ profile, review, listing, onChange, onOpenListing }: { pro
     try {
       const r = await call<{ review: Review | null }>('/api/admin/gbp/reviews', 'POST', { profile, review: review.id, body: text });
       // If the service did not hand the review back, show the reply as on its way.
-      onChange(r.review ?? { ...review, reply: { id: '', text: text.trim(), status: 'pending', error: null, postedAt: new Date().toISOString() } });
+      onChange(r.review ?? { ...review, reply: { id: '', text: text.trim(), status: 'pending', error: null, postedAt: new Date().toISOString(), moderation: null, policyReason: null }, agentDraft: null });
       setOpen(false); setText('');
       follow(6);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The reply was not sent.');
+    } finally {
+      setBusy('');
+    }
+  };
+  const discard = async () => {
+    setBusy('Discarding…'); setError('');
+    try {
+      await call('/api/admin/gbp/reviews', 'PUT', { profile, review: review.id });
+      onChange({ ...review, agentDraft: null });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The draft was not discarded.');
     } finally {
       setBusy('');
     }
@@ -104,6 +115,18 @@ function ReviewCard({ profile, review, listing, onChange, onOpenListing }: { pro
           <p className="text-xs"><span className="font-semibold text-slate-300">Your reply</span> · <span className={state!.tone}>{state!.text}</span>{review.reply.postedAt && <span className="text-slate-500"> · {when(review.reply.postedAt)}</span>}</p>
           <p className="mt-1.5 whitespace-pre-line break-words text-sm text-slate-300">{review.reply.text}</p>
           {review.reply.error && <p className="mt-1.5 text-xs text-rose-300">{review.reply.error}</p>}
+          {review.reply.moderation === 'rejected' && <p className="mt-1.5 text-xs text-rose-300">Google rejected this reply{review.reply.policyReason ? ' (' + review.reply.policyReason + ')' : ''}, so it is not shown. Edit it and send it again.</p>}
+          {review.reply.moderation === 'pending' && <p className="mt-1.5 text-xs text-amber-300">Google is still checking this reply before showing it.</p>}
+        </div>
+      )}
+      {review.agentDraft && !open && (
+        <div className="mt-3 rounded-lg border border-sky-500/40 bg-sky-500/5 p-3">
+          <p className="text-xs"><span className="font-semibold text-sky-200">Draft from your AI agent</span> <span className="text-slate-500">· {when(review.agentDraft.at)} · not sent</span></p>
+          <p className="mt-1.5 whitespace-pre-line break-words text-sm text-slate-300">{review.agentDraft.text}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+            <button type="button" onClick={() => { setOpen(true); setText(review.agentDraft?.text ?? ''); }} className="rounded-lg bg-sky-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-sky-500">Read and send</button>
+            <button type="button" onClick={discard} disabled={Boolean(busy)} className="text-slate-400 hover:text-rose-300">{busy || 'Discard draft'}</button>
+          </div>
         </div>
       )}
 

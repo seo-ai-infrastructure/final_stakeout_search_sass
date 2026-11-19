@@ -6,7 +6,7 @@ import { agentGate } from '@/lib/gbpAccess';
 import { google, googleAccess } from '@/lib/googleOAuth';
 import { propertyFor } from '@stakeout/core/googleSite';
 import {
-  GA_DIMENSIONS, GSC_DIMENSIONS, exploreRange, gaRequest, gaRows, gaTotals, gscRequest, gscRows,
+  GA_DIMENSIONS, GSC_DIMENSIONS, GSC_PAIRABLE, exploreRange, gaPairBreakdown, gaPairRows, gaRequest, gaRows, gaTotals, gscPairRequest, gscPairRows, gscRequest, gscRows,
   type GaDimension, type GaFilters, type GscDimension, type GscFilters,
 } from '@stakeout/core/googleExplore';
 
@@ -20,7 +20,8 @@ const text = (v: unknown) => (typeof v === 'string' ? v : undefined);
  * POST /api/admin/google/explore : a client's website in Search Console or Analytics
  * for a chosen range against the range before, broken down by one thing, with filters. Read-only.
  *   { source: "gsc", website, by, days | from+to, query, queryMode, page, device, appearance, type }
- *   { source: "ga", property, by, days | from+to, page, device, came }
+ *   { source: "ga", property, by, days | from+to, page, device, came, campaign }
+ * `by2` breaks the rows down by a second thing as well (searches by page, landing pages by campaign).
  * Answers with the two ranges, the totals for each, and up to 250 rows (each with its figure before).
  */
 export async function POST(req: Request) {
@@ -34,6 +35,7 @@ export async function POST(req: Request) {
       const website = String(b.website ?? '');
       if (!/^https?:\/\//.test(website)) throw new InputError('This listing has no website.');
       const by = (text(b.by) && (b.by as string) in GSC_DIMENSIONS ? b.by : 'query') as GscDimension;
+      const by2 = text(b.by2) && GSC_PAIRABLE.includes(b.by2 as GscDimension) && GSC_PAIRABLE.includes(by) && b.by2 !== by ? (b.by2 as GscDimension) : null;
       const range = exploreRange(b, new Date(), 3);
       if (typeof range === 'string') throw new InputError(range);
       const sites = await google<{ siteEntry?: { siteUrl: string; permissionLevel?: string }[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites');
@@ -44,13 +46,14 @@ export async function POST(req: Request) {
       // The ways the site appeared (rich results and the like) are listed too, so one can be chosen as a filter.
       const [now, was, rows, rowsWas, appearances] = await Promise.all([
         ask(gscRequest(range.recent, f, null)), ask(gscRequest(range.before, f, null)),
-        ask(gscRequest(range.recent, f, by)), by === 'date' ? Promise.resolve({ rows: [] as GscRow[] }) : ask(gscRequest(range.before, f, by, 1000)),
+        ask(by2 ? gscPairRequest(range.recent, f, [by, by2]) : gscRequest(range.recent, f, by)),
+        by === 'date' || by2 === 'date' ? Promise.resolve({ rows: [] as GscRow[] }) : ask(by2 ? gscPairRequest(range.before, f, [by, by2], 2000) : gscRequest(range.before, f, by, 1000)),
         ask(gscRequest(range.recent, { type: f.type }, 'searchAppearance', 50)).catch(() => ({ rows: [] as GscRow[] })),
       ]);
       const total = (x: { rows?: GscRow[] }) => ({ a: x.rows?.[0]?.clicks ?? 0, b: x.rows?.[0]?.impressions ?? 0, c: typeof x.rows?.[0]?.position === 'number' ? Math.round((x.rows[0].position as number) * 10) / 10 : null });
       return NextResponse.json({
-        source: 'gsc', property, by, range, recent: total(now), before: total(was),
-        rows: gscRows(rows.rows ?? [], rowsWas.rows ?? []),
+        source: 'gsc', property, by, ...(by2 ? { by2 } : {}), range, recent: total(now), before: total(was),
+        rows: by2 ? gscPairRows(rows.rows ?? [], rowsWas.rows ?? []) : gscRows(rows.rows ?? [], rowsWas.rows ?? []),
         appearances: (appearances.rows ?? []).map((r) => r.keys?.[0] ?? '').filter(Boolean),
       });
     }
@@ -59,15 +62,17 @@ export async function POST(req: Request) {
       const property = String(b.property ?? '');
       if (!/^properties\/\d+$/.test(property)) throw new InputError('Choose the Analytics property first.');
       const by = (text(b.by) && (b.by as string) in GA_DIMENSIONS ? b.by : 'landingPagePlusQueryString') as GaDimension;
+      const by2 = text(b.by2) && (b.by2 as string) in GA_DIMENSIONS && b.by2 !== by ? (b.by2 as GaDimension) : null;
       const range = exploreRange(b, new Date(), 1);
       if (typeof range === 'string') throw new InputError(range);
-      const f: GaFilters = { page: text(b.page), device: text(b.device), source: text(b.came) };
+      const f: GaFilters = { page: text(b.page), device: text(b.device), source: text(b.came), campaign: text(b.campaign) };
       const ask = (body: unknown) => google<GaReport>(token, 'https://analyticsdata.googleapis.com/v1beta/' + property + ':runReport', body);
       const [now, was, rows, rowsWas] = await Promise.all([
         ask(gaRequest(range.recent, f, null)), ask(gaRequest(range.before, f, null)),
-        ask(gaRequest(range.recent, f, by)), by === 'date' ? Promise.resolve({ rows: [] } as GaReport) : ask(gaRequest(range.before, f, by, 1000)),
+        ask(by2 ? gaPairBreakdown(range.recent, f, [by, by2]) : gaRequest(range.recent, f, by)),
+        by === 'date' || by2 === 'date' ? Promise.resolve({ rows: [] } as GaReport) : ask(by2 ? gaPairBreakdown(range.before, f, [by, by2], 2000) : gaRequest(range.before, f, by, 1000)),
       ]);
-      return NextResponse.json({ source: 'ga', property, by, range, recent: gaTotals(now.rows), before: gaTotals(was.rows), rows: gaRows(rows.rows ?? [], rowsWas.rows ?? [], by) });
+      return NextResponse.json({ source: 'ga', property, by, ...(by2 ? { by2 } : {}), range, recent: gaTotals(now.rows), before: gaTotals(was.rows), rows: by2 ? gaPairRows(rows.rows ?? [], rowsWas.rows ?? [], [by, by2]) : gaRows(rows.rows ?? [], rowsWas.rows ?? [], by) });
     }
     throw new InputError('Unknown source.');
   } catch (e) {

@@ -25,6 +25,8 @@ export type GbpLocation = {
   profile?: { description?: string } & Record<string, unknown>;
   regularHours?: { periods?: Period[] };
   specialHours?: { specialHourPeriods?: SpecialPeriod[] };
+  /** Named hour sets beside the main ones (delivery, pickup, online service…). */
+  moreHours?: { hoursTypeId?: string; periods?: Period[] }[];
   storefrontAddress?: { addressLines?: string[]; locality?: string; administrativeArea?: string; postalCode?: string; regionCode?: string };
   metadata?: Record<string, unknown>;
 } & Record<string, unknown>;
@@ -37,6 +39,9 @@ export type AddressForm = { lines: string; locality: string; region: string; pos
 /** One date with its own hours (a holiday): closed all day, or one opening period. `date` is YYYY-MM-DD. */
 export type SpecialDay = { date: string; closed: boolean; open: string; close: string };
 
+/** One named set of hours (delivery, pickup…) for the week. `type` is Google's id for it (DELIVERY). A week with every day closed removes the set. */
+export type MoreHours = { type: string; days: DayHours[] };
+
 /** What the editor may ask to change. A key that is absent is left alone. */
 export type GbpChange = {
   description?: string;
@@ -45,6 +50,8 @@ export type GbpChange = {
   additionalPhones?: string[];
   regularHours?: DayHours[];
   specialHours?: SpecialDay[];
+  /** Only the sets named are touched; every other set the listing has stays as it is. */
+  moreHours?: MoreHours[];
   title?: string;
   primaryCategory?: Category;
   primaryPhone?: string;
@@ -66,6 +73,7 @@ const LABELS: Record<keyof GbpChange, string> = {
   additionalPhones: 'Additional phone numbers',
   regularHours: 'Opening hours',
   specialHours: 'Holiday hours',
+  moreHours: 'More hours',
   title: 'Business name',
   primaryCategory: 'Primary category',
   primaryPhone: 'Primary phone',
@@ -182,6 +190,39 @@ const weekText = (week: DayHours[] | null) =>
     ? week.map((d) => d.day.slice(0, 3).toLowerCase() + ' ' + (d.closed ? 'closed' : d.allDay ? '24h' : spans(d).map((x) => x.replace('-', '–')).join(' and '))).join(', ')
     : 'overnight hours';
 
+const SHUT: DayHours[] = DAYS.map((day) => ({ day, closed: true, allDay: false, open: '09:00', close: '17:00' }));
+/** The named hour sets Google offers this listing (they come from its categories). */
+export function moreTypesOf(loc: GbpLocation): { type: string; label: string }[] {
+  const out: { type: string; label: string }[] = [];
+  const cats = [loc.categories?.primaryCategory, ...(loc.categories?.additionalCategories ?? [])] as ({ moreHoursTypes?: { hoursTypeId?: string; displayName?: string }[] } | undefined)[];
+  for (const c of cats) for (const t of c?.moreHoursTypes ?? []) if (t.hoursTypeId && !out.some((x) => x.type === t.hoursTypeId)) out.push({ type: t.hoursTypeId, label: t.displayName ?? t.hoursTypeId });
+  return out;
+}
+/** The listing's named hour sets, each as a week (`days` null when a set runs overnight and cannot be shown as rows). */
+export function moreOf(loc: GbpLocation): { type: string; days: DayHours[] | null }[] {
+  return (Array.isArray(loc.moreHours) ? loc.moreHours : []).filter((m) => m?.hoursTypeId).map((m) => ({ type: String(m.hoursTypeId), days: weekOf({ regularHours: { periods: m.periods ?? [] } }) }));
+}
+const moreText = (sets: { type: string; days: DayHours[] | null }[]) => sets.map((m) => m.type.toLowerCase().replace(/_/g, ' ') + ': ' + weekText(m.days)).join('; ') || 'none';
+/** Why a week of hours cannot be sent, or null. */
+function weekProblem(week: DayHours[]): string | null {
+  if (week.length !== 7 || week.some((d, i) => d.day !== DAYS[i])) return 'The week of opening hours is incomplete.';
+  for (const d of week) {
+    if (d.closed || d.allDay) continue;
+    const all = [{ open: d.open, close: d.close }, ...(d.more ?? [])];
+    if (all.length > 3) return `On ${d.day.toLowerCase()} there are more opening periods than Google shows well: keep it to three.`;
+    if (all.some((x) => !(/^\d{2}:\d{2}$/.test(x.open) && /^\d{2}:\d{2}$/.test(x.close) && x.open < x.close)))
+      return `On ${d.day.toLowerCase()} the closing time must be after the opening time.`;
+    const sorted = [...all].sort((x, y) => x.open.localeCompare(y.open));
+    if (sorted.some((x, i) => i > 0 && x.open < sorted[i - 1].close)) return `On ${d.day.toLowerCase()} two opening periods overlap.`;
+  }
+  return null;
+}
+/** The sets in a change that really differ from the listing's. */
+function moreChanged(live: GbpLocation, sets: MoreHours[]) {
+  const now = moreOf(live);
+  return sets.filter((m) => weekKey(m.days) !== weekKey(now.find((x) => x.type === m.type)?.days ?? (now.some((x) => x.type === m.type) ? null : SHUT)));
+}
+
 /** The day the business first opened, as YYYY-MM-DD ('' when Google has none, or only a year and month). */
 export function openingOf(loc: GbpLocation): string {
   return iso((loc.openInfo as { openingDate?: GDate } | undefined)?.openingDate);
@@ -208,6 +249,7 @@ export function describe(loc: GbpLocation, today = new Date().toISOString().slic
     additionalPhones: (loc.phoneNumbers?.additionalPhones ?? []).join(', ') || 'none',
     regularHours: weekText(weekOf(loc)),
     specialHours: (() => { const sp = specialOf(loc, today); return sp ? specialText(sp.days) : 'dates this editor cannot show'; })(),
+    moreHours: moreText(moreOf(loc)),
     title: clean(loc.title),
     primaryCategory: loc.categories?.primaryCategory?.displayName || loc.categories?.primaryCategory?.name || 'none',
     primaryPhone: clean(loc.phoneNumbers?.primaryPhone) || 'none',
@@ -242,15 +284,20 @@ export function problemWith(live: GbpLocation, change: GbpChange, today = new Da
   }
   if (change.regularHours !== undefined) {
     if (!weekOf(live)) return 'This profile has overnight hours, which this editor cannot change yet.';
-    if (change.regularHours.length !== 7 || change.regularHours.some((d, i) => d.day !== DAYS[i])) return 'The week of opening hours is incomplete.';
-    for (const d of change.regularHours) {
-      if (d.closed || d.allDay) continue;
-      const all = [{ open: d.open, close: d.close }, ...(d.more ?? [])];
-      if (all.length > 3) return `On ${d.day.toLowerCase()} there are more opening periods than Google shows well: keep it to three.`;
-      if (all.some((x) => !(/^\d{2}:\d{2}$/.test(x.open) && /^\d{2}:\d{2}$/.test(x.close) && x.open < x.close)))
-        return `On ${d.day.toLowerCase()} the closing time must be after the opening time.`;
-      const sorted = [...all].sort((x, y) => x.open.localeCompare(y.open));
-      if (sorted.some((x, i) => i > 0 && x.open < sorted[i - 1].close)) return `On ${d.day.toLowerCase()} two opening periods overlap.`;
+    const bad = weekProblem(change.regularHours);
+    if (bad) return bad;
+  }
+  if (change.moreHours !== undefined) {
+    const offered = moreTypesOf(live), now = moreOf(live), seen = new Set<string>();
+    for (const m of change.moreHours) {
+      const label = String(m.type ?? '').toLowerCase().replace(/_/g, ' ');
+      if (!/^[A-Z][A-Z_]{1,40}$/.test(String(m.type ?? ''))) return 'Name each set of hours by Google’s id for it, such as DELIVERY or PICKUP.';
+      if (seen.has(m.type)) return `The ${label} hours are listed twice.`;
+      seen.add(m.type);
+      if (offered.length && !offered.some((o) => o.type === m.type)) return `Google does not offer ${label} hours for this listing’s categories. It offers: ${offered.map((o) => o.type).join(', ')}.`;
+      if (now.some((x) => x.type === m.type && x.days === null)) return `The ${label} hours run overnight, which this editor cannot change yet.`;
+      const bad = weekProblem(Array.isArray(m.days) ? m.days : []);
+      if (bad) return `${label[0].toUpperCase() + label.slice(1)} hours: ${bad}`;
     }
   }
   if (change.specialHours !== undefined) {
@@ -328,6 +375,11 @@ export function diff(live: GbpLocation, change: GbpChange, today = new Date().to
     const now = specialOf(live, today);
     if (now && specialKey(change.specialHours) !== specialKey(now.days))
       add('specialHours', 'green', specialText(now.days), specialText(change.specialHours), now.past ? `${now.past} past date${now.past === 1 ? '' : 's'} Google still holds will be cleared.` : undefined);
+  }
+
+  if (change.moreHours !== undefined) {
+    const sets = moreChanged(live, change.moreHours);
+    if (sets.length) add('moreHours', 'green', moreText(moreOf(live).filter((x) => sets.some((m) => m.type === x.type))), moreText(sets.filter((m) => m.days.some((d) => !d.closed))) === 'none' ? 'removed' : moreText(sets));
   }
 
   if (change.title !== undefined && clean(change.title) !== clean(live.title)) add('title', 'red', clean(live.title), clean(change.title));
@@ -458,12 +510,19 @@ export function buildPatch(live: GbpLocation, change: GbpChange, changes: FieldC
   return {
     location: fields.length ? { fields, ...location } : null,
     hours:
-      has('regularHours') || has('specialHours')
+      has('regularHours') || has('specialHours') || has('moreHours')
         ? {
-            fields: [...(has('regularHours') ? ['regularHours'] : []), ...(has('specialHours') ? ['specialHours'] : [])],
+            fields: [...(has('regularHours') ? ['regularHours'] : []), ...(has('specialHours') ? ['specialHours'] : []), ...(has('moreHours') ? ['moreHours'] : [])],
             ...(has('regularHours') ? { regularHours: { periods: periodsOf(change.regularHours!) } } : {}),
             // Past dates are left out: they no longer do anything, and only dates from today on are sent.
             ...(has('specialHours') ? { specialHours: { specialHourPeriods: specialPeriodsOf(change.specialHours!) } } : {}),
+            // Google replaces every set at once, so the sets not being changed are sent back as they are.
+            ...(has('moreHours')
+              ? { moreHours: [
+                  ...(Array.isArray(live.moreHours) ? live.moreHours : []).filter((m) => !change.moreHours!.some((x) => x.type === m?.hoursTypeId)),
+                  ...change.moreHours!.filter((m) => m.days.some((d) => !d.closed)).map((m) => ({ hoursTypeId: m.type, periods: periodsOf(m.days) })),
+                ] }
+              : {}),
           }
         : null,
   };

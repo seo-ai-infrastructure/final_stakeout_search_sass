@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { TOOLS, WRITES } from '@stakeout/core/agentTools';
+import { PLAYBOOKS, TOOLS, WRITES, playbookText } from '@stakeout/core/agentTools';
 import { AGENT_ADDON, dollars } from '@stakeout/core/gbpPlans';
 
 type Key = { id: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null };
@@ -44,6 +44,15 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
     if (!window.confirm('Take the AI agents add-on off? Your keys stop working. Nothing is refunded.')) return;
     setBusy(true); setError('');
     try { setBill(await call<Addon>('/api/billing/gbp', 'POST', { addon: false })); } catch (e) { setError(e instanceof Error ? e.message : 'Could not remove it.'); } finally { setBusy(false); }
+  };
+  // How many scan credits this account's agents may spend in a month, and how many they have.
+  type Budget = { cap: number; used: number; left: number; month: string };
+  const [budget, setBudget] = useState<Budget | null>(null);
+  const [cap, setCap] = useState('');
+  useEffect(() => { call<Budget>('/api/agent/limits').then((b) => { setBudget(b); setCap(String(b.cap)); }).catch(() => {}); }, []);
+  const saveCap = async () => {
+    setBusy(true); setError('');
+    try { const b = await call<Budget>('/api/agent/limits', 'POST', { cap: Number(cap) }); setBudget(b); setCap(String(b.cap)); setCopied('cap'); setTimeout(() => setCopied(''), 1500); } catch (e) { setError(e instanceof Error ? e.message : 'The limit was not saved.'); } finally { setBusy(false); }
   };
   const read = useCallback(() => call<{ keys: Key[] }>('/api/keys').then((r) => setKeys(r.keys)).catch((e) => setError(e.message)), []);
   useEffect(() => { read(); }, [read]);
@@ -119,6 +128,38 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
         </div>
         <p className="mt-2 text-xs text-slate-500">A key acts as your account. Keep it out of shared documents, and revoke it the moment it might have leaked. Each key is limited to 60 requests a minute.</p>
       </div>}
+
+      {open && budget && <div className={card}>
+        <h2 className="text-lg font-semibold">Limits on what an agent does by itself</h2>
+        <ul className="mt-3 space-y-2 text-sm text-slate-300">
+          <li><span className="font-semibold text-slate-100">Scans.</span> An agent’s scan is a 5×5 grid (25 credits) unless it asks for a larger one by name, and all of its scans together stop at the monthly limit below. Scans you start yourself do not count.</li>
+          <li><span className="font-semibold text-slate-100">Low-rated reviews.</span> A reply to a review of 3 stars or fewer is never sent by an agent. It waits as a draft in your review inbox for you to read and send.</li>
+          <li><span className="font-semibold text-slate-100">Changes someone else made.</span> An agent can keep or undo a change to a description or to hours. A change to a name, category, phone, website or address is left for you.</li>
+          <li><span className="font-semibold text-slate-100">Services.</span> An agent adds, edits or removes the services it names. The rest of the list is never touched.</li>
+        </ul>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <label htmlFor="agent-cap" className="text-sm text-slate-300">Scan credits agents may spend a month</label>
+          <input id="agent-cap" type="number" min={0} max={20000} step={25} inputMode="numeric" value={cap} onChange={(e) => setCap(e.target.value)} className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500" />
+          <button type="button" onClick={saveCap} disabled={busy || cap === '' || Number(cap) === budget.cap} className={btn}>{copied === 'cap' ? 'Saved' : 'Save'}</button>
+          <span className="text-xs text-slate-500">{budget.used} used so far this month · {budget.left} left · 0 stops agent scans</span>
+        </div>
+      </div>}
+
+      <div className={card}>
+        <h2 className="text-lg font-semibold">Ready-made jobs</h2>
+        <p className="mt-1 text-sm text-slate-400">Four jobs to hand your agent. An agent connected here finds them by itself, as prompts. In any other chat, copy one and paste it in.</p>
+        <ul className="mt-3 grid gap-3 lg:grid-cols-2">
+          {PLAYBOOKS.map((b) => (
+            <li key={b.name} className="flex flex-col rounded-lg border border-slate-800 bg-slate-950/50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0"><p className="font-semibold text-slate-100">{b.title}</p><p className="mt-0.5 text-xs text-slate-500">{b.description}</p></div>
+                <button type="button" onClick={() => copy(b.name, playbookText(b))} className={btn + ' shrink-0'}>{copied === b.name ? 'Copied' : 'Copy'}</button>
+              </div>
+              <p className="mt-2 line-clamp-3 text-xs text-slate-400">{playbookText(b)}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       <div className={card}>
         <h2 className="text-lg font-semibold">What an agent can do</h2>

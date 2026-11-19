@@ -55,7 +55,8 @@ test('the subscription follows the listings that are on a plan', () => {
   assert.equal(quantityPlan([{ plan: 'MANAGE', status: 'ENDING' }], { MANAGE: 1 }).empty, true);
 });
 
-import { TOOLS, WRITES, rpcAnswer, toolCall } from '../packages/core/agentTools';
+import { PLAYBOOKS, TOOLS, WRITES, annotationsOf, playbookText, rpcAnswer, toolCall } from '../packages/core/agentTools';
+import { withUtm } from '../packages/core/gbpExtras';
 import { exploreRange } from '../packages/core/googleExplore';
 import { monthsOf } from '../packages/core/gbpInsights';
 import { reviewAlert } from '../packages/core/reviewAlert';
@@ -72,7 +73,7 @@ test('an agent can never reach an identity edit', () => {
   assert.deepEqual(change.regularHours, [{ day: 'MONDAY', closed: false, allDay: false, open: '08:00', close: '17:00' }]);
   assert.match(String(toolCall('update_listing', at)), /Give a description/);
   // The extras handler also takes booking links: an agent's tools only ever ask for services or attributes.
-  assert.equal((toolCall('update_services', { ...at, services: [], kind: 'link-add' }) as { body: { kind: string } }).body.kind, 'services');
+  assert.equal((toolCall('upsert_services', { ...at, services: [{ name: 'Drain cleaning' }], kind: 'link-add' }) as { body: { kind: string } }).body.kind, 'services-patch');
   assert.equal((toolCall('update_attributes', { ...at, attributes: { 'attributes/x': true } }) as { body: { kind: string } }).body.kind, 'attributes');
 });
 
@@ -103,6 +104,11 @@ test('the MCP handshake', () => {
   assert.equal(list.result.tools.length, TOOLS.length);
   assert.equal(list.result.tools.find((t) => t.name === 'get_listing')?.annotations.readOnlyHint, true);
   assert.equal(list.result.tools.find((t) => t.name === 'create_post')?.annotations.readOnlyHint, false);
+  // Every tool says whether it only reads; every one that changes something or spends credits is marked so a client asks first.
+  for (const t of list.result.tools as unknown as { name: string; annotations: { readOnlyHint: boolean; destructiveHint: boolean } }[]) assert.equal(t.annotations.destructiveHint, !t.annotations.readOnlyHint, t.name);
+  for (const w of WRITES) assert.ok(TOOLS.some((t) => t.name === w), w);
+  assert.equal(annotationsOf('start_scan').destructiveHint, true);
+  assert.equal(annotationsOf('get_workspace_briefing').readOnlyHint, true);
   assert.equal((rpcAnswer({ jsonrpc: '2.0', id: 4, method: 'nope' }) as { error: { code: number } }).error.code, -32601);
   assert.equal((rpcAnswer({ id: 5, method: 'ping' }) as { error: { code: number } }).error.code, -32600);
 });
@@ -184,4 +190,74 @@ test('a connection never paid for is given back after an hour', () => {
   assert.equal(unpaidClock(false, ago(60), now, false).disconnect, true);
   assert.equal(unpaidClock(false, ago(60), now, true).disconnect, false, 'an account that paid before keeps the week');
   assert.equal(unpaidClock(true, ago(600), now, false).disconnect, false);
+});
+
+test('an agent patches services; it never sends a whole list', () => {
+  // The old whole-list tool is gone, and says what to use instead.
+  assert.match(String(toolCall('update_services', { ...at, services: [] })), /upsert_services/);
+  assert.equal(TOOLS.some((t) => t.name === 'update_services'), false);
+  assert.deepEqual((toolCall('upsert_services', { ...at, services: [{ name: 'Drain cleaning', description: 'Same day.' }] }) as { body: unknown }).body, { ...at, kind: 'services-patch', upsert: [{ key: undefined, typeId: undefined, name: 'Drain cleaning', description: 'Same day.' }], remove: [] });
+  assert.deepEqual((toolCall('remove_services', { ...at, services: ['Drain cleaning', ''] }) as { body: unknown }).body, { ...at, kind: 'services-patch', upsert: [], remove: ['Drain cleaning'] });
+  assert.match(String(toolCall('upsert_services', { ...at, services: [{ description: 'x' }] })), /Name each service/);
+  assert.match(String(toolCall('remove_services', { ...at, services: [] })), /Name the services/);
+});
+
+test('an agent’s scan is 5×5 unless a size is named', () => {
+  const scan = (a: Record<string, unknown>) => toolCall('start_scan', { keyword: 'plumber', business: 'Acme', lat: 28, lng: -81, ...a });
+  assert.equal((scan({}) as { body: { gridSize: number } }).body.gridSize, 5);
+  assert.equal((scan({ gridSize: 9 }) as { body: { gridSize: number } }).body.gridSize, 9);
+  assert.match(String(scan({ gridSize: 13 })), /gridSize/);
+  assert.match(String(scan({ gridSize: 6 })), /gridSize/);
+});
+
+test('booking links are tagged and preferred unless told otherwise', () => {
+  const add = toolCall('manage_action_links', { ...at, action: 'add', type: 'APPOINTMENT', uri: 'https://acme.com/book' }) as { body: Record<string, unknown> };
+  assert.equal(add.body.kind, 'link-add');
+  assert.equal(add.body.preferred, true);
+  assert.equal(add.body.uri, 'https://acme.com/book?utm_source=google&utm_medium=organic&utm_campaign=gbp_listing&utm_content=appointment');
+  // Tags already on the link are kept, and tagging can be switched off.
+  assert.equal(withUtm('https://acme.com/book?utm_campaign=spring', 'APPOINTMENT'), 'https://acme.com/book?utm_campaign=spring&utm_source=google&utm_medium=organic&utm_content=appointment');
+  assert.equal((toolCall('manage_action_links', { ...at, action: 'add', type: 'APPOINTMENT', uri: 'https://acme.com/book', tag: false, preferred: false }) as { body: Record<string, unknown> }).body.uri, 'https://acme.com/book');
+  assert.equal(withUtm('not a link', 'APPOINTMENT'), 'not a link');
+  assert.equal((toolCall('manage_action_links', { ...at, action: 'delete', name: 'locations/2/placeActionLinks/x' }) as { body: Record<string, unknown> }).body.kind, 'link-delete');
+  assert.match(String(toolCall('manage_action_links', { ...at, action: 'update', uri: 'https://acme.com' })), /name/);
+  assert.match(String(toolCall('manage_action_links', { ...at, action: 'wipe' })), /add, update or delete/);
+});
+
+test('the new tools become the right requests', () => {
+  assert.deepEqual(toolCall('resolve_change', { change_id: 'abc', action: 'revert' }), { route: 'resolve', method: 'OP', body: { id: 'abc', action: 'revert' } });
+  assert.match(String(toolCall('resolve_change', { change_id: 'abc', action: 'delete' })), /accept or revert/);
+  assert.deepEqual(toolCall('get_workspace_briefing', {}), { route: 'briefing', method: 'OP' });
+  assert.deepEqual(toolCall('inspect_url', { url: 'https://acme.com/plumbing' }), { route: 'overview', method: 'POST', body: { source: 'inspect', website: 'https://acme.com/plumbing' } });
+  assert.match(String(toolCall('inspect_url', { url: 'acme.com' })), /https/);
+  assert.equal((toolCall('add_media', { ...at, url: 'https://acme.com/a.jpg', category: 'team' }) as { body: Record<string, unknown> }).body.category, 'TEAMS');
+  assert.match(String(toolCall('add_media', { ...at, url: 'https://acme.com/a.jpg', category: 'MENU' })), /category must be/);
+  assert.deepEqual((toolCall('delete_media', { ...at, name: 'accounts/1/locations/2/media/x' }) as { query: unknown }).query, { ...at, name: 'accounts/1/locations/2/media/x' });
+  assert.deepEqual((toolCall('search_gbp_categories', { ...at, q: 'pressure washing' }) as { query: unknown }).query, { ...at, q: 'pressure washing', full: '1' });
+  const ga = toolCall('analytics', { property: 'properties/1', by: 'landingPagePlusQueryString', by2: 'sessionCampaignName', utm_campaign: 'gbp_listing' }) as { body: Record<string, unknown> };
+  assert.equal(ga.body.by2, 'sessionCampaignName');
+  assert.equal(ga.body.campaign, 'gbp_listing');
+  assert.equal((toolCall('search_console', { website: 'https://acme.com', by: 'query', by2: 'page' }) as { body: Record<string, unknown> }).body.by2, 'page');
+  // A queued post takes the queue's slot; an edit to a post carries only what changes.
+  assert.match(String(toolCall('enqueue_post', { ...at, queue: 'q1', body: 'Hi', scheduledAt: '2027-01-01T10:00:00Z' })), /leave scheduledAt out/);
+  assert.deepEqual((toolCall('enqueue_post', { ...at, queue: 'q1', body: 'Hi' }) as { body: unknown }).body, { ...at, draft: { body: 'Hi' }, queue: 'q1', priority: 'medium' });
+  assert.deepEqual((toolCall('update_post', { ...at, id: 'p1', image: '', body: 'New' }) as { body: unknown }).body, { ...at, id: 'p1', change: { body: 'New', image: '' } });
+  assert.match(String(toolCall('get_post_stats', { ...at, ids: [] })), /ids/);
+  const more = toolCall('update_listing', { ...at, openingDate: '2011-10-01', moreHours: [{ type: 'delivery', days: [{ day: 'MONDAY', closed: false, open: '09:00', close: '17:00' }] }] }) as { body: { change: { moreHours: { type: string }[]; openingDate: string } } };
+  assert.equal(more.body.change.moreHours[0].type, 'DELIVERY');
+  assert.equal(more.body.change.openingDate, '2011-10-01');
+});
+
+test('the playbooks are offered as MCP prompts', () => {
+  const init = rpcAnswer({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }) as { result: { capabilities: Record<string, unknown> } };
+  assert.ok(init.result.capabilities.prompts);
+  const list = rpcAnswer({ jsonrpc: '2.0', id: 2, method: 'prompts/list' }) as { result: { prompts: { name: string }[] } };
+  assert.deepEqual(list.result.prompts.map((p) => p.name), ['weekly_listing_check', 'reply_to_new_reviews', 'find_why_i_dropped', 'monthly_client_report']);
+  const got = rpcAnswer({ jsonrpc: '2.0', id: 3, method: 'prompts/get', params: { name: 'weekly_listing_check', arguments: { business: 'Acme Plumbing' } } }) as { result: { messages: { role: string; content: { type: string; text: string } }[] } };
+  assert.equal(got.result.messages[0].role, 'user');
+  assert.match(got.result.messages[0].content.text, /Acme Plumbing/);
+  assert.equal((rpcAnswer({ jsonrpc: '2.0', id: 4, method: 'prompts/get', params: { name: 'nope' } }) as { error: { code: number } }).error.code, -32602);
+  // Every tool a playbook names is one the server has.
+  for (const b of PLAYBOOKS) for (const m of playbookText(b).matchAll(/\b([a-z]+(?:_[a-z]+)+)\b/g)) if (!/^(utm|gbp)_/.test(m[1])) assert.ok(TOOLS.some((t) => t.name === m[1]), b.name + ' names ' + m[1]);
+  assert.match(playbookText(PLAYBOOKS[0]), /my business/);
 });

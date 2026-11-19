@@ -5,7 +5,8 @@ import { getAuthenticatedUser } from '@/lib/auth';
 import { db } from '@stakeout/db';
 import { allow, gate, paidLocations } from '@/lib/gbpAccess';
 import { postproxy } from '@/lib/postproxy';
-import { emptyDraft, postProblem, postRequest, readPost, type GbpPost, type PostDraft } from '@stakeout/core/gbpPosts';
+import { BODY_MAX, emptyDraft, postProblem, postRequest, readPost, type GbpPost, type PostDraft } from '@stakeout/core/gbpPosts';
+import { queuesOf } from '@/lib/gbpQueues';
 
 export const maxDuration = 60;
 
@@ -26,6 +27,7 @@ export async function GET(req: Request) {
     const q = new URL(req.url).searchParams;
     if (q.get('all') === '1') return NextResponse.json(await everyPost());
     const t = await gate(q.get('profile'), q.get('location'), 'manage');
+    if (q.get('stats')) return NextResponse.json(await statsOf(t, String(q.get('stats'))));
     const posts: GbpPost[] = [];
     for (let page = 1; page <= 3; page++) {
       const r = await postproxy<{ total?: number; data?: unknown[] }>('/api/posts', { query: { profile_id: t.profile, 'platforms[]': 'google_business', per_page: '100', page: String(page), include_media: 'true' } });
@@ -84,16 +86,113 @@ async function everyPost() {
   return { posts, problems: [...new Set(problems)].slice(0, 3) };
 }
 
-/** POST /api/admin/gbp/posts (admins only) { profile, location, draft }: publishes the post now, or schedules it. */
+/** The post as the service has it, when it is a Google post on this listing; otherwise it is unknown here. */
+async function ownPost(t: { profile: string; location: string }, id: string) {
+  if (!/^[A-Za-z0-9_-]{3,80}$/.test(id)) throw new InputError('Unknown post.');
+  const raw = await postproxy('/api/posts/' + encodeURIComponent(id)).catch(() => null);
+  const post = readPost(raw);
+  if (!post || post.location !== t.location) throw new InputError('Unknown post.', 404);
+  return post;
+}
+
+/**
+ * What the service has recorded for up to ten of this listing's posts. Google gives no numbers for
+ * a single post (no views, no clicks): what comes back is each post's state and whatever the
+ * service did record. The listing's own calls and clicks are in its insights.
+ */
+async function statsOf(t: { profile: string; location: string }, list: string) {
+  const ids = [...new Set(list.split(',').map((x) => x.trim()).filter(Boolean))].slice(0, 10);
+  if (!ids.length) throw new InputError('Name at least one post.');
+  const posts = await Promise.all(ids.map((id) => ownPost(t, id)));
+  type Stats = { data?: Record<string, { platforms?: { platform?: string; records?: { stats?: Record<string, unknown>; recorded_at?: string }[] }[] }> };
+  const r = await postproxy<Stats>('/api/posts/stats', { query: { post_ids: ids.join(',') } }).catch(() => ({ data: {} }) as Stats);
+  return {
+    note: 'Google does not report views or clicks for a single post. For what the listing got (calls, website clicks, direction requests), read its insights for the days after a post went out.',
+    posts: posts.map((p) => {
+      const last = (r.data?.[p.id]?.platforms ?? []).find((x) => x.platform === 'google_business')?.records?.slice(-1)[0];
+      return { id: p.id, state: p.state, at: p.at, error: p.error, permalink: p.permalink, stats: last?.stats && Object.keys(last.stats).length ? last.stats : null, recordedAt: last?.recorded_at ?? null };
+    }),
+  };
+}
+
+/**
+ * POST /api/admin/gbp/posts (admins only) { profile, location, draft, queue, priority }: publishes
+ * the post now, or schedules it. With `queue` (one of this account's posting queues) the queue
+ * gives it its next open slot instead.
+ */
 export async function POST(req: Request) {
   try {
-    const b = (await req.json()) as { profile?: unknown; location?: unknown; draft?: unknown };
+    const b = (await req.json()) as { profile?: unknown; location?: unknown; draft?: unknown; queue?: unknown; priority?: unknown };
     const t = await gate(b.profile, b.location, 'manage');
     const draft = draftOf(b.draft);
     const problem = postProblem(draft);
     if (problem) throw new InputError(problem);
-    const made = await postproxy('/api/posts', { method: 'POST', body: postRequest(draft, t.profile, t.location) });
+    const body: Record<string, unknown> = postRequest(draft, t.profile, t.location);
+    if (b.queue !== undefined) {
+      if (draft.scheduledAt) throw new InputError('A queued post takes the queue’s next slot: leave the time out.');
+      const queue = (await queuesOf(t.u, t.profile)).find((x) => x.id === String(b.queue));
+      if (!queue) throw new InputError('Unknown queue. list_queues shows the ones this account has.', 404);
+      if (!queue.enabled) throw new InputError('That queue is paused.', 409);
+      if (!queue.timeslots.length) throw new InputError('That queue has no time slots yet, so it cannot place a post.', 409);
+      body.queue_id = queue.id;
+      body.queue_priority = ['high', 'medium', 'low'].includes(String(b.priority)) ? String(b.priority) : 'medium';
+    }
+    const made = await postproxy('/api/posts', { method: 'POST', body });
     return NextResponse.json({ post: readPost(made) });
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
+
+/**
+ * PATCH /api/admin/gbp/posts { profile, location, id, change }: edits a post that has not gone out
+ * yet (scheduled, more than five minutes away). `change` holds only what differs: body, image,
+ * scheduledAt, cta + ctaUrl, title, startDate, endDate.
+ */
+export async function PATCH(req: Request) {
+  try {
+    const b = (await req.json()) as { profile?: unknown; location?: unknown; id?: unknown; change?: unknown };
+    const t = await gate(b.profile, b.location, 'manage');
+    const post = await ownPost(t, String(b.id ?? ''));
+    if (post.state !== 'scheduled' && post.state !== 'draft') throw new InputError('Only a post that has not gone out yet can be edited. To change a published one, remove it and post again.', 409);
+    if (post.state === 'scheduled' && post.at && Date.parse(post.at) - Date.now() < 5 * 60000) throw new InputError('This post goes out in under five minutes, too late to edit.', 409);
+    const c = (b.change && typeof b.change === 'object' ? b.change : {}) as Record<string, unknown>;
+    const text = (k: string) => (typeof c[k] === 'string' ? (c[k] as string).trim() : undefined);
+    const https = (v: string | undefined) => v === undefined || v === '' || /^https:\/\/\S+$/.test(v);
+    const out: { post: Record<string, string>; platforms?: { google_business: Record<string, string> }; media?: string[] } = { post: {} };
+    const g: Record<string, string> = {};
+    const words = text('body');
+    if (words !== undefined) {
+      if (!words) throw new InputError('The post needs some text.');
+      if (words.length > BODY_MAX) throw new InputError(`The post is ${words.length} characters; Google allows ${BODY_MAX}.`);
+      out.post.body = words;
+    }
+    const at = text('scheduledAt');
+    if (at !== undefined) {
+      const ms = Date.parse(at);
+      if (Number.isNaN(ms) || ms - Date.now() < 10 * 60000) throw new InputError('The new time must be at least ten minutes from now.');
+      out.post.scheduled_at = new Date(ms).toISOString();
+    }
+    if (!https(text('image')) || !https(text('ctaUrl'))) throw new InputError('Links and images must be https addresses.');
+    if (text('image') !== undefined) out.media = text('image') ? [text('image') as string] : [];
+    const cta = text('cta');
+    if (cta !== undefined) {
+      if (!['BOOK', 'ORDER', 'SHOP', 'LEARN_MORE', 'SIGN_UP', 'CALL'].includes(cta)) throw new InputError('Unknown button.');
+      if (cta !== 'CALL' && !text('ctaUrl')) throw new InputError('Give the address the button goes to (ctaUrl).');
+      g.cta_action_type = cta;
+    }
+    if (text('ctaUrl')) g.cta_url = text('ctaUrl') as string;
+    if (text('title')) g.event_title = text('title') as string;
+    for (const [k, to] of [['startDate', 'event_start_date'], ['endDate', 'event_end_date']] as const) {
+      const v = text(k);
+      if (v === undefined) continue;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new InputError('Dates are written YYYY-MM-DD.');
+      g[to] = v;
+    }
+    if (Object.keys(g).length) out.platforms = { google_business: g };
+    if (!Object.keys(out.post).length && !out.platforms && !out.media) throw new InputError('Say what to change: body, image, scheduledAt, cta, ctaUrl, title, startDate or endDate.');
+    const made = await postproxy('/api/posts/' + encodeURIComponent(post.id), { method: 'PATCH', body: out });
+    return NextResponse.json({ post: readPost(made) ?? (await ownPost(t, post.id)) });
   } catch (e) {
     return errorResponse(e);
   }

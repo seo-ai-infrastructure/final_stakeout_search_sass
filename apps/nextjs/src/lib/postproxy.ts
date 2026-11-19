@@ -43,3 +43,6 @@ export async function postproxy<T = unknown>(
 
 /** A location's path under one connected profile. */
 export const gbpPath = (profileId: string, what: string) => '/api/profiles/' + encodeURIComponent(profileId) + '/google_business/' + what;
+
+/** Google's category search by name. A name of several words has to be quoted, or Google refuses the search. */
+export const categoryFilter = (name: string) => 'displayName=' + (/\s/.test(name.trim()) ? '"' + name.trim().replace(/"/g, '') + '"' : name.trim());

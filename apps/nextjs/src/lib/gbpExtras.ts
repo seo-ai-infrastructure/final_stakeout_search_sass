@@ -1,4 +1,4 @@
-import { postproxy, gbpPath } from '@/lib/postproxy';
+import { postproxy, gbpPath, categoryFilter } from '@/lib/postproxy';
 import { readLocation } from '@/lib/gbpAdmin';
 import { readAttributes, readLinks, readServices } from '@stakeout/core/gbpExtras';
 import type { GbpLocation } from '@stakeout/core/gbp';
@@ -28,7 +28,7 @@ export async function serviceTypesOf(t: T, loc: GbpLocation) {
   const region = String(loc.storefrontAddress?.regionCode ?? 'US');
   const types: { typeId: string; name: string }[] = [];
   for (const c of cats) {
-    const r = await get<{ categories?: { name: string; serviceTypes?: { serviceTypeId?: string; displayName?: string }[] }[] }>(t, 'available_location_categories', { region_code: region, language_code: 'en', filter: 'displayName=' + c.displayName, view: 'FULL', page_size: '20' }).catch(() => null);
+    const r = await get<{ categories?: { name: string; serviceTypes?: { serviceTypeId?: string; displayName?: string }[] }[] }>(t, 'available_location_categories', { region_code: region, language_code: 'en', filter: categoryFilter(String(c.displayName)), view: 'FULL', page_size: '20' }).catch(() => null);
     for (const s of r?.categories?.find((x) => x.name === c.name)?.serviceTypes ?? [])
       if (s.serviceTypeId && s.displayName && !types.some((x) => x.typeId === s.serviceTypeId)) types.push({ typeId: s.serviceTypeId, name: s.displayName });
   }

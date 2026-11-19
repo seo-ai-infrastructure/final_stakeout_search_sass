@@ -101,3 +101,19 @@ export async function rivalListings(names: string[], lat: number, lng: number, m
   }
   return { rivals, missing, waiting, problem, lookedUp };
 }
+
+/**
+ * What is already kept about these businesses near a place: main category, the others, rating and
+ * review count. Nothing is looked up or paid for: a business never looked up is simply left out.
+ */
+export async function keptRivals(names: string[], lat: number, lng: number): Promise<Record<string, { category: string | null; otherCategories: string[]; rating: number | null; reviews: number | null }>> {
+  const keys = new Map(names.map((n) => [keyOf(n, lat, lng), n]));
+  const rows = await db.rivalProfile.findMany({ where: { key: { in: [...keys.keys()] } }, select: { key: true, data: true } });
+  const out: Record<string, { category: string | null; otherCategories: string[]; rating: number | null; reviews: number | null }> = {};
+  for (const row of rows) {
+    const name = keys.get(row.key) as string;
+    const r = row.data ? readRival(row.data as Record<string, unknown>, name) : null;
+    if (r) out[name] = { category: r.categories[0]?.name ?? null, otherCategories: r.categories.slice(1, 6).map((c) => c.name), rating: r.rating, reviews: r.reviews };
+  }
+  return out;
+}

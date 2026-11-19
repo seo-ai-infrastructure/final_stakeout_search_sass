@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { attributePatch, attributeProblem, buildServices, linkProblem, readAttributes, readLinks, readServices, serviceProblem, serviceTypeName } from '../packages/core/gbpExtras';
+import { attributePatch, attributeProblem, buildServices, linkProblem, mergeServices, readAttributes, readLinks, readServices, serviceProblem, serviceTypeName } from '../packages/core/gbpExtras';
 
 const available = [
   { parent: 'attributes/is_owned_by_women', valueType: 'BOOL', displayName: 'Identifies as women-owned', groupDisplayName: 'From the business', valueMetadata: [{ value: true, displayName: 'Yes' }] },
@@ -109,4 +109,33 @@ test('action links', () => {
   assert.match(linkProblem('book.example', 'APPOINTMENT', [])!, /https/);
   assert.match(linkProblem('https://x.example', 'TELEPORT', [])!, /Choose what/);
   assert.match(linkProblem('https://x.example', 'FOOD_ORDERING', ['APPOINTMENT'])!, /does not offer/);
+});
+
+test('a patch to the services never loses one that was not named', () => {
+  const items = [
+    { structuredServiceItem: { serviceTypeId: 'job_type_id:gutter_cleaning', description: 'Old words.' } },
+    { structuredServiceItem: { serviceTypeId: 'job_type_id:window_washing' } },
+    { freeFormServiceItem: { category: 'categories/gcid:x', label: { displayName: 'Roof Rinse', description: 'Soft wash.' } } },
+  ];
+  const has = readServices(items, { 'job_type_id:gutter_cleaning': 'Gutter cleaning', 'job_type_id:window_washing': 'Window washing' });
+  // One description changed by name (any capitals), one service added: the other two are sent back untouched.
+  const m = mergeServices(has, [{ name: 'gutter CLEANING', description: 'New words.' }, { name: 'Deck staining', description: 'Two coats.' }], []);
+  assert.deepEqual(m.want, [
+    { key: 's:job_type_id:gutter_cleaning', description: 'New words.' },
+    { key: 's:job_type_id:window_washing', description: '' },
+    { key: 'f:roof rinse', description: 'Soft wash.' },
+    { name: 'Deck staining', description: 'Two coats.' },
+  ]);
+  assert.deepEqual([m.added, m.edited, m.removed, m.unknown], [1, 1, 0, []]);
+  const built = buildServices(items, m.want, 'categories/gcid:x');
+  assert.equal(built.serviceItems.length, 4);
+  assert.deepEqual(built.changed, ['Gutter cleaning: description changed', 'Deck staining: added']);
+  // Naming a service with no description keeps the one it has.
+  assert.equal(mergeServices(has, [{ key: 'f:roof rinse' }], []).want[2].description, 'Soft wash.');
+  // Removing by name, by type id or by key; a name that matches nothing is reported, not guessed.
+  const r = mergeServices(has, [], ['Roof rinse', 'job_type_id:window_washing', 'Chimney sweep']);
+  assert.deepEqual(r.want, [{ key: 's:job_type_id:gutter_cleaning', description: 'Old words.' }]);
+  assert.deepEqual([r.removed, r.unknown], [2, ['Chimney sweep']]);
+  // An empty patch changes nothing at all.
+  assert.deepEqual(buildServices(items, mergeServices(has, [], []).want, 'categories/gcid:x').changed, []);
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterReviews, isLow, needsReply, readReview, replyProblem, reviewSummary, REPLY_MAX_BYTES } from '../packages/core/gbpReviews';
+import { draftFirst, filterReviews, isLow, needsReply, readReview, replyProblem, reviewSummary, REPLY_MAX_BYTES } from '../packages/core/gbpReviews';
 
 const raw = (over: object = {}) => ({
   id: 'NGfnqwg',
@@ -27,7 +27,9 @@ test('a review is read from what the service sends, with its reply', () => {
   assert.equal(r.stars, 5);
   assert.equal(r.author, 'Kiva');
   assert.equal(r.replyUrl, 'https://business.google.com/n/2/reviews/x');
-  assert.deepEqual(r.reply, { id: 'KDfaKpM', text: 'Thank you!', status: 'published', error: null, postedAt: '2026-11-17T10:58:21.377Z' });
+  assert.deepEqual(r.reply, { id: 'KDfaKpM', text: 'Thank you!', status: 'published', error: null, postedAt: '2026-11-17T10:58:21.377Z', moderation: null, policyReason: null });
+  assert.equal(r.deleted, false);
+  assert.equal(r.replyRemoved, false);
   // Missing pieces never break the list: no name, no rating, a link that is not a web address.
   const bare = readReview(raw({ author_username: null, platform_data: { star_rating: 'FIVE' }, author_avatar_url: 'javascript:x', permalink: null }))!;
   assert.equal(bare.author, 'A Google user');
@@ -77,4 +79,33 @@ test('a reply must have words and fit Google’s limit', () => {
   assert.match(replyProblem('a'.repeat(REPLY_MAX_BYTES + 1))!, /Too long/);
   // Counted in bytes, as Google does: an emoji is four.
   assert.match(replyProblem('😀'.repeat(1025))!, /Too long/);
+});
+
+test('Google’s check of a reply, and what has been taken down', () => {
+  const ok = readReview(raw({ replies: [reply({ platform_data: { reply_state: 'APPROVED' } })] }))!;
+  assert.equal(ok.reply?.moderation, 'approved');
+  assert.equal(needsReply(ok), false);
+  // A rejected reply is not showing, so the review still needs one; the reason is in plain words.
+  const no = readReview(raw({ replies: [reply({ platform_data: { reply_state: 'REJECTED', policy_violation: 'PERSONAL_INFO' } })] }))!;
+  assert.equal(no.reply?.moderation, 'rejected');
+  assert.equal(no.reply?.policyReason, 'personal info');
+  assert.equal(needsReply(no), true);
+  assert.equal(readReview(raw({ replies: [reply({ platform_data: { reply_state: 'PENDING' } })] }))!.reply?.moderation, 'pending');
+  // A reply taken down on Google is no reply, and is said to have been there.
+  const gone = readReview(raw({ replies: [reply({ status: 'deleted' })] }))!;
+  assert.equal(gone.reply, null);
+  assert.equal(gone.replyRemoved, true);
+  // A review that is no longer on Google is marked, and never asks for an answer.
+  const removed = readReview(raw({ status: 'deleted' }))!;
+  assert.equal(removed.deleted, true);
+  assert.equal(needsReply(removed), false);
+});
+
+test('an agent’s reply to a low-rated review waits for a person', () => {
+  assert.equal(draftFirst(1), true);
+  assert.equal(draftFirst(3), true);
+  assert.equal(draftFirst(4), false);
+  assert.equal(draftFirst(5), false);
+  // No rating to go by: a person reads it first.
+  assert.equal(draftFirst(null), true);
 });

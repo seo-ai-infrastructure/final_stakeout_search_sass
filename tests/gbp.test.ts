@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPatch, describe, diff, hhmm, periodsOf, problemWith, redBlock, showing, siteOf, weekOf, worst, type GbpLocation } from '../packages/core/gbp';
+import { buildPatch, describe, diff, hhmm, moreOf, moreTypesOf, periodsOf, problemWith, redBlock, showing, siteOf, weekOf, worst, type GbpLocation } from '../packages/core/gbp';
 import { postproxyProblem } from '../apps/nextjs/src/lib/postproxy';
 
 const live: GbpLocation = {
@@ -210,4 +210,38 @@ test('split shifts, an opening date and an address', () => {
   assert.deepEqual(buildPatch(shop, { address: moved }, a).location, { fields: ['storefrontAddress'], storefrontAddress: { addressLines: ['40 Lake Ave', 'Suite 2'], locality: 'Lakeland', administrativeArea: 'FL', postalCode: '33801', regionCode: 'US' } });
   assert.match(problemWith({ ...live, storefrontAddress: undefined }, { address: moved })!, /shows no address/);
   assert.deepEqual(serviceAreasOf({ serviceArea: { places: { placeInfos: [{ placeName: 'Lakeland, FL, USA', placeId: 'x' }] } } }), ['Lakeland, FL, USA']);
+});
+
+test('named hour sets: only the set named is changed, the others are sent back as they are', () => {
+  const DAYS7 = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+  const wk = (open: string, close: string, days = ['MONDAY', 'TUESDAY']) => DAYS7.map((day) => ({ day, closed: !days.includes(day), allDay: false, open: days.includes(day) ? open : '09:00', close: days.includes(day) ? close : '17:00' }));
+  const loc: GbpLocation = {
+    title: 'Acme',
+    categories: { primaryCategory: { name: 'categories/gcid:plumber', displayName: 'Plumber', moreHoursTypes: [{ hoursTypeId: 'DELIVERY', displayName: 'Delivery' }, { hoursTypeId: 'PICKUP', displayName: 'Pickup' }] } as never },
+    moreHours: [{ hoursTypeId: 'PICKUP', periods: [{ openDay: 'MONDAY', openTime: { hours: 10 }, closeDay: 'MONDAY', closeTime: { hours: 14 } }] }],
+  };
+  assert.deepEqual(moreTypesOf(loc).map((t) => t.type), ['DELIVERY', 'PICKUP']);
+  assert.equal(moreOf(loc)[0].type, 'PICKUP');
+  assert.match(describe(loc).moreHours, /^pickup: mon 10:00–14:00/);
+  // A set Google does not offer this listing is refused, with the ones it does.
+  assert.match(String(problemWith(loc, { moreHours: [{ type: 'BRUNCH', days: wk('09:00', '11:00') }] })), /does not offer brunch hours.*DELIVERY, PICKUP/);
+  assert.match(String(problemWith(loc, { moreHours: [{ type: 'DELIVERY', days: wk('12:00', '11:00') }] })), /Delivery hours: On monday the closing time/);
+  assert.match(String(problemWith(loc, { moreHours: [{ type: 'DELIVERY', days: wk('09:00', '11:00').slice(0, 5) }] })), /incomplete/);
+  // Adding delivery: pickup goes back to Google untouched.
+  const change = { moreHours: [{ type: 'DELIVERY', days: wk('09:00', '17:00') }] };
+  assert.equal(problemWith(loc, change), null);
+  const changes = diff(loc, change);
+  assert.deepEqual(changes.map((c) => [c.key, c.tier]), [['moreHours', 'green']]);
+  const patch = buildPatch(loc, change, changes);
+  assert.equal(patch.location, null);
+  assert.deepEqual(patch.hours?.fields, ['moreHours']);
+  assert.deepEqual((patch.hours as { moreHours: { hoursTypeId: string; periods: unknown[] }[] }).moreHours.map((m) => [m.hoursTypeId, m.periods.length]), [['PICKUP', 1], ['DELIVERY', 2]]);
+  // Sending what is already there is no change; a week with every day closed removes the set.
+  assert.deepEqual(diff(loc, { moreHours: [{ type: 'PICKUP', days: wk('10:00', '14:00', ['MONDAY']) }] }), []);
+  const off = { moreHours: [{ type: 'PICKUP', days: wk('09:00', '17:00', []) }] };
+  assert.equal(diff(loc, off)[0].to, 'removed');
+  assert.deepEqual((buildPatch(loc, off, diff(loc, off)).hours as { moreHours: unknown[] }).moreHours, []);
+  // Once Google shows it, the edit reads as live.
+  const after = { ...loc, moreHours: [...loc.moreHours!, { hoursTypeId: 'DELIVERY', periods: periodsOf(wk('09:00', '17:00')) }] };
+  assert.deepEqual(showing(after, change, changes), { live: ['moreHours'], waiting: [] });
 });

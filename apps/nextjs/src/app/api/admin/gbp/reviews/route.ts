@@ -5,7 +5,9 @@ import { target } from '@/lib/gbpAdmin';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { allow } from '@/lib/gbpAccess';
 import { postproxy } from '@/lib/postproxy';
-import { readReview, replyProblem, type Review } from '@stakeout/core/gbpReviews';
+import { draftFirst, readReview, replyProblem, type Review } from '@stakeout/core/gbpReviews';
+import { isAgent } from '@/lib/acting';
+import { draftsFor, dropDraft, saveDraft } from '@/lib/reviewDrafts';
 
 export const maxDuration = 60;
 
@@ -39,7 +41,10 @@ export async function GET(req: Request) {
     const page = Math.min(500, Math.max(1, Number(q.get('page')) || 1));
     const r = await postproxy<{ total?: number; data?: unknown[] }>(comments(profile), { query: { placement_id: location, page: String(page), per_page: String(PER_PAGE) } });
     const rows = r.data ?? [];
-    const reviews = rows.map(readReview).filter((x): x is Review => x !== null);
+    const read = rows.map(readReview).filter((x): x is Review => x !== null);
+    // A reply an agent wrote to a low-rated review waits with the review for a person to send.
+    const drafts = await draftsFor(profile, read.filter((x) => !x.reply).map((x) => x.id));
+    const reviews = read.map((x) => (drafts[x.id] ? { ...x, agentDraft: drafts[x.id] } : x));
     return NextResponse.json({ reviews, total: Number(r.total) || reviews.length, page, more: rows.length === PER_PAGE && page * PER_PAGE < (Number(r.total) || 0) });
   } catch (e) {
     return errorResponse(e);
@@ -51,6 +56,9 @@ export async function GET(req: Request) {
  * service accepts it at once and publishes it to Google in the background, so the reply comes back
  * as "pending"; reading the review again shows whether Google took it. A review has one reply: a
  * new one replaces the old.
+ *
+ * From an account's AI agent, a reply to a review of three stars or fewer (or with no rating) is
+ * not sent: it is kept as a draft for a person to read and send from the review inbox.
  */
 export async function POST(req: Request) {
   try {
@@ -59,8 +67,18 @@ export async function POST(req: Request) {
     await mayTouch(profile, id);
     const problem = replyProblem(b.body);
     if (problem) throw new InputError(problem);
+    if (isAgent()) {
+      const review = await reread(profile, id);
+      if (!review) throw new InputError('Unknown review.', 404);
+      if (review.deleted) throw new InputError('This review is no longer on Google, so it cannot be answered.', 409);
+      if (draftFirst(review.stars)) {
+        const agentDraft = await saveDraft(profile, id, String(b.body));
+        return NextResponse.json({ sent: false, draft: true, message: 'Not sent. A reply to a review of three stars or fewer is kept as a draft: a person reads it and sends it from the review inbox on Stakeout.', review: { ...review, agentDraft } });
+      }
+    }
     await postproxy(comments(profile), { method: 'POST', body: { parent_id: id, body: String(b.body).trim() } });
-    return NextResponse.json({ review: await reread(profile, id) });
+    await dropDraft(profile, id);
+    return NextResponse.json({ sent: true, review: await reread(profile, id) });
   } catch (e) {
     return errorResponse(e);
   }
@@ -106,3 +124,17 @@ async function mayTouch(profile: string, id: string) {
 }
 
 const reread = (profile: string, id: string) => postproxy(comments(profile) + '/' + encodeURIComponent(id)).then(readReview).catch(() => null);
+
+/** PUT /api/admin/gbp/reviews { profile, review }: drops an agent's waiting draft for a review without sending it. */
+export async function PUT(req: Request) {
+  try {
+    const b = (await req.json()) as { profile?: unknown; review?: unknown };
+    const { profile, id } = ids(b.profile, b.review);
+    if (isAgent()) throw new InputError('Not available to agents.', 403);
+    await mayTouch(profile, id);
+    await dropDraft(profile, id);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return errorResponse(e);
+  }
+}
