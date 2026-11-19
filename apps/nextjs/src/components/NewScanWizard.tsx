@@ -30,6 +30,7 @@ const SPACING_OPTIONS = [
   { label: '0.5 Miles', short: '0.5 mi', km: 0.80467 },
   { label: '1.0 Mile', short: '1 mi', km: 1.60934 },
   { label: '2.0 Miles', short: '2 mi', km: 3.21868 },
+  { label: '3.0 Miles', short: '3 mi', km: 4.82802 },
   { label: '5.0 Miles', short: '5 mi', km: 8.04672 },
 ];
 export function NewScanWizard() {
@@ -891,7 +892,7 @@ export function NewScanWizard() {
             </div>
             <div className="flex items-center gap-2">
               <span className="whitespace-nowrap text-xs text-slate-300">Points apart</span>
-              <div className="grid flex-1 grid-cols-4 gap-1.5">
+              <div className="grid flex-1 grid-cols-5 gap-1.5">
                 {SPACING_OPTIONS.map((sp) => (
                   <button key={sp.km} type="button" aria-pressed={spacingKm === sp.km} onClick={() => setSpacingKm(sp.km)} className={pill(spacingKm === sp.km)}>
                     {sp.short}

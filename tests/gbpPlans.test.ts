@@ -83,7 +83,8 @@ test('tools turn into the site’s own requests', () => {
   assert.equal(scan.body.spacingKm, 3.21868);
   assert.equal(scan.body.gridSize, 5);
   assert.equal(scan.body.targetBusiness, 'Stuart Plumbing');
-  assert.match(String(toolCall('start_scan', { keyword: 'x', business: 'y', lat: 1, lng: 1, spacingMiles: 3 })), /spacingMiles/);
+  assert.match(String(toolCall('start_scan', { keyword: 'x', business: 'y', lat: 1, lng: 1, spacingMiles: 4 })), /spacingMiles/);
+  assert.equal((toolCall('start_scan', { keyword: 'x', business: 'y', lat: 1, lng: 1, spacingMiles: 3 }) as { body: Record<string, unknown> }).body.spacingKm, 4.82802);
   assert.match(String(toolCall('create_post', { ...at, body: 'Hi', image: 'data:image/png;base64,AAAA' })), /https/);
   assert.equal(toolCall('nope', {}), 'Unknown tool.');
   assert.equal(toolCall('get_scan', { scanId: '../x' }), 'Unknown scan.');
@@ -122,4 +123,12 @@ test('a low-star review email says who, how many stars and what', () => {
   assert.match(a.lines[0], /Dana left 1 star on/);
   assert.match(a.lines[1], /Never showed up/);
   assert.match(reviewAlert({ stars: 2, author: 'A', text: '' }, 'X').lines[1], /rating only/);
+});
+
+import { parseSpec } from '../packages/core/grid';
+
+test('points can be three miles apart', () => {
+  const spec = { keyword: 'plumber', targetBusiness: 'Stuart Plumbing', centerLat: 28.04, centerLng: -81.95, gridSize: 5, targetType: 'mobile_chrome' };
+  assert.equal(parseSpec({ ...spec, spacingKm: 4.82802 }).spacingKm, 4.82802);
+  assert.throws(() => parseSpec({ ...spec, spacingKm: 4 }));
 });

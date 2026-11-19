@@ -44,7 +44,7 @@ export function parseSpec(input: Record<string, unknown>) {
     typeof gridSize !== 'number' ||
     ![3, 5, 7, 9, 11].includes(gridSize) ||
     typeof spacingKm !== 'number' ||
-    ![0.80467, 1.60934, 3.21868, 8.04672].includes(spacingKm) ||
+    ![0.80467, 1.60934, 3.21868, 4.82802, 8.04672].includes(spacingKm) ||
     typeof trackAiOverviews !== 'boolean'
   )
     throw new InputError('Invalid grid size, spacing or AI option.');

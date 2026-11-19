@@ -79,7 +79,7 @@ export const TOOLS: Tool[] = [
     lat: { type: 'number', description: 'Centre of the grid.' },
     lng: { type: 'number', description: 'Centre of the grid.' },
     gridSize: { type: 'integer', enum: [3, 5, 7, 9, 11], description: 'Points per side. Default 5.' },
-    spacingMiles: { type: 'number', enum: [0.5, 1, 2, 5], description: 'Distance between points. Default 1.' },
+    spacingMiles: { type: 'number', enum: [0.5, 1, 2, 3, 5], description: 'Distance between points. Default 1.' },
     trackAiOverviews: { type: 'boolean', description: 'Also record Google’s AI answer at each point. Default false.' },
   }, ['keyword', 'business', 'lat', 'lng']),
 ];
@@ -87,7 +87,7 @@ export const TOOLS: Tool[] = [
 /** Tools that change something: an agent's client can ask the person before running them. */
 export const WRITES = new Set(['reply_to_review', 'create_post', 'delete_post', 'update_listing', 'update_services', 'update_attributes', 'start_scan']);
 
-const KM: Record<string, number> = { '0.5': 0.80467, '1': 1.60934, '2': 3.21868, '5': 8.04672 };
+const KM: Record<string, number> = { '0.5': 0.80467, '1': 1.60934, '2': 3.21868, '3': 4.82802, '5': 8.04672 };
 const s = (v: unknown) => (typeof v === 'string' ? v : '');
 const where = (a: Record<string, unknown>) => ({ profile: s(a.profile), location: s(a.location) });
 const daysOf = (a: Record<string, unknown>) => (Number.isFinite(Number(a.days)) && Number(a.days) >= 1 ? String(Math.round(Number(a.days))) : '30');
@@ -137,7 +137,7 @@ export function toolCall(name: string, a: Record<string, unknown>): Call | strin
     case 'get_scan': return /^[a-z0-9]{10,40}$/.test(s(a.scanId)) ? { route: 'scan', method: 'GET', query: { scanId: s(a.scanId) } } : 'Unknown scan.';
     case 'start_scan': {
       const spacingKm = KM[String(a.spacingMiles ?? 1)];
-      if (!spacingKm) return 'spacingMiles must be 0.5, 1, 2 or 5.';
+      if (!spacingKm) return 'spacingMiles must be 0.5, 1, 2, 3 or 5.';
       return { route: 'scan-create', method: 'POST', body: { keyword: s(a.keyword), targetBusiness: s(a.business), centerLat: a.lat, centerLng: a.lng, gridSize: typeof a.gridSize === 'number' ? a.gridSize : 5, spacingKm, trackAiOverviews: a.trackAiOverviews === true, targetType: 'mobile_chrome' } };
     }
     default: return 'Unknown tool.';
