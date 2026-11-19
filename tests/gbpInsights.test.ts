@@ -132,3 +132,50 @@ test('the month still running is left out, and "fewer than" figures show in both
   assert.equal(t.rows.find((r) => r.keyword === 'broderick')!.latest, 22);
   assert.deepEqual(keywordTrends([{ month: '2026-11', keywords: [] }]), { rows: [], months: [] });
 });
+
+import { brandSplit, byWeekday, listingTotals, rateByWeek, dailySeries } from '../packages/core/gbpInsights';
+
+test('searches split into found-by-service and found-by-name', () => {
+  const row = (keyword: string, total: number, exact = true) => ({ keyword, total, exact, latest: total, latestText: String(total), previous: null, previousText: '', gain: null, months: 1, byMonth: [total] });
+  const s = brandSplit([row('plumber near me', 300), row('drain cleaning', 100), row('stuart plumbing', 150), row('stuart plumbing jobs', 20), row('plumber jobs', 10)], 'stuart');
+  assert.deepEqual(s.discovery, { terms: 2, shown: 400 });
+  assert.deepEqual(s.branded, { terms: 2, shown: 170 });
+  assert.deepEqual(s.other, { terms: 1, shown: 10 });
+  assert.equal(s.by, 'shown');
+  // A small listing: Google gives no counts, so the searches themselves are counted.
+  const small = brandSplit([row('dwi attorney near me', 0, false), row('broderick', 0, false), row('brandon j broderick', 0, false)], 'broderick');
+  assert.equal(small.by, 'terms');
+  assert.equal(small.branded.terms, 2);
+  assert.equal(brandSplit([], '').known, false);
+});
+
+test('a measure by day of the week is an average, so a part week does not skew it', () => {
+  const rec = (date: string, calls: number) => ({ date, platform_stats: { call_clicks: calls } });
+  const d = dailySeries([rec('2026-11-01', 2), rec('2026-11-02', 6), rec('2026-11-08', 4), rec('2026-11-09', 10)], '2026-11-01', '2026-11-09').days;
+  const w = byWeekday(d, 'calls');
+  assert.equal(w[0], 3); // two Sundays: 2 and 4
+  assert.equal(w[1], 8); // two Mondays: 6 and 10
+  assert.equal(w[2], 0);
+});
+
+test('actions per 100 views, week by week', () => {
+  const rec = (date: string, views: number, calls: number) => ({ date, views, platform_stats: { call_clicks: calls } });
+  const days = dailySeries([rec('2026-11-01', 100, 5), rec('2026-11-03', 100, 5), rec('2026-11-08', 0, 0)], '2026-11-01', '2026-11-14').days;
+  assert.deepEqual(rateByWeek(days), [{ date: '2026-11-01', value: 5 }, { date: '2026-11-08', value: null }]);
+});
+
+test('every listing from its newest totals, busiest first', () => {
+  const t = listingTotals([
+    { placement_id: 'accounts/1/locations/2', recorded_at: '2026-11-18T03:00:00Z', stats: { views: 1000, call_clicks: 20, website_clicks: 30, business_direction_requests: 10 } },
+    { placement_id: 'accounts/1/locations/3', recorded_at: '2026-11-18T03:00:00Z', stats: { business_impressions_mobile_search: 400, business_impressions_mobile_maps: 100, call_clicks: 80, business_conversations: 5 } },
+    { placement_id: 'accounts/1/locations/4', stats: {} },
+    { stats: { views: 5 } }, 'junk',
+  ]);
+  assert.deepEqual(t.map((r) => r.location), ['accounts/1/locations/3', 'accounts/1/locations/2', 'accounts/1/locations/4']);
+  assert.equal(t[0].views, 500);
+  assert.equal(t[0].actions, 85);
+  assert.equal(t[0].rate, 17);
+  assert.equal(t[1].rate, 6);
+  assert.equal(t[2].rate, null);
+  assert.deepEqual(listingTotals(null), []);
+});

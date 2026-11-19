@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { DAILY, SURFACES, brandWord, byWeek, risingKeywords, scannable, type DailyKey, type Day, type KeywordTrend } from '@stakeout/core/gbpInsights';
-import { BarCell, Change, MiniChart, SectionHead, Segmented, Skeleton, Spark, SplitBar, Tile, card, fmt, shortDate } from '@/components/InsightBits';
+import { DAILY, SURFACES, brandSplit, brandWord, byWeek, byWeekday, rateByWeek, risingKeywords, scannable, type DailyKey, type Day, type KeywordTrend } from '@stakeout/core/gbpInsights';
+import { BarCell, Change, MiniChart, SectionHead, Segmented, Skeleton, Spark, SplitBar, Tile, WeekdayBars, card, fmt, shortDate } from '@/components/InsightBits';
 
 type Totals = Record<DailyKey, number>;
 type Range = { recent: { from: string; to: string }; before: { from: string; to: string }; days: number };
@@ -26,6 +26,8 @@ export default function GbpInsights({ profile, location, businessName, place, ra
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [metric, setMetric] = useState<DailyKey>('calls');
+  // The chart can show the action rate instead of one of the counts.
+  const [showRate, setShowRate] = useState(false);
   const [view, setView] = useState<'top' | 'rising'>('top');
   const [find, setFind] = useState('');
   const [picked, setPicked] = useState<string[]>([]);
@@ -59,6 +61,16 @@ export default function GbpInsights({ profile, location, businessName, place, ra
     return rows.map((d, i) => ({ label: (weekly ? 'Week of ' : '') + shortDate(d.date), value: d[shownMetric], before: prior.length === rows.length ? prior[i][shownMetric] : null }));
   }, [daily, shownMetric, compare]);
   // Each headline number's shape over the period, for the line along its tile (by week once there are many days).
+  // Actions per 100 views by week, for this period and the one before, once there are two weeks to draw.
+  const ratePoints = useMemo(() => {
+    if (!daily || daily.length < 14 || !daily.known.includes('views')) return [];
+    const now = rateByWeek(daily.days);
+    const prior = compare && daily.previous?.length === daily.days.length ? rateByWeek(daily.previous) : [];
+    return now.filter((w) => w.value !== null).length < 2 ? [] : now.map((w, i) => ({ label: 'Week of ' + shortDate(w.date), value: w.value ?? 0, before: prior.length === now.length ? prior[i].value : null }));
+  }, [daily, compare]);
+  const rateOn = showRate && ratePoints.length > 0;
+  const weekdays = useMemo(() => (daily && shownMetric && daily.length >= 28 ? byWeekday(daily.days, shownMetric) : []), [daily, shownMetric]);
+  const split = useMemo(() => brandSplit(data?.keywords.rows ?? [], brandWord(businessName, (data?.keywords.rows ?? []).map((r) => r.keyword), place)), [data, businessName, place]);
   const sparkOf = (k: DailyKey) => (daily ? (daily.length > 92 ? byWeek(daily.days, DAILY.map((m) => m.key)) : daily.days).map((d) => d[k]) : []);
   const actions = daily ? (['calls', 'websiteClicks', 'directions', 'conversations', 'bookings', 'foodOrders'] as DailyKey[]).filter((k) => daily.known.includes(k)).reduce((n, k) => n + daily.totals[k], 0) : 0;
   const actionsBefore = daily ? (['calls', 'websiteClicks', 'directions', 'conversations', 'bookings', 'foodOrders'] as DailyKey[]).filter((k) => daily.known.includes(k)).reduce((n, k) => n + daily.before[k], 0) : 0;
@@ -84,27 +96,36 @@ export default function GbpInsights({ profile, location, businessName, place, ra
         <div className={'space-y-5 ' + (busy ? 'opacity-50' : '')}>
           {/* The headline numbers are also the switch for the chart under them. */}
           <div className={'grid grid-cols-2 gap-3 ' + (chartKeys.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-4')}>
-            {chartKeys.map((k) => <Tile key={k} big label={k === 'views' ? 'Views on Search and Maps' : label(k)} value={daily.totals[k]} was={daily.before[k]} compare={compare} spark={sparkOf(k)} active={shownMetric === k} onSelect={() => setMetric(k)} />)}
+            {chartKeys.map((k) => <Tile key={k} big label={k === 'views' ? 'Views on Search and Maps' : label(k)} value={daily.totals[k]} was={daily.before[k]} compare={compare} spark={sparkOf(k)} active={!rateOn && shownMetric === k} onSelect={() => { setMetric(k); setShowRate(false); }} />)}
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {daily.totals.views > 0 && <Tile label="Actions per 100 views" value={(actions / daily.totals.views) * 100} was={daily.before.views ? (actionsBefore / daily.before.views) * 100 : null} digits={1} compare={compare} note="calls, clicks, directions and more" />}
+            {daily.totals.views > 0 && <Tile label="Actions per 100 views" value={(actions / daily.totals.views) * 100} was={daily.before.views ? (actionsBefore / daily.before.views) * 100 : null} digits={1} compare={compare} note="calls, clicks, directions and more" {...(ratePoints.length ? { spark: ratePoints.map((x) => x.value), active: rateOn, onSelect: () => setShowRate(true) } : {})} />}
             {(['conversations', 'bookings', 'foodOrders', 'menuClicks'] as DailyKey[]).filter((k) => daily.known.includes(k) && (daily.totals[k] > 0 || daily.before[k] > 0)).map((k) => <Tile key={k} label={label(k)} value={daily.totals[k]} was={daily.before[k]} compare={compare} />)}
           </div>
           {!compare && <p className="text-xs text-slate-500">Google has {daily.daysWithData} of these {daily.length} days{daily.daysBefore < daily.length - 3 ? ` and ${daily.daysBefore} of the ${daily.length} before` : ''}, so no comparison is shown: a part-filled period is not a drop.</p>}
 
           {shownMetric && (
             <div>
-              <h4 className="mb-2 text-sm font-semibold">{label(shownMetric)} {daily.length > 92 ? 'by week' : 'by day'}</h4>
-              <MiniChart points={points} name={label(shownMetric)} />
+              <h4 className="mb-2 text-sm font-semibold">{rateOn ? 'Actions per 100 views, by week' : `${label(shownMetric)} ${daily.length > 92 ? 'by week' : 'by day'}`}</h4>
+              {rateOn ? <MiniChart points={ratePoints} name="Actions per 100 views" digits={1} /> : <MiniChart points={points} name={label(shownMetric)} />}
+              {rateOn && <p className="mt-1 text-xs text-slate-500">Of every 100 times the listing was seen, how many led to a call, a website click, a direction request, a message or a booking. This is the number that listing edits, photos and reviews move.</p>}
             </div>
           )}
 
-          {SURFACES.some((k) => daily.totals[k] > 0) && (
-            <div>
-              <h4 className="mb-2 text-sm font-semibold">Where the listing was seen</h4>
-              <SplitBar parts={SURFACES.map((k) => ({ label: label(k), value: daily.totals[k] }))} />
-            </div>
-          )}
+          <div className="grid gap-5 lg:grid-cols-2">
+            {SURFACES.some((k) => daily.totals[k] > 0) && (
+              <div className="min-w-0">
+                <h4 className="mb-2 text-sm font-semibold">Where the listing was seen</h4>
+                <SplitBar parts={SURFACES.map((k) => ({ label: label(k), value: daily.totals[k] }))} />
+              </div>
+            )}
+            {shownMetric && weekdays.some((v) => v > 0) && (
+              <div className="min-w-0">
+                <h4 className="mb-2 text-sm font-semibold">{label(shownMetric)} on a typical day of the week</h4>
+                <WeekdayBars values={weekdays} name={label(shownMetric)} />
+              </div>
+            )}
+          </div>
         </div>
       )}
       {p?.kind === 'snapshot' && (
@@ -129,6 +150,12 @@ export default function GbpInsights({ profile, location, businessName, place, ra
               </div>
             )}
           </div>
+          {!data.keywords.problem && split.known && split.discovery.terms + split.branded.terms > 0 && (
+            <div className="mt-3 rounded-lg border border-slate-800 bg-slate-950 p-3">
+              <p className="mb-2 text-xs text-slate-400">How people found the listing{split.by === 'terms' ? ' (counted by search, since Google gives few exact numbers for this listing)' : ''}</p>
+              <SplitBar parts={[{ label: 'Searched for what you do', value: split.discovery[split.by] }, { label: 'Searched for you by name', value: split.branded[split.by] }]} />
+            </div>
+          )}
           {data.keywords.problem ? (
             <p className="mt-2 text-sm text-amber-300">Google gives no search terms for this listing: {data.keywords.problem}</p>
           ) : rows.length === 0 ? (

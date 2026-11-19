@@ -262,3 +262,69 @@ export function monthsOf(from: string, to: string, keep = 12): { from: string; t
   const floor = new Date(Date.UTC(y, m - keep, 1)).toISOString().slice(0, 7);
   return { from: a < floor ? floor : a, to: b };
 }
+
+/* ───────────── More to read from the same numbers ───────────── */
+
+/**
+ * How people found the listing: by searching for what it does (discovery) or by searching for it
+ * by name (branded). Job hunting and the like is set aside as "other". `shown` adds up the months
+ * Google gave a real count for; `terms` counts the searches themselves, which is what there is to
+ * go on when a listing is small and Google only says "fewer than 15".
+ */
+export function brandSplit(rows: KeywordTrend[], brand: string) {
+  const part = () => ({ terms: 0, shown: 0 });
+  const out = { discovery: part(), branded: part(), other: part() };
+  for (const r of rows) {
+    const named = Boolean(brand) && r.keyword.split(/[^a-z0-9]+/).includes(brand);
+    const p = named ? out.branded : scannable(r.keyword, brand) ? out.discovery : out.other;
+    p.terms++;
+    p.shown += r.total;
+  }
+  // Counts are worth showing once they cover a fair share of the searches; otherwise the terms are counted.
+  const counted = rows.filter((r) => r.exact).length;
+  return { ...out, by: (rows.length > 0 && counted >= rows.length * 0.3 && out.discovery.shown + out.branded.shown > 0 ? 'shown' : 'terms') as 'shown' | 'terms', known: Boolean(brand) };
+}
+
+/** One measure's average for each day of the week, Sunday first, across the days given. */
+export function byWeekday(days: Day[], key: DailyKey): number[] {
+  const sum = [0, 0, 0, 0, 0, 0, 0], n = [0, 0, 0, 0, 0, 0, 0];
+  for (const d of days) {
+    const w = new Date(d.date + 'T12:00:00Z').getUTCDay();
+    sum[w] += d[key];
+    n[w]++;
+  }
+  return sum.map((s, i) => (n[i] ? Math.round((s / n[i]) * 10) / 10 : 0));
+}
+
+/**
+ * Actions (calls, website clicks, directions, messages, bookings, orders) per 100 views, week by
+ * week: a single day has too few of either to read. A week with no views has no rate (null).
+ */
+export function rateByWeek(days: Day[]): { date: string; value: number | null }[] {
+  return byWeek(days, DAILY.map((m) => m.key)).map((w) => {
+    const acts = ACTIONS.reduce((s, k) => s + w[k], 0);
+    return { date: w.date, value: w.views > 0 ? Math.round((acts / w.views) * 1000) / 10 : null };
+  });
+}
+
+export type ListingTotals = { location: string; views: number; calls: number; websiteClicks: number; directions: number; actions: number; rate: number | null; recordedAt: string | null };
+
+/**
+ * Every listing of a connected account from its newest 30-day totals (Postproxy's `latest_stats`),
+ * busiest first. `actions` is everything a customer did from the listing; `rate` is actions per 100 views.
+ */
+export function listingTotals(latest: unknown): ListingTotals[] {
+  const rows: ListingTotals[] = [];
+  for (const x of Array.isArray(latest) ? latest : []) {
+    const r = (x && typeof x === 'object' ? x : {}) as { placement_id?: unknown; recorded_at?: unknown; stats?: unknown };
+    const s = (r.stats && typeof r.stats === 'object' ? r.stats : {}) as Record<string, unknown>;
+    if (typeof r.placement_id !== 'string') continue;
+    const n = (...keys: string[]) => keys.reduce((t, k) => t + (typeof s[k] === 'number' && Number.isFinite(s[k]) ? (s[k] as number) : 0), 0);
+    const surfaces = n('business_impressions_desktop_search', 'business_impressions_mobile_search', 'business_impressions_desktop_maps', 'business_impressions_mobile_maps');
+    const views = n('views') || surfaces;
+    const calls = n('call_clicks'), websiteClicks = n('website_clicks'), directions = n('business_direction_requests', 'direction_requests');
+    const actions = calls + websiteClicks + directions + n('business_conversations', 'business_bookings', 'business_food_orders');
+    rows.push({ location: r.placement_id, views, calls, websiteClicks, directions, actions, rate: views > 0 ? Math.round((actions / views) * 1000) / 10 : null, recordedAt: typeof r.recorded_at === 'string' ? r.recorded_at : null });
+  }
+  return rows.sort((a, b) => b.actions - a.actions || b.views - a.views);
+}

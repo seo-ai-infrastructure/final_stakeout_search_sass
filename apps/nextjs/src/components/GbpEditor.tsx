@@ -8,6 +8,7 @@ import GbpExtras from '@/components/GbpExtras';
 import GbpGaps from '@/components/GbpGaps';
 import GbpPlans, { UpgradeCard, connectGoogle } from '@/components/GbpPlans';
 import GbpAgents from '@/components/GbpAgents';
+import GbpOverview from '@/components/GbpOverview';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, descriptionWarnings, diff, highScrutiny, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
@@ -104,7 +105,6 @@ export default function GbpEditor() {
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [ready, setReady] = useState(true);
   const [pick, setPick] = useState<{ profile: string; location: string } | null>(null);
-  const [find, setFind] = useState('');
   const [notice, setNotice] = useState('');
   const [live, setLive] = useState<GbpLocation | null>(null);
   const [tab, setTab] = useState<'listing' | 'reviews' | 'changes' | 'plan' | 'agents'>('listing');
@@ -311,30 +311,12 @@ export default function GbpEditor() {
 
       {ready && tab === 'listing' && (choosing || !pick) && (admin || profiles === null || profiles.length > 0) && (
         <div className={card}>
-          <label className="text-sm font-semibold">Location</label>
+          <div className="flex flex-wrap items-baseline justify-between gap-2"><h2 className="text-base font-semibold">All listings</h2><span className="text-xs text-slate-500">Google’s totals for the last 30 days · click a listing to open it</span></div>
           {profiles === null ? <p className="mt-2 text-sm text-slate-400">Loading connected accounts…</p> : profiles.length === 0 ? (
             <p className="mt-2 text-sm text-slate-400">{admin ? 'No Google Business account is connected in Postproxy yet. Connect one there (Profiles → Connect account), then reload this page.' : 'No Google account connected yet.'}</p>
           ) : (
             <>
-              <input className={input + ' mt-2'} placeholder={'Search ' + profiles.reduce((n, p) => n + p.locations.length, 0) + ' locations by name'} value={find} onChange={(e) => setFind(e.target.value)} />
-              <ul className="mt-2 max-h-72 divide-y divide-slate-800 overflow-y-auto rounded-lg border border-slate-800">
-                {profiles.flatMap((p) =>
-                  p.locations
-                    .filter((l) => l.name.toLowerCase().includes(find.trim().toLowerCase()))
-                    .map((l) => {
-                      const on = pick?.profile === p.id && pick.location === l.id;
-                      return (
-                        <li key={p.id + l.id}>
-                          <button type="button" onClick={() => { setPick({ profile: p.id, location: l.id }); setChoosing(false); setFind(''); }} className={'flex w-full items-baseline justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-slate-800 ' + (on ? 'bg-emerald-500/10 text-emerald-300' : '')}>
-                            <span className="min-w-0 truncate">{l.name}{!admin && <span className={'ml-2 rounded-full border px-1.5 py-0.5 text-[10px] ' + (l.plan ? 'border-emerald-500/40 text-emerald-300' : 'border-slate-700 text-slate-500')}>{l.plan === 'AGENT' ? 'Agent' : l.plan ? 'Manage' : 'Free'}</span>}{admin && p.customer && <span className="ml-2 rounded-full border border-sky-500/40 px-1.5 py-0.5 text-[10px] text-sky-300">customer</span>}</span>
-                            {/* Several locations share a name, and one can sit under two Google accounts: the ids tell them apart. */}
-                            <span className="shrink-0 font-mono text-[11px] text-slate-500">account …{l.id.split('/')[1].slice(-4)} · location …{l.id.split('/')[3].slice(-5)}</span>
-                          </button>
-                        </li>
-                      );
-                    }),
-                )}
-              </ul>
+              <GbpOverview profiles={profiles} admin={admin} picked={pick} onOpen={(p) => { setPick(p); setChoosing(false); }} />
               {profiles.filter((p) => p.status !== 'active' || p.problem).map((p) => (
                 <p key={p.id} className="mt-2 text-xs text-amber-300">{p.name}: {p.problem ?? (admin ? 'needs reconnecting in Postproxy' : 'needs reconnecting: use Plan and billing → Connect another Google account')}</p>
               ))}

@@ -137,7 +137,7 @@ export type ChartPoint = { label: string; value: number; before?: number | null 
  * One measure over time: this period as a solid line, the period before (when given) as a dashed
  * one on the same scale. Move over it to read any point. `name` says what is being counted.
  */
-export function MiniChart({ points, name, height = 190 }: { points: ChartPoint[]; name: string; height?: number }) {
+export function MiniChart({ points, name, height = 190, digits = 0 }: { points: ChartPoint[]; name: string; height?: number; digits?: number }) {
   const [ref, width] = useWidth();
   const [at, setAt] = useState<number | null>(null);
   const hasBefore = points.some((p) => typeof p.before === 'number');
@@ -193,8 +193,8 @@ export function MiniChart({ points, name, height = 190 }: { points: ChartPoint[]
         {p && at !== null && width > 0 && (
           <div className="pointer-events-none absolute top-1 z-10 rounded-lg border border-slate-700 bg-slate-950/95 px-2.5 py-1.5 text-xs shadow-lg" style={geo.x(at) > width / 2 ? { right: width - geo.x(at) + 10 } : { left: geo.x(at) + 10 }}>
             <p className="text-slate-400">{p.label}</p>
-            <p className="font-semibold tabular-nums text-slate-100">{fmt(p.value)} <span className="font-normal text-slate-400">{name.toLowerCase()}</span></p>
-            {typeof p.before === 'number' && <p className="tabular-nums text-slate-400">{fmt(p.before)} the period before</p>}
+            <p className="font-semibold tabular-nums text-slate-100">{fmt(p.value, digits)} <span className="font-normal text-slate-400">{name.toLowerCase()}</span></p>
+            {typeof p.before === 'number' && <p className="tabular-nums text-slate-400">{fmt(p.before, digits)} the period before</p>}
           </div>
         )}
       </div>
@@ -228,6 +228,28 @@ export function SplitBar({ parts }: { parts: { label: string; value: number }[] 
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** Seven bars, Sunday to Saturday: what a typical one of each day looks like. The busiest is picked out. */
+export function WeekdayBars({ values, name }: { values: number[]; name: string }) {
+  const max = Math.max(...values);
+  if (!(max > 0)) return null;
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const full = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+  const top = values.indexOf(max);
+  return (
+    <div>
+      <div className="flex h-28 items-end gap-2" role="img" aria-label={`${name} on a typical day of the week: most on ${full[top]}, ${fmt(max, 1)}`}>
+        {values.map((v, i) => (
+          <div key={i} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1" title={`${full[i]}: ${fmt(v, 1)} on average`}>
+            <span className={'text-[11px] tabular-nums ' + (i === top ? 'font-semibold text-emerald-300' : 'text-slate-400')}>{fmt(v, v < 10 ? 1 : 0)}</span>
+            <div className={'w-full max-w-10 rounded-t ' + (i === top ? 'bg-emerald-400' : 'bg-slate-600')} style={{ height: Math.max(2, (v / max) * 72) }} />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex gap-2 border-t border-slate-800 pt-1">{DAYS.map((d, i) => <span key={d} className={'min-w-0 flex-1 text-center text-[11px] ' + (i === top ? 'text-emerald-300' : 'text-slate-500')}>{d}</span>)}</div>
     </div>
   );
 }
