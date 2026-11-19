@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { pct } from '@stakeout/core/googleSite';
+import GoogleExplorer from '@/components/GoogleExplorer';
 
 type Status = { configured: boolean; connected: boolean; email: string | null; searchConsole: boolean; analytics: boolean };
 type Range = { from: string; to: string };
@@ -165,6 +166,7 @@ export default function GoogleSitePanel({ website, businessName }: { website: st
                           </div>
                         </>
                       )}
+                      <GoogleExplorer source="gsc" website={website} />
                     </>
                   )}
                 </div>
@@ -194,6 +196,7 @@ export default function GoogleSitePanel({ website, businessName }: { website: st
                         “From the Google listing” counts visits tagged <code>{analytics.campaign}</code>, which is what the “Add tracking tag” button puts on the listing’s website link.
                         {analytics.listing.recent.sessions === 0 && analytics.listing.before.sessions === 0 && ' None yet: add the tag to the website link above and the visits start being counted.'}
                       </p>
+                      <GoogleExplorer source="ga" property={property} />
                     </>
                   )}
                 </div>

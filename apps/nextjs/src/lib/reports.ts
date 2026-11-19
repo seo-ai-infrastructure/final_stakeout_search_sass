@@ -59,6 +59,7 @@ const reportSelect = {
   id: true,
   keyword: true,
   targetBusiness: true,
+  targetDomain: true,
   centerLat: true,
   centerLng: true,
   gridSize: true,

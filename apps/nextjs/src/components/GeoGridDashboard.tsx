@@ -13,6 +13,7 @@ import { Protocol } from 'pmtiles';
 import type { PinCensus } from '@stakeout/core/censusLookup';
 import type { PinInsights } from '@stakeout/core/pinInsights';
 import { ReportVerdict, RankDistributionCard, AiCoverageCard } from './ReportSummary';
+import GetListedCard from '@/components/GetListedCard';
 import { bandOf, reportSummary, type RankBucket, type FindingKind } from '../lib/reportSummary';
 import { groundOwners, aiPosition, winningRadius } from '../lib/marketInsights';
 import { combinedReading, combinedStyle, combinedTotals, COMBINED_LEGEND } from '../lib/combinedMap';
@@ -172,6 +173,8 @@ export type GridScanData = {
   viewingFor?: string;
   id: string;
   targetBusiness: string;
+  /** The business's own website (a bare domain), when it was given. */
+  targetDomain?: string | null;
   keyword: string;
   status: string;
   createdAt: string;
@@ -1213,6 +1216,7 @@ export function GeoGridDashboard({
       />
       </div>
       <AiCoverageCard scan={scan} />
+      <GetListedCard scan={scan} shared={shared} />
       <MarketInsights scan={scan} />
       </div>
     </div>
