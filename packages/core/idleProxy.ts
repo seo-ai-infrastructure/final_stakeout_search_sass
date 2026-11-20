@@ -10,6 +10,27 @@
 export const IDLE_MAP_KEY = 'stakeout:idleproxies';
 export const idleBoundKey = (imageId: string) => 'stakeout:idlebound:' + imageId;
 
+/** Redis: the exit address a phone last searched through (its paid proxy), and whose evidence is still being pulled. */
+export const paidExitKey = (imageId: string) => 'stakeout:paidexit:' + imageId;
+export const phoneTailKey = (imageId: string) => 'stakeout:tail:' + imageId;
+
+/** The address our own /api/ip saw the phone come from ({"ip":"1.2.3.4"}), or null when it did not answer. */
+export function parseExitReply(text: string): string | null {
+  const m = String(text ?? '').match(/"ip"\s*:\s*"([0-9a-fA-F:.]{3,45})"/);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * Where a phone really is after it was moved to its idle proxy: 'paid' when it still comes out of
+ * the address its last search used, 'idle' when it comes out anywhere else, 'unknown' when the
+ * phone could not reach the check.
+ */
+export function idleExitVerdict(seen: string | null, paid: string | null): 'idle' | 'paid' | 'unknown' {
+  if (!seen) return 'unknown';
+  if (paid && seen === paid.trim().toLowerCase()) return 'paid';
+  return 'idle';
+}
+
 /** The proxies of one DuoPlus proxy group, from proxy/list rows ({ id, group_ids: [...] }). */
 export function groupProxyIds(rows: unknown[], group: string): string[] {
   const ids = rows

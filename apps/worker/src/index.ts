@@ -22,7 +22,8 @@ import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { powerTick, powerReport } from './power';
-import { idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
+import { forceIdle, idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
+import { phoneTailKey } from '@stakeout/core/idleProxy';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficByHour, trafficHourKey, trafficLow, type TrafficHour, type TrafficReading } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
@@ -55,6 +56,17 @@ const AUTO_PAUSE_TEMPLATE_FAILS = Number(process.env.AUTO_PAUSE_TEMPLATE_FAILS ?
 const NO_DEVICE_GRACE_MS = Number(process.env.NO_DEVICE_GRACE_MINUTES ?? 30) * 60000;
 /** How long a point keeps waiting for a working proxy before it is given up (and refunded). */
 const PROXY_WAIT_MS = Number(process.env.PROXY_WAIT_HOURS ?? 24) * 3600000;
+/** No point holds a phone longer than this (12 minutes): it is stopped, the phone is freed and the point tried again. */
+const POINT_CAP_MS = Math.max(300, Number(process.env.POINT_CAP_SECONDS ?? 720)) * 1000;
+/**
+ * A restart (every deploy) lets running points finish: this long, a little more than the longest
+ * a point can take. railway.json's drainingSeconds must be longer still, or the platform ends the
+ * worker first.
+ */
+const DRAIN_MS = Math.max(30, Number(process.env.DRAIN_SECONDS ?? 780)) * 1000;
+/** The phones this worker's points hold right now (for a shutdown that cannot wait any longer). */
+const held = new Map<string, LeasedDevice>();
+let closing = false;
 
 async function execute(job: Job, token?: string) {
   const pin = await db.gridPin.findUnique({
@@ -99,6 +111,13 @@ async function execute(job: Job, token?: string) {
       throw new DelayedError();
     }
     const d = lease.device;
+    if (closing) {
+      // Shutting down: nothing new is started. The point goes straight back for the new worker.
+      await d.release();
+      await job.moveToDelayed(Date.now() + 5000, token);
+      throw new DelayedError();
+    }
+    held.set(d.imageId, d);
     // Its idle proxy (if it had one) is over: this point binds the phone's own search proxy.
     await leftIdle(d.imageId);
     // A phone handed back early may still have its last point's evidence being pulled (only when
@@ -109,6 +128,7 @@ async function execute(job: Job, token?: string) {
       await Promise.race([tail, new Promise((r) => setTimeout(r, 90000))]);
       const now = await db.devicePool.findUnique({ where: { imageId: d.imageId }, select: { cooldownUntil: true, autoPausedAt: true } });
       if (now && (now.cooldownUntil > new Date() || now.autoPausedAt)) {
+        held.delete(d.imageId);
         await d.release();
         await job.moveToDelayed(Date.now() + 15000, token);
         throw new DelayedError();
@@ -120,6 +140,7 @@ async function execute(job: Job, token?: string) {
     const power = await phonePowerStatus(d.imageId);
     // Still applying settings (or booting): busy, not offline. Try again shortly, same phone stays in service.
     if (power && !power.on && (power.status === 'configuring' || power.status === 'powering on')) {
+      held.delete(d.imageId);
       await d.release();
       await job.moveToDelayed(Date.now() + 15000, token);
       throw new DelayedError();
@@ -127,6 +148,7 @@ async function execute(job: Job, token?: string) {
     if (power && !power.on) {
       console.warn('[duoplus] phone', d.imageId, 'is', power.status, '- taken out of service; point requeued');
       await db.devicePool.update({ where: { imageId: d.imageId }, data: { offlineAt: new Date() } }).catch(() => {});
+      held.delete(d.imageId);
       await d.release();
       await job.moveToDelayed(Date.now() + 5000, token);
       throw new DelayedError();
@@ -149,18 +171,32 @@ async function execute(job: Job, token?: string) {
       marks.released = Date.now();
       // Never let a failed write keep the lease: an unreleased lease would hold the phone for good.
       await restPhone(d.imageId).catch(() => {});
-      await d.release().catch(() => {});
       if (measuring) {
+        // Said in Redis too, so another worker (a new one starting during a deploy) leaves the
+        // phone alone while its evidence is still being pulled here.
+        await redis().set(phoneTailKey(d.imageId), '1', 'EX', 600).catch(() => {});
         const t: Promise<unknown> = measuring.catch(() => {}).finally(() => {
-          if (phoneTails.get(d.imageId) === t) phoneTails.delete(d.imageId);
+          if (phoneTails.get(d.imageId) !== t) return;
+          phoneTails.delete(d.imageId);
+          void redis().del(phoneTailKey(d.imageId)).catch(() => 0);
         });
         phoneTails.set(d.imageId, t);
       }
+      held.delete(d.imageId);
+      await d.release().catch(() => {});
     };
     try {
-      const run = measureMobile(pin, d, { marks, phoneDone });
+      const capAt = attemptStart + POINT_CAP_MS;
+      const run = measureMobile(pin, d, { marks, phoneDone, capAt });
       measuring = run;
-      const result = await run;
+      // The hard limit: whatever the phone is doing, the point lets go of it at the cap.
+      let capTimer: NodeJS.Timeout | undefined;
+      const cap = new Promise<never>((_, reject) => {
+        // Once the phone has been handed back, only the evidence is left: no limit on that.
+        capTimer = setTimeout(() => !released && reject(new Error('POINT_TIME_CAP the point was stopped after ' + Math.round(POINT_CAP_MS / 60000) + ' minutes')), Math.max(1000, capAt - Date.now()));
+      });
+      run.catch(() => {});
+      const result = await Promise.race([run, cap]).finally(() => clearTimeout(capTimer));
       if (!released) await d.assertOwned();
       await settlePin(pin.id, { data: result });
       await recordDeviceOutcome(d.imageId, null).catch(() => {});
@@ -189,6 +225,7 @@ async function execute(job: Job, token?: string) {
       // Pace only real searches: setup failures (ADB, proxy, DuoPlus) don't need a rest.
       if (!released) {
         if (searched(pinError)) await restPhone(d.imageId).catch(() => {});
+        held.delete(d.imageId);
         await d.release();
       }
       await noteTiming(pin, d.imageId, attemptStart, marks, pinError).catch(() => {});
@@ -749,9 +786,36 @@ wakeConnection.on('message', (_channel, reason) => {
   void tick();
 });
 
+/**
+ * A restart (SIGTERM, on every deploy): nothing new is started, the points that are running are
+ * allowed to finish, and then the worker leaves. The new worker is already up and takes the rest
+ * of the queue. If the points are still running when the time is up, their phones are moved to
+ * their idle proxies and let go first, so nothing is left running up paid data.
+ */
 async function close() {
+  if (closing) return;
+  closing = true;
   clearInterval(timer);
-  await Promise.all([deviceWorker.close(), cronWorker.close()]);
+  const running = held.size;
+  console.log('[stop] asked to stop:', running, 'point(s) running; they get up to', Math.round(DRAIN_MS / 60000), 'minutes to finish, nothing new is started');
+  const finished = Promise.all([deviceWorker.close(), cronWorker.close()]).then(() => true);
+  const inTime = await Promise.race([finished, new Promise<boolean>((r) => setTimeout(() => r(false), DRAIN_MS))]).catch(() => false);
+  if (inTime) {
+    // Evidence still being pulled from phones already handed back.
+    await Promise.race([Promise.allSettled([...phoneTails.values()]), new Promise((r) => setTimeout(r, 60000))]);
+    console.log('[stop] every running point finished; leaving');
+  } else {
+    const phones = [...held.keys()];
+    const moved = await forceIdle(phones).catch(() => 0);
+    for (const d of held.values()) await d.release().catch(() => {});
+    console.warn('[stop] out of time with', phones.length, 'point(s) still running:', moved, 'phone(s) moved to their idle proxies and let go; those points go back in the queue');
+    await Promise.race([deviceWorker.close(true), new Promise((r) => setTimeout(r, 5000))]).catch(() => {});
+  }
+  await Promise.race([shutDown(), new Promise((r) => setTimeout(r, 10000))]).catch(() => {});
+  process.exit(0);
+}
+
+async function shutDown() {
   await Promise.all([pins.close(), schedules.close()]);
   await Promise.allSettled([
     queueConnection.quit(),

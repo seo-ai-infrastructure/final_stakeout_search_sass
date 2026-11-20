@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { db, type GridPin, type GridScan } from '@stakeout/db';
 import { listsForPin, normPlace, locationVerified, topLineVerified, proxyPlace, proxyState } from '@stakeout/core/proxyLists';
+import { dataLine, dataUsed, parseIfaceBytes, parseUidBytes, parseUidPackages, type DataUse } from '@stakeout/core/dataUse';
+import { paidExitKey } from '@stakeout/core/idleProxy';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
 import { isProxyProblem, pinOutageKey, supplyDown } from '@stakeout/core/proxyWait';
@@ -798,6 +800,30 @@ async function provisionProxySeller(device: LeasedDevice, p: Pin) {
 export { readBundleFile } from './bundle';
 
 /** What execute() hands a point: where to note its moments, and how to give the phone back early. */
+/** The phone's counters right now: bytes per network card and per app id. */
+async function readData(d: LeasedDevice) {
+  const ifaces = parseIfaceBytes(
+    await shell(d, 'for i in /sys/class/net/*; do echo "${i##*/} $(cat $i/statistics/rx_bytes 2>/dev/null) $(cat $i/statistics/tx_bytes 2>/dev/null)"; done', 10000),
+  );
+  // Android writes its per-app numbers down every so often: ask it to do so now, then read them.
+  const raw = await shell(
+    d,
+    "(cmd netstats poll || dumpsys netstats poll || dumpsys netstats --poll) >/dev/null 2>&1; dumpsys netstats --full --uid detail full 2>/dev/null | grep -E 'stats:|uid=|rb='",
+    25000,
+  ).catch(() => '');
+  return { at: Date.now(), ifaces, uids: parseUidBytes(raw), sample: raw.slice(0, 300) };
+}
+/** Which app each app id is (asked once per phone every six hours). */
+const names = new Map<string, { at: number; map: Record<string, string> }>();
+const uidHelpSaid = new Set<string>();
+async function packageNames(d: LeasedDevice) {
+  const had = names.get(d.imageId);
+  if (had && Date.now() - had.at < 6 * 3600000) return had.map;
+  const map = parseUidPackages(await shell(d, 'pm list packages -U 2>/dev/null', 20000).catch(() => ''));
+  if (Object.keys(map).length) names.set(d.imageId, { at: Date.now(), map });
+  return map;
+}
+
 type RunContext = {
   marks: Marks;
   /**
@@ -805,6 +831,8 @@ type RunContext = {
    * starts and its lease is released, while the evidence is pulled, checked and saved here.
    */
   phoneDone: () => Promise<void>;
+  /** When the point must let go of the phone (the hard limit per point), epoch ms. */
+  capAt?: number;
 };
 
 /** How each phone's Chrome lets the template refresh Google's location (see skipFooterHunt). */
@@ -849,10 +877,34 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       captureEnded();
     }
   };
+  // How much data this attempt uses, and which apps use it: read before anything is bound and
+  // again when the phone's part is over (or the attempt fails). Never able to fail a point.
+  const dataBefore = process.env.DATA_MEASURE === 'false' ? null : await readData(d).catch(() => null);
+  let dataSaid = false;
+  const dataEnd = async (outcome: string): Promise<DataUse | null> => {
+    if (dataSaid || !dataBefore) return null;
+    dataSaid = true;
+    try {
+      const after = await readData(d);
+      const used = dataUsed(dataBefore, after, await packageNames(d));
+      const secs = Math.round((Date.now() - dataBefore.at) / 1000);
+      console.log('[data]', d.imageId, 'point', p.id, pinNetwork(scan.network, p.rowIdx, p.colIdx), scan.targetType, outcome, secs + 's:', dataLine(used));
+      if (used.appsMb == null && !uidHelpSaid.has(d.imageId)) {
+        uidHelpSaid.add(d.imageId);
+        console.warn('[data]', d.imageId, 'gave no per-app numbers. Start of its answer:', JSON.stringify(after.sample));
+      }
+      return used;
+    } catch (e) {
+      console.warn('[data]', d.imageId, 'not measured:', errMsg(e).slice(0, 120));
+      return null;
+    }
+  };
   try {
     return await capture();
   } catch (e) {
     bootstrappedInMemory.delete(d.imageId);
+    // Failed attempts use data too (often the most): said while this point still holds the phone.
+    if (!/^(DEVICE_LEASE|CANCELLED|ADB_)/.test(errMsg(e))) await dataEnd('failed ' + errMsg(e).split(/[ :]/)[0]);
     throw withEvidence(e, ev);
   } finally {
     setupDone();
@@ -862,6 +914,9 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
   await ensureRunnerInstalled(d);
   const proof = await provision(d, p);
   run.marks.proxy = Date.now();
+  // The address this search goes out of: the idle check later makes sure the phone has left it.
+  const exitIp = (proof as { ip?: string })?.ip;
+  if (exitIp) await redis().set(paidExitKey(d.imageId), exitIp, 'EX', 7 * 86400).catch(() => {});
   setupDone();
   await d.assertOwned();
   // A phone just switched on (power saving): once its proxy is set, run the warm-up template one
@@ -1024,6 +1079,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         ).catch(() => '')
       ).replace(/\s+/g, ' ').trim();
     let rpaError: unknown = null;
+    let capped = false;
     try {
       let stopLooked = Date.now();
       const r = await runRpaSearch({
@@ -1040,6 +1096,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         doneCheck: async () => (await shell(d, `[ -f /sdcard/stakeout/${tag}.done ] && echo y; true`).catch(() => '')).trim() === 'y',
         // A stopped scan settles its points at once; looked up at most every 12 s while the phone works.
         stopCheck: async () => {
+          // Past the hard limit: the phone's task is cancelled like a stopped scan's.
+          if (run.capAt && Date.now() > run.capAt - 15000) return (capped = true);
           if (Date.now() - stopLooked < 12000) return false;
           stopLooked = Date.now();
           return (await db.gridPin.findUnique({ where: { id: p.id }, select: { status: true } }))?.status !== 'PENDING';
@@ -1054,8 +1112,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       if (p.startedAt) Object.assign(proof, { ranSeconds: Math.round((Date.now() - p.startedAt.getTime()) / 1000) });
     } catch (e) {
       run.marks.templateDone ??= Date.now();
-      const problem = e instanceof Error && e.message.startsWith('RPA_SURFACE_ERROR') ? '' : await templateProblem();
-      rpaError = problem ? new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160)) : e;
+      const problem = capped || (e instanceof Error && e.message.startsWith('RPA_SURFACE_ERROR')) ? '' : await templateProblem();
+      rpaError = capped ? new Error('POINT_TIME_CAP the search was stopped at the time limit') : problem ? new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160)) : e;
     } finally {
       // Template finished: the recorder now reads the results list and stops. Template failed:
       // the recorder keeps only the screen as it is now (abort), so the run can be looked at.
@@ -1084,6 +1142,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       approved.exitHeld = after ? after.ip === approved.ip : null;
       if (after && after.ip !== approved.ip) throw new Error('PROXY_EXIT_CHANGED ' + approved.ip + '>' + after.ip);
     }
+    const used = await dataEnd('ok');
+    if (used) Object.assign(proof, { data: used });
     // The phone's part is over: its rest starts now and the next point can have it, while the
     // evidence is pulled, checked and saved here.
     await run.phoneDone();

@@ -186,7 +186,8 @@ export function NewScanWizard() {
         if (sc.targetType) setTargetType(sc.targetType);
         if (sc.gridSize) setGridSize(offeredSize(sc.gridSize));
         if (sc.spacingKm) setSpacingKm(sc.spacingKm);
-        if (sc.network === 'mobile' || sc.network === 'mix') setNetwork(sc.network);
+        // The network is not carried over: every new scan starts on home internet (the cheaper
+        // data), and mobile or the mix is chosen on purpose each time.
         setTrackAiOverviews(Boolean(sc.trackAiOverviews));
         const match = list.find((x) => x.name === sc.targetBusiness);
         if (match) setBusinessId(match.id);

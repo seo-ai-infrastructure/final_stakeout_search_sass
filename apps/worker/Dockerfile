@@ -14,4 +14,7 @@ COPY apps/worker apps/worker
 RUN npm run db:generate && npm run check:worker
 RUN if [ "$ENABLE_DESKTOP" = "true" ]; then apt-get update && apt-get install -y python3-venv && python3 -m venv /opt/desktop && /opt/desktop/bin/pip install --no-cache-dir -r apps/worker/desktop/requirements.txt && /opt/desktop/bin/playwright install --with-deps chromium ffmpeg && rm -rf /var/lib/apt/lists/*; fi
 ENV DESKTOP_PYTHON=/opt/desktop/bin/python
-CMD ["npm","run","start:worker"]
+# Node is started directly (not through npm), so the stop signal of a deploy reaches the worker
+# itself and it can finish its running points before it leaves.
+WORKDIR /app/apps/worker
+CMD ["node","--import","tsx","src/index.ts"]
