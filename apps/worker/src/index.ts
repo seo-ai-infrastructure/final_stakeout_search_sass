@@ -11,6 +11,7 @@ import {
   redactRedisUrl,
   duoplusSlotStats,
 } from '@stakeout/core/redis';
+import { rescanAt } from './rescan';
 import { WAKE_CHANNEL, mayRest } from '@stakeout/core/wake';
 import { r2DryRunDaily } from './r2Report';
 import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
@@ -883,6 +884,8 @@ setTimeout(() => void r2DryRunDaily(), 240_000);
 // A one-off look inside stored evidence (EVIDENCE_PEEK), written to the database.
 setTimeout(() => void evidencePeek().catch((e) => console.warn('[peek] skipped:', (e as Error).message)), 20_000);
 setTimeout(() => void rerankScans().catch((e) => console.warn('[rerank] skipped:', (e as Error).message)), 30_000);
+// A one-off: a scan run again around a different centre (RESCAN).
+setTimeout(() => void rescanAt().catch((e) => console.warn('[rescan] not started:', (e as Error).message)), 25_000);
 // What the phones themselves recorded about their data use (the last hours, by app): logged once.
 setTimeout(() => void logDataHistory().catch((e) => console.warn('[data-history] skipped:', (e as Error).message)), 150_000);
 setInterval(() => void r2DryRunDaily(), 3600_000);
