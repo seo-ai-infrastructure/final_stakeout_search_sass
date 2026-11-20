@@ -21,7 +21,7 @@ import { paintSplitPin } from '../lib/combinedPin';
 import { PinEvidenceCard } from './PinEvidenceCard';
 import { MarketInsights } from './MarketInsights';
 import { buyingPower, nearWins, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
-import { gridColumns, rankColor, rankTextColor, RANK_SCALE, columnColor, COLUMN_SCALE, RANK_KEYS, rankKey, ADS_SCALE, adsColor, type RankKey } from '../lib/gridColumns';
+import { gridColumns, rankColor, rankTextColor, RANK_SCALE, columnColor, COLUMN_SCALE, RANK_KEYS, rankKey, ADS_SCALE, adsColor, NA_COLOR, type RankKey } from '../lib/gridColumns';
 import {
   CENSUS_LAYERS,
   CENSUS_SOURCE_LABEL,
@@ -492,7 +492,7 @@ export function GeoGridDashboard({
       let fill = view3d && style3d === 'columns' ? columnColor(p.status, rank) : rankColor(p.status, rank);
       // No map pack on that page: the local rank is not applicable (grey), not "20+".
       const na = p.status === 'COMPLETED' && !projected && Boolean(p.proxyMeta?.noLocal);
-      if (na) fill = '#334155';
+      if (na) fill = NA_COLOR;
       let text = p.status === 'FAILED' ? '×' : p.status === 'PENDING' ? '…' : na ? 'N/A' : rank ? String(rank) : '20+';
       // In AI place: a point with no AI Overview is a small muted dot; one that names the business stands out.
       let quiet = false, standout = false;
@@ -950,6 +950,12 @@ export function GeoGridDashboard({
                     <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-700" style={{ boxShadow: '0 0 0 2px #c084fc' }} />
                     AI Overview named you
                   </button>
+                )}
+                {(mapMode === 'rank' || mapMode === 'ads') && !projected && scan.pins.some((x) => x.status === 'COMPLETED' && x.proxyMeta?.noLocal) && (
+                  <span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-slate-300" title="Not a bad result: Google showed no map pack at these points, so there is no local rank to win or lose. What counts here is the AI Overview: see AI place.">
+                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: NA_COLOR }} />
+                    N/A · no map pack here: the AI Overview is what counts
+                  </span>
                 )}
                 {mapMode === 'rank' && soloPins.length > 0 && (
                   <span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-slate-300" title="Google answered with one business at these points">

@@ -1,5 +1,5 @@
 'use client';
-import { rankColor, rankTextColor, RANK_SCALE } from '../lib/gridColumns';
+import { rankColor, rankTextColor, RANK_SCALE, NA_COLOR } from '../lib/gridColumns';
 import { useEffect, useMemo, useState } from 'react';
 import type { GridScanData } from './GeoGridDashboard';
 import { describeArea, LEVEL_LABEL } from '../lib/censusLayer';
@@ -185,8 +185,8 @@ export function EvidencePanel({
                 <span
                   className="min-w-[36px] rounded-full px-2 py-0.5 text-center text-xs font-extrabold"
                   style={{
-                    backgroundColor: rankColor(p.status, rank),
-                    color: rankTextColor(rankColor(p.status, rank)),
+                    backgroundColor: p.status === 'COMPLETED' && !rank && p.proxyMeta?.noLocal ? NA_COLOR : rankColor(p.status, rank),
+                    color: rankTextColor(p.status === 'COMPLETED' && !rank && p.proxyMeta?.noLocal ? NA_COLOR : rankColor(p.status, rank)),
                     // The same ring as on the map: the business is named in this point's AI Overview.
                     boxShadow: p.status === 'COMPLETED' && p.targetCitedInAi ? '0 0 0 3px #c084fc' : undefined,
                   }}
