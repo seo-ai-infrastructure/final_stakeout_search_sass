@@ -824,7 +824,17 @@ export function NewScanWizard() {
     (on ? 'border-emerald-400 bg-emerald-400/15 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500');
   const label = 'text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400';
   const field = 'min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-white placeholder-slate-500';
-  const blockedWhy = !targetBusiness.trim() ? 'Add the business name' : !runKeywords.length ? 'Choose a keyword' : '';
+  // The map opens on a default spot. Until the pin has been moved off it (a search result picked,
+  // the map clicked, the pin dragged, a saved business or a past scan loaded), no scan can start:
+  // a scan around the wrong town is worthless and still costs credits.
+  const placed = centerLat !== 28.039465 || centerLng !== -81.949804;
+  const steps: { done: boolean; title: string; how: string }[] = [
+    { done: Boolean(targetBusiness.trim()), title: 'Type the business name', how: 'Exactly as it shows on Google.' },
+    { done: placed, title: 'Put the pin on the business', how: 'Search its address in the box on the map and pick it, or drag the pin there. The grid is drawn around the pin.' },
+    { done: runKeywords.length > 0, title: 'Add a keyword', how: 'What a customer would search, like “ac repair”.' },
+  ];
+  const nextStep = steps.findIndex((x) => !x.done);
+  const blockedWhy = !targetBusiness.trim() ? 'Step 1: add the business name' : !placed ? 'Step 2: put the pin on the business' : !runKeywords.length ? 'Step 3: add a keyword' : '';
   return (
     <div className="flex min-h-[calc(100vh-4rem)] w-full flex-col bg-slate-950 text-slate-100 lg:h-[calc(100vh-4rem)] lg:flex-row lg:overflow-hidden">
       {/* LEFT RAIL: the settings scroll if they must; the order bar never leaves the screen. */}
@@ -836,6 +846,20 @@ export function NewScanWizard() {
               <span>{errorMsg}</span>
             </div>
           )}
+          {/* How to run a scan, in order. Loud until every step is done, then quiet. */}
+          <section aria-label="How to run a scan" className={'rounded-xl border-2 p-3 ' + (nextStep === -1 ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-rose-500 bg-rose-500/10')}>
+            <p className={'text-sm font-extrabold ' + (nextStep === -1 ? 'text-emerald-300' : 'text-rose-200')}>{nextStep === -1 ? 'Ready. Check the grid on the map, then launch.' : 'How to run a scan'}</p>
+            {nextStep !== -1 && (
+              <ol className="mt-2 space-y-1.5">
+                {[...steps, { done: false, title: 'Press Launch', how: 'One credit per grid point.' }].map((x, i) => (
+                  <li key={x.title} className={'flex gap-2 text-[13px] ' + (x.done ? 'text-slate-500' : i === nextStep ? 'text-white' : 'text-slate-300')}>
+                    <span className={'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ' + (x.done ? 'bg-emerald-500/20 text-emerald-300' : i === nextStep ? 'bg-rose-500 text-white' : 'bg-slate-700 text-slate-200')}>{x.done ? '✓' : i + 1}</span>
+                    <span><span className={'font-semibold ' + (x.done ? 'line-through' : '')}>{x.title}</span>{!x.done && i === nextStep && <span className="block text-xs text-rose-100/90">{x.how}</span>}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
           {/* Business and keywords: one card */}
           <section className="space-y-2">
             <label htmlFor="ns-business" className={label}>Business &amp; keywords</label>
@@ -1064,9 +1088,10 @@ export function NewScanWizard() {
       <div className="relative min-h-[28rem] flex-1 bg-slate-950">
         <div className="pointer-events-none absolute left-5 right-5 top-5 z-20 flex flex-wrap items-start gap-2">
           <div className="pointer-events-auto w-full max-w-sm">
+          {!placed && <p className="mb-1.5 inline-block rounded-lg bg-rose-500 px-2.5 py-1 text-xs font-bold text-white shadow-lg">Step 2: search the business address here, then pick it</p>}
           <form
             onSubmit={handleGeocodeSearch}
-            className="flex items-center overflow-hidden rounded-xl border border-slate-700 bg-slate-900/95 shadow-2xl"
+            className={'flex items-center overflow-hidden rounded-xl border bg-slate-900/95 shadow-2xl ' + (placed ? 'border-slate-700' : 'border-2 border-rose-500 ring-4 ring-rose-500/30')}
           >
             <MapPin className="ml-3.5 h-4 w-4 shrink-0 text-emerald-400" />
             <input
