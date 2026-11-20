@@ -1088,7 +1088,7 @@ export function NewScanWizard() {
       <div className="relative min-h-[28rem] flex-1 bg-slate-950">
         <div className="pointer-events-none absolute left-5 right-5 top-5 z-20 flex flex-wrap items-start gap-2">
           <div className="pointer-events-auto w-full max-w-sm">
-          {!placed && <p className="mb-1.5 inline-block rounded-lg bg-rose-500 px-2.5 py-1 text-xs font-bold text-white shadow-lg">Step 2: search the business address here, then pick it</p>}
+          {!placed && <p className="mb-1.5 inline-block rounded-lg bg-rose-500 px-2.5 py-1 text-xs font-bold text-white shadow-lg">Step 2: search the business or address to select the center of your grid</p>}
           <form
             onSubmit={handleGeocodeSearch}
             className={'flex items-center overflow-hidden rounded-xl border bg-slate-900/95 shadow-2xl ' + (placed ? 'border-slate-700' : 'border-2 border-rose-500 ring-4 ring-rose-500/30')}
