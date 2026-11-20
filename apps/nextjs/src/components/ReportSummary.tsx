@@ -45,12 +45,14 @@ export function ReportVerdict({
   onFinding?: (kind: FindingKind) => void;
 }) {
   const s = reportSummary(scan);
-  const v = verdictFor(s.completed ? scan.solv : null);
+  const sh = s.share;
+  const v = verdictFor(s.completed ? sh.share : null);
   const tone = VERDICT[v.tone];
+  const noPack = s.completed > 0 && s.localPoints === 0;
   const delta = s.standard !== null && s.buyingPower !== null ? s.buyingPower - s.standard : null;
   const tiles: [string, string, string][] = [
-    ['Buying-Power SoLV', num(s.buyingPower, '%'), delta === null ? 'needs neighborhood data' : Math.round(delta) === 0 ? 'same as SoLV' : `${delta > 0 ? '+' : ''}${delta.toFixed(0)} against SoLV`],
-    ['Average rank', num(s.avgRank, '', 1), s.completed ? `found at ${s.found} of ${s.completed}` : '—'],
+    ['Buying-Power SoLV', noPack ? '—' : num(s.buyingPower, '%'), noPack ? 'no map pack on this search' : delta === null ? 'needs neighborhood data' : Math.round(delta) === 0 ? 'same as SoLV' : `${delta > 0 ? '+' : ''}${delta.toFixed(0)} against SoLV`],
+    ['Average rank', num(s.avgRank, '', 1), !s.completed ? '—' : noPack ? `no map pack at ${s.completed} of ${s.completed}` : s.localPoints < s.completed ? `found at ${s.found} of ${s.localPoints} with a map pack` : `found at ${s.found} of ${s.completed}`],
     ['Winning radius', s.radiusMiles === null ? '—' : s.radiusMiles.toFixed(1) + ' mi', 'top 3 holds this far out'],
     ['Ads above you', num(s.adsAboveYou, '', 1), 'on average, per point'],
   ];
@@ -58,19 +60,52 @@ export function ReportVerdict({
     <div className="space-y-4">
       <div className={box}>
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Share of local voice</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400" title="At how many points the business is in the top three of what Google showed there: the map pack where there is one, the AI Overview where there is not.">Share of local search</p>
           <span className={'rounded-full px-3 py-1 text-xs font-bold ' + tone.pill}>{v.label}</span>
         </div>
-        <p className={'mt-2 text-7xl font-extrabold leading-none tracking-tight ' + tone.text}>{num(s.completed ? scan.solv : null, '%')}</p>
+        <p className={'mt-2 text-7xl font-extrabold leading-none tracking-tight ' + tone.text}>{num(s.completed ? sh.share : null, '%')}</p>
         <p className="mt-3 text-sm leading-relaxed text-slate-300">
           {s.completed ? (
             <>
-              In the top 3 at <span className="font-bold text-white">{s.top3} of {s.completed} points</span>, and #1 at {s.distribution.buckets[0].count}.
+              In the top 3 of what Google showed at <span className="font-bold text-white">{sh.wins} of {sh.points} points</span>
+              {sh.wins > 0 ? <>: {sh.local.top3} in the map pack, {sh.ai.winsWithoutPack} in the AI Overview.</> : '.'}
             </>
           ) : (
             'No completed points yet.'
           )}
         </p>
+        {s.completed > 0 && (
+          <dl className="mt-4 space-y-2 text-sm">
+            <div className="flex items-baseline justify-between gap-3 rounded-xl border border-slate-800 px-3 py-2.5">
+              <dt className="text-slate-300">
+                <span className="font-semibold text-white">Share of Local Voice</span> <span className="text-xs text-slate-500">· map pack</span>
+              </dt>
+              <dd className="text-right text-slate-200">
+                {sh.local.points ? (
+                  <>
+                    <span className="font-bold text-white">{num(sh.local.solv, '%')}</span> · top 3 at {sh.local.top3} of {sh.local.points}{sh.local.points < sh.points ? ' with a map pack' : ''}, #1 at {sh.local.first}
+                  </>
+                ) : (
+                  <span className="font-semibold text-cyan-300">No map pack at any of {sh.points} points</span>
+                )}
+              </dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-3 rounded-xl border border-slate-800 px-3 py-2.5">
+              <dt className="text-slate-300">
+                <span className="font-semibold text-violet-300">AI Overview</span>
+              </dt>
+              <dd className="text-right text-slate-200">
+                {sh.ai.points ? (
+                  <>
+                    named at <span className="font-bold text-white">{sh.ai.named} of {sh.ai.points}</span> · top 3 at {sh.ai.top3} · position zero at {sh.ai.zero}
+                  </>
+                ) : (
+                  'No AI Overview at any point'
+                )}
+              </dd>
+            </div>
+          </dl>
+        )}
         <div className="mt-4 grid grid-cols-2 gap-2.5">
           {tiles.map(([label, value, hint]) => (
             <div key={label} className="rounded-xl border border-slate-800 p-3">
@@ -135,14 +170,15 @@ export function RankDistributionCard({
   onBand: (b: RankBucket['key'] | null) => void;
 }) {
   const s = reportSummary(scan);
-  if (!s.completed) return null;
+  // Ranks exist only where the page had a map pack: with none anywhere, there is nothing to distribute.
+  if (!s.localPoints) return null;
   // Sits under the map, in a wide column: the distribution on the left, who holds #1 on the right.
   // On a narrow screen the two halves stack.
   return (
     <div className={box + (s.leaders.length > 0 ? ' grid gap-6 md:grid-cols-2' : '')}>
       <div>
       <h2 className="text-sm font-bold text-white">Rank distribution</h2>
-      <p className="mt-1 text-xs text-slate-400">Select a band to show its points on the map.</p>
+      <p className="mt-1 text-xs text-slate-400">Select a band to show its points on the map.{s.localPoints < s.completed ? ` Counted over the ${s.localPoints} of ${s.completed} points that had a map pack.` : ''}</p>
       <div className="mt-4 flex h-12 w-full gap-0.5">
         {s.distribution.buckets
           .filter((b) => b.count > 0)
@@ -184,10 +220,10 @@ export function RankDistributionCard({
               <li key={l.name} className="text-xs">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className={'truncate ' + (l.isYou ? 'font-bold text-emerald-300' : 'text-slate-200')}>{l.name}{l.isYou ? ' (you)' : ''}</span>
-                  <span className="shrink-0 text-slate-400">{l.points} of {s.completed}</span>
+                  <span className="shrink-0 text-slate-400">{l.points} of {s.localPoints}</span>
                 </div>
                 <div className="mt-1 h-1.5 rounded bg-slate-800">
-                  <div className={'h-1.5 rounded ' + (l.isYou ? 'bg-emerald-400' : 'bg-slate-400')} style={{ width: (100 * l.points) / s.completed + '%' }} />
+                  <div className={'h-1.5 rounded ' + (l.isYou ? 'bg-emerald-400' : 'bg-slate-400')} style={{ width: (100 * l.points) / s.localPoints + '%' }} />
                 </div>
               </li>
             ))}

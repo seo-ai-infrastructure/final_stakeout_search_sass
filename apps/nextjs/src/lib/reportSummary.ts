@@ -1,5 +1,5 @@
 import { buyingPower } from './buyingPower';
-import { aiBusinesses, aiSources, aiVersusPack, groundOwners, packOrder, paidPressure, siteKind, winningRadius, type InsightPin } from './marketInsights';
+import { aiBusinesses, aiPosition, aiSources, aiVersusPack, groundOwners, packOrder, paidPressure, siteKind, winningRadius, type InsightPin } from './marketInsights';
 
 /** What a finding is about. */
 export type FindingKind = 'rank' | 'bp' | 'radius' | 'rival' | 'ads' | 'ai';
@@ -39,14 +39,47 @@ const points = (n: number) => (n === 1 ? '1 point' : `${n} points`);
  * The report's headline numbers and what they mean, in plain language. Every finding is a sentence
  * built from the scan's own data; one is only included when the data behind it exists.
  */
+/**
+ * Share of local search: at how many points the business is in the top three of whatever Google
+ * showed there. Where the page had a map pack, that is the local results; where it had none, the
+ * AI Overview (its list, or its opening sentences: "position zero"). The two parts are also given
+ * on their own: Share of Local Voice over the points with a map pack, and the AI Overview over
+ * the points that had one.
+ */
+export function searchShare(pins: InsightPin[], target: string) {
+  const done = pins.filter((p) => p.status === 'COMPLETED');
+  const noPack = (p: InsightPin) => Boolean(p.proxyMeta?.noLocal);
+  const local = done.filter((p) => !noPack(p));
+  const localTop3 = local.filter((p) => p.rankFound != null && p.rankFound <= 3).length;
+  const place = (p: InsightPin) => p.proxyMeta?.aiPosition ?? (p.insights?.v === 1 ? (aiPosition(p.insights.ai.named, target)?.pos ?? null) : null);
+  const answered = done.filter((p) => p.hasAiOverview ?? (p.insights?.v === 1 && p.insights.ai.shown));
+  const zero = (p: InsightPin) => Boolean(p.proxyMeta?.aiLead);
+  const aiTop = (p: InsightPin) => zero(p) || ((place(p) ?? 99) <= 3);
+  const wins = localTop3 + done.filter((p) => noPack(p) && aiTop(p)).length;
+  return {
+    points: done.length,
+    wins,
+    share: done.length ? (100 * wins) / done.length : null,
+    /** Map pack: points that had one, and the business's top-three share of them (Share of Local Voice). */
+    local: { points: local.length, top3: localTop3, first: local.filter((p) => p.rankFound === 1).length, solv: local.length ? (100 * localTop3) / local.length : null },
+    /** AI Overview: points that had one, where the business is named, in its top three, and in its opening sentences. */
+    ai: { points: answered.length, named: answered.filter((p) => p.targetCitedInAi || place(p) != null || zero(p)).length, top3: answered.filter(aiTop).length, zero: answered.filter(zero).length, winsWithoutPack: wins - localTop3 },
+  };
+}
+
 export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string; centerLat: number; centerLng: number }) {
-  const dist = rankDistribution(scan.pins);
+  // Rank numbers are about the points that had local results. A point with no map pack has no
+  // local rank: it is left out here and counted under the AI Overview.
+  const allDone = scan.pins.filter((p) => p.status === 'COMPLETED').length;
+  const localPins = scan.pins.filter((p) => !(p.status === 'COMPLETED' && p.proxyMeta?.noLocal));
+  const share = searchShare(scan.pins, scan.targetBusiness);
+  const dist = rankDistribution(localPins);
   const top3 = dist.buckets[0].count + dist.buckets[1].count;
-  const found = scan.pins.filter((p) => p.status === 'COMPLETED' && p.rankFound != null);
+  const found = localPins.filter((p) => p.status === 'COMPLETED' && p.rankFound != null);
   const avgRank = found.length ? found.reduce((n, p) => n + (p.rankFound as number), 0) / found.length : null;
-  const bp = buyingPower(scan.pins);
-  const owners = groundOwners(scan.pins, scan.targetBusiness);
-  const radius = winningRadius(scan.pins, { lat: scan.centerLat, lng: scan.centerLng });
+  const bp = buyingPower(localPins);
+  const owners = groundOwners(localPins, scan.targetBusiness);
+  const radius = winningRadius(localPins, { lat: scan.centerLat, lng: scan.centerLng });
   const paid = paidPressure(scan.pins);
   const ai = aiSources(scan.pins, scan.targetBusiness);
   const aiNamed = aiBusinesses(scan.pins, scan.targetBusiness);
@@ -60,7 +93,7 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
 
   // Who holds #1 at each completed point (the first name in the point's ordered results).
   const firsts = new Map<string, { name: string; points: number; isYou: boolean }>();
-  for (const p of scan.pins) {
+  for (const p of localPins) {
     const name = p.status === 'COMPLETED' ? p.topCompetitors?.[0] : null;
     if (!name) continue;
     const key = name.toLowerCase().trim();
@@ -78,6 +111,14 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
     findings.push(text);
     findingKinds.push(kind);
   };
+  const noPackPoints = allDone - dist.total;
+  if (noPackPoints)
+    note(
+      'ai',
+      dist.total
+        ? `Google showed no map pack at ${noPackPoints} of ${points(allDone)}: those have no local rank, and what counts there is the AI Overview.`
+        : `Google showed no map pack at any of the ${points(allDone)}, so there is no local rank on this search. What counts here is the AI Overview: ${scan.targetBusiness} is in its top three or opening line at ${share.ai.top3} of ${points(share.ai.points)}.`,
+    );
   if (dist.total) {
     note('rank', 
       top3 === 0
@@ -114,7 +155,10 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
     );
 
   return {
-    completed: dist.total,
+    completed: allDone,
+    /** Points whose page had a map pack: what the rank numbers below are counted over. */
+    localPoints: dist.total,
+    share,
     top3,
     standard: bp.standard,
     buyingPower: bp.buyingPower,

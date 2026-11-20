@@ -10,6 +10,9 @@ export type InsightPin = BuyingPowerPin & {
   lng: number;
   topCompetitors?: string[] | null;
   insights?: PinInsights | null;
+  hasAiOverview?: boolean | null;
+  /** From the report: no map pack on the page (no local rank), and the business's place in the AI Overview. */
+  proxyMeta?: { noLocal?: boolean; aiPosition?: number | null; aiLead?: boolean } | null;
 };
 
 const norm = (s: string) =>
