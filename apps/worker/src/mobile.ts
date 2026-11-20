@@ -9,6 +9,7 @@ import { db, type GridPin, type GridScan } from '@stakeout/db';
 import { listsForPin, normPlace, locationVerified, topLineVerified, proxyPlace, proxyState } from '@stakeout/core/proxyLists';
 import { dataLine, dataUsed, parseIfaceBytes, parseUidBytes, parseUidPackages, type DataUse } from '@stakeout/core/dataUse';
 import { paidExitKey } from '@stakeout/core/idleProxy';
+import { laneOf, laneSaw } from './lane';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
 import { isProxyProblem, pinOutageKey, supplyDown } from '@stakeout/core/proxyWait';
@@ -235,7 +236,7 @@ async function googleProbe(d: LeasedDevice): Promise<string> {
 }
 
 /** Binds the proxy and GPS, then checks the exit through it: two geolocation services and Google itself. */
-async function preflightExit(d: LeasedDevice, p: Pin, isp: string, stateCode = proxyState(p)) {
+async function preflightExit(d: LeasedDevice, p: Pin, isp: string, stateCode = proxyState(p), lane = false) {
   await applyNetworkAndGps(d, p);
   await sleep(6000);
   const token = process.env.IPINFO_TOKEN ? '?token=' + encodeURIComponent(process.env.IPINFO_TOKEN) : '';
@@ -246,7 +247,10 @@ async function preflightExit(d: LeasedDevice, p: Pin, isp: string, stateCode = p
       : parseIpapi(await deviceGet(d, 'http://ip-api.com/json/?fields=status,countryCode,region,regionName,city,isp,org,as,hosting,proxy,query'));
   // A scripted request to Google seconds before the search looks like a bot: off unless PROXY_GATE_GOOGLE=true.
   const google = process.env.PROXY_GATE_GOOGLE !== 'true' ? null : parseGoogleProbe(await googleProbe(d));
-  const verdict = judgeExit({ ipinfo, ipapi, google }, { stateCode, isp, policy: gatePolicy(), extraAsns: extraAsns() });
+  // A lane's port sits wherever its modem is, and databases file some carriers' 5G blocks under
+  // consumer internet: so no state rule and no carrier list there. Hosting and data-centre
+  // networks, and anything outside the US, are still refused.
+  const verdict = judgeExit({ ipinfo, ipapi, google }, { stateCode, isp, policy: lane && gatePolicy() !== 'off' ? 'deny' : gatePolicy(), extraAsns: extraAsns(), anyState: lane });
   return { verdict, ipinfo, ipapi, google };
 }
 
@@ -335,6 +339,8 @@ type GatewayTarget = {
   state?: string;
   /** For the receipt: the place asked for, e.g. "Tampa, FL". */
   place?: string;
+  /** A shared mobile lane: judged without the state rule. */
+  lane?: boolean;
 };
 
 /**
@@ -387,7 +393,7 @@ async function provisionGateway(
       await redis().del(`stakeout:devport:${device.imageId}`).catch(() => {});
       // "Mix of ISPs": the ISP is a preference, so a residential IP in the right state will do.
       // Mobile data: any carrier the gatekeeper knows as a real mobile network.
-      const g = await preflightExit(device, p, p.scan.ispMode === 'mix' ? '' : g0.isp, target.state ?? proxyState(p));
+      const g = await preflightExit(device, p, p.scan.ispMode === 'mix' ? '' : g0.isp, target.state ?? proxyState(p), Boolean(target.lane));
       if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
       if (!g.verdict.ok) {
         tried.push(target.rung + ':' + session + ':' + g.verdict.reasons.join('+'));
@@ -695,6 +701,25 @@ async function provision(device: LeasedDevice, p: Pin) {
   await device.assertOwned();
   // Mobile points (a mobile scan, or the mobile half of a mix) run only on mobile carrier IPs, never on home internet.
   if (pinNetwork(p.scan.network, p.rowIdx, p.colIdx) === 'mobile') {
+    // A place on a mobile lane was taken before the phone was (index.ts): the search goes out of it.
+    const lane = await laneOf(p.id);
+    if (lane) {
+      if (transportFor(device) !== 'adb') throw new Error('PROXY_MOBILE_NEEDS_ADB_PHONE');
+      const got = await provisionGateway(device, p, {
+        source: 'lane-' + lane.n,
+        network: 'mobile',
+        host: lane.host,
+        port: lane.port,
+        protocol: lane.protocol,
+        password: lane.password,
+        tries: 2,
+        minutes: 0,
+        isp: '',
+        targets: [{ rung: 'MOBILE_LANE', user: () => lane.user, lane: true, place: 'mobile lane ' + lane.n }],
+      });
+      await laneSaw(lane, p.id, got.ip).catch(() => {});
+      return got;
+    }
     const provider = mobileProvider();
     if (!provider) throw new Error('MOBILE_DATA_NOT_CONFIGURED set VOIDMOB_API_KEY and VOIDMOB_PROXY_ID (or VOIDMOB_USERNAME and VOIDMOB_PASSWORD, or the Decodo mobile login) on the worker');
     if (transportFor(device) !== 'adb') throw new Error('PROXY_MOBILE_NEEDS_ADB_PHONE');

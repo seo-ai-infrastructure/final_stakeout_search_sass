@@ -25,6 +25,8 @@ import { logDataHistory } from './dataHistory';
 import { powerTick, powerReport } from './power';
 import { forceIdle, idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
 import { phoneTailKey } from '@stakeout/core/idleProxy';
+import { enterLane, laneExit, laneNote, lanesOn, leaveLane } from './lane';
+import { laneConfigs } from '@stakeout/core/lane';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficByHour, trafficHourKey, trafficLow, type TrafficHour, type TrafficReading } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
@@ -75,6 +77,7 @@ async function execute(job: Job, token?: string) {
     include: { scan: true },
   });
   if (!pin || pin.status !== 'PENDING') return;
+  let lanePoint = false;
   try {
     if (pin.scan.targetType === 'desktop_aimode') {
       await settlePin(pin.id, { data: await measureDesktop(pin) });
@@ -85,6 +88,13 @@ async function execute(job: Job, token?: string) {
     const region = pinOutageKey(pin);
     if (region && Date.now() - job.timestamp < PROXY_WAIT_MS && (await proxyOutageSince(region)) && !(await claimProxyProbe(region, pin.id))) {
       await job.moveToDelayed(Date.now() + 60000 + Math.floor(Math.random() * 30000), token);
+      throw new DelayedError();
+    }
+    // Mobile lanes: a mobile point takes its place in a wave before it takes a phone. While every
+    // lane's wave is under way it waits here, holding nothing.
+    lanePoint = lanesOn() && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'mobile';
+    if (lanePoint && !closing && (await enterLane(pin.id)) === null) {
+      await job.moveToDelayed(Date.now() + 7000 + Math.floor(Math.random() * 5000), token);
       throw new DelayedError();
     }
     // A phone already on this point's Proxy-Seller list is preferred (home internet only).
@@ -172,6 +182,8 @@ async function execute(job: Job, token?: string) {
       marks.released = Date.now();
       // Never let a failed write keep the lease: an unreleased lease would hold the phone for good.
       await restPhone(d.imageId).catch(() => {});
+      // The search is over: the point's place in its mobile wave is free (the IP is no longer in use).
+      if (lanePoint) await leaveLane(pin.id).catch(() => {});
       if (measuring) {
         // Said in Redis too, so another worker (a new one starting during a deploy) leaves the
         // phone alone while its evidence is still being pulled here.
@@ -229,9 +241,14 @@ async function execute(job: Job, token?: string) {
         held.delete(d.imageId);
         await d.release();
       }
+      // Failed, or stopped at the time limit: its place in the mobile wave is given back, so one
+      // stuck phone never keeps a wave from ending.
+      if (lanePoint) await leaveLane(pin.id).catch(() => {});
       await noteTiming(pin, d.imageId, attemptStart, marks, pinError).catch(() => {});
     }
   } catch (e) {
+    // A point that had a place in a mobile wave and is going back in the queue gives it up.
+    if (lanePoint) await leaveLane(pin.id).catch(() => {});
     if (e instanceof DelayedError) throw e;
     const msg = e instanceof Error ? e.message : 'PIN_FAILED';
     // A proxy problem never fails a point: it goes back in the queue (no attempt used, nothing
@@ -606,7 +623,8 @@ async function reportHealth() {
     // The proxy providers in use, in the order they are tried (PROXY_PROVIDERS).
     proxyProviders: proxyProviders(),
     // Mobile data scans need a VoidMob package (or the Decodo mobile login) on the worker.
-    mobileData: Boolean(mobileProvider()),
+    mobileData: Boolean(mobileProvider()) || lanesOn(),
+    mobileLanes: laneNote() || null,
     mobileProvider: mobileProvider(),
     // Where the VoidMob login comes from: "package prx_..." (read from VoidMob) or "VOIDMOB_USERNAME".
     mobileLogin: mobileProvider() === 'voidmob' ? voidmobLoginNote() || null : null,
@@ -832,6 +850,12 @@ process.once('SIGTERM', () => void close());
 console.info(
   `Stakeout Telemetry Engine online · target=${redactRedisUrl()} · stakeout-pins + stakeout-recurring-schedules`,
 );
+// Mobile lanes: said at start, with a live check of each port (which address it comes out of).
+if (lanesOn()) {
+  console.info('[lane] mobile points use', laneConfigs().length, 'lane(s):', laneNote());
+  for (const l of laneConfigs())
+    void laneExit(l).then((ip) => (ip ? console.info('[lane]', l.n, 'answers: comes out of', ip) : console.error('[lane]', l.n, 'DOES NOT ANSWER: check MOBILE_LANE_' + l.n + '_HOST / _PORT / _USER / _PASSWORD / _PROTOCOL')));
+}
 // Points finished before per-point insights existed get them once, from their stored bundles.
 setTimeout(() => {
   backfillInsights().catch((e) => console.error('[insights] backfill skipped:', (e as Error).message));

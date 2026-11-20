@@ -113,7 +113,7 @@ type GateVerdict = {
  */
 export function judgeExit(
   ev: ExitEvidence,
-  opts: { stateCode: string; isp?: string | null; policy?: GatePolicy; extraAsns?: number[] },
+  opts: { stateCode: string; isp?: string | null; policy?: GatePolicy; extraAsns?: number[]; /** A shared mobile port sits wherever its modem is: the state rule is skipped (US still required). */ anyState?: boolean },
 ): GateVerdict {
   const policy = opts.policy ?? 'strict';
   const reasons: string[] = [];
@@ -127,11 +127,11 @@ export function judgeExit(
   // 1. Every geolocation source must say US and the point's state.
   if (ipinfo) {
     if (!/^(us|usa|united states)$/i.test(ipinfo.country.trim())) reasons.push('IPINFO_COUNTRY_' + (ipinfo.country || '?'));
-    else if (!stateMatches(ipinfo.region, null, opts.stateCode)) reasons.push('IPINFO_STATE_' + squash(ipinfo.region || '?'));
+    else if (!opts.anyState && !stateMatches(ipinfo.region, null, opts.stateCode)) reasons.push('IPINFO_STATE_' + squash(ipinfo.region || '?'));
   }
   if (ipapi) {
     if (ipapi.countryCode.toUpperCase() !== 'US') reasons.push('IPAPI_COUNTRY_' + (ipapi.countryCode || '?'));
-    else if (!stateMatches(ipapi.regionName, ipapi.region, opts.stateCode)) reasons.push('IPAPI_STATE_' + (ipapi.region || '?'));
+    else if (!opts.anyState && !stateMatches(ipapi.regionName, ipapi.region, opts.stateCode)) reasons.push('IPAPI_STATE_' + (ipapi.region || '?'));
     // 2. Datacenter / leased ranges masquerading as residential.
     if (ipapi.hosting) reasons.push('HOSTING_RANGE');
   }
