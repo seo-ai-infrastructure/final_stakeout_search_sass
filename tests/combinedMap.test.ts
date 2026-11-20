@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 test('combined map: a point is a miss only when the business is in neither place', async () => {
-  const { combinedReading, combinedTotals, combinedStyle, COMBINED_STYLES } = await import('../apps/nextjs/src/lib/combinedMap');
+  const { combinedReading, combinedTotals, combinedStyle, AI_PURPLE } = await import('../apps/nextjs/src/lib/combinedMap');
   const base = { rank: null, rankFrom: null, hasAiOverview: true, cited: false, aiPos: null };
   // Missing from the local results, first in the AI Overview: recommended there, not a miss.
   const recommended = combinedReading({ ...base, cited: true, aiPos: 1 });
@@ -29,12 +29,16 @@ test('combined map: a point is a miss only when the business is in neither place
   // In neither: "20+".
   const miss = combinedReading(base);
   assert.deepEqual([miss.kind, miss.label, miss.top3, miss.detail], ['miss', '20+', false, 'Not in the AI Overview · not in the local results']);
-  // The pin's colour by where the business shows, and how high.
-  assert.deepEqual(
-    [both, combinedReading({ ...base, rank: 6, cited: true, aiPos: 5 }), recommended, combinedReading({ ...base, cited: true, aiPos: 6 }), local, miss].map((r) => combinedStyle(r)),
-    [COMBINED_STYLES.both, COMBINED_STYLES.bothLow, COMBINED_STYLES.ai, COMBINED_STYLES.aiLow, COMBINED_STYLES.local, COMBINED_STYLES.miss],
-  );
-  assert.equal(COMBINED_STYLES.ai.label, 'Recommended by AI Overview');
+  // The pin takes the Pack rank colour of the placement it shows; purple where that placement is the AI Overview's.
+  const { rankColor } = await import('../apps/nextjs/src/lib/gridColumns');
+  assert.equal(combinedStyle(local).swatch, rankColor('COMPLETED', 4));
+  assert.equal(combinedStyle(miss).swatch, rankColor('COMPLETED', null));
+  assert.equal(combinedStyle(recommended).swatch, AI_PURPLE);
+  assert.equal(combinedStyle(aiList).swatch, AI_PURPLE);
+  // In both: purple only when the AI Overview place is the better one.
+  assert.equal(combinedStyle(combinedReading({ ...base, rank: 6, cited: true, aiPos: 5 })).swatch, AI_PURPLE);
+  assert.equal(combinedStyle(combinedReading({ ...base, rank: 2, cited: true, aiPos: 5 })).swatch, rankColor('COMPLETED', 2));
+  assert.equal(combinedStyle(combinedReading({ ...base, rank: 2, cited: true })).swatch, rankColor('COMPLETED', 2));
   const t = combinedTotals([recommended, both, local, aiList, miss]);
   assert.deepEqual([t.total, t.visible, t.localVisible, t.notInLocal, t.recommended, t.miss], [5, 4, 2, 3, 2, 1]);
 });
