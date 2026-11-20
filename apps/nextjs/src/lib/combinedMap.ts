@@ -6,7 +6,7 @@
  * even where the AI Overview above them names it first. Here a point is a miss only when the
  * business is in neither.
  */
-import { RANK_COLORS, RANK_SCALE, rankColor, rankTextColor } from './gridColumns';
+import { NA_COLOR, RANK_COLORS, RANK_SCALE, rankColor, rankTextColor } from './gridColumns';
 
 export type CombinedKind = 'both' | 'ai' | 'local' | 'miss';
 export type CombinedReading = {
@@ -61,21 +61,31 @@ export function combinedReading(p: {
 }
 
 /**
- * How a best-placement pin is coloured, and the legend. The pin takes the same colours as the Pack
- * rank view for the placement it shows, with one exception: where the placement shown is the
- * business's place in the AI Overview (it is not in the local results there, or it places higher
- * in the AI Overview than in them), the pin is purple.
+ * How a Combined pin is coloured and labelled, in this order:
+ *  1. An AI Overview is on the page: purple, whatever the local rank is. The label is the
+ *     business's place in it ("✓" when it is named without a place, "no" when the answer leaves
+ *     it out, on a darker purple).
+ *  2. No AI Overview and no local pack on the page: "N/A".
+ *  3. Otherwise the Pack rank colours for its local rank; "20+" in red when a local pack was on
+ *     the page and the business was not in it.
  */
 type CombinedStyle = { label: string; swatch: string };
 export const AI_PURPLE = '#a855f7';
-/** The placement on the pin comes from the AI Overview, not from the local results. */
-export const shownFromAi = (r: CombinedReading) => (r.ai === 'named' && r.local == null) || (typeof r.ai === 'number' && (r.local == null || r.ai < r.local));
-export const combinedStyle = (r: CombinedReading): CombinedStyle =>
-  shownFromAi(r)
-    ? { label: 'AI Overview placement', swatch: AI_PURPLE }
-    : { label: r.local != null ? 'Local results' : 'In neither', swatch: rankColor('COMPLETED', r.local) };
-/** The legend: the Pack rank colours, and purple for a placement in the AI Overview. */
-export const COMBINED_LEGEND: CombinedStyle[] = [...RANK_SCALE.map(([label, swatch]) => ({ label, swatch })), { label: 'AI Overview placement', swatch: AI_PURPLE }];
+export const AI_PURPLE_OUT = '#4c1d95';
+export function combinedPin(r: CombinedReading, noLocalPack: boolean): { fill: string; text: string; from: 'ai' | 'na' | 'local' } {
+  if (typeof r.ai === 'number') return { fill: AI_PURPLE, text: '#' + r.ai, from: 'ai' };
+  if (r.ai === 'named') return { fill: AI_PURPLE, text: '✓', from: 'ai' };
+  if (r.ai === 'no') return { fill: AI_PURPLE_OUT, text: 'no', from: 'ai' };
+  if (noLocalPack || !r.localShown) return { fill: NA_COLOR, text: 'N/A', from: 'na' };
+  return { fill: rankColor('COMPLETED', r.local), text: r.local != null ? '#' + r.local : '20+', from: 'local' };
+}
+/** The legend: the Pack rank colours, the two purples for a page with an AI Overview, and N/A. */
+export const COMBINED_LEGEND: CombinedStyle[] = [
+  ...RANK_SCALE.map(([label, swatch]) => ({ label, swatch })),
+  { label: 'AI Overview: you are in it', swatch: AI_PURPLE },
+  { label: 'AI Overview: you are not', swatch: AI_PURPLE_OUT },
+  { label: 'No local pack', swatch: NA_COLOR },
+];
 
 /**
  * The two halves of a split pin: the AI Overview on top (it is higher on the page), the local

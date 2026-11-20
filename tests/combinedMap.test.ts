@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 test('combined map: a point is a miss only when the business is in neither place', async () => {
-  const { combinedReading, combinedTotals, combinedStyle, AI_PURPLE } = await import('../apps/nextjs/src/lib/combinedMap');
+  const { combinedReading, combinedTotals, combinedPin, AI_PURPLE, AI_PURPLE_OUT } = await import('../apps/nextjs/src/lib/combinedMap');
   const base = { rank: null, rankFrom: null, hasAiOverview: true, cited: false, aiPos: null };
   // Missing from the local results, first in the AI Overview: recommended there, not a miss.
   const recommended = combinedReading({ ...base, cited: true, aiPos: 1 });
@@ -29,16 +29,22 @@ test('combined map: a point is a miss only when the business is in neither place
   // In neither: "20+".
   const miss = combinedReading(base);
   assert.deepEqual([miss.kind, miss.label, miss.top3, miss.detail], ['miss', '20+', false, 'Not in the AI Overview · not in the local results']);
-  // The pin takes the Pack rank colour of the placement it shows; purple where that placement is the AI Overview's.
-  const { rankColor } = await import('../apps/nextjs/src/lib/gridColumns');
-  assert.equal(combinedStyle(local).swatch, rankColor('COMPLETED', 4));
-  assert.equal(combinedStyle(miss).swatch, rankColor('COMPLETED', null));
-  assert.equal(combinedStyle(recommended).swatch, AI_PURPLE);
-  assert.equal(combinedStyle(aiList).swatch, AI_PURPLE);
-  // In both: purple only when the AI Overview place is the better one.
-  assert.equal(combinedStyle(combinedReading({ ...base, rank: 6, cited: true, aiPos: 5 })).swatch, AI_PURPLE);
-  assert.equal(combinedStyle(combinedReading({ ...base, rank: 2, cited: true, aiPos: 5 })).swatch, rankColor('COMPLETED', 2));
-  assert.equal(combinedStyle(combinedReading({ ...base, rank: 2, cited: true })).swatch, rankColor('COMPLETED', 2));
+  // The pin: purple whenever an AI Overview is on the page; N/A with no AI Overview and no local
+  // pack; otherwise the Pack rank colours, 20+ when a pack is there without the business.
+  const { rankColor, NA_COLOR } = await import('../apps/nextjs/src/lib/gridColumns');
+  const pin = (r: ReturnType<typeof combinedReading>, na = false) => { const x = combinedPin(r, na); return [x.fill, x.text]; };
+  const off = { ...base, hasAiOverview: false };
+  assert.deepEqual(pin(combinedReading({ ...off, rank: 4 })), [rankColor('COMPLETED', 4), '#4']);
+  assert.deepEqual(pin(combinedReading(off)), [rankColor('COMPLETED', null), '20+']);
+  assert.deepEqual(pin(combinedReading(off), true), [NA_COLOR, 'N/A']);
+  // An AI Overview on the page: purple no matter what, with the business's place in it.
+  assert.deepEqual(pin(recommended), [AI_PURPLE, '#1']);
+  assert.deepEqual(pin(aiList, true), [AI_PURPLE, '#3']);
+  assert.deepEqual(pin(combinedReading({ ...base, rank: 2, cited: true, aiPos: 5 })), [AI_PURPLE, '#5']);
+  assert.deepEqual(pin(combinedReading({ ...base, rank: 2, cited: true })), [AI_PURPLE, '✓']);
+  // The answer leaves the business out: darker purple "no", even with a local rank or no pack.
+  assert.deepEqual(pin(local), [AI_PURPLE_OUT, 'no']);
+  assert.deepEqual(pin(combinedReading({ ...base, rankFrom: 'none' }), true), [AI_PURPLE_OUT, 'no']);
   const t = combinedTotals([recommended, both, local, aiList, miss]);
   assert.deepEqual([t.total, t.visible, t.localVisible, t.notInLocal, t.recommended, t.miss], [5, 4, 2, 3, 2, 1]);
 });

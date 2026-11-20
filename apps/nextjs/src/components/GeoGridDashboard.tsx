@@ -16,7 +16,7 @@ import { ReportVerdict, RankDistributionCard, AiCoverageCard } from './ReportSum
 import AiCitationsTab from '@/components/AiCitationsTab';
 import { bandOf, reportSummary, type RankBucket, type FindingKind } from '../lib/reportSummary';
 import { groundOwners, aiPosition, winningRadius } from '../lib/marketInsights';
-import { combinedReading, combinedStyle, combinedTotals, shownFromAi, COMBINED_LEGEND } from '../lib/combinedMap';
+import { combinedReading, combinedPin, combinedTotals, COMBINED_LEGEND } from '../lib/combinedMap';
 import { paintSplitPin } from '../lib/combinedPin';
 import { PinEvidenceCard } from './PinEvidenceCard';
 import { MarketInsights } from './MarketInsights';
@@ -510,12 +510,11 @@ export function GeoGridDashboard({
       } else if (p.status === 'COMPLETED' && mapMode === 'combined') {
         // The same pin as the other views: its colour says where the business shows, the label its best placement.
         combined = readCombined(p);
-        // Pack rank colours, purple where the placement shown is the AI Overview's. A page with no
-        // map pack and no AI placement keeps its "N/A" mark.
-        if (!na || shownFromAi(combined)) {
-          fill = combinedStyle(combined).swatch;
-          text = combined.label;
-        }
+        // Purple with its AI place when the business is in the AI Overview; "N/A" where the page
+        // had no local pack; otherwise the Pack rank colours ("20+" red when it is not in the pack).
+        const pin = combinedPin(combined, na);
+        fill = pin.fill;
+        text = pin.text;
       } else if (p.status === 'COMPLETED' && mapMode === 'ads') {
         const ads = ins?.adsAboveYou ?? null;
         fill = adsColor(ads);
