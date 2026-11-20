@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import GbpPostCalendar from '@/components/GbpPostCalendar';
 import OutletStrip, { OutletMark, type Outlet, type Tick } from '@/components/OutletStrip';
 import { draftProblem, OUTLET_NAME, OUTLET_TEXT_MAX, outletProblem, type ListingOutlets } from '@stakeout/core/outlets';
-import { BODY_MAX, CTA, emptyDraft, nextWeeklySlot, postProblem, type GbpPost, type PostDraft, type PostFormat } from '@stakeout/core/gbpPosts';
+import { CTA, emptyDraft, nextWeeklySlot, postProblem, type GbpPost, type PostDraft, type PostFormat } from '@stakeout/core/gbpPosts';
 
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
 const input = 'w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500 disabled:opacity-50';
@@ -61,7 +61,7 @@ function prepareImage(file: File, minW: number, minH: number): Promise<string> {
 }
 
 /** Posts for one listing: write one, publish it now or schedule it, and see what is out and what is waiting. */
-export default function GbpPosts({ profile, location }: { profile: string; location: string }) {
+export default function GbpPosts({ profile, location, name = '' }: { profile: string; location: string; name?: string }) {
   const [posts, setPosts] = useState<GbpPost[] | null>(null);
   const [d, setD] = useState<PostDraft>(emptyDraft);
   const [later, setLater] = useState(false);
@@ -70,6 +70,12 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
   const [sure, setSure] = useState('');
+  // Composer furniture: Google's options opened, the paste-a-link box shown, a file held over the
+  // drop box, and which outlet the preview shows.
+  const [opts, setOpts] = useState(false);
+  const [urlBox, setUrlBox] = useState(false);
+  const [over, setOver] = useState(false);
+  const [view, setView] = useState<Tick>('google_business');
   const composer = useRef<HTMLDivElement>(null);
   // The listing's other outlets (Facebook, LinkedIn), and which of them this post is switched off for.
   const [outlets, setOutlets] = useState<Outlet[]>([]);
@@ -83,7 +89,7 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
       setPosts([]); setError(e instanceof Error ? e.message : 'Could not read the posts.');
     }
   }, [profile, location]);
-  useEffect(() => { setPosts(null); setD(emptyDraft()); setLater(false); setError(''); setNote(''); load(); }, [load]);
+  useEffect(() => { setPosts(null); setD(emptyDraft()); setLater(false); setError(''); setNote(''); setOpts(false); setUrlBox(false); load(); }, [load]);
   // A post on its way out is watched: the list is read again every few seconds until every place it
   // went to has answered, so "waiting" turns to "published" without a reload. A scheduled post is
   // watched from the minute before it is due. Watching stops after ten minutes.
@@ -126,30 +132,47 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   // starts as it was left on this listing's last post; one that cannot take the post says why and
   // is left out. Google is a tick like the others once another outlet is there to carry the post.
   const ready = outlets.filter((o) => o.connected && o.chosen);
+  const google = ready.length === 0 || !off.includes('google_business');
+  // The post as it will be sent. The kind of post, its button, and its offer or event details are
+  // Google's: with Google unticked it goes out as a plain update. A photo with no words is added
+  // to the Google listing as a photo.
+  const eff: PostDraft = !google
+    ? { ...d, format: 'standard', cta: '', ctaUrl: '' }
+    : d.format === 'standard' && !d.body.trim() && d.image
+      ? { ...d, format: 'photo' }
+      : d;
   // On an empty form nothing is judged yet: the ticks show what a post will go to once written.
   const fresh = !d.body && !d.image && !d.title && !d.startDate;
-  const whyNot = (o: Outlet) => outletProblem(fresh ? { ...d, body: 'x' } : d, o.outlet, o.chosen ? { profile: '', placement: o.chosen.id, name: o.chosen.name } : undefined);
+  const whyNot = (o: Outlet) => outletProblem(fresh ? { ...eff, format: 'standard', body: 'x' } : eff, o.outlet, o.chosen ? { profile: '', placement: o.chosen.id, name: o.chosen.name } : undefined);
   const sending = ready.filter((o) => !off.includes(o.outlet) && !whyNot(o)).map((o) => o.outlet);
-  const google = ready.length === 0 || !off.includes('google_business');
   const chosen: ListingOutlets = Object.fromEntries(ready.filter((o) => sending.includes(o.outlet)).map((o) => [o.outlet, { profile: '', placement: o.chosen!.id, name: o.chosen!.name }]));
-  const problem = ready.length ? draftProblem(d, google, chosen) : postProblem(d);
-  // The tightest text limit among the outlets this post is going to (Google's, unless that changes).
-  const textMax = Math.min(...(google ? [BODY_MAX] : []), ...sending.map((o) => OUTLET_TEXT_MAX[o]), google || sending.length ? Infinity : BODY_MAX);
-  const dated = d.format === 'offer' || d.format === 'event';
-  const untouched = !d.body && !d.image && !d.title && !d.startDate;
+  const problem = ready.length ? draftProblem(eff, google, chosen) : postProblem(eff);
+  // Where this post is going, and the tightest text limit among those places.
+  const targets: Tick[] = [...(google ? ['google_business' as const] : []), ...sending];
+  const tightest = targets.length ? [...targets].sort((x, y) => OUTLET_TEXT_MAX[x] - OUTLET_TEXT_MAX[y])[0] : 'google_business';
+  const textMax = OUTLET_TEXT_MAX[tightest];
+  const dated = google && (d.format === 'offer' || d.format === 'event');
+  const untouched = fresh;
+  const length = d.body.trim().length;
+  // Google's options stay open while one of them is in use.
+  const optsOpen = opts || d.format !== 'standard' || Boolean(d.cta);
+  const seen: Tick = targets.includes(view) ? view : targets[0] ?? 'google_business';
+  const seenName = seen === 'google_business' ? name || 'Your Google listing' : ready.find((o) => o.outlet === seen)?.chosen?.name ?? OUTLET_NAME[seen];
 
   const pickImage = async (file: File | undefined) => {
     if (!file) return;
     setError('');
-    try { set('image', await prepareImage(file, d.format === 'photo' ? 250 : 400, d.format === 'photo' ? 250 : 300)); } catch (e) { setError(e instanceof Error ? e.message : 'Photo not added.'); }
+    // Google's smallest photo: 400×300 beside text, 250×250 on its own. The other outlets have no such floor.
+    const [w, h] = !google ? [1, 1] : d.body.trim() ? [400, 300] : [250, 250];
+    try { set('image', await prepareImage(file, w, h)); setUrlBox(false); } catch (e) { setError(e instanceof Error ? e.message : 'Photo not added.'); }
   };
   const send = async () => {
     setBusy('send'); setError(''); setNote('');
     try {
-      await call('/api/admin/gbp/posts', 'POST', { profile, location, draft: d, ...(sending.length ? { outlets: sending } : {}), ...(google ? {} : { google: false }) });
+      await call('/api/admin/gbp/posts', 'POST', { profile, location, draft: eff, ...(sending.length ? { outlets: sending } : {}), ...(google ? {} : { google: false }) });
       const to = [...(google ? ['Google'] : []), ...sending.map((o) => OUTLET_NAME[o])].join(', ');
       setNote((d.scheduledAt ? 'Scheduled for ' + when(d.scheduledAt) : 'Sent') + ' to ' + to + '. Each one shows below as it publishes.');
-      setD(emptyDraft()); setLater(false);
+      setD(emptyDraft()); setLater(false); setOpts(false);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The post was not sent.');
@@ -191,81 +214,210 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
       {posts !== null && <GbpPostCalendar posts={posts} onDay={writeFor} onSchedule={scheduleOne} onCancel={remove} />}
 
       {/* Facebook and LinkedIn: set NEXT_PUBLIC_OUTLETS=off to hide them. */}
-      {process.env.NEXT_PUBLIC_OUTLETS !== 'off' && <OutletStrip profile={profile} location={location} onChange={gotOutlets} />}
+      {process.env.NEXT_PUBLIC_OUTLETS !== 'off' && <OutletStrip profile={profile} location={location} name={name} onChange={gotOutlets} />}
 
       <div ref={composer} className="scroll-mt-20 border-t border-slate-800 pt-4">
         <p className="text-sm font-medium">Write a post</p>
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {FORMATS.map(([f, label, hint]) => (
-          <button key={f} type="button" title={hint} aria-pressed={d.format === f} onClick={() => set('format', f)} className={'rounded-full border px-3 py-1 text-sm ' + (d.format === f ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 text-slate-300 hover:border-slate-500')}>{label}</button>
-        ))}
+      <div className="grid gap-5 lg:grid-cols-[3fr_2fr]">
+        <div className="min-w-0 space-y-4">
+          {ready.length > 0 && (
+            <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <legend className="sr-only">Where this post goes</legend>
+              <span className="text-xs text-slate-400">Post to</span>
+              <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-200" title={google ? 'Going to the Google listing. Untick to leave Google out of this post.' : 'Tick to send this post to the Google listing too.'}>
+                <input type="checkbox" checked={google} onChange={() => setOff((x) => (x.includes('google_business') ? x.filter((y) => y !== 'google_business') : [...x, 'google_business']))} className="h-4 w-4 accent-emerald-500" />
+                <OutletMark outlet="google_business" on={google} size={20} /> Google
+              </label>
+              {ready.map((o) => {
+                const why = whyNot(o);
+                const on = sending.includes(o.outlet);
+                return (
+                  <label
+                    key={o.outlet}
+                    className={'inline-flex items-center gap-1.5 ' + (why ? 'cursor-not-allowed text-slate-500' : 'cursor-pointer text-slate-200')}
+                    title={why ?? (on ? `Going to ${o.chosen!.name}. Untick to leave ${OUTLET_NAME[o.outlet]} out of this post.` : `Tick to send this post to ${o.chosen!.name} too.`)}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-emerald-500"
+                      checked={on}
+                      disabled={Boolean(why)}
+                      onChange={() => setOff((x) => (x.includes(o.outlet) ? x.filter((y) => y !== o.outlet) : [...x, o.outlet]))}
+                    />
+                    <OutletMark outlet={o.outlet} on={on} size={20} /> {OUTLET_NAME[o.outlet]}
+                    {/* Why an outlet is left out is said once there is a post to judge, not on an empty form. */}
+                    {why && !untouched && <span className="text-xs text-amber-300/90">· {why}</span>}
+                  </label>
+                );
+              })}
+            </fieldset>
+          )}
+
+          <div>
+            <label className="text-sm font-medium" htmlFor="post-text">
+              {dated ? 'Details' : 'Post'}{' '}
+              <span className={'ml-1 text-xs ' + (length > textMax ? 'text-rose-300' : 'text-slate-500')}>
+                {length.toLocaleString()} / {textMax.toLocaleString()}
+                {targets.length > 1 && ` · ${OUTLET_NAME[tightest]}’s limit, the tightest of the ${targets.length}`}
+              </span>
+            </label>
+            <textarea id="post-text" className={input + ' mt-1.5 h-36'} value={d.body} onChange={(e) => set('body', e.target.value)} placeholder="What should customers know?" />
+          </div>
+
+          <div>
+            <p className="text-sm font-medium">Photo <span className="text-xs text-slate-500">optional</span></p>
+            {d.image ? (
+              <div className="mt-1.5 flex items-start gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={d.image} alt="The photo for this post" className="h-24 w-32 rounded-lg border border-slate-700 object-cover" />
+                <button type="button" onClick={() => set('image', '')} className="text-sm text-slate-400 hover:text-rose-300">Remove photo</button>
+              </div>
+            ) : (
+              <>
+                <label
+                  onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+                  onDragLeave={() => setOver(false)}
+                  onDrop={(e) => { e.preventDefault(); setOver(false); pickImage(e.dataTransfer.files?.[0]); }}
+                  className={'mt-1.5 flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center text-sm ' + (over ? 'border-emerald-500 bg-emerald-500/5 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500')}
+                >
+                  <span>Drop a photo here, or <span className="font-semibold text-emerald-300">choose one</span></span>
+                  <span className="mt-1 text-xs text-slate-500">
+                    JPG or PNG · one photo a post{google ? ' · at least 400×300 for Google' : ''}
+                  </span>
+                  <input type="file" accept="image/jpeg,image/png" className="sr-only" onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} />
+                </label>
+                {urlBox ? (
+                  <input autoFocus className={input + ' mt-2'} placeholder="https:// link to a JPG or PNG" onBlur={(e) => { if (e.target.value.trim()) set('image', e.target.value.trim()); else setUrlBox(false); }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
+                ) : (
+                  <button type="button" onClick={() => setUrlBox(true)} className="mt-1.5 text-xs text-slate-400 hover:text-sky-300">or paste URL</button>
+                )}
+              </>
+            )}
+            {google && d.image && !d.body.trim() && <p className="mt-1 text-xs text-slate-500">With no text, this is added to the Google listing as a photo.</p>}
+          </div>
+
+          {/* What only Google has: the kind of post, its button, and offer or event details. Gone when Google is unticked. */}
+          {google && (
+            <div className="rounded-lg border border-slate-800 bg-slate-950/60">
+              <button type="button" aria-expanded={optsOpen} onClick={() => setOpts(!optsOpen)} disabled={d.format !== 'standard' || Boolean(d.cta)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm">
+                <OutletMark outlet="google_business" size={18} />
+                <span className="text-slate-400">{ready.length ? 'Google options' : 'Post options'}</span>
+                <span className="text-slate-200">{FORMATS.find((f) => f[0] === d.format)?.[1] ?? 'Update'} · {CTA.find((c) => c.value === d.cta)?.label ?? 'No button'}</span>
+                {d.format === 'standard' && !d.cta && <span className="ml-auto text-xs text-slate-500">{optsOpen ? 'Hide' : 'Change'}</span>}
+              </button>
+              {optsOpen && (
+                <div className="space-y-3 border-t border-slate-800 p-3">
+                  <div className="flex flex-wrap gap-1.5">
+                    {FORMATS.filter(([f]) => f !== 'photo').map(([f, label, hint]) => (
+                      <button key={f} type="button" title={hint} aria-pressed={d.format === f} onClick={() => set('format', f)} className={'rounded-full border px-3 py-1 text-sm ' + (d.format === f ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300' : 'border-slate-700 text-slate-300 hover:border-slate-500')}>{label}</button>
+                    ))}
+                  </div>
+                  {dated && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="sm:col-span-2">
+                        <label className="text-sm font-medium">{d.format === 'event' ? 'Event name' : 'Offer headline'} <span className="ml-1 text-xs text-slate-500">{d.title.length} / 58{d.format === 'offer' ? ' · optional' : ''}</span></label>
+                        <input className={input + ' mt-1.5'} value={d.title} onChange={(e) => set('title', e.target.value)} placeholder={d.format === 'event' ? 'Open house' : '10% off roof washing'} />
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Starts</label>
+                        <div className="mt-1.5 flex flex-wrap gap-2"><input type="date" className={small + ' min-w-0 flex-1'} value={d.startDate} onChange={(e) => set('startDate', e.target.value)} /><input type="time" className={small} value={d.startTime} onChange={(e) => set('startTime', e.target.value)} aria-label="Start time (optional)" /></div>
+                      </div>
+                      <div>
+                        <label className="text-sm font-medium">Ends</label>
+                        <div className="mt-1.5 flex flex-wrap gap-2"><input type="date" className={small + ' min-w-0 flex-1'} value={d.endDate} onChange={(e) => set('endDate', e.target.value)} /><input type="time" className={small} value={d.endTime} onChange={(e) => set('endTime', e.target.value)} aria-label="End time (optional)" /></div>
+                      </div>
+                    </div>
+                  )}
+                  {d.format === 'offer' && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div><label className="text-sm font-medium">Coupon code <span className="text-xs text-slate-500">optional</span></label><input className={input + ' mt-1.5'} value={d.coupon} onChange={(e) => set('coupon', e.target.value)} /></div>
+                      <div><label className="text-sm font-medium">Link to redeem <span className="text-xs text-slate-500">optional</span></label><input className={input + ' mt-1.5'} value={d.redeemUrl} onChange={(e) => set('redeemUrl', e.target.value)} placeholder="https://" /></div>
+                      <div className="sm:col-span-2"><label className="text-sm font-medium">Terms <span className="text-xs text-slate-500">optional</span></label><input className={input + ' mt-1.5'} value={d.terms} onChange={(e) => set('terms', e.target.value)} /></div>
+                    </div>
+                  )}
+                  <div className="grid gap-3 sm:grid-cols-[12rem_1fr]">
+                    <div><label className="text-sm font-medium">Button</label><select className={input + ' mt-1.5'} value={d.cta} onChange={(e) => set('cta', e.target.value)}>{CTA.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
+                    {d.cta && d.cta !== 'CALL' && <div><label className="text-sm font-medium">Button link</label><input className={input + ' mt-1.5'} value={d.ctaUrl} onChange={(e) => set('ctaUrl', e.target.value)} placeholder="https://" /></div>}
+                    {d.cta === 'CALL' && <p className="self-end pb-2 text-xs text-slate-500">Calls the number on the listing.</p>}
+                  </div>
+                  {sending.length > 0 && <p className="text-xs text-slate-500">These show on Google only. {sending.map((o) => OUTLET_NAME[o]).join(' and ')} get{sending.length === 1 ? 's' : ''} the text and photo.</p>}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* How the post will look on one of the places it is going. A sketch, not the network's own rendering. */}
+        <aside className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium">Preview</p>
+            {targets.length > 1 && (
+              <div className="ml-auto flex gap-1" role="tablist" aria-label="Preview for">
+                {targets.map((t) => (
+                  <button key={t} type="button" role="tab" aria-selected={seen === t} title={OUTLET_NAME[t]} onClick={() => setView(t)} className={'rounded-full p-0.5 ' + (seen === t ? 'ring-2 ring-emerald-500' : 'opacity-60 hover:opacity-100')}>
+                    <OutletMark outlet={t} size={22} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="mt-1.5 overflow-hidden rounded-lg border border-slate-700 bg-white text-slate-900">
+            <div className="flex items-center gap-2 px-3 pt-3">
+              <OutletMark outlet={seen} size={32} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{seenName}</p>
+                <p className="text-xs text-slate-500">{d.scheduledAt ? when(d.scheduledAt) : 'Just now'} · {OUTLET_NAME[seen]}</p>
+              </div>
+            </div>
+            {untouched ? (
+              <p className="px-3 py-6 text-sm text-slate-400">Your post shows here as you write it.</p>
+            ) : (
+              <>
+                {seen === 'google_business' && d.image && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={d.image} alt="" className="mt-3 aspect-[4/3] w-full object-cover" />
+                )}
+                <div className="px-3 py-3">
+                  {seen === 'google_business' && dated && (
+                    <>
+                      {d.title && <p className="text-sm font-semibold">{d.title}</p>}
+                      {d.startDate && <p className="text-xs text-slate-500">{d.startDate}{d.startTime ? ' ' + d.startTime : ''}{d.endDate ? ' – ' + d.endDate + (d.endTime ? ' ' + d.endTime : '') : ''}</p>}
+                    </>
+                  )}
+                  {d.body.trim() && <p className="mt-1 whitespace-pre-wrap break-words text-sm">{d.body.trim().slice(0, OUTLET_TEXT_MAX[seen])}</p>}
+                  {seen === 'google_business' && d.format === 'offer' && d.coupon && <p className="mt-2 inline-block rounded border border-dashed border-slate-400 px-2 py-1 text-xs font-semibold">{d.coupon}</p>}
+                  {seen === 'google_business' && d.cta && <p className="mt-2 text-sm font-semibold text-blue-600">{CTA.find((c) => c.value === d.cta)?.label}</p>}
+                </div>
+                {seen !== 'google_business' && d.image && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={d.image} alt="" className="w-full object-cover" />
+                )}
+                {/* Facebook turns the button link into a link card when there is no photo. */}
+                {seen === 'facebook' && !d.image && google && d.cta && d.cta !== 'CALL' && /^https:\/\/\S+$/.test(d.ctaUrl.trim()) && (
+                  <p className="truncate border-t border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-600">{d.ctaUrl.trim().replace(/^https:\/\//, '').split('/')[0]}</p>
+                )}
+              </>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-slate-500">A rough look. Each network lays it out its own way.</p>
+        </aside>
       </div>
 
-      {dated && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <label className="text-sm font-medium">{d.format === 'event' ? 'Event name' : 'Offer headline'} <span className="ml-1 text-xs text-slate-500">{d.title.length} / 58{d.format === 'offer' ? ' · optional' : ''}</span></label>
-            <input className={input + ' mt-1.5'} value={d.title} onChange={(e) => set('title', e.target.value)} placeholder={d.format === 'event' ? 'Open house' : '10% off roof washing'} />
-          </div>
-          <div>
-            <label className="text-sm font-medium">Starts</label>
-            <div className="mt-1.5 flex gap-2"><input type="date" className={small} value={d.startDate} onChange={(e) => set('startDate', e.target.value)} /><input type="time" className={small} value={d.startTime} onChange={(e) => set('startTime', e.target.value)} aria-label="Start time (optional)" /></div>
-          </div>
-          <div>
-            <label className="text-sm font-medium">Ends</label>
-            <div className="mt-1.5 flex gap-2"><input type="date" className={small} value={d.endDate} onChange={(e) => set('endDate', e.target.value)} /><input type="time" className={small} value={d.endTime} onChange={(e) => set('endTime', e.target.value)} aria-label="End time (optional)" /></div>
-          </div>
-        </div>
-      )}
-
-      {d.format !== 'photo' && (
-        <div>
-          <label className="text-sm font-medium">{d.format === 'standard' ? 'Post' : 'Details'} <span className={'ml-1 text-xs ' + (d.body.trim().length > BODY_MAX ? 'text-rose-300' : 'text-slate-500')}>{d.body.trim().length} / {BODY_MAX}</span></label>
-          <textarea className={input + ' mt-1.5 h-28'} value={d.body} onChange={(e) => set('body', e.target.value)} placeholder="What should customers know?" />
-        </div>
-      )}
-
-      {d.format === 'offer' && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div><label className="text-sm font-medium">Coupon code <span className="text-xs text-slate-500">optional</span></label><input className={input + ' mt-1.5'} value={d.coupon} onChange={(e) => set('coupon', e.target.value)} /></div>
-          <div><label className="text-sm font-medium">Link to redeem <span className="text-xs text-slate-500">optional</span></label><input className={input + ' mt-1.5'} value={d.redeemUrl} onChange={(e) => set('redeemUrl', e.target.value)} placeholder="https://" /></div>
-          <div className="sm:col-span-2"><label className="text-sm font-medium">Terms <span className="text-xs text-slate-500">optional</span></label><input className={input + ' mt-1.5'} value={d.terms} onChange={(e) => set('terms', e.target.value)} /></div>
-        </div>
-      )}
-
-      <div>
-        <label className="text-sm font-medium">Photo {d.format !== 'photo' && <span className="text-xs text-slate-500">optional</span>}</label>
-        {d.image ? (
-          <div className="mt-1.5 flex items-start gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={d.image} alt="The photo for this post" className="h-24 w-32 rounded-lg border border-slate-700 object-cover" />
-            <button type="button" onClick={() => set('image', '')} className="text-sm text-slate-400 hover:text-rose-300">Remove photo</button>
-          </div>
-        ) : (
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-            <label className="cursor-pointer rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500">Choose a photo<input type="file" accept="image/jpeg,image/png" className="sr-only" onChange={(e) => { pickImage(e.target.files?.[0]); e.target.value = ''; }} /></label>
-            <span className="text-xs text-slate-500">or</span>
-            <input className={input + ' max-w-sm'} placeholder="https:// link to a JPG or PNG" onBlur={(e) => e.target.value.trim() && set('image', e.target.value.trim())} />
-          </div>
-        )}
-        <p className="mt-1 text-xs text-slate-500">JPG or PNG. Large photos are made smaller before sending. One photo a post; Google does not take video here.</p>
-      </div>
-
-      {d.format !== 'photo' && (
-        <div className="grid gap-3 sm:grid-cols-[12rem_1fr]">
-          <div><label className="text-sm font-medium">Button</label><select className={input + ' mt-1.5'} value={d.cta} onChange={(e) => set('cta', e.target.value)}>{CTA.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
-          {d.cta && d.cta !== 'CALL' && <div><label className="text-sm font-medium">Button link</label><input className={input + ' mt-1.5'} value={d.ctaUrl} onChange={(e) => set('ctaUrl', e.target.value)} placeholder="https://" /></div>}
-          {d.cta === 'CALL' && <p className="self-end pb-2 text-xs text-slate-500">Calls the number on the listing.</p>}
-        </div>
-      )}
-
+      {/* One bar to finish: when it goes, and the button that sends it. */}
       <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3 text-sm">
           <label className="flex items-center gap-2"><input type="radio" name="when" checked={!later} onChange={() => { setLater(false); set('scheduledAt', ''); }} className="accent-emerald-500" />Post now</label>
           <label className="flex items-center gap-2"><input type="radio" name="when" checked={later} onChange={() => { setLater(true); set('scheduledAt', nextWeeklySlot(slot.day, slot.time, scheduled).toISOString()); }} className="accent-emerald-500" />Schedule</label>
           {later && <input type="datetime-local" className={small} value={d.scheduledAt ? localValue(new Date(d.scheduledAt)) : ''} onChange={(e) => set('scheduledAt', e.target.value ? new Date(e.target.value).toISOString() : '')} aria-label="When to post" />}
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
+            {problem && !untouched && <span className="text-xs text-amber-300">{problem}</span>}
+            {note && <span className="text-xs text-emerald-300">{note}</span>}
+            <button type="button" onClick={send} disabled={Boolean(busy) || Boolean(problem)} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40">
+              {busy === 'send' ? 'Sending…' : (d.scheduledAt ? 'Schedule' : 'Post') + (ready.length > 0 && targets.length > 0 ? ' to ' + targets.map((t) => OUTLET_NAME[t]).join(' + ') : '')}
+            </button>
+          </div>
         </div>
         {later && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
@@ -277,51 +429,11 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
           </div>
         )}
       </div>
-
-      {ready.length > 0 && (
-        <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-          <legend className="sr-only">Where this post goes</legend>
-          <span className="text-xs text-slate-400">Post to</span>
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-200" title={google ? 'Going to the Google listing. Untick to leave Google out of this post.' : 'Tick to send this post to the Google listing too.'}>
-            <input type="checkbox" checked={google} onChange={() => setOff((x) => (x.includes('google_business') ? x.filter((y) => y !== 'google_business') : [...x, 'google_business']))} className="h-4 w-4 accent-emerald-500" />
-            <OutletMark outlet="google_business" on={google} size={20} /> Google
-          </label>
-          {ready.map((o) => {
-            const why = whyNot(o);
-            const on = sending.includes(o.outlet);
-            return (
-              <label
-                key={o.outlet}
-                className={'inline-flex items-center gap-1.5 ' + (why ? 'cursor-not-allowed text-slate-500' : 'cursor-pointer text-slate-200')}
-                title={why ?? (on ? `Going to ${o.chosen!.name}. Untick to leave ${OUTLET_NAME[o.outlet]} out of this post.` : `Tick to send this post to ${o.chosen!.name} too.`)}
-              >
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-emerald-500"
-                  checked={on}
-                  disabled={Boolean(why)}
-                  onChange={() => setOff((x) => (x.includes(o.outlet) ? x.filter((y) => y !== o.outlet) : [...x, o.outlet]))}
-                />
-                <OutletMark outlet={o.outlet} on={on} size={20} /> {OUTLET_NAME[o.outlet]}
-                {/* Why an outlet is left out is said once there is a post to judge, not on an empty form. */}
-                {why && !untouched && <span className="text-xs text-amber-300/90">· {why}</span>}
-              </label>
-            );
-          })}
-          {sending.length > 0 && <span className="basis-full text-xs text-slate-500">Same text and photo everywhere · {textMax.toLocaleString()} characters{google ? ' (Google’s limit). Buttons, offers and event dates show on Google only.' : '. Without Google this is a plain update: no button, offer or event.'}</span>}
-        </fieldset>
-      )}
-
-      <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={send} disabled={Boolean(busy) || Boolean(problem)} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40">{busy === 'send' ? 'Sending…' : d.scheduledAt ? 'Schedule' : 'Post'}{busy !== 'send' && ready.length > 0 && (google || sending.length > 0) ? ' to ' + [...(google ? ['Google'] : []), ...sending.map((o) => OUTLET_NAME[o])].join(' + ') : ''}</button>
-        {problem && !untouched && <span className="text-xs text-amber-300">{problem}</span>}
-        {note && <span className="text-xs text-emerald-300">{note}</span>}
-      </div>
       {error && <p className="text-sm text-rose-300">{error}</p>}
 
       <div className="border-t border-slate-800 pt-4">
-        <p className="text-sm font-medium">Sent from here</p>
-        {posts === null ? <p className="mt-2 text-xs text-slate-500">Reading posts…</p> : posts.length === 0 ? <p className="mt-2 text-xs text-slate-500">Nothing yet. Posts made on Google itself are not listed here.</p> : (
+        <p className="text-sm font-medium">Scheduled &amp; Published</p>
+        {posts === null ? <p className="mt-2 text-xs text-slate-500">Reading posts…</p> : posts.length === 0 ? <p className="mt-2 text-xs text-slate-500">Nothing yet. Posts made on the networks themselves are not listed here.</p> : (
           <ul className="mt-2 divide-y divide-slate-800">
             {posts.map((p) => (
               <li key={p.id} className="flex gap-3 py-3">
@@ -350,7 +462,7 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
                   <div className="mt-1.5 flex flex-wrap gap-3 text-xs">
                     {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-sky-300">See it on Google</a>}
                     {sure === p.id
-                      ? <><button type="button" onClick={() => remove(p)} disabled={Boolean(busy)} className="text-rose-300 hover:underline">{busy === p.id ? 'Removing…' : p.state === 'published' ? 'Yes, take it off Google' : 'Yes, cancel it'}</button><button type="button" onClick={() => setSure('')} className="text-slate-400 hover:underline">Keep it</button></>
+                      ? <><button type="button" onClick={() => remove(p)} disabled={Boolean(busy)} className="text-rose-300 hover:underline">{busy === p.id ? 'Removing…' : p.state === 'published' ? (p.also ?? []).length ? 'Yes, take it down everywhere' : 'Yes, take it off Google' : 'Yes, cancel it'}</button><button type="button" onClick={() => setSure('')} className="text-slate-400 hover:underline">Keep it</button></>
                       : <button type="button" onClick={() => setSure(p.id)} className="text-slate-400 hover:text-rose-300">{p.state === 'scheduled' ? 'Cancel' : 'Remove'}</button>}
                   </div>
                 </div>

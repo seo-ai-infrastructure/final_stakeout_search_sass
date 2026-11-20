@@ -409,7 +409,7 @@ export default function GbpEditor() {
 
           {view === 'insights' && <SearchInsights profile={pick.profile} location={pick.location} businessName={live.title ?? ''} place={[live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(' ')} website={live.websiteUri ?? ''} onOpen={paidListing ? (what) => setView(what) : undefined} />}
           {view !== 'insights' && !paidListing && <UpgradeCard profile={pick.profile} location={pick.location} name={live.title ?? 'this listing'} what={view === 'edit' ? 'Editing' : view === 'posts' ? 'Posting' : 'Reviews'} onDone={() => { readProfiles(); setNotice('This listing is on the Manage plan.'); }} />}
-          {view === 'posts' && paidListing && <GbpPosts profile={pick.profile} location={pick.location} />}
+          {view === 'posts' && paidListing && <GbpPosts profile={pick.profile} location={pick.location} name={live.title ?? openName} />}
           {view === 'reviews' && paidListing && profiles && <GbpReviews key={pick.location} profiles={profiles} only={pick} oneListing={!admin} onOpenListing={(p) => { setPick(p); setView('insights'); }} />}
 
           {view === 'edit' && paidListing && (

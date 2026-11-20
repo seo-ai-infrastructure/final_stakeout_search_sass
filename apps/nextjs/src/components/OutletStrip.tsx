@@ -49,7 +49,7 @@ async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> 
  *
  * Draws nothing where the feature is not open (the server says so), so it can sit on any listing.
  */
-export default function OutletStrip({ profile, location, onChange }: { profile: string; location: string; onChange?: (o: Outlet[], off: Tick[]) => void }) {
+export default function OutletStrip({ profile, location, name = '', onChange }: { profile: string; location: string; name?: string; onChange?: (o: Outlet[], off: Tick[]) => void }) {
   const [outlets, setOutlets] = useState<Outlet[] | null>(null);
   const [open, setOpen] = useState<ExtraOutlet | null>(null);
   const [busy, setBusy] = useState('');
@@ -104,9 +104,9 @@ export default function OutletStrip({ profile, location, onChange }: { profile: 
   return (
     <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-1 text-xs text-slate-400">This business posts to</span>
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 py-0.5 pl-0.5 pr-2.5 text-xs text-slate-200" title="The Google listing: every post goes here">
-          <OutletMark outlet="google_business" /> Google
+        <span className="mr-1 text-xs text-slate-400">Connected accounts</span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 py-0.5 pl-0.5 pr-2.5 text-xs text-slate-200" title="The Google listing">
+          <OutletMark outlet="google_business" /> <span className="max-w-[14rem] truncate">{name || 'Google'}</span>
         </span>
         {outlets.map((o) => {
           const ready = o.connected && o.chosen;
@@ -122,7 +122,7 @@ export default function OutletStrip({ profile, location, onChange }: { profile: 
               className={'inline-flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 text-xs ' + (ready ? 'border-slate-700 text-slate-200' : o.connected ? 'border-amber-400/60 text-amber-300' : 'border-dashed border-slate-700 text-slate-400 hover:border-slate-500 hover:text-slate-200')}
             >
               <OutletMark outlet={o.outlet} on={Boolean(ready)} />
-              {busy === o.outlet + 'connect' ? 'Opening…' : ready ? o.chosen!.name : o.connected ? 'Choose a Page' : 'Connect ' + label}
+              <span className="max-w-[14rem] truncate">{busy === o.outlet + 'connect' ? 'Opening…' : ready ? o.chosen!.name : o.connected ? 'Choose a Page' : 'Connect ' + label}</span>
             </button>
           );
         })}

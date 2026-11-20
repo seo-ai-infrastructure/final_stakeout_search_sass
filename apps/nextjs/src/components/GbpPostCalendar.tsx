@@ -7,7 +7,7 @@ const small = input.replace('w-full ', '');
 const btn = 'rounded-lg border border-slate-700 px-3 py-1.5 text-sm hover:border-slate-500 disabled:opacity-40';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DOT: Record<GbpPost['state'], string> = { scheduled: 'bg-sky-400', publishing: 'bg-amber-400', published: 'bg-emerald-400', failed: 'bg-rose-400', draft: 'bg-slate-500' };
-const STATE_TEXT: Record<GbpPost['state'], string> = { scheduled: 'Scheduled', publishing: 'Publishing', published: 'On Google', failed: 'Failed', draft: 'Draft' };
+const STATE_TEXT: Record<GbpPost['state'], string> = { scheduled: 'Scheduled', publishing: 'Publishing', published: 'Published', failed: 'Failed', draft: 'Draft' };
 const PLAN_KEY = 'stakeout.gbp.plan';
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 const dayName = (ymd: string) => new Date(ymd + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
