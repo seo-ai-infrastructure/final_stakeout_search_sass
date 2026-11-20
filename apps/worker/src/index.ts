@@ -22,6 +22,7 @@ import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
 import { logDataHistory } from './dataHistory';
+import { evidencePeek } from './evidencePeek';
 import { powerTick, powerReport } from './power';
 import { forceIdle, idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
 import { phoneTailKey } from '@stakeout/core/idleProxy';
@@ -878,6 +879,8 @@ setTimeout(() => {
 // Stored files: what R2 holds and what nothing points at any more, once in 20 hours (looked at
 // hourly). Report only, unless R2_CLEANUP=delete.
 setTimeout(() => void r2DryRunDaily(), 240_000);
+// A one-off look inside stored evidence (EVIDENCE_PEEK), written to the database.
+setTimeout(() => void evidencePeek().catch((e) => console.warn('[peek] skipped:', (e as Error).message)), 20_000);
 // What the phones themselves recorded about their data use (the last hours, by app): logged once.
 setTimeout(() => void logDataHistory().catch((e) => console.warn('[data-history] skipped:', (e as Error).message)), 150_000);
 setInterval(() => void r2DryRunDaily(), 3600_000);
