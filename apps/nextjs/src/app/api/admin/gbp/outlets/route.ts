@@ -3,7 +3,8 @@ import { InputError } from '@stakeout/core/grid';
 import { isExtraOutlet } from '@stakeout/core/outlets';
 import { errorResponse } from '@/lib/api';
 import { gate } from '@/lib/gbpAccess';
-import { chooseOutlet, connectOutlet, forgetOutlet, outletStrip, placementsOf, savedOutlets } from '@/lib/outlets';
+import { chooseOutlet, connectOutlet, forgetOutlet, outletStrip, placementsOf, savedOutlets, savedTicksOff } from '@/lib/outlets';
+import { rankChoices } from '@stakeout/core/outlets';
 
 export const maxDuration = 30;
 
@@ -25,9 +26,13 @@ export async function GET(req: Request) {
     if (isExtraOutlet(list)) {
       const saved = (await savedOutlets(t))[list];
       const row = outlets.find((o) => o.outlet === list);
-      if (row && saved) row.choices = await placementsOf(saved.profile).catch(() => null);
+      if (row && saved) {
+        const all = await placementsOf(saved.profile).catch(() => null);
+        const name = (await placementsOf(t.profile).catch(() => [])).find((x) => x.id === t.location)?.name ?? '';
+        row.choices = all && all.length > 1 ? rankChoices(name, all) : all;
+      }
     }
-    return NextResponse.json({ outlets });
+    return NextResponse.json({ outlets, off: await savedTicksOff(t) });
   } catch (e) {
     return errorResponse(e);
   }
@@ -51,7 +56,7 @@ export async function POST(req: Request) {
     if (b.action === 'choose') await chooseOutlet(t, b.outlet, typeof b.placement === 'string' && b.placement ? b.placement : null);
     else if (b.action === 'forget') await forgetOutlet(t, b.outlet);
     else throw new InputError('Unknown action.');
-    return NextResponse.json({ outlets: await outletStrip(t) });
+    return NextResponse.json({ outlets: await outletStrip(t), off: await savedTicksOff(t) });
   } catch (e) {
     return errorResponse(e);
   }

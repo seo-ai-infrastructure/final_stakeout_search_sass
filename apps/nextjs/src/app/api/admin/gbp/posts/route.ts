@@ -7,8 +7,8 @@ import { allow, gate, paidLocations } from '@/lib/gbpAccess';
 import { postproxy } from '@/lib/postproxy';
 import { BODY_MAX, emptyDraft, postProblem, postRequest, readPost, type GbpPost, type PostDraft } from '@stakeout/core/gbpPosts';
 import { queuesOf } from '@/lib/gbpQueues';
-import { isExtraOutlet, outletProblem, withOutlets, type ListingOutlets } from '@stakeout/core/outlets';
-import { outletsToSend } from '@/lib/outlets';
+import { buildPostRequest, draftProblem, EXTRA_OUTLETS, isExtraOutlet, OUTLET_NAME, type ListingOutlets } from '@stakeout/core/outlets';
+import { forgetPostOwner, isPostOwner, outletsToSend, postsOwnedBy, recordPostOwner, saveTicksOff, type Tick } from '@/lib/outlets';
 
 export const maxDuration = 60;
 
@@ -40,6 +40,16 @@ export async function GET(req: Request) {
       }
       if (rows.length < 100) break;
     }
+    // Posts made here for this listing that have no Google copy (sent to Facebook or LinkedIn only):
+    // found through our own record of which listing each was made for.
+    const have = new Set(posts.map((p) => p.id));
+    const more = (await postsOwnedBy(t).catch(() => [])).filter((id) => !have.has(id)).slice(0, 40);
+    await Promise.all(
+      more.map(async (id) => {
+        const p = readPost(await postproxy('/api/posts/' + encodeURIComponent(id)).catch(() => null), t.location);
+        if (p && p.location === t.location) posts.push(p);
+      }),
+    );
     const waiting = posts.filter((p) => p.state === 'scheduled').sort((a, b) => String(a.at).localeCompare(String(b.at)));
     const rest = posts.filter((p) => p.state !== 'scheduled').sort((a, b) => String(b.at).localeCompare(String(a.at)));
     return NextResponse.json({ posts: [...waiting, ...rest] });
@@ -92,7 +102,8 @@ async function everyPost() {
 async function ownPost(t: { profile: string; location: string }, id: string) {
   if (!/^[A-Za-z0-9_-]{3,80}$/.test(id)) throw new InputError('Unknown post.');
   const raw = await postproxy('/api/posts/' + encodeURIComponent(id)).catch(() => null);
-  const post = readPost(raw);
+  // By its Google copy; one with no Google copy, by our record of the listing it was made for.
+  const post = readPost(raw) ?? ((await isPostOwner(id, t).catch(() => false)) ? readPost(raw, t.location) : null);
   if (!post || post.location !== t.location) throw new InputError('Unknown post.', 404);
   return post;
 }
@@ -124,22 +135,20 @@ async function statsOf(t: { profile: string; location: string }, list: string) {
  */
 export async function POST(req: Request) {
   try {
-    const b = (await req.json()) as { profile?: unknown; location?: unknown; draft?: unknown; queue?: unknown; priority?: unknown; outlets?: unknown };
+    const b = (await req.json()) as { profile?: unknown; location?: unknown; draft?: unknown; queue?: unknown; priority?: unknown; outlets?: unknown; google?: unknown };
     const t = await gate(b.profile, b.location, 'manage');
     const draft = draftOf(b.draft);
-    const problem = postProblem(draft);
+    // Where it goes: Google unless left out, and the listing's Facebook Page and LinkedIn page when
+    // asked (the other outlets, and leaving Google out, are for admins only for now).
+    const google = b.google !== false;
+    const asked = Array.isArray(b.outlets) ? b.outlets.map(String) : [];
+    if ((asked.length || !google) && t.u.role !== 'ADMIN') throw new InputError('Posting to other networks is not open on this account yet.', 403);
+    const send: ListingOutlets = asked.length ? await outletsToSend(t, asked) : {};
+    const missing = asked.filter(isExtraOutlet).find((o) => !send[o]);
+    if (missing) throw new InputError(`${OUTLET_NAME[missing]} is not connected for this listing.`);
+    const problem = draftProblem(draft, google, send);
     if (problem) throw new InputError(problem);
-    // The same post to the listing's Facebook Page and LinkedIn page too, when asked (admins only for now).
-    let send: ListingOutlets = {};
-    if (Array.isArray(b.outlets) && b.outlets.length) {
-      if (t.u.role !== 'ADMIN') throw new InputError('Posting to other networks is not open on this account yet.', 403);
-      send = await outletsToSend(t, b.outlets);
-      for (const o of b.outlets.map(String).filter(isExtraOutlet)) {
-        const why = outletProblem(draft, o, send[o]);
-        if (why) throw new InputError(why);
-      }
-    }
-    const body: Record<string, unknown> = withOutlets(postRequest(draft, t.profile, t.location), draft, send);
+    const body: Record<string, unknown> = buildPostRequest(draft, google ? { profile: t.profile, location: t.location } : null, send);
     if (b.queue !== undefined) {
       if (draft.scheduledAt) throw new InputError('A queued post takes the queue’s next slot: leave the time out.');
       const queue = (await queuesOf(t.u, t.profile)).find((x) => x.id === String(b.queue));
@@ -149,8 +158,14 @@ export async function POST(req: Request) {
       body.queue_id = queue.id;
       body.queue_priority = ['high', 'medium', 'low'].includes(String(b.priority)) ? String(b.priority) : 'medium';
     }
-    const made = await postproxy('/api/posts', { method: 'POST', body });
-    return NextResponse.json({ post: readPost(made) });
+    const made = await postproxy<{ id?: string }>('/api/posts', { method: 'POST', body });
+    // Which listing it was made for is written down, and the ticks are remembered for the next post.
+    if (made?.id) await recordPostOwner(String(made.id), t).catch((e) => console.warn('[posts] owner not recorded:', (e as Error).message));
+    if (t.u.role === 'ADMIN') {
+      const off: Tick[] = [...(google ? [] : ['google_business' as const]), ...EXTRA_OUTLETS.filter((o) => !send[o])];
+      await saveTicksOff(t, off).catch(() => {});
+    }
+    return NextResponse.json({ post: readPost(made, t.location) });
   } catch (e) {
     return errorResponse(e);
   }
@@ -172,11 +187,12 @@ export async function PATCH(req: Request) {
     const text = (k: string) => (typeof c[k] === 'string' ? (c[k] as string).trim() : undefined);
     const https = (v: string | undefined) => v === undefined || v === '' || /^https:\/\/\S+$/.test(v);
     const out: { post: Record<string, string>; platforms?: { google_business: Record<string, string> }; media?: string[] } = { post: {} };
+    const limit = post.google ? BODY_MAX : 3000;
     const g: Record<string, string> = {};
     const words = text('body');
     if (words !== undefined) {
       if (!words) throw new InputError('The post needs some text.');
-      if (words.length > BODY_MAX) throw new InputError(`The post is ${words.length} characters; Google allows ${BODY_MAX}.`);
+      if (words.length > limit) throw new InputError(`The post is ${words.length} characters; ${post.google ? 'Google' : 'this post'} allows ${limit}.`);
       out.post.body = words;
     }
     const at = text('scheduledAt');
@@ -201,10 +217,11 @@ export async function PATCH(req: Request) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new InputError('Dates are written YYYY-MM-DD.');
       g[to] = v;
     }
+    if (Object.keys(g).length && !post.google) throw new InputError('This post is not on Google, so it has no button, title or dates to change.');
     if (Object.keys(g).length) out.platforms = { google_business: g };
     if (!Object.keys(out.post).length && !out.platforms && !out.media) throw new InputError('Say what to change: body, image, scheduledAt, cta, ctaUrl, title, startDate or endDate.');
     const made = await postproxy('/api/posts/' + encodeURIComponent(post.id), { method: 'PATCH', body: out });
-    return NextResponse.json({ post: readPost(made) ?? (await ownPost(t, post.id)) });
+    return NextResponse.json({ post: readPost(made, t.location) ?? (await ownPost(t, post.id)) });
   } catch (e) {
     return errorResponse(e);
   }
@@ -220,16 +237,43 @@ export async function DELETE(req: Request) {
     const q = new URL(req.url).searchParams;
     const id = String(q.get('id') ?? '');
     if (!/^[A-Za-z0-9_-]{3,80}$/.test(id)) throw new InputError('Unknown post.');
+    const raw = await postproxy<{ platforms?: { platform?: string; status?: string; params?: { location_id?: unknown } }[] }>('/api/posts/' + encodeURIComponent(id)).catch(() => null);
     if (u.role !== 'ADMIN') {
       // A customer may only take down a post on one of their own paid listings: the post says which listing it is on.
-      const raw = await postproxy<{ platforms?: { platform?: string; params?: { location_id?: unknown } }[] }>('/api/posts/' + encodeURIComponent(id)).catch(() => null);
       const g = raw?.platforms?.find((p) => p.platform === 'google_business');
       const profile = String(q.get('profile') ?? ''), location = String(g?.params?.location_id ?? '');
       if (!g || !location) throw new InputError('Unknown post.', 404);
       await allow(u, profile, location, 'manage');
     }
-    await postproxy('/api/posts/' + encodeURIComponent(id), { method: 'DELETE', query: { delete_on_platform: q.get('google') === '1' ? 'true' : undefined } });
-    return NextResponse.json({ ok: true });
+    // A published post is taken down everywhere it went, in one request. When that is refused as a
+    // whole, each place is asked on its own, so one that cannot take a post down is named and the
+    // rest still go.
+    const notes: string[] = [];
+    const everywhere = q.get('google') === '1';
+    const one = '/api/posts/' + encodeURIComponent(id);
+    const label = (x?: string) => (x === 'google_business' ? 'Google' : isExtraOutlet(x) ? OUTLET_NAME[x] : String(x ?? 'One outlet'));
+    try {
+      await postproxy(one, { method: 'DELETE', query: { delete_on_platform: everywhere ? 'true' : undefined } });
+    } catch (e) {
+      if (!everywhere) throw e;
+      const started: string[] = [];
+      for (const p of (raw?.platforms ?? []).filter((x) => x.status === 'published')) {
+        await postproxy(one + '/delete_on_platform', { method: 'POST', body: { network: p.platform } }).then(
+          () => started.push(label(p.platform)),
+          (err) => notes.push(`${label(p.platform)} could not take it down (${err instanceof Error ? err.message : 'refused'}): remove it there by hand.`),
+        );
+      }
+      if (started.length) {
+        // Those take a moment to finish, so the post stays listed here until they have.
+        notes.unshift(`Being taken down from ${started.join(' and ')}.`);
+        notes.push('Press Remove again in a minute to clear it from this list.');
+        return NextResponse.json({ ok: true, notes });
+      }
+      await postproxy(one, { method: 'DELETE' });
+      notes.push('It is cleared from this list.');
+    }
+    await forgetPostOwner(id).catch(() => 0);
+    return NextResponse.json({ ok: true, notes });
   } catch (e) {
     return errorResponse(e);
   }

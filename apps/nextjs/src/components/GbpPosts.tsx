@@ -1,8 +1,8 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import GbpPostCalendar from '@/components/GbpPostCalendar';
-import OutletStrip, { OutletMark, type Outlet } from '@/components/OutletStrip';
-import { OUTLET_NAME, OUTLET_TEXT_MAX, outletProblem, type ExtraOutlet } from '@stakeout/core/outlets';
+import OutletStrip, { OutletMark, type Outlet, type Tick } from '@/components/OutletStrip';
+import { draftProblem, OUTLET_NAME, OUTLET_TEXT_MAX, outletProblem, type ListingOutlets } from '@stakeout/core/outlets';
 import { BODY_MAX, CTA, emptyDraft, nextWeeklySlot, postProblem, type GbpPost, type PostDraft, type PostFormat } from '@stakeout/core/gbpPosts';
 
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
@@ -17,7 +17,7 @@ const FORMATS: [PostFormat, string, string][] = [
 const STATE: Record<GbpPost['state'], { text: string; tone: string }> = {
   scheduled: { text: 'Scheduled', tone: 'text-sky-300' },
   publishing: { text: 'Publishing…', tone: 'text-amber-300' },
-  published: { text: 'On Google', tone: 'text-emerald-300' },
+  published: { text: 'Published', tone: 'text-emerald-300' },
   failed: { text: 'Failed', tone: 'text-rose-300' },
   draft: { text: 'Draft', tone: 'text-slate-400' },
 };
@@ -73,7 +73,8 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   const composer = useRef<HTMLDivElement>(null);
   // The listing's other outlets (Facebook, LinkedIn), and which of them this post is switched off for.
   const [outlets, setOutlets] = useState<Outlet[]>([]);
-  const [off, setOff] = useState<ExtraOutlet[]>([]);
+  const [off, setOff] = useState<Tick[]>([]);
+  const gotOutlets = useCallback((list: Outlet[], last: Tick[]) => { setOutlets(list); setOff(last); }, []);
 
   const load = useCallback(async () => {
     try {
@@ -91,16 +92,19 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
 
   const set = <K extends keyof PostDraft>(k: K, v: PostDraft[K]) => { setD((x) => ({ ...x, [k]: v })); setNote(''); };
   const scheduled = useMemo(() => (posts ?? []).filter((p) => p.state === 'scheduled' && p.at).map((p) => p.at as string), [posts]);
-  const problem = postProblem(d);
   // An outlet takes this post when it is connected, a Page is chosen, and the post suits it. Each
-  // starts switched on; one that cannot take the post says why and is left out.
+  // starts as it was left on this listing's last post; one that cannot take the post says why and
+  // is left out. Google is a tick like the others once another outlet is there to carry the post.
   const ready = outlets.filter((o) => o.connected && o.chosen);
   // On an empty form nothing is judged yet: the ticks show what a post will go to once written.
   const fresh = !d.body && !d.image && !d.title && !d.startDate;
   const whyNot = (o: Outlet) => outletProblem(fresh ? { ...d, body: 'x' } : d, o.outlet, o.chosen ? { profile: '', placement: o.chosen.id, name: o.chosen.name } : undefined);
   const sending = ready.filter((o) => !off.includes(o.outlet) && !whyNot(o)).map((o) => o.outlet);
+  const google = ready.length === 0 || !off.includes('google_business');
+  const chosen: ListingOutlets = Object.fromEntries(ready.filter((o) => sending.includes(o.outlet)).map((o) => [o.outlet, { profile: '', placement: o.chosen!.id, name: o.chosen!.name }]));
+  const problem = ready.length ? draftProblem(d, google, chosen) : postProblem(d);
   // The tightest text limit among the outlets this post is going to (Google's, unless that changes).
-  const textMax = Math.min(BODY_MAX, ...sending.map((o) => OUTLET_TEXT_MAX[o]));
+  const textMax = Math.min(...(google ? [BODY_MAX] : []), ...sending.map((o) => OUTLET_TEXT_MAX[o]), google || sending.length ? Infinity : BODY_MAX);
   const dated = d.format === 'offer' || d.format === 'event';
   const untouched = !d.body && !d.image && !d.title && !d.startDate;
 
@@ -112,9 +116,9 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   const send = async () => {
     setBusy('send'); setError(''); setNote('');
     try {
-      await call('/api/admin/gbp/posts', 'POST', { profile, location, draft: d, ...(sending.length ? { outlets: sending } : {}) });
-      const where = sending.length ? ' Also going to ' + sending.map((o) => OUTLET_NAME[o]).join(' and ') + '.' : '';
-      setNote((d.scheduledAt ? 'Scheduled for ' + when(d.scheduledAt) + '.' : 'Sent. It shows as “On Google” below once Google has published it.') + where);
+      await call('/api/admin/gbp/posts', 'POST', { profile, location, draft: d, ...(sending.length ? { outlets: sending } : {}), ...(google ? {} : { google: false }) });
+      const to = [...(google ? ['Google'] : []), ...sending.map((o) => OUTLET_NAME[o])].join(', ');
+      setNote((d.scheduledAt ? 'Scheduled for ' + when(d.scheduledAt) : 'Sent') + ' to ' + to + '. Each one shows below as it publishes.');
       setD(emptyDraft()); setLater(false);
       await load();
     } catch (e) {
@@ -126,8 +130,10 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   const remove = async (p: GbpPost) => {
     setBusy(p.id); setError('');
     try {
-      await call(`/api/admin/gbp/posts?id=${encodeURIComponent(p.id)}&profile=${encodeURIComponent(profile)}${p.state === 'published' ? '&google=1' : ''}`, 'DELETE');
+      const r = await call<{ notes?: string[] }>(`/api/admin/gbp/posts?id=${encodeURIComponent(p.id)}&profile=${encodeURIComponent(profile)}${p.state === 'published' ? '&google=1' : ''}`, 'DELETE');
       setSure(''); await load();
+      // An outlet that could not take the post down is named, so it can be removed there by hand.
+      if (r.notes?.length) setError(r.notes.join(' '));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The post was not removed.');
     } finally {
@@ -154,7 +160,7 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
       <h3 className="font-semibold">Posts</h3>
       {posts !== null && <GbpPostCalendar posts={posts} onDay={writeFor} onSchedule={scheduleOne} onCancel={remove} />}
 
-      <OutletStrip profile={profile} location={location} onChange={setOutlets} />
+      <OutletStrip profile={profile} location={location} onChange={gotOutlets} />
 
       <div ref={composer} className="scroll-mt-20 border-t border-slate-800 pt-4">
         <p className="text-sm font-medium">Write a post</p>
@@ -245,9 +251,9 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
         <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <legend className="sr-only">Where this post goes</legend>
           <span className="text-xs text-slate-400">Post to</span>
-          <label className="inline-flex items-center gap-1.5 text-slate-200" title="Every post goes to the Google listing">
-            <input type="checkbox" checked readOnly disabled className="h-4 w-4 accent-emerald-500" />
-            <OutletMark outlet="google_business" size={20} /> Google
+          <label className="inline-flex cursor-pointer items-center gap-1.5 text-slate-200" title={google ? 'Going to the Google listing. Untick to leave Google out of this post.' : 'Tick to send this post to the Google listing too.'}>
+            <input type="checkbox" checked={google} onChange={() => setOff((x) => (x.includes('google_business') ? x.filter((y) => y !== 'google_business') : [...x, 'google_business']))} className="h-4 w-4 accent-emerald-500" />
+            <OutletMark outlet="google_business" on={google} size={20} /> Google
           </label>
           {ready.map((o) => {
             const why = whyNot(o);
@@ -271,12 +277,12 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
               </label>
             );
           })}
-          {sending.length > 0 && <span className="basis-full text-xs text-slate-500">Same text and photo everywhere · {textMax.toLocaleString()} characters ({textMax === BODY_MAX ? 'Google’s limit' : 'the tightest limit'}). Buttons, offers and event dates show on Google only.</span>}
+          {sending.length > 0 && <span className="basis-full text-xs text-slate-500">Same text and photo everywhere · {textMax.toLocaleString()} characters{google ? ' (Google’s limit). Buttons, offers and event dates show on Google only.' : '. Without Google this is a plain update: no button, offer or event.'}</span>}
         </fieldset>
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={send} disabled={Boolean(busy) || Boolean(problem)} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40">{busy === 'send' ? 'Sending…' : d.scheduledAt ? 'Schedule' : 'Post'}{busy !== 'send' && ready.length > 0 ? ' to ' + ['Google', ...sending.map((o) => OUTLET_NAME[o])].join(' + ') : ''}</button>
+        <button type="button" onClick={send} disabled={Boolean(busy) || Boolean(problem)} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40">{busy === 'send' ? 'Sending…' : d.scheduledAt ? 'Schedule' : 'Post'}{busy !== 'send' && ready.length > 0 && (google || sending.length > 0) ? ' to ' + [...(google ? ['Google'] : []), ...sending.map((o) => OUTLET_NAME[o])].join(' + ') : ''}</button>
         {problem && !untouched && <span className="text-xs text-amber-300">{problem}</span>}
         {note && <span className="text-xs text-emerald-300">{note}</span>}
       </div>
@@ -296,7 +302,7 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
                   {p.error && <p className="mt-1 text-xs text-rose-300">{p.error}</p>}
                   {(p.also ?? []).length > 0 && (
                     <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                      {(p.also ?? []).map((a) => (
+                      {[...(p.google ? [{ outlet: 'google_business' as const, ...p.google }] : []), ...(p.also ?? [])].map((a) => (
                         <span key={a.outlet} className="inline-flex items-center gap-1" title={a.error ?? undefined}>
                           <OutletMark outlet={a.outlet} size={16} on={a.state !== 'failed'} />
                           {a.state === 'published' ? (

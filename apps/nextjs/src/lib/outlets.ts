@@ -1,6 +1,6 @@
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
-import { EXTRA_OUTLETS, isExtraOutlet, type ChosenOutlet, type ExtraOutlet, type ListingOutlets } from '@stakeout/core/outlets';
+import { EXTRA_OUTLETS, isExtraOutlet, rankChoices, type ChosenOutlet, type ExtraOutlet, type ListingOutlets } from '@stakeout/core/outlets';
 import { postproxy } from '@/lib/postproxy';
 
 /**
@@ -28,8 +28,44 @@ export async function savedOutlets(t: { profile: string; location: string }): Pr
   }
 }
 
-async function save(t: { profile: string; location: string }, v: ListingOutlets) {
-  const value = JSON.stringify(v);
+/** The outlets left unticked on this listing's last post ('google_business' included), so the next one starts the same way. */
+export type Tick = ExtraOutlet | 'google_business';
+export async function savedTicksOff(t: { profile: string; location: string }): Promise<Tick[]> {
+  const rows = await db.$queryRaw<{ value: string }[]>`SELECT value FROM "Kept" WHERE scope = 'outlets' AND key = ${keyOf(t)} LIMIT 1`;
+  try {
+    const off = (JSON.parse(rows[0]?.value ?? '{}') as { off?: unknown }).off;
+    return Array.isArray(off) ? (off.filter((x) => x === 'google_business' || isExtraOutlet(x)) as Tick[]) : [];
+  } catch {
+    return [];
+  }
+}
+export async function saveTicksOff(t: { profile: string; location: string }, off: Tick[]) {
+  const [saved, before] = await Promise.all([savedOutlets(t), savedTicksOff(t)]);
+  if ([...off].sort().join() === [...before].sort().join()) return;
+  await save(t, saved, off);
+}
+
+/**
+ * Which listing a post was made for: our own record, written when the post is created. It is what
+ * ties a post to its listing when the post was not sent to Google (a post with a Google copy is
+ * also tied by the location written in that copy, so older posts need no record).
+ */
+export async function recordPostOwner(postId: string, t: { profile: string; location: string }) {
+  await db.$executeRaw`INSERT INTO "Kept" (scope, key, value, "updatedAt") VALUES ('post-owner', ${postId}, ${keyOf(t)}, now()) ON CONFLICT (scope, key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = now()`;
+}
+export async function isPostOwner(postId: string, t: { profile: string; location: string }) {
+  const rows = await db.$queryRaw<{ value: string }[]>`SELECT value FROM "Kept" WHERE scope = 'post-owner' AND key = ${postId} LIMIT 1`;
+  return rows[0]?.value === keyOf(t);
+}
+/** The newest posts recorded for a listing (ids). */
+export async function postsOwnedBy(t: { profile: string; location: string }, limit = 60) {
+  const rows = await db.$queryRaw<{ key: string }[]>`SELECT key FROM "Kept" WHERE scope = 'post-owner' AND value = ${keyOf(t)} ORDER BY "updatedAt" DESC LIMIT ${limit}`;
+  return rows.map((r) => r.key);
+}
+export const forgetPostOwner = (postId: string) => db.$executeRaw`DELETE FROM "Kept" WHERE scope = 'post-owner' AND key = ${postId}`;
+
+async function save(t: { profile: string; location: string }, v: ListingOutlets, off?: Tick[]) {
+  const value = JSON.stringify({ ...v, off: off ?? (await savedTicksOff(t)) });
   await db.$executeRaw`INSERT INTO "Kept" (scope, key, value, "updatedAt") VALUES ('outlets', ${keyOf(t)}, ${value}, now()) ON CONFLICT (scope, key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = now()`;
 }
 
@@ -51,6 +87,9 @@ export const placementsOf = async (profileId: string) =>
  */
 export async function outletStrip(t: { profile: string; location: string }) {
   const [{ profiles }, saved] = await Promise.all([groupOf(t.profile), savedOutlets(t)]);
+  // The listing's own name, to put the Page that looks like it first in a long list.
+  let listing: string | null = null;
+  const named = async () => (listing ??= (await placementsOf(t.profile).catch(() => [])).find((x) => x.id === t.location)?.name ?? '');
   let changed = false;
   const outlets = await Promise.all(
     EXTRA_OUTLETS.map(async (outlet) => {
@@ -62,9 +101,10 @@ export async function outletStrip(t: { profile: string; location: string }) {
         chosen = undefined;
         changed = true;
       }
-      let choices: { id: string | null; name: string }[] | null = null;
+      let choices: { id: string | null; name: string; suggested?: boolean }[] | null = null;
       if (p && !chosen) {
         choices = await placementsOf(p.id).catch(() => null);
+        if (choices && choices.length > 1) choices = rankChoices(await named(), choices);
         if (choices && choices.length === 1) {
           chosen = { profile: p.id, placement: choices[0].id, name: choices[0].name };
           saved[outlet] = chosen;

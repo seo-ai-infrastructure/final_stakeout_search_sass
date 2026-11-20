@@ -41,7 +41,7 @@ export const emptyDraft = (): PostDraft => ({ format: 'standard', body: '', cta:
 const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s + 'T00:00:00Z'));
 const isTime = (s: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 const isHttps = (s: string) => { try { return new URL(s).protocol === 'https:'; } catch { return false; } };
-const isImage = (s: string) => isHttps(s) || /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(s);
+export const isImage = (s: string) => isHttps(s) || /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(s);
 
 /** Why this post cannot be sent, or null. `now` decides what "in the past" means. */
 export function postProblem(d: PostDraft, now: Date = new Date()): string | null {
@@ -67,7 +67,7 @@ export function postProblem(d: PostDraft, now: Date = new Date()): string | null
   return scheduleProblem(d, now);
 }
 
-function scheduleProblem(d: PostDraft, now: Date): string | null {
+export function scheduleProblem(d: PostDraft, now: Date): string | null {
   if (!d.scheduledAt) return null;
   const t = Date.parse(d.scheduledAt);
   if (Number.isNaN(t)) return 'The scheduled time is not a time.';
@@ -107,6 +107,8 @@ export function postRequest(d: PostDraft, profile: string, location: string) {
 export type GbpPost = {
   /** How the same post fared on the other outlets it was sent to (Facebook, LinkedIn); empty when it went to Google alone. */
   also?: OutletResult[];
+  /** The Google copy on its own (null: this post was not sent to Google). `state` above is the post as a whole. */
+  google?: { state: 'waiting' | 'published' | 'failed'; error: string | null; permalink: string | null } | null;
   id: string;
   location: string;
   format: string;
@@ -124,18 +126,39 @@ type Raw = Record<string, unknown>;
 const text = (v: unknown) => (typeof v === 'string' && v ? v : null);
 
 /** One post as the service lists it, for the listing it went to; null when it has no Google listing. */
-export function readPost(raw: unknown): GbpPost | null {
+/**
+ * A post as the posting service has it. A post belongs to a listing by its Google copy (the
+ * location written in it); one that was not sent to Google is read only when `owner` says which
+ * listing it was made for (our own record, see lib/outlets). `state` is the post as a whole:
+ * scheduled until it goes out, published once it is out anywhere, failed when it went nowhere.
+ */
+export function readPost(raw: unknown, owner?: string | null): GbpPost | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Raw;
-  const g = (Array.isArray(r.platforms) ? r.platforms : []).find((p): p is Raw => Boolean(p) && typeof p === 'object' && (p as Raw).platform === 'google_business');
+  const parts = (Array.isArray(r.platforms) ? r.platforms : []).filter((p): p is Raw => Boolean(p) && typeof p === 'object');
+  const g = parts.find((p) => p.platform === 'google_business');
   const params = (g?.params && typeof g.params === 'object' ? g.params : {}) as Raw;
-  const location = text(params.location_id);
-  if (!text(r.id) || !g || !location) return null;
-  const status = String(r.status ?? ''), on = String(g.status ?? '');
+  const location = text(params.location_id) ?? (g ? undefined : owner || undefined);
+  if (!text(r.id) || !location) return null;
+  const status = String(r.status ?? '');
+  const one = (p: Raw) => (String(p.status ?? '') === 'published' ? 'published' : String(p.status ?? '') === 'failed' ? 'failed' : 'waiting') as 'waiting' | 'published' | 'failed';
+  const each = parts.map(one);
   const state: GbpPost['state'] =
-    status === 'draft' ? 'draft' : on === 'failed' || status === 'media_processing_failed' ? 'failed' : on === 'published' ? 'published' : status === 'scheduled' ? 'scheduled' : 'publishing';
+    status === 'draft'
+      ? 'draft'
+      : status === 'media_processing_failed' || (each.length > 0 && each.every((x) => x === 'failed'))
+        ? 'failed'
+        : each.length > 0 && each.every((x) => x === 'published')
+          ? 'published'
+          : status === 'scheduled'
+            ? 'scheduled'
+            : each.some((x) => x === 'published')
+              ? 'published'
+              : 'publishing';
   const media = Array.isArray(r.media) ? (r.media[0] as Raw | string | undefined) : undefined;
   const image = typeof media === 'string' ? media : text((media as Raw | undefined)?.url) ?? text((media as Raw | undefined)?.source_url);
+  const link = (p: Raw | undefined) => (typeof p?.permalink === 'string' && /^https:\/\//.test(p.permalink) ? p.permalink : null);
+  const tried = parts.map((p) => text(p.attempted_at)).find(Boolean);
   return {
     id: String(r.id),
     location,
@@ -143,11 +166,12 @@ export function readPost(raw: unknown): GbpPost | null {
     body: String(r.body ?? ''),
     title: text(params.event_title),
     state,
-    error: text(g.error),
-    at: (state === 'scheduled' ? text(r.scheduled_at) : text(g.attempted_at)) ?? text(r.scheduled_at) ?? text(r.created_at),
-    permalink: typeof g.permalink === 'string' && /^https:\/\//.test(g.permalink) ? g.permalink : null,
+    error: text(g?.error) ?? (state === 'failed' ? text(parts.find((p) => text(p.error))?.error) : null) ?? null,
+    at: (state === 'scheduled' ? text(r.scheduled_at) : tried) ?? text(r.scheduled_at) ?? text(r.created_at),
+    permalink: link(g),
     image: image && /^https:\/\//.test(image) ? image : null,
     also: readOutletResults(raw),
+    google: g ? { state: one(g), error: text(g.error) ?? null, permalink: link(g) } : null,
   };
 }
 

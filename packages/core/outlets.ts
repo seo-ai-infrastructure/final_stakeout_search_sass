@@ -7,7 +7,7 @@
  * A sign-in to Facebook or LinkedIn connects a person, who may manage several Pages. Which Page
  * is this business's is chosen once per listing (the "placement") and remembered.
  */
-import type { PostDraft } from './gbpPosts';
+import { isImage, postProblem, postRequest, scheduleProblem, type PostDraft } from './gbpPosts';
 
 export const EXTRA_OUTLETS = ['facebook', 'linkedin'] as const;
 export type ExtraOutlet = (typeof EXTRA_OUTLETS)[number];
@@ -71,4 +71,60 @@ export function readOutletResults(raw: unknown): OutletResult[] {
     });
   }
   return out;
+}
+
+/**
+ * Why this post cannot be sent as it is (null: it can). With Google ticked, Google's own rules
+ * apply first. Without Google, the post is a plain update for the other outlets: offers, events
+ * and photo-only posts are Google's formats, and there must be somewhere for it to go.
+ */
+export function draftProblem(d: PostDraft, google: boolean, send: ListingOutlets, now: Date = new Date()): string | null {
+  const going = EXTRA_OUTLETS.filter((o) => send[o]);
+  if (!google && !going.length) return 'Tick at least one place for this post to go.';
+  if (google) {
+    const g = postProblem(d, now);
+    if (g) return g;
+  } else {
+    if (d.format !== 'standard') return 'Offers, events and photo-only posts are Google formats. Tick Google, or write this as an update.';
+    if (d.image && !isImage(d.image)) return 'The image must be a JPG or PNG file, or an https link to one.';
+    const when = scheduleProblem(d, now);
+    if (when) return when;
+  }
+  for (const o of going) {
+    const why = outletProblem(d, o, send[o]);
+    if (why) return why;
+  }
+  return null;
+}
+
+/** The request for the posting service: Google's part when it is ticked, plus each chosen outlet. */
+export function buildPostRequest(d: PostDraft, google: { profile: string; location: string } | null, send: ListingOutlets): Request {
+  if (google) return withOutlets(postRequest(d, google.profile, google.location) as Request, d, send);
+  const post: Record<string, string> = { body: d.body.trim() };
+  if (d.scheduledAt) post.scheduled_at = new Date(d.scheduledAt).toISOString();
+  return withOutlets({ post, profiles: [], ...(d.image ? { media: [d.image] } : {}), platforms: {} }, d, send);
+}
+
+const words = (t: string) =>
+  t.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').split(' ').filter((w) => w.length > 1 && !['the', 'and', 'of', 'llc', 'inc', 'co', 'pllc', 'pc', 'llp', 'at', 'law'].includes(w));
+
+/**
+ * The Pages to choose from, with the one that looks like this listing first. `suggested` marks it
+ * when the names share most of their words ("Plano Tree Service" and "Plano Tree Service Pros");
+ * with no clear match the order is left alone and nothing is marked.
+ */
+export function rankChoices<T extends { name: string }>(listing: string, choices: T[]): (T & { suggested: boolean })[] {
+  const want = words(listing);
+  const scored = choices.map((c, i) => {
+    const have = words(c.name);
+    const shared = want.filter((w) => have.includes(w)).length;
+    // How much of each name the other covers: both must be largely the same business name.
+    const score = want.length && have.length ? (shared / want.length + shared / have.length) / 2 : 0;
+    return { c, i, score };
+  });
+  const best = [...scored].sort((a, b) => b.score - a.score || a.i - b.i)[0];
+  const clear = Boolean(best) && best.score >= 0.6;
+  return scored
+    .sort((a, b) => (clear ? Number(b === best) - Number(a === best) : 0) || a.i - b.i)
+    .map((x) => ({ ...x.c, suggested: clear && x === best }));
 }

@@ -10,8 +10,9 @@ export type Outlet = {
   status: string | null;
   expiresAt: string | null;
   chosen: { id: string | null; name: string } | null;
-  choices: { id: string | null; name: string }[] | null;
+  choices: { id: string | null; name: string; suggested?: boolean }[] | null;
 };
+export type Tick = ExtraOutlet | 'google_business';
 
 /** Each network's own colour, used on its mark only. */
 export const OUTLET_MARK: Record<ExtraOutlet | 'google_business', { text: string; color: string }> = {
@@ -48,17 +49,18 @@ async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> 
  *
  * Draws nothing where the feature is not open (the server says so), so it can sit on any listing.
  */
-export default function OutletStrip({ profile, location, onChange }: { profile: string; location: string; onChange?: (o: Outlet[]) => void }) {
+export default function OutletStrip({ profile, location, onChange }: { profile: string; location: string; onChange?: (o: Outlet[], off: Tick[]) => void }) {
   const [outlets, setOutlets] = useState<Outlet[] | null>(null);
   const [open, setOpen] = useState<ExtraOutlet | null>(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [find, setFind] = useState('');
   const base = `profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}`;
 
   const take = useCallback(
-    (list: Outlet[]) => {
+    (list: Outlet[], off: Tick[] = []) => {
       setOutlets(list);
-      onChange?.(list);
+      onChange?.(list, off);
       // A sign-in that manages several Pages and has none chosen for this listing: ask now.
       const ask = list.find((o) => o.connected && !o.chosen && o.choices && o.choices.length > 1);
       if (ask) setOpen((cur) => cur ?? ask.outlet);
@@ -67,23 +69,25 @@ export default function OutletStrip({ profile, location, onChange }: { profile: 
   );
   const load = useCallback(async () => {
     try {
-      take((await call<{ outlets: Outlet[] }>('/api/admin/gbp/outlets?' + base)).outlets);
+      const r = await call<{ outlets: Outlet[]; off?: Tick[] }>('/api/admin/gbp/outlets?' + base);
+      take(r.outlets, r.off ?? []);
     } catch (e) {
       // Not open on this account: the strip simply is not there.
       if ((e as { status?: number }).status === 403) setOutlets([]);
       else setError(e instanceof Error ? e.message : 'Could not read the connected networks.');
     }
   }, [base, take]);
-  useEffect(() => { setOutlets(null); setOpen(null); setError(''); load(); }, [load]);
+  useEffect(() => { setOutlets(null); setOpen(null); setError(''); setFind(''); load(); }, [load]);
 
   if (!outlets || outlets.length === 0) return error ? <p className="text-xs text-rose-300">{error}</p> : null;
 
   const act = async (outlet: ExtraOutlet, action: 'connect' | 'choose' | 'forget', placement?: string | null) => {
     setBusy(outlet + action); setError('');
     try {
-      const r = await call<{ url?: string; outlets?: Outlet[] }>('/api/admin/gbp/outlets', 'POST', { profile, location, outlet, action, placement });
+      const r = await call<{ url?: string; outlets?: Outlet[]; off?: Tick[] }>('/api/admin/gbp/outlets', 'POST', { profile, location, outlet, action, placement });
       if (r.url) { window.location.href = r.url; return; }
-      if (r.outlets) take(r.outlets);
+      if (r.outlets) take(r.outlets, r.off ?? []);
+      setFind('');
       if (action !== 'connect') setOpen(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work.');
@@ -93,7 +97,7 @@ export default function OutletStrip({ profile, location, onChange }: { profile: 
   };
   const change = async (outlet: ExtraOutlet) => {
     setBusy(outlet + 'list');
-    try { take((await call<{ outlets: Outlet[] }>('/api/admin/gbp/outlets?' + base + '&choices=' + outlet)).outlets); } catch (e) { setError(e instanceof Error ? e.message : 'Could not list the Pages.'); } finally { setBusy(''); }
+    try { const r = await call<{ outlets: Outlet[]; off?: Tick[] }>('/api/admin/gbp/outlets?' + base + '&choices=' + outlet); take(r.outlets, r.off ?? []); } catch (e) { setError(e instanceof Error ? e.message : 'Could not list the Pages.'); } finally { setBusy(''); }
   };
   const shown = outlets.find((o) => o.outlet === open) ?? null;
 
@@ -137,22 +141,42 @@ export default function OutletStrip({ profile, location, onChange }: { profile: 
             </div>
           ) : shown.choices && shown.choices.length ? (
             <>
-              <p className="text-slate-200">Which {shown.outlet === 'facebook' ? 'Facebook Page' : 'LinkedIn page'} is this business?</p>
-              <ul className="mt-2 flex flex-wrap gap-2">
-                {shown.choices.map((c) => (
-                  <li key={c.id ?? 'self'}>
-                    <button
-                      type="button"
-                      disabled={Boolean(busy)}
-                      onClick={() => act(shown.outlet, 'choose', c.id)}
-                      className={'rounded-lg border px-3 py-1.5 text-sm ' + (shown.chosen?.id === c.id ? 'border-emerald-500 text-emerald-300' : 'border-slate-700 text-slate-200 hover:border-slate-500')}
-                    >
-                      {c.name}
-                      {c.id === null && <span className="ml-1 text-xs text-slate-500">(own profile)</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="flex flex-wrap items-center gap-3">
+                <p className="text-slate-200">Which {shown.outlet === 'facebook' ? 'Facebook Page' : 'LinkedIn page'} is this business?</p>
+                {/* A long list gets a box to narrow it. */}
+                {shown.choices.length > 8 && (
+                  <input
+                    value={find}
+                    onChange={(e) => setFind(e.target.value)}
+                    placeholder={`Search ${shown.choices.length} pages`}
+                    aria-label="Search the pages"
+                    className="w-56 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-sm text-slate-100 outline-none focus:border-emerald-500"
+                  />
+                )}
+              </div>
+              {(() => {
+                const q = find.trim().toLowerCase();
+                const list = shown.choices.filter((c) => !q || c.name.toLowerCase().includes(q));
+                if (!list.length) return <p className="mt-2 text-xs text-slate-500">No page with “{find.trim()}” in its name.</p>;
+                return (
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {list.map((c) => (
+                      <li key={c.id ?? 'self'}>
+                        <button
+                          type="button"
+                          disabled={Boolean(busy)}
+                          onClick={() => act(shown.outlet, 'choose', c.id)}
+                          className={'rounded-lg border px-3 py-1.5 text-sm ' + (shown.chosen?.id === c.id || c.suggested ? 'border-emerald-500 text-emerald-200' : 'border-slate-700 text-slate-200 hover:border-slate-500')}
+                        >
+                          {c.name}
+                          {c.suggested && <span className="ml-1.5 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-300">Looks like this one</span>}
+                          {c.id === null && <span className="ml-1 text-xs text-slate-500">(own profile)</span>}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
             </>
           ) : (
             <p className="text-slate-400">
