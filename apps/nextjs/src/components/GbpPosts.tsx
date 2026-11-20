@@ -84,6 +84,36 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
     }
   }, [profile, location]);
   useEffect(() => { setPosts(null); setD(emptyDraft()); setLater(false); setError(''); setNote(''); load(); }, [load]);
+  // A post on its way out is watched: the list is read again every few seconds until every place it
+  // went to has answered, so "waiting" turns to "published" without a reload. A scheduled post is
+  // watched from the minute before it is due. Watching stops after ten minutes.
+  const [, setMinute] = useState(0);
+  const anyScheduled = (posts ?? []).some((p) => p.state === 'scheduled');
+  useEffect(() => {
+    if (!anyScheduled) return;
+    const t = setInterval(() => setMinute((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, [anyScheduled]);
+  const pendingKey = (posts ?? [])
+    .filter((p) => {
+      const due = p.at ? new Date(p.at).getTime() - Date.now() : 0;
+      if (p.state === 'scheduled') return due < 60_000 && due > -600_000;
+      const waits = p.state === 'publishing' || p.google?.state === 'waiting' || (p.also ?? []).some((a) => a.state === 'waiting');
+      return waits && due > -600_000;
+    })
+    .map((p) => p.id)
+    .join(',');
+  useEffect(() => {
+    if (!pendingKey) return;
+    const quiet = async () => {
+      try {
+        const r = await call<{ posts: GbpPost[] }>(`/api/admin/gbp/posts?profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}`);
+        setPosts(r.posts);
+      } catch { /* the next look tries again */ }
+    };
+    const t = setInterval(quiet, 6000);
+    return () => clearInterval(t);
+  }, [pendingKey, profile, location, posts]);
   // The weekly slot is remembered on this device.
   useEffect(() => {
     try { const s = JSON.parse(localStorage.getItem(SLOT_KEY) ?? 'null'); if (s && Number.isInteger(s.day) && typeof s.time === 'string') setSlot({ day: s.day, time: s.time }); } catch { /* none saved */ }
