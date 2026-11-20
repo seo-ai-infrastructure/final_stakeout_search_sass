@@ -314,7 +314,9 @@ export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
   // details. A plain line after the bullets have begun is therefore the next business: one the
   // answer names without linking a Google listing (so it has no kgmid).
   let bulleted = false;
-  for (const raw of text.replace(/\r/g, '').split('\n')) {
+  const rawLines = text.replace(/\r/g, '').split('\n');
+  for (let li = 0; li < rawLines.length; li++) {
+    const raw = rawLines[li];
     const line = raw.trim();
     if (!line) {
       blank = true;
@@ -322,6 +324,24 @@ export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
     }
     const afterBlank = blank;
     blank = false;
+    // A written section that lists businesses as bullets: "• Name" (with or without a Google
+    // link) and its details as indented bullets under it. The business is the outer bullet.
+    // (Seen 2026-11-20: such a section came before the answer's business cards, and the tracked
+    // business, named first, was missed because only the cards were read.)
+    const nextRaw = rawLines[li + 1] ?? '';
+    if (/^•\s+\S/.test(raw) && /^[\t ]+[•◦]/.test(nextRaw)) {
+      const linked = /\((https:\/\/www\.google\.com\/search\?kgmid=([^&)\s]+)[^)\s]*)\)/.exec(line);
+      const name = line.replace(/^•\s*/, '').replace(/\s*\(https?:\/\/[^)\s]*\)/g, '').replace(/,?\s*\[\d+\]/g, '').trim();
+      const id = linked ? decodeURIComponent(linked[2]) : '';
+      const known = businesses.some((x) => (id && x.kgmid === id) || norm(x.name) === norm(name));
+      if (name && name.length <= 90 && !/[:?!]$/.test(name) && !known) {
+        cur = { pos: businesses.length + 1, name, kgmid: id, url: linked?.[1] ?? '', rating: null, reviews: null, category: null, lines: [] };
+        businesses.push(cur);
+        blocks.push({ kind: 'business', business: businesses.length - 1 });
+        bulleted = false;
+        continue;
+      }
+    }
     // A business starts its own line; a bullet (detail) that links a kgmid is not a new business.
     const b = line.startsWith('•') ? null : BIZ_LINE.exec(line);
     if (b && !businesses.some((x) => x.kgmid === decodeURIComponent(b[3]))) {
@@ -584,13 +604,19 @@ export function rankWithoutFinder(
   pages: (string | null | undefined)[],
   aiSnapshots: (string | null | undefined)[],
   target: string,
+  /** The AI answer as Google's own "Copy text" gave it: names every business in order, cards or not. */
+  aiCopy?: string | null,
 ): { rank: number | null; list: string[]; from: 'map_pack' | 'single_business' | 'ai_overview_list' | 'none' } {
   const names = (ls: Listing[] | undefined) => (ls ?? []).filter((y) => !y.ad).map((y) => y.name);
   const pack = pages.filter((x): x is string => !!x).map((x) => names(readResultsPage(x)?.pack)).find((l) => l.length) ?? [];
   // No pack: a single-business panel is Google's local answer for this spot, and comes before an AI Overview's list.
   const solo = pack.length ? null : (pages.map((x) => readSoloPanel(x)).find(Boolean) ?? null);
   if (solo) return { rank: sameBusiness(solo.name, target) ? 1 : null, list: [solo.name], from: 'single_business' };
-  const ai = pack.length ? [] : (aiSnapshots.filter((x): x is string => !!x).map((x) => names(readAiOverview(x)?.businesses)).find((l) => l.length) ?? []);
+  const cards = pack.length ? [] : (aiSnapshots.filter((x): x is string => !!x).map((x) => names(readAiOverview(x)?.businesses)).find((l) => l.length) ?? []);
+  // The screen snapshot only shows business cards. The copied answer also has businesses the
+  // answer wrote out in a section of its own, so it is the fuller list whenever it has one.
+  const copied = pack.length || !aiCopy ? [] : readAiCopy(aiCopy).businesses.map((b) => b.name);
+  const ai = copied.length >= cards.length ? copied : cards;
   const list = pack.length ? pack : ai;
   const i = list.findIndex((n) => sameBusiness(n, target));
   return { rank: i >= 0 ? i + 1 : null, list, from: pack.length ? 'map_pack' : ai.length ? 'ai_overview_list' : 'none' };

@@ -109,7 +109,7 @@ export async function backfillPackRanks(limit = 200) {
       };
       const serp = read('serp.xml'),
         final = read('final.xml');
-      found = rankWithoutFinder([serp, final], [read('aio_expanded.xml'), read('aio_initial.xml'), serp, final], p.target);
+      found = rankWithoutFinder([serp, final], [read('aio_expanded.xml'), read('aio_initial.xml'), serp, final], p.target, read('aio_copy.txt'));
     } catch (e) {
       const err = e as Error & { name?: string };
       // A bundle that is gone cannot be re-read: mark the point checked. Anything else is retried next time.
@@ -131,4 +131,51 @@ export async function backfillPackRanks(limit = 200) {
     await db.gridScan.update({ where: { id: scanId }, data: metrics(completed) });
   }
   console.log(`[rank] re-read ${pins.length} point(s) saved as "no local results": ${fixed} had a map pack or AI list and were corrected` + (scans.size ? ` · ${scans.size} scan(s) recomputed` : ''));
+}
+
+/**
+ * Re-reads the AI-answer rank of finished scans named in RERANK_SCANS (comma-separated scan ids)
+ * with the current reader, and corrects points whose list or rank comes out different. For scans
+ * saved before the reader knew a layout. Does nothing when the variable is empty.
+ */
+export async function rerankScans() {
+  const ids = (process.env.RERANK_SCANS ?? '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 12);
+  if (!ids.length) return;
+  for (const scanId of ids) {
+    const scan = await db.gridScan.findUnique({ where: { id: scanId }, select: { targetBusiness: true } });
+    if (!scan) continue;
+    const pins = await db.gridPin.findMany({ where: { scanId, status: 'COMPLETED', dumpsTarUrl: { not: null } }, select: { id: true, rowIdx: true, colIdx: true, rankFound: true, topCompetitors: true, dumpsTarUrl: true, proxyMeta: true } });
+    let changed = 0;
+    for (const p of pins) {
+      const meta = (p.proxyMeta as Record<string, unknown> | null) ?? {};
+      if (meta.rankFrom !== 'ai_overview_list' && meta.rankFrom !== 'none') continue;
+      try {
+        let key = p.dumpsTarUrl!;
+        if (key.startsWith('https://')) key = decodeURIComponent(new URL(key).pathname.slice(1));
+        const obj = await r2().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+        const files = untarGz(await obj.Body!.transformToByteArray());
+        const read = (name: string) => {
+          for (const [path, data] of files) if (path === name || path.endsWith('/' + name)) return data.toString('utf8');
+          return null;
+        };
+        const serp = read('serp.xml'), final = read('final.xml');
+        const found = rankWithoutFinder([serp, final], [read('aio_expanded.xml'), read('aio_initial.xml'), serp, final], scan.targetBusiness, read('aio_copy.txt'));
+        const before = JSON.stringify(p.topCompetitors ?? []);
+        if (found.from !== 'ai_overview_list' || (JSON.stringify(found.list) === before && found.rank === p.rankFound)) continue;
+        await db.gridPin.update({
+          where: { id: p.id },
+          data: { rankFound: found.rank, topCompetitors: found.list, proxyMeta: { ...meta, rankFrom: found.from, rankSource: 'ai_answer_list', reread: { at: new Date().toISOString(), rankWas: p.rankFound, listedWas: (p.topCompetitors as unknown[] | null)?.length ?? 0 } } as object },
+        });
+        changed++;
+        console.log('[rerank]', scanId, 'point', p.rowIdx + 1 + ',' + (p.colIdx + 1) + ':', 'rank', p.rankFound ?? 'none', '→', found.rank ?? 'none', '· listed', (p.topCompetitors as unknown[] | null)?.length ?? 0, '→', found.list.length);
+      } catch (e) {
+        console.warn('[rerank]', p.id, (e as Error).message);
+      }
+    }
+    if (changed) {
+      const completed = await db.gridPin.findMany({ where: { scanId, status: 'COMPLETED' }, select: { rankFound: true, hasAiOverview: true, targetCitedInAi: true } });
+      await db.gridScan.update({ where: { id: scanId }, data: metrics(completed) });
+    }
+    console.log('[rerank]', scanId, changed, 'of', pins.length, 'point(s) corrected');
+  }
 }
