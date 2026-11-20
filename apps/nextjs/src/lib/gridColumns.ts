@@ -35,6 +35,12 @@ export function rankKey(status: string, rank: number | null | undefined): RankKe
   return rank <= 3 ? 'top' : rank === 4 ? 'four' : rank === 5 ? 'five' : rank === 6 ? 'six' : rank === 7 ? 'seven' : rank === 8 ? 'eight' : 'low';
 }
 
+/**
+ * A point whose page had no map pack (local rank not applicable): a bright cyan, well away from
+ * the green-to-red rank scale and from the violet of the AI ring, so it is never read as a rank.
+ */
+export const NA_COLOR = '#22d3ee';
+
 export function rankColor(status: string, rank: number | null | undefined) {
   const k = rankKey(status, rank);
   return k ? RANK_COLORS[k] : RANK_COLORS.pending;
