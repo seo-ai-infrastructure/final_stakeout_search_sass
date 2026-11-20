@@ -1369,6 +1369,9 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         Object.assign(proof, { locationCheckedBy: 'top_line' });
       } else {
         await keepRefusedEvidence();
+        // What Google actually printed is said in the log (the refusal itself keeps its plain code).
+        const tops = [b.serp, b.final, ...b.scroll].map((x) => (x ? readResultsPage(x).location : null)).filter(Boolean);
+        console.warn('[location] point', p.id, 'on', d.imageId, 'expected', [p.city, p.stateCode, p.zip].join(' / '), '· footer line:', JSON.stringify(result.locationSource ?? null), '· top line(s):', JSON.stringify([...new Set(tops)].slice(0, 3)), '· refreshed:', /location_refreshed=1/.test(b.meta), '· snapshots:', b.scroll.length);
         throw new Error('LOCATION_UNVERIFIED');
       }
     }
