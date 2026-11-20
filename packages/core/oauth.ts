@@ -150,9 +150,12 @@ export function readClientDocument(url: string, doc: unknown): ClientInfo | OAut
   if (!name) return fail('invalid_client', 'The client metadata document has no client_name.');
   const list = uris(d.redirect_uris);
   if (typeof list === 'string') return fail('invalid_client', list);
-  // A document cannot hold a shared secret: an app that needs one registers instead.
+  // This server signs an app in as a public client: PKCE proves it is the app that started the sign-in. An app may say it
+  // prefers to sign its requests (private_key_jwt) as long as it can also work without (ChatGPT's document does: it lists
+  // both, and uses whichever this server offers). An app that can only work with a secret or a signature is refused.
   const method = d.token_endpoint_auth_method;
-  if (method !== undefined && method !== 'none') return fail('invalid_client', 'Only token_endpoint_auth_method "none" is supported for a client metadata document.');
+  const able = Array.isArray(d.token_endpoint_auth_methods_supported) ? d.token_endpoint_auth_methods_supported.map(String) : null;
+  if (!(method === undefined || method === 'none' || able?.includes('none'))) return fail('invalid_client', 'This app only signs in with ' + String(method) + ', which is not supported here. It has to be able to use token_endpoint_auth_method "none" with PKCE.');
   return { name, redirectUris: list, uri: /^https:\/\//.test(text(d.client_uri, 500)) ? text(d.client_uri, 500) : null };
 }
 

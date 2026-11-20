@@ -91,6 +91,11 @@ test('an app known by its metadata address', () => {
   assert.match((readClientDocument(url, { ...doc, redirect_uris: [] }) as { error_description: string }).error_description, /redirect_uris/);
   assert.match((readClientDocument(url, { ...doc, redirect_uris: ['http://evil.example/cb'] }) as { error_description: string }).error_description, /https/);
   assert.equal((readClientDocument(url, { ...doc, token_endpoint_auth_method: 'client_secret_post' }) as { error: string }).error, 'invalid_client');
+  // ChatGPT's document says it prefers to sign its requests but can also work without: it is accepted, and signs in with PKCE alone.
+  const gpt = 'https://chatgpt.com/oauth/yV_Ht3du5xG_/client.json';
+  assert.deepEqual(readClientDocument(gpt, { client_id: gpt, client_uri: 'https://chatgpt.com/', redirect_uris: ['https://chatgpt.com/connector/oauth/yV_Ht3du5xG_'], token_endpoint_auth_method: 'private_key_jwt', token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'], grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'], client_name: 'ChatGPT', token_endpoint_auth_signing_alg: 'RS256', jwks_uri: 'https://chatgpt.com/oauth/jwks.json' }), { name: 'ChatGPT', redirectUris: ['https://chatgpt.com/connector/oauth/yV_Ht3du5xG_'], uri: 'https://chatgpt.com/' });
+  // An app that can only sign its requests is still refused, and told why.
+  assert.match((readClientDocument(url, { ...doc, token_endpoint_auth_method: 'private_key_jwt', token_endpoint_auth_methods_supported: ['private_key_jwt'] }) as { error_description: string }).error_description, /only signs in with private_key_jwt/);
   assert.equal((readClientDocument(url, [doc]) as { error: string }).error, 'invalid_client');
 });
 
