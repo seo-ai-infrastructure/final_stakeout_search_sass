@@ -11,8 +11,8 @@ export const maxDuration = 30;
 /** For now the other outlets are for admins only, while they are being tried out. */
 async function adminGate(profile: unknown, location: unknown) {
   const t = await gate(profile, location, 'manage');
-  // Switched off for now for everyone; NEXT_PUBLIC_OUTLETS=on brings it back for admins.
-  if (process.env.NEXT_PUBLIC_OUTLETS !== 'on' || t.u.role !== 'ADMIN') throw new InputError('Posting to other networks is not open on this account yet.', 403);
+  // For admins only for now; NEXT_PUBLIC_OUTLETS=off switches it off for everyone.
+  if (process.env.NEXT_PUBLIC_OUTLETS === 'off' || t.u.role !== 'ADMIN') throw new InputError('Posting to other networks is not open on this account yet.', 403);
   return t;
 }
 

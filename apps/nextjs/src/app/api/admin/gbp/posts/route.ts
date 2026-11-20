@@ -142,7 +142,7 @@ export async function POST(req: Request) {
     // asked (the other outlets, and leaving Google out, are for admins only for now).
     const google = b.google !== false;
     const asked = Array.isArray(b.outlets) ? b.outlets.map(String) : [];
-    if ((asked.length || !google) && (process.env.NEXT_PUBLIC_OUTLETS !== 'on' || t.u.role !== 'ADMIN')) throw new InputError('Posting to other networks is not open on this account yet.', 403);
+    if ((asked.length || !google) && (process.env.NEXT_PUBLIC_OUTLETS === 'off' || t.u.role !== 'ADMIN')) throw new InputError('Posting to other networks is not open on this account yet.', 403);
     const send: ListingOutlets = asked.length ? await outletsToSend(t, asked) : {};
     const missing = asked.filter(isExtraOutlet).find((o) => !send[o]);
     if (missing) throw new InputError(`${OUTLET_NAME[missing]} is not connected for this listing.`);

@@ -190,8 +190,8 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
       <h3 className="font-semibold">Posts</h3>
       {posts !== null && <GbpPostCalendar posts={posts} onDay={writeFor} onSchedule={scheduleOne} onCancel={remove} />}
 
-      {/* Facebook and LinkedIn are switched off for now: set NEXT_PUBLIC_OUTLETS=on to bring them back. */}
-      {process.env.NEXT_PUBLIC_OUTLETS === 'on' && <OutletStrip profile={profile} location={location} onChange={gotOutlets} />}
+      {/* Facebook and LinkedIn: set NEXT_PUBLIC_OUTLETS=off to hide them. */}
+      {process.env.NEXT_PUBLIC_OUTLETS !== 'off' && <OutletStrip profile={profile} location={location} onChange={gotOutlets} />}
 
       <div ref={composer} className="scroll-mt-20 border-t border-slate-800 pt-4">
         <p className="text-sm font-medium">Write a post</p>
