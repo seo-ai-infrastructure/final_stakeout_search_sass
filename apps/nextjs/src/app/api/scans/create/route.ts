@@ -46,7 +46,9 @@ export async function POST(req: Request) {
       throw new InputError('That search surface is not available yet. Choose Google Chrome.');
     await assertFleetSupports(s.targetType, s.phoneModel);
     if (s.targetType !== 'desktop_aimode') {
-      if (listsEnabled()) {
+      // A scan on the mobile network alone uses no home proxies: none are prepared, so a town the
+      // home-proxy provider does not know cannot stop it.
+      if (listsEnabled() && s.network !== 'mobile') {
         // Prepare the residential proxies BEFORE the grid is queued: for the centre
         // city and every other city the grid's points fall in, one list per chosen
         // ISP plus an any-ISP fallback. Lists are saved and reused by later scans.
@@ -56,7 +58,7 @@ export async function POST(req: Request) {
         const { market: m } = await prepareGridProxies(center, places, s.isps);
         s.proxyRegion = m.region;
         s.proxyCity = m.city;
-      } else if (s.ispMode !== 'any' && s.isps.some((i) => !targetableIspCodes().includes(i))) {
+      } else if (s.network !== 'mobile' && s.ispMode !== 'any' && s.isps.some((i) => !targetableIspCodes().includes(i))) {
         throw new InputError('That ISP cannot be targeted yet. Choose "Any ISP".');
       }
     }

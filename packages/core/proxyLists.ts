@@ -158,8 +158,19 @@ async function prepareScanProxies(city: string, stateCode: string, isps: string[
   const unknown = isps.filter((i) => !m.isps.includes(i));
   if (unknown.length)
     throw new InputError('Not available in this market: ' + unknown.join(', ') + '. Choose from the ISP list.', 422);
-  for (const isp of isps) await ensureList(m, isp);
-  await ensureList(m, '');
+  try {
+    for (const isp of isps) await ensureList(m, isp);
+    await ensureList(m, '');
+  } catch (e) {
+    // The provider lists the town but refuses a proxy list for it ("Invalid city ISO code"): the
+    // scan uses the whole state's addresses instead of being turned away.
+    if (!m.city || !/invalid city/i.test(e instanceof Error ? e.message : '')) throw e;
+    console.warn('[proxy] the provider refused a list for', m.city + ',', m.region, '- using the whole state');
+    const wide = { ...m, city: '', level: 'region' as Market['level'] };
+    for (const isp of isps) await ensureList(wide, isp);
+    await ensureList(wide, '');
+    return wide;
+  }
   // Any address in the state, kept ready as the last resort for every scan: a small town's own
   // list can have only a handful of real IPs behind its ports, and a large or doubled-up scan
   // uses them all up (each IP is capped per hour). Its points then fall back to this list.
