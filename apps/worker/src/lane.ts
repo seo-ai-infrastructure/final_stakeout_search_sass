@@ -14,6 +14,7 @@ const stateKey = (n: number) => 'stakeout:lane:' + n;
 const lockKey = (n: number) => 'stakeout:lane:' + n + ':lock';
 const downKey = (n: number) => 'stakeout:lane:' + n + ':down';
 const pinKey = (pinId: string) => 'stakeout:lanepin:' + pinId;
+const rotatedKey = (n: number) => 'stakeout:lane:' + n + ':rotated';
 const doorMs = () => Math.max(5, Number(process.env.MOBILE_LANE_DOOR_SECONDS ?? 40)) * 1000;
 /** A point is given up on by the lane a minute after its own hard time limit. */
 const holdMs = () => (Math.max(300, Number(process.env.POINT_CAP_SECONDS ?? 720)) + 60) * 1000;
@@ -122,32 +123,67 @@ const unlock = (n: number, token: string) =>
  */
 async function freshIp(lane: LaneConfig, before: string | null, change: boolean): Promise<string | null> {
   const rotate = change && Boolean(lane.rotateUrl);
+  // 'done': the link said the IP was changed. 'failed': it refused or errored, and the modem may
+  // or may not be resetting in the background.
+  let outcome: 'none' | 'done' | 'failed' = 'none';
   if (rotate) {
-    // Some providers' links only answer once the modem has its new address (half a minute or
-    // more), so the link is given a minute and a half.
-    const ms = Math.max(15, Number(process.env.MOBILE_LANE_ROTATE_TIMEOUT_SECONDS ?? 90)) * 1000;
+    // Providers refuse a second change too soon after the last one: the gap is kept here.
+    const gap = Math.max(0, Number(process.env.MOBILE_LANE_ROTATE_GAP_SECONDS ?? 60)) * 1000;
+    const last = Number((await redis().get(rotatedKey(lane.n)).catch(() => null)) ?? 0);
+    if (last && Date.now() - last < gap) await sleep(gap - (Date.now() - last));
+    // The link answers only once the modem has its new address, which can take minutes on a
+    // sticky carrier: it is given three. A plain browser-like request, since some providers'
+    // front doors turn away requests with no User-Agent.
+    const ms = Math.max(15, Number(process.env.MOBILE_LANE_ROTATE_TIMEOUT_SECONDS ?? 180)) * 1000;
     const t0 = Date.now();
-    const ok = await fetch(lane.rotateUrl!, { signal: AbortSignal.timeout(ms) }).then((r) => r.status < 500, () => false);
-    if (!ok) console.warn('[lane]', lane.n, 'the rotate link gave no good answer within', Math.round((Date.now() - t0) / 1000) + 's; checking the port anyway');
-    else console.log('[lane]', lane.n, 'rotate link answered after', Math.round((Date.now() - t0) / 1000) + 's');
-    await sleep(1000);
+    await redis().set(rotatedKey(lane.n), String(t0), 'EX', 3600).catch(() => {});
+    try {
+      const r = await fetch(lane.rotateUrl!, {
+        method: 'GET',
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; StakeoutWorker/1.0)', Accept: 'application/json, text/plain, */*' },
+        signal: AbortSignal.timeout(ms),
+      });
+      const body = (await r.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200);
+      const secs = Math.round((Date.now() - t0) / 1000);
+      if (r.ok) {
+        outcome = 'done';
+        console.log('[lane]', lane.n, 'rotate link answered', r.status, 'after', secs + 's');
+      } else {
+        outcome = 'failed';
+        console.warn('[lane]', lane.n, 'rotate link refused:', r.status, 'after', secs + 's ·', JSON.stringify(body));
+      }
+    } catch (e) {
+      outcome = 'failed';
+      console.warn('[lane]', lane.n, 'rotate link gave no answer after', Math.round((Date.now() - t0) / 1000) + 's:', (e as Error).name || 'error');
+    }
+    // A refused or failed call can still have started a reset: the port is left alone for a
+    // while before it is trusted, so a wave is never opened just as the modem drops.
+    await sleep(outcome === 'failed' ? 15000 : 1000);
   }
-  const until = Date.now() + Math.max(10, Number(process.env.MOBILE_LANE_SETTLE_SECONDS ?? 30)) * 1000;
+  const until = Date.now() + Math.max(10, Number(process.env.MOBILE_LANE_SETTLE_SECONDS ?? 30)) * 1000 + (outcome === 'failed' ? 15000 : 0);
   const started = Date.now();
   let ip: string | null = null;
-  let sameSeen = 0;
+  let answers = 0;
   while (Date.now() < until) {
-    ip = await laneExit(lane, 6000);
-    // Back, and on a new address (or there is no link to change it, or it has answered the
-    // old address three times running: the change did not take, which is said below).
-    if (ip && (!rotate || ip !== before || ++sameSeen >= 3)) break;
+    const got = await laneExit(lane, 6000);
+    if (got) {
+      ip = got;
+      answers++;
+      // After a clean change (or none): the first answer will do. After a failed call: two
+      // answers five seconds apart, so a reset in mid-flight is not mistaken for a steady port.
+      if (outcome !== 'failed' || answers >= 2) break;
+      await sleep(5000);
+      continue;
+    }
+    answers = 0;
+    ip = null;
     await sleep(2000);
   }
-  if (!ip) {
-    console.error('[lane]', lane.n, 'did not answer within', Math.round((Date.now() - started) / 1000) + 's: no wave opened, asked again in 30s');
+  if (!ip || (outcome === 'failed' && answers < 2)) {
+    console.error('[lane]', lane.n, 'did not answer steadily within', Math.round((Date.now() - started) / 1000) + 's: no wave opened, asked again in 30s');
     return null;
   }
-  if (rotate && before && ip === before) console.warn('[lane]', lane.n, 'IP DID NOT CHANGE: still', ip, 'after the rotate link was called');
+  if (rotate && outcome === 'failed') console.warn('[lane]', lane.n, 'the IP change was not confirmed: this wave may share an address with the last one (port answers on', ip + ')');
   return ip;
 }
 
@@ -160,7 +196,7 @@ export async function enterLane(pinId: string): Promise<number | null> {
   for (const lane of laneConfigs()) {
     if (await redis().exists(downKey(lane.n)).catch(() => 0)) continue;
     const token = randomUUID();
-    if (!(await redis().set(lockKey(lane.n), token, 'PX', 150000, 'NX').catch(() => null))) continue; // another point is at this lane's door
+    if (!(await redis().set(lockKey(lane.n), token, 'PX', 330000, 'NX').catch(() => null))) continue; // another point is at this lane's door
     try {
       const now = Date.now();
       const asked = laneAsk(await read(lane.n), pinId, now, { size: lane.size, doorMs: doorMs(), holdMs: holdMs() });
