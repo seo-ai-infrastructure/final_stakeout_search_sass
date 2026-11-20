@@ -25,7 +25,7 @@ import { logDataHistory } from './dataHistory';
 import { powerTick, powerReport } from './power';
 import { forceIdle, idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
 import { phoneTailKey } from '@stakeout/core/idleProxy';
-import { enterLane, laneExit, laneNote, lanesOn, leaveLane } from './lane';
+import { enterLane, laneExit, laneNote, lanesOn, laneWave, leaveLane } from './lane';
 import { laneConfigs } from '@stakeout/core/lane';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficByHour, trafficHourKey, trafficLow, type TrafficHour, type TrafficReading } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
@@ -240,6 +240,20 @@ async function execute(job: Job, token?: string) {
         if (searched(pinError)) await restPhone(d.imageId).catch(() => {});
         held.delete(d.imageId);
         await d.release();
+      }
+      // A failed attempt is written on the point itself (phone, reason, wave), so what happened
+      // to a point can be read from the database even when the log has lost the line.
+      if (pinError && !(pinError instanceof DelayedError)) {
+        const w = lanePoint ? await laneWave(pin.id).catch(() => null) : null;
+        const entry = {
+          at: new Date().toISOString(),
+          phone: d.imageId,
+          kind: failureKind(pinError),
+          reason: (pinError instanceof Error ? pinError.message : String(pinError)).slice(0, 200),
+          seconds: Math.round((Date.now() - attemptStart) / 1000),
+          ...(w ?? {}),
+        };
+        await db.$executeRaw`UPDATE "GridPin" SET "proxyMeta" = jsonb_set(CASE WHEN jsonb_typeof("proxyMeta") = 'object' THEN "proxyMeta" ELSE '{}'::jsonb END, '{attempts}', (CASE WHEN jsonb_typeof("proxyMeta"->'attempts') = 'array' THEN "proxyMeta"->'attempts' ELSE '[]'::jsonb END) || ${JSON.stringify([entry])}::jsonb) WHERE id = ${pin.id} AND status = 'PENDING'`.catch((e) => console.warn('[attempts] not saved:', (e as Error).message));
       }
       // Failed, or stopped at the time limit: its place in the mobile wave is given back, so one
       // stuck phone never keeps a wave from ending.

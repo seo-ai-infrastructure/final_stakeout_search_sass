@@ -9,7 +9,7 @@ import { db, type GridPin, type GridScan } from '@stakeout/db';
 import { listsForPin, normPlace, locationVerified, topLineVerified, proxyPlace, proxyState } from '@stakeout/core/proxyLists';
 import { dataLine, dataUsed, parseIfaceBytes, parseUidBytes, parseUidPackages, type DataUse } from '@stakeout/core/dataUse';
 import { paidExitKey } from '@stakeout/core/idleProxy';
-import { laneOf, laneSaw } from './lane';
+import { laneOf, laneSaw, laneWave } from './lane';
 import type { LaneConfig } from '@stakeout/core/lane';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
@@ -787,6 +787,9 @@ async function provision(device: LeasedDevice, p: Pin) {
         sharedRecord: () => laneRecord(lane, device),
       });
       await laneSaw(lane, p.id, got.ip).catch(() => {});
+      // Which wave of which lane this search went out in, kept with the point.
+      const w = await laneWave(p.id).catch(() => null);
+      if (w) Object.assign(got, w);
       return got;
     }
     const provider = mobileProvider();
@@ -1463,6 +1466,22 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     } catch (e) {
       console.error('[insights]', (e as Error).message);
     }
+    // Kept with the point, for looking back without the logs: what Google printed as the place,
+    // where the rank was read from, whether the page had a local pack and its "More businesses",
+    // and the attempts that failed before this one (written to the point as they happened).
+    if (surface === 'chrome' || surface === 'google') {
+      const pages = [b.serp, b.final, ...b.scroll].filter((x): x is string => Boolean(x)).map((x) => readResultsPage(x));
+      const from = (proof as { rankFrom?: string }).rankFrom;
+      Object.assign(proof, {
+        locationText: result.locationSource ?? null,
+        locationTop: pages.map((x) => x.location).find(Boolean) ?? null,
+        rankSource: !aiList ? 'local_pack_full' : from === 'map_pack' ? 'local_pack_top3' : from === 'ai_overview_list' ? 'ai_answer_list' : 'none',
+        localPack: { onPage: pages.some((x) => x.pack.length > 0), moreButton: pages.some((x) => Boolean(x.packMore)), opened: !aiList },
+      });
+    } else Object.assign(proof, { rankSource: 'maps_list' });
+    const before = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true } }).catch(() => null);
+    const attempts = (before?.proxyMeta as { attempts?: unknown } | null)?.attempts;
+    if (Array.isArray(attempts) && attempts.length) Object.assign(proof, { attempts });
     run.marks.saved = Date.now();
     return {
       assignedDeviceId: d.imageId,

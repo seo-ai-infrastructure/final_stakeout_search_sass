@@ -262,6 +262,14 @@ export async function leaveLane(pinId: string): Promise<void> {
   console.warn('[lane]', n, 'point', pinId, 'could not sign out of its wave; its place lapses at its time limit');
 }
 
+/** The lane and wave a point is in right now (null: none). Kept with the point's record. */
+export async function laneWave(pinId: string): Promise<{ lane: number; wave: number; waveIp: string | null } | null> {
+  const n = Number((await redis().get(pinKey(pinId)).catch(() => null)) ?? NaN);
+  if (!Number.isInteger(n)) return null;
+  const s = await read(n);
+  return { lane: n, wave: s.wave, waveIp: s.ip };
+}
+
 /** After the gate: does the point come out of the wave's own address? (Said when it does not.) */
 export async function laneSaw(lane: LaneConfig, pinId: string, ip: string) {
   const s = await read(lane.n);
