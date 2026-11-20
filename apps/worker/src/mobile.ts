@@ -420,6 +420,8 @@ async function provisionGateway(
      * each phone's own record being rewritten.
      */
     sharedRecord?: () => Promise<string>;
+    /** Wait this long between tries of the same target (a lane whose modem is changing its IP). */
+    retryPauseMs?: number;
   },
 ) {
   const tried: string[] = [];
@@ -465,6 +467,9 @@ async function provisionGateway(
       if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
       if (!g.verdict.ok) {
         tried.push(target.rung + ':' + session + ':' + g.verdict.reasons.join('+'));
+        // A shared mobile port can be dark for a minute while its modem takes a new address:
+        // the point waits here and asks again, staying in its wave, instead of giving up.
+        if (g0.retryPauseMs && t < g0.tries - 1) await sleep(g0.retryPauseMs);
         continue;
       }
       const v = g.verdict;
@@ -780,7 +785,9 @@ async function provision(device: LeasedDevice, p: Pin) {
         port: lane.port,
         protocol: lane.protocol,
         password: lane.password,
-        tries: 2,
+        // Up to about two and a half minutes of asking: longer than a modem takes to come back.
+        tries: 6,
+        retryPauseMs: 8000,
         minutes: 0,
         isp: '',
         targets: [{ rung: 'MOBILE_LANE', user: () => lane.user, lane: true, place: 'mobile lane ' + lane.n }],
@@ -1422,6 +1429,19 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       if (r.from === 'map_pack' && r.rank === null && [b.serp, b.final, ...b.scroll].some((x) => Boolean(x && readResultsPage(x).packMore))) {
         await keepRefusedEvidence();
         throw new Error('RPA_SURFACE_ERROR finder_not_opened: the full list of businesses never opened');
+      }
+      // Google's AI answer names the business, yet no list of businesses was read from the page
+      // (its list stayed folded, or was not captured): searched once more rather than saved as
+      // "no rank". Once only: an answer that really is plain text is kept the second time.
+      if (r.from === 'none' && result.hasAiOverview && result.targetCitedInAi) {
+        const row = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true } }).catch(() => null);
+        const earlier = (row?.proxyMeta as { attempts?: { reason?: string }[] } | null)?.attempts ?? [];
+        // (Not when the point has already failed twice for other reasons: its tries are nearly used up.)
+        if (earlier.length < 2 && !earlier.some((a) => /ai_list_not_read/.test(a?.reason ?? ''))) {
+          await keepRefusedEvidence();
+          throw new Error("RPA_SURFACE_ERROR ai_list_not_read: Google's AI answer cites the business but its list of businesses was not read");
+        }
+        Object.assign(proof, { aiListRetried: true });
       }
       aiList = { rank: r.rank, list: r.list };
       Object.assign(proof, { finderShown: false, rankFrom: r.from });

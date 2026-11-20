@@ -37,6 +37,7 @@ export function kindLabel(kind: string): string {
     [/^RPA_SURFACE_ERROR location_not_refreshed/, "Location not refreshed"],
     [/^RPA_SURFACE_ERROR no_scroll/, "Template didn't scroll the results"],
     [/^RPA_SURFACE_ERROR finder_not_opened/, 'The full list of businesses never opened'],
+    [/^RPA_SURFACE_ERROR ai_list_not_read/, "AI answer cites the business but its list wasn't read"],
     [/^RPA_SURFACE_ERROR (surface_error|template)/, 'Template reported a wrong page'],
     [/^RPA_SURFACE_ERROR blocked/, 'Template reported being blocked'],
     [/^RPA_SURFACE_ERROR/, 'Template reported a problem'],
