@@ -10,6 +10,7 @@ import { listsForPin, normPlace, locationVerified, topLineVerified, proxyPlace, 
 import { dataLine, dataUsed, parseIfaceBytes, parseUidBytes, parseUidPackages, type DataUse } from '@stakeout/core/dataUse';
 import { paidExitKey } from '@stakeout/core/idleProxy';
 import { laneOf, laneSaw } from './lane';
+import type { LaneConfig } from '@stakeout/core/lane';
 import { judgeExit, parseIpinfo, parseIpapi, parseGoogleProbe, portOrder, ispMatches, type GatePolicy } from '@stakeout/core/proxyGate';
 import { redis } from '@stakeout/core/redis';
 import { isProxyProblem, pinOutageKey, supplyDown } from '@stakeout/core/proxyWait';
@@ -106,10 +107,14 @@ async function waitUntilConfigured(d: LeasedDevice, maxMs = 90000) {
 const stillConfiguring = (e: unknown) => /being configured|cannot be operated|configuring/i.test(e instanceof Error ? e.message : String(e));
 
 /** Binds the phone's proxy record and moves its GPS and time zone to the pin (one batched request). */
-async function applyNetworkAndGps(d: LeasedDevice, p: Pin) {
+/** The proxy record each phone was last bound to by a point (its own, or a lane's shared one). */
+const boundRecord = new Map<string, string>();
+
+async function applyNetworkAndGps(d: LeasedDevice, p: Pin, record: string = d.proxyId) {
+  boundRecord.set(d.imageId, record);
   const item = {
     image_id: d.imageId,
-    proxy: { id: d.proxyId, dns: 1 },
+    proxy: { id: record, dns: 1 },
     gps: { type: 2, latitude: String(p.lat), longitude: String(p.lng) },
     locale: { type: 2, timezone: stateTimezone(p.stateCode), language: 'en-US' },
   };
@@ -236,8 +241,8 @@ async function googleProbe(d: LeasedDevice): Promise<string> {
 }
 
 /** Binds the proxy and GPS, then checks the exit through it: two geolocation services and Google itself. */
-async function preflightExit(d: LeasedDevice, p: Pin, isp: string, stateCode = proxyState(p), lane = false) {
-  await applyNetworkAndGps(d, p);
+async function preflightExit(d: LeasedDevice, p: Pin, isp: string, stateCode = proxyState(p), lane = false, record?: string) {
+  await applyNetworkAndGps(d, p, record);
   await sleep(6000);
   const token = process.env.IPINFO_TOKEN ? '?token=' + encodeURIComponent(process.env.IPINFO_TOKEN) : '';
   const ipinfo = parseIpinfo(await deviceGet(d, (process.env.IP_CHECK_URL || 'https://ipinfo.io/json') + token));
@@ -305,6 +310,53 @@ async function replaceProxyRecord(device: LeasedDevice, rec: ProxyRecord, listId
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 240);
 
 /**
+ * The one DuoPlus proxy record of a mobile lane, made once and then bound to every phone that
+ * searches through the lane. If DuoPlus already has the lane's address on some phone's own record
+ * (it answers with that record), the record becomes the lane's and that phone is given a new one
+ * of its own the next time it needs it.
+ */
+async function laneRecord(lane: LaneConfig, device: LeasedDevice): Promise<string> {
+  const print = createHash('sha1').update([lane.host, lane.port, lane.user, lane.password, lane.protocol].join('|')).digest('hex').slice(0, 16);
+  const key = 'stakeout:lane:' + lane.n + ':record';
+  const had = await redis().get(key).catch(() => null);
+  if (had?.endsWith('|' + print)) return had.split('|')[0];
+  let id: unknown = null;
+  try {
+    const res = await duoplusPost('/api/v1/proxy/add', {
+      proxy_list: [{ protocol: lane.protocol, host: lane.host, port: lane.port, user: lane.user, password: lane.password, name: 'stakeout-lane-' + lane.n }],
+      ip_scan_channel: 'ip2location',
+    });
+    id = res?.data?.success?.[0]?.id ?? null;
+  } catch (e) {
+    console.warn('[lane]', lane.n, 'DuoPlus did not add the lane record -', errText(e), '- looking for one it already has');
+  }
+  if (!id) {
+    // Already there under another name: found by its address.
+    for (let page = 1; page <= 30 && !id; page++) {
+      const res = await duoplusPost('/api/v1/proxy/list', { page, pagesize: 100 });
+      const list: any[] = res?.data?.list ?? [];
+      id = list.find((r) => String(r?.host ?? r?.ip ?? '') === lane.host && Number(r?.port) === lane.port)?.id ?? null;
+      if (list.length < 100) break;
+    }
+  }
+  if (!id) throw new Error('DUOPLUS_PROXY_ADD_FAILED no record for mobile lane ' + lane.n);
+  const rec = String(id);
+  const owner = await db.devicePool.findFirst({ where: { proxyId: rec }, select: { imageId: true } });
+  if (owner) {
+    const none = 'none-' + owner.imageId;
+    await db.devicePool.update({ where: { imageId: owner.imageId }, data: { proxyId: none, proxyListId: null } });
+    if (owner.imageId === device.imageId) {
+      device.proxyId = none;
+      device.proxyListId = null;
+    }
+    console.log('[lane]', lane.n, 'record', rec, "was phone " + owner.imageId + "'s own: it is the lane's now, and that phone gets a new record with its next home-internet point");
+  }
+  await redis().set(key, rec + '|' + print, 'EX', 30 * 86400).catch(() => {});
+  console.log('[lane]', lane.n, 'uses DuoPlus proxy record', rec, 'for every phone');
+  return rec;
+}
+
+/**
  * Two limits on searches per exit IP per hour. Per phone (SEARCHES_PER_IP_PER_HOUR): several
  * phones behind one home connection is normal, so each phone has its own count and a town with
  * few real IPs keeps its searches local. Across all phones (SEARCHES_PER_IP_ALL_PHONES_PER_HOUR,
@@ -362,6 +414,12 @@ async function provisionGateway(
     minutes: number;
     isp: string;
     targets: GatewayTarget[];
+    /**
+     * A proxy record shared by several phones (a mobile lane): DuoPlus keeps one record per proxy
+     * address and refuses a second, so the phones are all bound to that one record instead of
+     * each phone's own record being rewritten.
+     */
+    sharedRecord?: () => Promise<string>;
   },
 ) {
   const tried: string[] = [];
@@ -371,6 +429,16 @@ async function provisionGateway(
       const session = randomBytes(6).toString('hex');
       const rec: ProxyRecord = { host: g0.host, port: g0.port, user: target.user(session), password: g0.password, protocol: g0.protocol };
       let superseded: string | null = null;
+      let shared: string | undefined;
+      if (g0.sharedRecord) {
+        try {
+          shared = await g0.sharedRecord();
+        } catch (e) {
+          console.warn('[duoplus] no shared proxy record for', g0.source, '-', errText(e));
+          tried.push(target.rung + ':' + session + ':UPDATE_FAILED');
+          continue;
+        }
+      } else
       try {
         await duoplusPost('/api/v1/proxy/update', { id: device.proxyId, ...rec, ip_scan_channel: 'ip2location' });
         if (device.proxyListId) {
@@ -393,7 +461,7 @@ async function provisionGateway(
       await redis().del(`stakeout:devport:${device.imageId}`).catch(() => {});
       // "Mix of ISPs": the ISP is a preference, so a residential IP in the right state will do.
       // Mobile data: any carrier the gatekeeper knows as a real mobile network.
-      const g = await preflightExit(device, p, p.scan.ispMode === 'mix' ? '' : g0.isp, target.state ?? proxyState(p), Boolean(target.lane));
+      const g = await preflightExit(device, p, p.scan.ispMode === 'mix' ? '' : g0.isp, target.state ?? proxyState(p), Boolean(target.lane), shared);
       if (superseded) await duoplusPost('/api/v1/proxy/delete', { ids: [superseded] }).catch((e) => console.warn('[duoplus] old proxy record', superseded, 'not deleted -', errText(e)));
       if (!g.verdict.ok) {
         tried.push(target.rung + ':' + session + ':' + g.verdict.reasons.join('+'));
@@ -716,6 +784,7 @@ async function provision(device: LeasedDevice, p: Pin) {
         minutes: 0,
         isp: '',
         targets: [{ rung: 'MOBILE_LANE', user: () => lane.user, lane: true, place: 'mobile lane ' + lane.n }],
+        sharedRecord: () => laneRecord(lane, device),
       });
       await laneSaw(lane, p.id, got.ip).catch(() => {});
       return got;
@@ -1207,7 +1276,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       await waitForUpload();
     } finally {
       // Re-bind first: a lost lease must never leave the phone without its proxy.
-      await updatePhone({ image_id: d.imageId, proxy: { id: d.proxyId, dns: 1 } });
+      await updatePhone({ image_id: d.imageId, proxy: { id: boundRecord.get(d.imageId) ?? d.proxyId, dns: 1 } });
       await d.assertOwned();
     }
     b = await readBundle(tarKey, tag, dir);

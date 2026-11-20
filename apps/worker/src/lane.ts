@@ -120,11 +120,17 @@ const unlock = (n: number, token: string) =>
  * seconds, for up to half a minute, until it answers. Returns the new exit address, or null when
  * the port did not come back (the wave is not opened).
  */
-async function freshIp(lane: LaneConfig, before: string | null): Promise<string | null> {
-  if (lane.rotateUrl) {
-    const ok = await fetch(lane.rotateUrl, { signal: AbortSignal.timeout(15000) }).then((r) => r.status < 500, () => false);
-    if (!ok) console.warn('[lane]', lane.n, 'the rotate link did not answer; checking the port anyway');
-    await sleep(2000);
+async function freshIp(lane: LaneConfig, before: string | null, change: boolean): Promise<string | null> {
+  const rotate = change && Boolean(lane.rotateUrl);
+  if (rotate) {
+    // Some providers' links only answer once the modem has its new address (half a minute or
+    // more), so the link is given a minute and a half.
+    const ms = Math.max(15, Number(process.env.MOBILE_LANE_ROTATE_TIMEOUT_SECONDS ?? 90)) * 1000;
+    const t0 = Date.now();
+    const ok = await fetch(lane.rotateUrl!, { signal: AbortSignal.timeout(ms) }).then((r) => r.status < 500, () => false);
+    if (!ok) console.warn('[lane]', lane.n, 'the rotate link gave no good answer within', Math.round((Date.now() - t0) / 1000) + 's; checking the port anyway');
+    else console.log('[lane]', lane.n, 'rotate link answered after', Math.round((Date.now() - t0) / 1000) + 's');
+    await sleep(1000);
   }
   const until = Date.now() + Math.max(10, Number(process.env.MOBILE_LANE_SETTLE_SECONDS ?? 30)) * 1000;
   const started = Date.now();
@@ -134,14 +140,14 @@ async function freshIp(lane: LaneConfig, before: string | null): Promise<string 
     ip = await laneExit(lane, 6000);
     // Back, and on a new address (or there is no link to change it, or it has answered the
     // old address three times running: the change did not take, which is said below).
-    if (ip && (!lane.rotateUrl || ip !== before || ++sameSeen >= 3)) break;
+    if (ip && (!rotate || ip !== before || ++sameSeen >= 3)) break;
     await sleep(2000);
   }
   if (!ip) {
-    console.error('[lane]', lane.n, 'did not come back within', Math.round((Date.now() - started) / 1000) + 's after the IP change: no wave opened, asked again in 30s');
+    console.error('[lane]', lane.n, 'did not answer within', Math.round((Date.now() - started) / 1000) + 's: no wave opened, asked again in 30s');
     return null;
   }
-  if (lane.rotateUrl && before && ip === before) console.warn('[lane]', lane.n, 'IP DID NOT CHANGE: still', ip, 'after the rotate link was called');
+  if (rotate && before && ip === before) console.warn('[lane]', lane.n, 'IP DID NOT CHANGE: still', ip, 'after the rotate link was called');
   return ip;
 }
 
@@ -154,7 +160,7 @@ export async function enterLane(pinId: string): Promise<number | null> {
   for (const lane of laneConfigs()) {
     if (await redis().exists(downKey(lane.n)).catch(() => 0)) continue;
     const token = randomUUID();
-    if (!(await redis().set(lockKey(lane.n), token, 'PX', 75000, 'NX').catch(() => null))) continue; // another point is at this lane's door
+    if (!(await redis().set(lockKey(lane.n), token, 'PX', 150000, 'NX').catch(() => null))) continue; // another point is at this lane's door
     try {
       const now = Date.now();
       const asked = laneAsk(await read(lane.n), pinId, now, { size: lane.size, doorMs: doorMs(), holdMs: holdMs() });
@@ -164,7 +170,9 @@ export async function enterLane(pinId: string): Promise<number | null> {
       }
       let state = asked.state;
       if (asked.verdict === 'rotate') {
-        const ip = await freshIp(lane, state.ip);
+        // The very first wave of a lane uses the address the port already has (nobody has
+        // searched on it): the IP is only changed between waves.
+        const ip = await freshIp(lane, state.ip, state.wave > 0);
         if (!ip) {
           await redis().set(downKey(lane.n), '1', 'EX', 30).catch(() => {});
           continue;
