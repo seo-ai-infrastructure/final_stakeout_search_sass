@@ -1,7 +1,8 @@
 import { siteFromScans } from '@/lib/businessSite';
 import { db, Prisma } from '@stakeout/db';
 import { ispLabel } from './ispLabel';
-import { InputError } from '@stakeout/core/grid';
+import { InputError, metrics } from '@stakeout/core/grid';
+import { aiPositionOf, localRankOf, noLocalResults } from '@stakeout/core/localRank';
 import { lookupCensus, type PinCensus } from '@stakeout/core/censusLookup';
 
 const CENSUS_VINTAGE = (process.env.CENSUS_VINTAGE || process.env.NEXT_PUBLIC_CENSUS_VINTAGE || '').trim();
@@ -93,8 +94,14 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
   await fillCensus(s.pins);
   // A scan made before websites were saved borrows the one from the account's other scans of the same business.
   const borrowed = s.targetDomain ? null : await db.gridScan.findUnique({ where: { id: s.id }, select: { userId: true } }).then((o) => (o ? siteFromScans(o.userId, s.targetBusiness) : null)).catch(() => null);
+  // A point whose page had no map pack has no local rank (see core/localRank): its stored rank,
+  // if any, is its place in the AI Overview. The scan's rank numbers are worked out again here
+  // without those points, so reports saved before this rule read the same way as new ones.
+  const done = s.pins.filter((p) => p.status === 'COMPLETED');
+  const totals = done.length ? metrics(done.map((p) => ({ rankFound: p.rankFound, hasAiOverview: p.hasAiOverview, targetCitedInAi: p.targetCitedInAi, noLocal: noLocalResults(p.proxyMeta) }))) : null;
   return {
     ...s,
+    ...(totals ? { arp: totals.arp, atrp: totals.atrp, solv: totals.solv } : {}),
     ...(borrowed ? { targetDomain: borrowed } : {}),
     pins: s.pins.map((p) => {
       const m = p.proxyMeta as Record<string, unknown> | null;
@@ -103,6 +110,7 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
       const route = '/api/proof/' + p.id + '?kind=';
       return {
         ...p,
+        rankFound: localRankOf(m, p.rankFound),
         videoUrl: p.videoUrl
           ? route + 'video' + (token ? '&share=' + token : '')
           : null,
@@ -118,6 +126,12 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
               isp: ispLabel(m),
               finderShown: typeof m.finderShown === 'boolean' ? m.finderShown : null,
               rankFrom: typeof m.rankFrom === 'string' ? m.rankFrom : null,
+              /** No map pack on the page: the local rank is "not applicable". */
+              noLocal: noLocalResults(m),
+              /** The business's place in the AI Overview's list on such a page (null: not in it). */
+              aiPosition: aiPositionOf(m, p.rankFound),
+              /** "Position zero": named in the AI Overview's opening sentences. */
+              aiLead: m.aiLead === true,
             }
           : null,
       };

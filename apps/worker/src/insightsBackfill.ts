@@ -1,8 +1,9 @@
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
 import { r2, bucket } from '@stakeout/core/r2';
-import { untarGz, rankWithoutFinder } from '@stakeout/core/serpEvidence';
+import { aiNamesFirst, untarGz, rankWithoutFinder } from '@stakeout/core/serpEvidence';
 import { metrics } from '@stakeout/core/grid';
+import { noLocalResults } from '@stakeout/core/localRank';
 import { buildPinInsights } from '@stakeout/core/pinInsights';
 
 /**
@@ -121,14 +122,15 @@ export async function backfillPackRanks(limit = 200) {
     const current = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true } });
     const meta = { ...((current?.proxyMeta as Record<string, unknown> | null) ?? {}), packChecked: true, soloChecked: true, soloChecked2: true };
     if (found && found.from !== 'none' && found.from !== p.was) {
-      await db.gridPin.update({ where: { id: p.id }, data: { rankFound: found.rank, topCompetitors: found.list, proxyMeta: { ...meta, rankFrom: found.from } } });
+      const aiOnly = found.from === 'ai_overview_list';
+      await db.gridPin.update({ where: { id: p.id }, data: { rankFound: aiOnly ? null : found.rank, topCompetitors: found.list, proxyMeta: { ...meta, rankFrom: found.from, ...(aiOnly ? { aiPosition: found.rank } : {}) } } });
       scans.add(p.scanId);
       fixed++;
     } else await db.gridPin.update({ where: { id: p.id }, data: { proxyMeta: meta } });
   }
   for (const scanId of scans) {
-    const completed = await db.gridPin.findMany({ where: { scanId, status: 'COMPLETED' }, select: { rankFound: true, hasAiOverview: true, targetCitedInAi: true } });
-    await db.gridScan.update({ where: { id: scanId }, data: metrics(completed) });
+    const completed = await db.gridPin.findMany({ where: { scanId, status: 'COMPLETED' }, select: { rankFound: true, hasAiOverview: true, targetCitedInAi: true, proxyMeta: true } });
+    await db.gridScan.update({ where: { id: scanId }, data: metrics(completed.map((c) => ({ ...c, noLocal: noLocalResults(c.proxyMeta) }))) });
   }
   console.log(`[rank] re-read ${pins.length} point(s) saved as "no local results": ${fixed} had a map pack or AI list and were corrected` + (scans.size ? ` · ${scans.size} scan(s) recomputed` : ''));
 }
@@ -161,10 +163,10 @@ export async function rerankScans() {
         const serp = read('serp.xml'), final = read('final.xml');
         const found = rankWithoutFinder([serp, final], [read('aio_expanded.xml'), read('aio_initial.xml'), serp, final], scan.targetBusiness, read('aio_copy.txt'));
         const before = JSON.stringify(p.topCompetitors ?? []);
-        if (found.from !== 'ai_overview_list' || (JSON.stringify(found.list) === before && found.rank === p.rankFound)) continue;
+        if (found.from !== 'ai_overview_list' || (JSON.stringify(found.list) === before && p.rankFound === null && meta.aiPosition === found.rank)) continue;
         await db.gridPin.update({
           where: { id: p.id },
-          data: { rankFound: found.rank, topCompetitors: found.list, proxyMeta: { ...meta, rankFrom: found.from, rankSource: 'ai_answer_list', reread: { at: new Date().toISOString(), rankWas: p.rankFound, listedWas: (p.topCompetitors as unknown[] | null)?.length ?? 0 } } as object },
+          data: { rankFound: null, topCompetitors: found.list, proxyMeta: { ...meta, rankFrom: found.from, aiPosition: found.rank, aiLead: aiNamesFirst(read('aio_copy.txt'), scan.targetBusiness), rankSource: 'ai_answer_list', reread: { at: new Date().toISOString(), rankWas: p.rankFound, listedWas: (p.topCompetitors as unknown[] | null)?.length ?? 0 } } as object },
         });
         changed++;
         console.log('[rerank]', scanId, 'point', p.rowIdx + 1 + ',' + (p.colIdx + 1) + ':', 'rank', p.rankFound ?? 'none', '→', found.rank ?? 'none', '· listed', (p.topCompetitors as unknown[] | null)?.length ?? 0, '→', found.list.length);
@@ -173,8 +175,8 @@ export async function rerankScans() {
       }
     }
     if (changed) {
-      const completed = await db.gridPin.findMany({ where: { scanId, status: 'COMPLETED' }, select: { rankFound: true, hasAiOverview: true, targetCitedInAi: true } });
-      await db.gridScan.update({ where: { id: scanId }, data: metrics(completed) });
+      const completed = await db.gridPin.findMany({ where: { scanId, status: 'COMPLETED' }, select: { rankFound: true, hasAiOverview: true, targetCitedInAi: true, proxyMeta: true } });
+      await db.gridScan.update({ where: { id: scanId }, data: metrics(completed.map((c) => ({ ...c, noLocal: noLocalResults(c.proxyMeta) }))) });
     }
     console.log('[rerank]', scanId, changed, 'of', pins.length, 'point(s) corrected');
   }

@@ -384,6 +384,23 @@ export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
 }
 
 /**
+ * "Position zero": the AI answer names the business in its opening sentences, before any list
+ * (often as a link on the brand or its phone number). True when the opening paragraph of Google's
+ * copied answer contains the business's name, or the first part of it ("Brandon J. Broderick" of
+ * "Brandon J. Broderick, Personal Injury Attorney at Law").
+ */
+export function aiNamesFirst(copy: string | null | undefined, business: string): boolean {
+  if (!copy) return false;
+  const opening = copy.replace(/\r/g, '').split(/\n\s*\n/)[0] ?? '';
+  // An answer that starts straight with a business block has no opening sentence.
+  if (BIZ_LINE.test(opening.split('\n')[0].trim()) || /^•/.test(opening.trim())) return false;
+  const flat = (t: string) => t.toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+  const hay = ' ' + flat(opening) + ' ';
+  const full = flat(business), short = flat(business.split(/[,|–—-]| - /)[0] ?? '');
+  return (full.length >= 4 && hay.includes(' ' + full + ' ')) || (short.split(' ').length >= 2 && short.length >= 8 && hay.includes(' ' + short + ' '));
+}
+
+/**
  * Google's location line for one search: from the final snapshot when it has one, otherwise from
  * the results page of the same search (the Local Finder snapshot sometimes lacks the line).
  */

@@ -27,7 +27,9 @@ function rankLine(pin: GridPinData): string {
     if (pin.proxyMeta.rankFrom === 'none') return 'No local results on this page';
     if (pin.proxyMeta.rankFrom === 'single_business')
       return r === 1 ? 'Google showed only you here: the single-business result' : `Google showed a single business here: ${pin.topCompetitors?.[0] ?? 'another business'}`;
-    return r != null ? `#${r} in the AI Overview’s list (no local list on this page)` : 'Not in the AI Overview’s list (no local list on this page)';
+    const ai = pin.proxyMeta.aiPosition ?? null;
+    const lead = pin.proxyMeta.aiLead ? 'named in the AI Overview’s opening line (position 0)' : null;
+    return 'No map pack on this page, so no local rank (N/A) · ' + [lead, ai != null ? `#${ai} in the AI Overview’s list` : lead ? null : 'not in the AI Overview’s list'].filter(Boolean).join(' · ');
   }
   return r != null ? `#${r} in the local results` : 'Not in the top 10';
 }

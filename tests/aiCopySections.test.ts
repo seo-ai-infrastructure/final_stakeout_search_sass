@@ -78,3 +78,47 @@ test('the rank comes from the copied answer when it names more businesses than t
   assert.equal(without.rank, null);
   assert.ok(without.list.length <= 3);
 });
+
+test('"position zero": the business is named in the answer\'s opening sentences', async () => {
+  const { aiNamesFirst } = await import('../packages/core/serpEvidence');
+  assert.equal(aiNamesFirst(COPY, 'Brandon J. Broderick, Personal Injury Attorney at Law'), true);
+  assert.equal(aiNamesFirst(COPY, 'Zandra Law, PLLC'), true);
+  // Named further down (a card), not in the opening.
+  assert.equal(aiNamesFirst(COPY, 'Law Office of Carl Maltese'), false);
+  assert.equal(aiNamesFirst(COPY, 'Mandler & Sieger, LLP'), false);
+  // An answer that starts straight with business cards has no opening sentence.
+  assert.equal(aiNamesFirst('Law Office of Carl Maltese (https://www.google.com/search?kgmid=%2Fg%2F1tdc67_q)\n5.0(188) · Personal injury attorney', 'Law Office of Carl Maltese'), false);
+  assert.equal(aiNamesFirst(null, 'Anyone'), false);
+});
+
+test('a page with no map pack has no local rank; rank totals leave such points out', async () => {
+  const { noLocalResults, aiPositionOf, localRankOf } = await import('../packages/core/localRank');
+  const { metrics } = await import('../packages/core/grid');
+  const ai = { finderShown: false, rankFrom: 'ai_overview_list', aiPosition: 1 };
+  assert.equal(noLocalResults(ai), true);
+  assert.equal(localRankOf(ai, null), null);
+  assert.equal(aiPositionOf(ai, null), 1);
+  // Saved before the rule: the AI place sat in the rank field.
+  const old = { finderShown: false, rankFrom: 'ai_overview_list' };
+  assert.equal(localRankOf(old, 3), null);
+  assert.equal(aiPositionOf(old, 3), 3);
+  // A map pack (full list or its top three) and a single-business result keep their rank.
+  assert.equal(noLocalResults({ finderShown: false, rankFrom: 'map_pack' }), false);
+  assert.equal(noLocalResults({ finderShown: false, rankFrom: 'single_business' }), false);
+  assert.equal(noLocalResults({}), false);
+  assert.equal(localRankOf({ finderShown: false, rankFrom: 'map_pack' }, 2), 2);
+  // Two points with local results (#1 and not found) and two without: rank numbers use the two.
+  const m = metrics([
+    { rankFound: 1, hasAiOverview: true, targetCitedInAi: true },
+    { rankFound: null, hasAiOverview: false, targetCitedInAi: false },
+    { rankFound: null, hasAiOverview: true, targetCitedInAi: true, noLocal: true },
+    { rankFound: null, hasAiOverview: true, targetCitedInAi: false, noLocal: true },
+  ]);
+  assert.equal(m.solv, 50);
+  assert.equal(m.arp, 1);
+  assert.equal(m.aioTriggerRate, 75);
+  assert.equal(m.aioCitationRate, 50);
+  // Every point without a map pack: no rank numbers at all, AI numbers still there.
+  const none = metrics([{ rankFound: null, hasAiOverview: true, targetCitedInAi: true, noLocal: true }]);
+  assert.deepEqual([none.arp, none.atrp, none.solv, none.aioTriggerRate, none.aioCitationRate], [null, null, null, 100, 100]);
+});

@@ -247,12 +247,25 @@ export function scheduleCron(kind: string) {
       : null;
 }
 export function metrics(
-  pins: {
+  all: {
     rankFound: number | null;
     hasAiOverview: boolean;
     targetCitedInAi: boolean;
+    /** The point's page had no map pack: it has no local rank, and is left out of the rank numbers. */
+    noLocal?: boolean;
   }[],
 ) {
+  // Rank numbers are about the points that had local results; AI numbers are about every point.
+  const pins = all.filter((p) => !p.noLocal);
+  const aiPct = (n: number) => +((100 * n) / all.length).toFixed(2);
+  if (all.length && !pins.length)
+    return {
+      arp: null,
+      atrp: null,
+      solv: null,
+      aioTriggerRate: aiPct(all.filter((p) => p.hasAiOverview).length),
+      aioCitationRate: aiPct(all.filter((p) => p.targetCitedInAi).length),
+    };
   if (!pins.length)
     return {
       arp: null,
@@ -270,7 +283,7 @@ export function metrics(
     arp: ranks.length ? +(sum / ranks.length).toFixed(2) : 21,
     atrp: +((sum + 21 * (pins.length - ranks.length)) / pins.length).toFixed(2),
     solv: pct(ranks.filter((r) => r <= 3).length),
-    aioTriggerRate: pct(pins.filter((p) => p.hasAiOverview).length),
-    aioCitationRate: pct(pins.filter((p) => p.targetCitedInAi).length),
+    aioTriggerRate: aiPct(all.filter((p) => p.hasAiOverview).length),
+    aioCitationRate: aiPct(all.filter((p) => p.targetCitedInAi).length),
   };
 }

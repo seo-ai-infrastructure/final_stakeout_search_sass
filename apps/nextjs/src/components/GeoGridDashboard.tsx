@@ -162,6 +162,9 @@ export type GridPinData = {
     isp: string | null;
     finderShown: boolean | null;
     rankFrom: string | null;
+    noLocal?: boolean;
+    aiPosition?: number | null;
+    aiLead?: boolean;
   } | null;
   census?: PinCensus | null;
   insights?: PinInsights | null;
@@ -472,7 +475,7 @@ export function GeoGridDashboard({
       rankFrom: p.proxyMeta?.finderShown === false ? (p.proxyMeta.rankFrom ?? 'ai_overview_list') : null,
       hasAiOverview: p.hasAiOverview,
       cited: projected ? Boolean(projected.aiCitedPinIds[p.id]) || Boolean(place) : p.targetCitedInAi,
-      aiPos: place?.pos ?? null,
+      aiPos: place?.pos ?? p.proxyMeta?.aiPosition ?? null,
     });
   };
   useEffect(() => {
@@ -487,7 +490,10 @@ export function GeoGridDashboard({
       el.style.width = el.style.height = '34px';
       // On a 3D column the label takes the column's own (brighter) shade.
       let fill = view3d && style3d === 'columns' ? columnColor(p.status, rank) : rankColor(p.status, rank);
-      let text = p.status === 'FAILED' ? '×' : p.status === 'PENDING' ? '…' : rank ? String(rank) : '20+';
+      // No map pack on that page: the local rank is not applicable (grey), not "20+".
+      const na = p.status === 'COMPLETED' && !projected && Boolean(p.proxyMeta?.noLocal);
+      if (na) fill = '#334155';
+      let text = p.status === 'FAILED' ? '×' : p.status === 'PENDING' ? '…' : na ? 'N/A' : rank ? String(rank) : '20+';
       // In AI place: a point with no AI Overview is a small muted dot; one that names the business stands out.
       let quiet = false, standout = false;
       let combined: ReturnType<typeof combinedReading> | null = null;

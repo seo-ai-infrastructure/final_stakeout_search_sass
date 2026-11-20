@@ -1,6 +1,6 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/core/pinInsights';
-import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -1410,6 +1410,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     // map pack, so there was no "More businesses". Rank in that list (and record that), rather
     // than recording "0 listings, no rank".
     let aiList: { rank: number | null; list: string[] } | null = null;
+    let aiRankOnly = false;
     if ((surface === 'chrome' || surface === 'google') && b.final && !isLocalFinder(b.final)) {
       // The page's own map pack first (three listings, or four in Google's newer layout with
       // "See more on Google"), then an AI Overview's business list.
@@ -1444,7 +1445,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         Object.assign(proof, { aiListRetried: true });
       }
       aiList = { rank: r.rank, list: r.list };
-      Object.assign(proof, { finderShown: false, rankFrom: r.from });
+      aiRankOnly = r.from === 'ai_overview_list';
+      Object.assign(proof, { finderShown: false, rankFrom: r.from, ...(aiRankOnly ? { aiPosition: r.rank } : {}) });
     }
     const videoUrl = prefix + '/video.mp4',
       metaJsonUrl = prefix + '/meta.json';
@@ -1498,6 +1500,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         rankSource: !aiList ? 'local_pack_full' : from === 'map_pack' ? 'local_pack_top3' : from === 'ai_overview_list' ? 'ai_answer_list' : 'none',
         localPack: { onPage: pages.some((x) => x.pack.length > 0), moreButton: pages.some((x) => Boolean(x.packMore)), opened: !aiList },
       });
+      // "Position zero": named in the answer's opening sentences, ahead of any list.
+      if (b.aiCopy) Object.assign(proof, { aiLead: aiNamesFirst(b.aiCopy, scan.targetBusiness) });
     } else Object.assign(proof, { rankSource: 'maps_list' });
     const before = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true } }).catch(() => null);
     const attempts = (before?.proxyMeta as { attempts?: unknown } | null)?.attempts;
@@ -1505,7 +1509,9 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     run.marks.saved = Date.now();
     return {
       assignedDeviceId: d.imageId,
-      rankFound: aiList ? aiList.rank : result.targetRank,
+      // A page with no map pack has no local rank: the place in the AI Overview's list is kept
+      // apart (proxyCheck.aiPosition) and counts only as AI visibility.
+      rankFound: aiList ? (aiRankOnly ? null : aiList.rank) : result.targetRank,
       matchedDumpIdx: result.matchedDumpIndex,
       topCompetitors: aiList ? aiList.list : result.orderedBusinesses,
       insights: pinInsights ?? undefined,

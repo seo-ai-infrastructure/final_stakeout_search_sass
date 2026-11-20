@@ -1,4 +1,5 @@
 import { db } from '@stakeout/db';
+import { aiPositionOf, localRankOf, noLocalResults } from '@stakeout/core/localRank';
 import { InputError } from '@stakeout/core/grid';
 import { topRivals } from '@stakeout/core/gbpGaps';
 import { toolCall, type Call } from '@stakeout/core/agentTools';
@@ -70,8 +71,8 @@ const ROUTES: Record<string, Handler> = {
 async function gridOf(user: ActingUser, id: string): Promise<ComparedScan> {
   const scan = await db.gridScan.findFirst({ where: { id, ...(user.role === 'ADMIN' ? {} : { userId: user.id }) }, select: { id: true, keyword: true, targetBusiness: true, gridSize: true, spacingKm: true, centerLat: true, centerLng: true, targetType: true, createdAt: true } });
   if (!scan) throw new InputError('Unknown scan: ' + id + '.', 404);
-  const pins = await db.gridPin.findMany({ where: { scanId: id }, orderBy: [{ rowIdx: 'asc' }, { colIdx: 'asc' }], select: { rowIdx: true, colIdx: true, status: true, rankFound: true, topCompetitors: true } });
-  return { id: scan.id, keyword: scan.keyword, business: scan.targetBusiness, gridSize: scan.gridSize, spacingKm: scan.spacingKm, centerLat: scan.centerLat, centerLng: scan.centerLng, targetType: scan.targetType, createdAt: scan.createdAt, pins: pins.map((p) => ({ row: p.rowIdx, col: p.colIdx, status: p.status, rank: p.rankFound, top3: (Array.isArray(p.topCompetitors) ? (p.topCompetitors as unknown[]) : []).filter((x): x is string => typeof x === 'string').slice(0, 3) })) };
+  const pins = await db.gridPin.findMany({ where: { scanId: id }, orderBy: [{ rowIdx: 'asc' }, { colIdx: 'asc' }], select: { rowIdx: true, colIdx: true, status: true, rankFound: true, topCompetitors: true, proxyMeta: true } });
+  return { id: scan.id, keyword: scan.keyword, business: scan.targetBusiness, gridSize: scan.gridSize, spacingKm: scan.spacingKm, centerLat: scan.centerLat, centerLng: scan.centerLng, targetType: scan.targetType, createdAt: scan.createdAt, pins: pins.map((p) => ({ row: p.rowIdx, col: p.colIdx, status: p.status, rank: localRankOf(p.proxyMeta, p.rankFound), top3: (Array.isArray(p.topCompetitors) ? (p.topCompetitors as unknown[]) : []).filter((x): x is string => typeof x === 'string').slice(0, 3) })) };
 }
 
 /** Two scans of the same grid, point by point. */
@@ -91,10 +92,14 @@ async function scanSummary(user: ActingUser, id: string) {
     select: { id: true, userId: true, targetType: true, scheduleType: true, scheduleCron: true, keyword: true, targetBusiness: true, targetDomain: true, centerLat: true, centerLng: true, status: true, solv: true, gridSize: true, spacingKm: true, city: true, stateCode: true, totalPins: true, completedPins: true, failedPins: true, createdAt: true, trackAiOverviews: true },
   });
   if (!scan) throw new InputError('Unknown scan.', 404);
-  const pins = await db.gridPin.findMany({ where: { scanId: id }, orderBy: [{ rowIdx: 'asc' }, { colIdx: 'asc' }], select: { rowIdx: true, colIdx: true, city: true, status: true, rankFound: true, topCompetitors: true, hasAiOverview: true, targetCitedInAi: true, aiCitations: true } });
+  const rawPins = await db.gridPin.findMany({ where: { scanId: id }, orderBy: [{ rowIdx: 'asc' }, { colIdx: 'asc' }], select: { rowIdx: true, colIdx: true, city: true, status: true, rankFound: true, topCompetitors: true, hasAiOverview: true, targetCitedInAi: true, aiCitations: true, proxyMeta: true } });
+  // A page with no map pack has no local rank: its stored rank, if any, is the place in the AI answer.
+  const pins = rawPins.map((p) => ({ ...p, rankFound: localRankOf(p.proxyMeta, p.rankFound), noLocal: noLocalResults(p.proxyMeta), aiPosition: aiPositionOf(p.proxyMeta, p.rankFound) }));
   const done = pins.filter((p) => p.status === 'COMPLETED');
-  const ranked = done.filter((p) => p.rankFound !== null);
-  const rivals = topRivals(done.map((p) => ({ status: p.status, topCompetitors: p.topCompetitors as string[] | null })), scan.targetBusiness, 8);
+  const withLocal = done.filter((p) => !p.noLocal);
+  const ranked = withLocal.filter((p) => p.rankFound !== null);
+  // Rivals are counted in local results only: an AI answer's list is not a map pack.
+  const rivals = topRivals(withLocal.map((p) => ({ status: p.status, topCompetitors: p.topCompetitors as string[] | null })), scan.targetBusiness, 8);
   // Categories, rating and review count for the three most often above the business, from what is already kept.
   const known = await keptRivals(rivals.slice(0, 3).map((r) => r.name), scan.centerLat, scan.centerLng).catch(() => ({}) as Awaited<ReturnType<typeof keptRivals>>);
   const answered = done.filter((p) => p.hasAiOverview);
@@ -109,9 +114,10 @@ async function scanSummary(user: ActingUser, id: string) {
     website,
     searchedIn: maps ? 'Google Maps app' : 'Google search in Chrome',
     ...(repeats ? { repeats } : {}),
-    points: pins.map((p) => ({ row: p.rowIdx, col: p.colIdx, city: p.city, status: p.status, rank: p.rankFound, ...(scan.trackAiOverviews ? { aiAnswer: p.hasAiOverview, citedInAi: p.targetCitedInAi } : {}) })),
+    points: pins.map((p) => ({ row: p.rowIdx, col: p.colIdx, city: p.city, status: p.status, rank: p.rankFound, ...(p.noLocal ? { localResults: 'none on the page (no map pack): local rank not applicable', ...(p.aiPosition != null ? { aiAnswerPosition: p.aiPosition } : {}) } : {}), ...(scan.trackAiOverviews ? { aiAnswer: p.hasAiOverview, citedInAi: p.targetCitedInAi } : {}) })),
     averageRank: ranked.length ? Math.round((ranked.reduce((n, p) => n + (p.rankFound ?? 0), 0) / ranked.length) * 10) / 10 : null,
-    notFoundAt: done.length - ranked.length,
+    notFoundAt: withLocal.length - ranked.length,
+    noMapPackAt: done.length - withLocal.length,
     topRivals: rivals.map((r, i) => ({ name: r.name, inTopThreeAtPoints: r.points, ...(i < 3 ? known[r.name] ?? { details: 'Not looked up yet: a person can open this scan’s rival comparison on the site to fetch them.' } : {}) })),
     ...(maps ? { aiAnswers: 'Not applicable: this scan searched the Google Maps app, which shows no AI Overview. A scan in Google search (the default) always records them.' } : {}),
     ...(scan.trackAiOverviews ? { aiAnswers: { pointsWithAnAnswer: answered.length, pointsCitingTheBusiness: answered.filter((p) => p.targetCitedInAi).length, ownSiteCitedAt: cited.ownAnswers, mostCitedSites: [...cited.act, ...cited.others].sort((a, b) => b.answers - a.answers).slice(0, 10).map((c) => ({ site: c.site, name: c.name, answers: c.answers, share: c.share })) } } : {}),

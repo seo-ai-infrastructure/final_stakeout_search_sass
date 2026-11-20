@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { noLocalResults } from './localRank';
 import { db, Prisma } from '@stakeout/db';
 import {
   buildGrid,
@@ -172,12 +173,13 @@ export async function settlePin(
             rankFound: true,
             hasAiOverview: true,
             targetCitedInAi: true,
+            proxyMeta: true,
           },
         });
         await tx.gridScan.update({
           where: { id: scan.id },
           data: {
-            ...metrics(completed),
+            ...metrics(completed.map((c) => ({ ...c, noLocal: noLocalResults(c.proxyMeta) }))),
             completedAt: new Date(),
             status: !completed.length
               ? 'FAILED'

@@ -191,7 +191,7 @@ export function EvidencePanel({
                     boxShadow: p.status === 'COMPLETED' && p.targetCitedInAi ? '0 0 0 3px #c084fc' : undefined,
                   }}
                 >
-                  {p.status !== 'COMPLETED' ? (p.status === 'FAILED' ? '×' : '…') : rank ? '#' + rank : '20+'}
+                  {p.status !== 'COMPLETED' ? (p.status === 'FAILED' ? '×' : '…') : rank ? '#' + rank : p.proxyMeta?.noLocal ? 'N/A' : '20+'}
                 </span>
                 {scan.gridSize <= 7 && <span className="text-[10px] text-slate-500">R{p.rowIdx + 1}·C{p.colIdx + 1}</span>}
               </button>
