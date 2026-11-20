@@ -205,7 +205,7 @@ export type GridScanData = {
 export function GeoGridDashboard({
   identifier,
   shared = false,
-  initialMapMode = 'combined',
+  initialMapMode = 'rank',
   initialTab = 'overview',
   initialPin = null,
 }: {
