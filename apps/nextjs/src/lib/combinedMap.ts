@@ -118,10 +118,10 @@ export function combinedHalves(r: CombinedReading) {
 export function combinedTotals(readings: CombinedReading[]) {
   const n = (k: CombinedKind) => readings.filter((r) => r.kind === k).length;
   const both = n('both'), ai = n('ai'), local = n('local');
-  // A true miss had a local pack on the page and the business was in neither it nor the AI
-  // Overview. Points with no local pack are counted apart (`na`): the map shows them as N/A, or
-  // purple where an AI Overview was there.
-  const na = readings.filter((r) => r.kind === 'miss' && !r.localShown).length, miss = n('miss') - na;
+  // A true miss: the business is mentioned in neither the AI Overview nor the local pack, on a
+  // page that showed at least one of them. A page that showed neither had nothing to be in: it is
+  // counted apart (`na`), as the N/A pins on the map.
+  const na = readings.filter((r) => r.kind === 'miss' && r.ai === null && !r.localShown).length, miss = n('miss') - na;
   return {
     total: readings.length,
     visible: both + ai + local,

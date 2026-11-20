@@ -47,9 +47,10 @@ test('combined map: a point is a miss only when the business is in neither place
   assert.deepEqual(pin(combinedReading({ ...base, rankFrom: 'none' }), true), [AI_PURPLE_OUT, 'no']);
   const t = combinedTotals([recommended, both, local, aiList, miss]);
   assert.deepEqual([t.total, t.visible, t.localVisible, t.notInLocal, t.recommended, t.miss, t.na], [5, 4, 2, 3, 2, 1, 0]);
-  // A page with no local pack is counted apart, not as a miss.
-  const t2 = combinedTotals([miss, combinedReading({ ...base, rankFrom: 'none' })]);
-  assert.deepEqual([t2.miss, t2.na, t2.notInLocal], [1, 1, 2]);
+  // A true miss is "not mentioned in either": an AI Overview that leaves the business out on a page
+  // with no local pack counts. A page that showed neither (no AI Overview, no local pack) is N/A.
+  const t2 = combinedTotals([miss, combinedReading({ ...base, rankFrom: 'none' }), combinedReading({ ...base, rankFrom: 'none', hasAiOverview: false })]);
+  assert.deepEqual([t2.miss, t2.na, t2.notInLocal], [2, 1, 3]);
 });
 
 test('combined map, 50/50 split: AI Overview on top, the local results below in the Pack rank colours', async () => {
