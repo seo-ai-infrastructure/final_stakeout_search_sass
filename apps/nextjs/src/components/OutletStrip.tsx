@@ -55,6 +55,7 @@ export default function OutletStrip({ profile, location, name = '', onChange }: 
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [find, setFind] = useState('');
+  const [sureOut, setSureOut] = useState(false);
   const base = `profile=${encodeURIComponent(profile)}&location=${encodeURIComponent(location)}`;
 
   const take = useCallback(
@@ -77,17 +78,17 @@ export default function OutletStrip({ profile, location, name = '', onChange }: 
       else setError(e instanceof Error ? e.message : 'Could not read the connected networks.');
     }
   }, [base, take]);
-  useEffect(() => { setOutlets(null); setOpen(null); setError(''); setFind(''); load(); }, [load]);
+  useEffect(() => { setOutlets(null); setOpen(null); setError(''); setFind(''); setSureOut(false); load(); }, [load]);
 
   if (!outlets || outlets.length === 0) return error ? <p className="text-xs text-rose-300">{error}</p> : null;
 
-  const act = async (outlet: ExtraOutlet, action: 'connect' | 'choose' | 'forget', placement?: string | null) => {
+  const act = async (outlet: ExtraOutlet, action: 'connect' | 'choose' | 'forget' | 'disconnect', placement?: string | null) => {
     setBusy(outlet + action); setError('');
     try {
       const r = await call<{ url?: string; outlets?: Outlet[]; off?: Tick[] }>('/api/admin/gbp/outlets', 'POST', { profile, location, outlet, action, placement });
       if (r.url) { window.location.href = r.url; return; }
       if (r.outlets) take(r.outlets, r.off ?? []);
-      setFind('');
+      setFind(''); setSureOut(false);
       if (action !== 'connect') setOpen(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not work.');
@@ -134,7 +135,6 @@ export default function OutletStrip({ profile, location, name = '', onChange }: 
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
               <span className="text-slate-200">
                 {OUTLET_NAME[shown.outlet]}: <span className="font-semibold text-white">{shown.chosen.name}</span>
-                {shown.account && <span className="text-slate-500"> · signed in as {shown.account}</span>}
               </span>
               <button type="button" disabled={Boolean(busy)} onClick={() => change(shown.outlet)} className="text-xs text-slate-400 hover:text-sky-300">{busy === shown.outlet + 'list' ? 'Listing…' : 'Change'}</button>
               <button type="button" disabled={Boolean(busy)} onClick={() => act(shown.outlet, 'forget')} className="text-xs text-slate-400 hover:text-rose-300">Stop posting here</button>
@@ -184,6 +184,21 @@ export default function OutletStrip({ profile, location, name = '', onChange }: 
             </p>
           )}
         </div>
+      )}
+      {/* A wrong login can be signed out without choosing any Page. */}
+      {shown && shown.connected && (
+        <p className="mt-2 text-xs text-slate-500">
+          {shown.account ? `Signed in to ${OUTLET_NAME[shown.outlet]} as ${shown.account}. ` : ''}
+          {sureOut ? (
+            <>
+              This signs {OUTLET_NAME[shown.outlet]} out for every listing under this Google account. Posts already sent stay up.{' '}
+              <button type="button" disabled={Boolean(busy)} onClick={() => act(shown.outlet, 'disconnect')} className="text-rose-300 hover:underline">{busy === shown.outlet + 'disconnect' ? 'Disconnecting…' : 'Yes, disconnect'}</button>{' '}
+              <button type="button" onClick={() => setSureOut(false)} className="text-slate-400 hover:underline">Keep it</button>
+            </>
+          ) : (
+            <button type="button" onClick={() => setSureOut(true)} className="text-slate-400 hover:text-rose-300">Wrong login? Disconnect</button>
+          )}
+        </p>
       )}
       {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
     </div>

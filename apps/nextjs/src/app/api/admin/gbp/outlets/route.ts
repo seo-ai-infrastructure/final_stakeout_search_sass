@@ -3,7 +3,7 @@ import { InputError } from '@stakeout/core/grid';
 import { isExtraOutlet } from '@stakeout/core/outlets';
 import { errorResponse } from '@/lib/api';
 import { gate } from '@/lib/gbpAccess';
-import { chooseOutlet, connectOutlet, forgetOutlet, outletStrip, placementsOf, savedOutlets, savedTicksOff } from '@/lib/outlets';
+import { chooseOutlet, connectOutlet, disconnectOutlet, forgetOutlet, outletStrip, placementsOf, savedOutlets, savedTicksOff } from '@/lib/outlets';
 import { rankChoices } from '@stakeout/core/outlets';
 
 export const maxDuration = 30;
@@ -43,7 +43,8 @@ export async function GET(req: Request) {
  * POST /api/admin/gbp/outlets { profile, location, outlet, action }:
  *  connect → { url } to sign in to that network;
  *  choose  → records { placement } (a Page id, or null for the person's own LinkedIn profile) for this listing;
- *  forget  → this listing stops posting there (the sign-in stays for other listings).
+ *  forget  → this listing stops posting there (the sign-in stays for other listings);
+ *  disconnect → signs that network's login out of the account, for every listing under it.
  */
 export async function POST(req: Request) {
   try {
@@ -56,6 +57,7 @@ export async function POST(req: Request) {
     }
     if (b.action === 'choose') await chooseOutlet(t, b.outlet, typeof b.placement === 'string' && b.placement ? b.placement : null);
     else if (b.action === 'forget') await forgetOutlet(t, b.outlet);
+    else if (b.action === 'disconnect') await disconnectOutlet(t, b.outlet);
     else throw new InputError('Unknown action.');
     return NextResponse.json({ outlets: await outletStrip(t), off: await savedTicksOff(t) });
   } catch (e) {

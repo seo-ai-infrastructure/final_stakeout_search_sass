@@ -32,6 +32,9 @@ async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> 
 }
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
 /** A moment as the value a date-and-time field takes, in the viewer's own time zone. */
+/** A form date (2026-11-28) and time (14:30) as people read them. */
+const day = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(v + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
+const clock = (v: string) => (/^\d{2}:\d{2}$/.test(v) ? new Date('2000-01-01T' + v + ':00').toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '');
 const localValue = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 /**
@@ -140,7 +143,9 @@ export default function GbpPosts({ profile, location, name = '' }: { profile: st
     ? { ...d, format: 'standard', cta: '', ctaUrl: '' }
     : d.format === 'standard' && !d.body.trim() && d.image
       ? { ...d, format: 'photo' }
-      : d;
+      : d.format === 'offer'
+        ? { ...d, cta: '', ctaUrl: '', startTime: '', endTime: '' }
+        : d;
   // On an empty form nothing is judged yet: the ticks show what a post will go to once written.
   const fresh = !d.body && !d.image && !d.title && !d.startDate;
   const whyNot = (o: Outlet) => outletProblem(fresh ? { ...eff, format: 'standard', body: 'x' } : eff, o.outlet, o.chosen ? { profile: '', placement: o.chosen.id, name: o.chosen.name } : undefined);
@@ -155,7 +160,8 @@ export default function GbpPosts({ profile, location, name = '' }: { profile: st
   const untouched = fresh;
   const length = d.body.trim().length;
   // Google's options stay open while one of them is in use.
-  const optsOpen = opts || d.format !== 'standard' || Boolean(d.cta);
+  const hasButton = d.format !== 'offer' && Boolean(d.cta);
+  const optsOpen = opts || d.format !== 'standard' || hasButton;
   const seen: Tick = targets.includes(view) ? view : targets[0] ?? 'google_business';
   const seenName = seen === 'google_business' ? name || 'Your Google listing' : ready.find((o) => o.outlet === seen)?.chosen?.name ?? OUTLET_NAME[seen];
 
@@ -201,7 +207,7 @@ export default function GbpPosts({ profile, location, name = '' }: { profile: st
     if (at.getTime() < Date.now() + 10 * 60000) { at = new Date(Date.now() + 3600000); at.setMinutes(at.getMinutes() < 30 ? 30 : 60, 0, 0); }
     setLater(true); set('scheduledAt', at.toISOString());
     composer.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    composer.current?.querySelector('textarea')?.focus({ preventScroll: true });
+    document.getElementById('post-text')?.focus({ preventScroll: true });
   };
   const scheduleOne = async (draft: PostDraft) => {
     await call('/api/admin/gbp/posts', 'POST', { profile, location, draft });
@@ -301,11 +307,11 @@ export default function GbpPosts({ profile, location, name = '' }: { profile: st
           {/* What only Google has: the kind of post, its button, and offer or event details. Gone when Google is unticked. */}
           {google && (
             <div className="rounded-lg border border-slate-800 bg-slate-950/60">
-              <button type="button" aria-expanded={optsOpen} onClick={() => setOpts(!optsOpen)} disabled={d.format !== 'standard' || Boolean(d.cta)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm">
+              <button type="button" aria-expanded={optsOpen} onClick={() => setOpts(!optsOpen)} disabled={d.format !== 'standard' || hasButton} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm">
                 <OutletMark outlet="google_business" size={18} />
                 <span className="text-slate-400">{ready.length ? 'Google options' : 'Post options'}</span>
-                <span className="text-slate-200">{FORMATS.find((f) => f[0] === d.format)?.[1] ?? 'Update'} · {CTA.find((c) => c.value === d.cta)?.label ?? 'No button'}</span>
-                {d.format === 'standard' && !d.cta && <span className="ml-auto text-xs text-slate-500">{optsOpen ? 'Hide' : 'Change'}</span>}
+                <span className="text-slate-200">{FORMATS.find((f) => f[0] === d.format)?.[1] ?? 'Update'} · {d.format === 'offer' ? (d.redeemUrl.trim() ? 'Link to redeem' : 'No link') : CTA.find((c) => c.value === d.cta)?.label ?? 'No button'}</span>
+                {d.format === 'standard' && !hasButton && <span className="ml-auto text-xs text-slate-500">{optsOpen ? 'Hide' : 'Change'}</span>}
               </button>
               {optsOpen && (
                 <div className="space-y-3 border-t border-slate-800 p-3">
@@ -320,14 +326,16 @@ export default function GbpPosts({ profile, location, name = '' }: { profile: st
                         <label className="text-sm font-medium">{d.format === 'event' ? 'Event name' : 'Offer headline'} <span className="ml-1 text-xs text-slate-500">{d.title.length} / 58{d.format === 'offer' ? ' · optional' : ''}</span></label>
                         <input className={input + ' mt-1.5'} value={d.title} onChange={(e) => set('title', e.target.value)} placeholder={d.format === 'event' ? 'Open house' : '10% off roof washing'} />
                       </div>
-                      <div>
-                        <label className="text-sm font-medium">Starts</label>
-                        <div className="mt-1.5 flex flex-wrap gap-2"><input type="date" className={small + ' min-w-0 flex-1'} value={d.startDate} onChange={(e) => set('startDate', e.target.value)} /><input type="time" className={small} value={d.startTime} onChange={(e) => set('startTime', e.target.value)} aria-label="Start time (optional)" /></div>
-                      </div>
-                      <div>
-                        <label className="text-sm font-medium">Ends</label>
-                        <div className="mt-1.5 flex flex-wrap gap-2"><input type="date" className={small + ' min-w-0 flex-1'} value={d.endDate} onChange={(e) => set('endDate', e.target.value)} /><input type="time" className={small} value={d.endTime} onChange={(e) => set('endTime', e.target.value)} aria-label="End time (optional)" /></div>
-                      </div>
+                      {(['start', 'end'] as const).map((k) => (
+                        <div key={k} className="min-w-0">
+                          <label className="text-sm font-medium">{k === 'start' ? 'Starts' : 'Ends'}</label>
+                          <div className="mt-1.5 flex flex-wrap gap-2">
+                            <input type="date" className={small + ' min-w-[9.5rem] flex-1'} value={k === 'start' ? d.startDate : d.endDate} onChange={(e) => set(k === 'start' ? 'startDate' : 'endDate', e.target.value)} aria-label={k === 'start' ? 'Start date' : 'End date'} />
+                            {/* An offer runs by the day; only an event has times. */}
+                            {d.format === 'event' && <input type="time" className={small + ' min-w-[7.5rem] flex-1'} value={k === 'start' ? d.startTime : d.endTime} onChange={(e) => set(k === 'start' ? 'startTime' : 'endTime', e.target.value)} aria-label={(k === 'start' ? 'Start' : 'End') + ' time (optional)'} />}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   )}
                   {d.format === 'offer' && (
@@ -337,11 +345,12 @@ export default function GbpPosts({ profile, location, name = '' }: { profile: st
                       <div className="sm:col-span-2"><label className="text-sm font-medium">Terms <span className="text-xs text-slate-500">optional</span></label><input className={input + ' mt-1.5'} value={d.terms} onChange={(e) => set('terms', e.target.value)} /></div>
                     </div>
                   )}
-                  <div className="grid gap-3 sm:grid-cols-[12rem_1fr]">
+                  {/* An offer's link is "Link to redeem": it has no separate button. */}
+                  {d.format !== 'offer' && <div className="grid gap-3 sm:grid-cols-[12rem_1fr]">
                     <div><label className="text-sm font-medium">Button</label><select className={input + ' mt-1.5'} value={d.cta} onChange={(e) => set('cta', e.target.value)}>{CTA.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></div>
                     {d.cta && d.cta !== 'CALL' && <div><label className="text-sm font-medium">Button link</label><input className={input + ' mt-1.5'} value={d.ctaUrl} onChange={(e) => set('ctaUrl', e.target.value)} placeholder="https://" /></div>}
                     {d.cta === 'CALL' && <p className="self-end pb-2 text-xs text-slate-500">Calls the number on the listing.</p>}
-                  </div>
+                  </div>}
                   {sending.length > 0 && <p className="text-xs text-slate-500">These show on Google only. {sending.map((o) => OUTLET_NAME[o]).join(' and ')} get{sending.length === 1 ? 's' : ''} the text and photo.</p>}
                 </div>
               )}
@@ -350,7 +359,7 @@ export default function GbpPosts({ profile, location, name = '' }: { profile: st
         </div>
 
         {/* How the post will look on one of the places it is going. A sketch, not the network's own rendering. */}
-        <aside className="min-w-0">
+        <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
           <div className="flex items-center gap-2">
             <p className="text-sm font-medium">Preview</p>
             {targets.length > 1 && (
@@ -382,20 +391,27 @@ export default function GbpPosts({ profile, location, name = '' }: { profile: st
                 <div className="px-3 py-3">
                   {seen === 'google_business' && dated && (
                     <>
-                      {d.title && <p className="text-sm font-semibold">{d.title}</p>}
-                      {d.startDate && <p className="text-xs text-slate-500">{d.startDate}{d.startTime ? ' ' + d.startTime : ''}{d.endDate ? ' – ' + d.endDate + (d.endTime ? ' ' + d.endTime : '') : ''}</p>}
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">{d.format === 'offer' ? 'Offer' : 'Event'}</p>
+                      <p className={'text-sm font-semibold ' + (d.title ? '' : 'text-slate-400')}>{d.title || (d.format === 'event' ? 'Event name' : 'Offer headline')}</p>
+                      <p className="text-xs text-slate-500">{day(d.startDate) ? (d.format === 'offer' ? 'Valid ' : '') + day(d.startDate) + (eff.startTime ? ', ' + clock(eff.startTime) : '') + (day(d.endDate) ? ' – ' + day(d.endDate) + (eff.endTime ? ', ' + clock(eff.endTime) : '') : '') : 'Start and end dates'}</p>
                     </>
                   )}
                   {d.body.trim() && <p className="mt-1 whitespace-pre-wrap break-words text-sm">{d.body.trim().slice(0, OUTLET_TEXT_MAX[seen])}</p>}
-                  {seen === 'google_business' && d.format === 'offer' && d.coupon && <p className="mt-2 inline-block rounded border border-dashed border-slate-400 px-2 py-1 text-xs font-semibold">{d.coupon}</p>}
-                  {seen === 'google_business' && d.cta && <p className="mt-2 text-sm font-semibold text-blue-600">{CTA.find((c) => c.value === d.cta)?.label}</p>}
+                  {seen === 'google_business' && d.format === 'offer' && (
+                    <>
+                      {d.coupon.trim() && <p className="mt-2 inline-block rounded border border-dashed border-slate-400 px-2 py-1 text-xs font-semibold">Code: {d.coupon.trim()}</p>}
+                      {d.terms.trim() && <p className="mt-1 text-xs text-slate-500">{d.terms.trim()}</p>}
+                      {d.redeemUrl.trim() && <p className="mt-2 text-sm font-semibold text-blue-600">Redeem online</p>}
+                    </>
+                  )}
+                  {seen === 'google_business' && eff.cta && <p className="mt-2 text-sm font-semibold text-blue-600">{CTA.find((c) => c.value === eff.cta)?.label}</p>}
                 </div>
                 {seen !== 'google_business' && d.image && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={d.image} alt="" className="w-full object-cover" />
                 )}
                 {/* Facebook turns the button link into a link card when there is no photo. */}
-                {seen === 'facebook' && !d.image && google && d.cta && d.cta !== 'CALL' && /^https:\/\/\S+$/.test(d.ctaUrl.trim()) && (
+                {seen === 'facebook' && !d.image && google && eff.cta && eff.cta !== 'CALL' && /^https:\/\/\S+$/.test(d.ctaUrl.trim()) && (
                   <p className="truncate border-t border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-600">{d.ctaUrl.trim().replace(/^https:\/\//, '').split('/')[0]}</p>
                 )}
               </>

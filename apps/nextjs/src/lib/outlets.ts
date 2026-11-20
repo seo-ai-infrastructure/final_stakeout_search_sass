@@ -156,6 +156,17 @@ export async function forgetOutlet(t: { profile: string; location: string }, out
   await save(t, saved);
 }
 
+/**
+ * Signs that network's login out of the listing's account altogether (a wrong login, say). Every
+ * listing under the same Google account loses it; posts already sent stay where they are.
+ */
+export async function disconnectOutlet(t: { profile: string; location: string }, outlet: ExtraOutlet) {
+  const { profiles } = await groupOf(t.profile);
+  const p = profiles.find((x) => x.platform === outlet);
+  if (p) await postproxy('/api/profiles/' + encodeURIComponent(p.id), { method: 'DELETE' });
+  await forgetOutlet(t, outlet);
+}
+
 /** The outlets a post asked for, as chosen for this listing and still connected. Unknown names are refused. */
 export async function outletsToSend(t: { profile: string; location: string }, asked: unknown): Promise<ListingOutlets> {
   const names = Array.isArray(asked) ? [...new Set(asked.map(String))] : [];
