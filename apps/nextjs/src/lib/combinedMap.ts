@@ -89,9 +89,11 @@ export const COMBINED_LEGEND: CombinedStyle[] = [
 
 /**
  * The two halves of a split pin: the AI Overview on top (it is higher on the page), the local
- * results under it, each with one short label. The local half takes the Pack rank colours; a
- * point missing from the local results stays neutral where the AI Overview names the business,
- * and takes the 20+ red only when it is in neither.
+ * results under it, each with one short label. The AI half is purple whenever an AI Overview was
+ * on the page (dark purple "No" when it left the business out), as on the best-placement pin. The
+ * local half takes the Pack rank colours; "N/A" where the page had no local pack; a point missing
+ * from the pack stays neutral where the AI Overview names the business, and takes the 20+ red only
+ * when it is in neither.
  */
 export function combinedHalves(r: CombinedReading) {
   const top =
@@ -100,8 +102,9 @@ export function combinedHalves(r: CombinedReading) {
       : typeof r.ai === 'number'
         ? { text: '#' + r.ai, fill: '#4f46e5', ink: '#eef2ff' }
         : r.ai === 'no'
-          ? { text: 'No', fill: '#4c0519', ink: '#fecdd3' }
+          ? { text: 'No', fill: AI_PURPLE_OUT, ink: '#ddd6fe' }
           : { text: '–', fill: '#1e293b', ink: '#94a3b8' };
+  if (!r.localShown) return { top, bottom: { text: 'N/A', fill: NA_COLOR, ink: rankTextColor(NA_COLOR) } };
   const fill = r.local != null ? rankColor('COMPLETED', r.local) : r.kind === 'miss' ? RANK_COLORS.none : '#0f172a';
   const bottom = {
     text: r.local != null ? '#' + r.local : r.localShown ? '20+' : '–',
@@ -114,18 +117,23 @@ export function combinedHalves(r: CombinedReading) {
 /** The headline numbers for a set of finished points. */
 export function combinedTotals(readings: CombinedReading[]) {
   const n = (k: CombinedKind) => readings.filter((r) => r.kind === k).length;
-  const both = n('both'), ai = n('ai'), local = n('local'), miss = n('miss');
+  const both = n('both'), ai = n('ai'), local = n('local');
+  // A true miss had a local pack on the page and the business was in neither it nor the AI
+  // Overview. Points with no local pack are counted apart (`na`): the map shows them as N/A, or
+  // purple where an AI Overview was there.
+  const na = readings.filter((r) => r.kind === 'miss' && !r.localShown).length, miss = n('miss') - na;
   return {
     total: readings.length,
     visible: both + ai + local,
     localVisible: both + local,
     /** Points a local-only map marks as not found. */
-    notInLocal: ai + miss,
+    notInLocal: ai + miss + na,
     /** Named in the AI Overview while missing from the local results. */
     recommended: ai,
     both,
     local,
     miss,
+    na,
     firstInBoth: readings.filter((r) => r.ai === 1 && r.local === 1).length,
   };
 }

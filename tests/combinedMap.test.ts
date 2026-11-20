@@ -46,12 +46,15 @@ test('combined map: a point is a miss only when the business is in neither place
   assert.deepEqual(pin(local), [AI_PURPLE_OUT, 'no']);
   assert.deepEqual(pin(combinedReading({ ...base, rankFrom: 'none' }), true), [AI_PURPLE_OUT, 'no']);
   const t = combinedTotals([recommended, both, local, aiList, miss]);
-  assert.deepEqual([t.total, t.visible, t.localVisible, t.notInLocal, t.recommended, t.miss], [5, 4, 2, 3, 2, 1]);
+  assert.deepEqual([t.total, t.visible, t.localVisible, t.notInLocal, t.recommended, t.miss, t.na], [5, 4, 2, 3, 2, 1, 0]);
+  // A page with no local pack is counted apart, not as a miss.
+  const t2 = combinedTotals([miss, combinedReading({ ...base, rankFrom: 'none' })]);
+  assert.deepEqual([t2.miss, t2.na, t2.notInLocal], [1, 1, 2]);
 });
 
 test('combined map, 50/50 split: AI Overview on top, the local results below in the Pack rank colours', async () => {
-  const { combinedReading, combinedHalves } = await import('../apps/nextjs/src/lib/combinedMap');
-  const { rankColor, RANK_COLORS } = await import('../apps/nextjs/src/lib/gridColumns');
+  const { combinedReading, combinedHalves, AI_PURPLE_OUT } = await import('../apps/nextjs/src/lib/combinedMap');
+  const { rankColor, RANK_COLORS, NA_COLOR } = await import('../apps/nextjs/src/lib/gridColumns');
   const base = { rank: null, rankFrom: null, hasAiOverview: true, cited: false, aiPos: null };
   const half = (p: Partial<typeof base> & Record<string, unknown>) => combinedHalves(combinedReading({ ...base, ...p } as typeof base));
   // AI #1, not in the local results: purple "#1" over a neutral "20+" (the AI Overview has it, so not a miss).
@@ -62,11 +65,12 @@ test('combined map, 50/50 split: AI Overview on top, the local results below in 
   assert.deepEqual([b.top.text, b.top.fill, b.bottom.text, b.bottom.fill, b.bottom.ink], ['#5', '#4f46e5', '#6', rankColor('COMPLETED', 6), '#0f172a']);
   // Local #2 with an AI Overview that leaves the business out; then with no AI Overview at all.
   const c = half({ rank: 2 });
-  assert.deepEqual([c.top.text, c.bottom.text, c.bottom.fill, c.bottom.ink], ['No', '#2', '#2a6600', '#ffffff']);
+  assert.deepEqual([c.top.text, c.top.fill, c.bottom.text, c.bottom.fill, c.bottom.ink], ['No', AI_PURPLE_OUT, '#2', '#2a6600', '#ffffff']);
   assert.equal(half({ rank: 2, hasAiOverview: false }).top.text, '–');
-  // Named without a place, on a page with no local results.
+  // On a page with no local pack: N/A underneath, whether or not the AI Overview has the business.
   const d = half({ cited: true, rank: 3, rankFrom: 'ai_overview_list' });
-  assert.deepEqual([d.top.text, d.bottom.text, d.bottom.fill], ['#3', '–', '#0f172a']);
+  assert.deepEqual([d.top.text, d.bottom.text, d.bottom.fill], ['#3', 'N/A', NA_COLOR]);
+  assert.deepEqual([half({ rankFrom: 'none' }).bottom.text, half({ rankFrom: 'none' }).bottom.fill], ['N/A', NA_COLOR]);
   assert.equal(half({ cited: true }).top.text, '✓');
   // In neither place: the 20+ red underneath.
   const e = half({});

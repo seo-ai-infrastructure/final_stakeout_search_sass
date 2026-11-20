@@ -807,7 +807,7 @@ export function GeoGridDashboard({
             <p className="mt-1 text-2xl font-bold text-rose-300">
               {combinedStats.miss} <span className="text-sm font-medium text-slate-300">of {combinedStats.total} points</span>
             </p>
-            <p className="mt-1 text-xs text-slate-300">In neither the AI Overview nor the local results</p>
+            <p className="mt-1 text-xs text-slate-300">A local pack was shown, and the business was in neither it nor the AI Overview{combinedStats.na > 0 ? ` · ${combinedStats.na} more had no local pack on the page` : ''}</p>
           </div>
         </div>
       )}
