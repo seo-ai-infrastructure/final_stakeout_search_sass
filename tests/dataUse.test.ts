@@ -84,3 +84,17 @@ test('the exit check reads our own tiny reply and compares it with the last paid
   assert.equal(idleExitVerdict('198.51.100.4', null), 'idle');
   assert.equal(idleExitVerdict(null, '203.0.113.9'), 'unknown');
 });
+
+test("the phone's own history is read per time bucket, with the apps that used the most", async () => {
+  const { parseUidBuckets, dataHistory } = await import('../packages/core/dataUse');
+  const rows = parseUidBuckets(NETSTATS);
+  assert.deepEqual(rows.sort((a, b) => a.st - b.st || a.uid.localeCompare(b.uid)), [
+    { uid: '10123', st: 1700000000, bytes: 1200 },
+    { uid: '1000', st: 1700007200, bytes: 30 },
+    { uid: '10123', st: 1700007200, bytes: 4800 },
+  ]);
+  const big = [{ uid: '10', st: 7200, bytes: 300 * 1048576 }, { uid: '11', st: 7200, bytes: 5 * 1048576 }, { uid: '10', st: 0, bytes: 9 }];
+  assert.deepEqual(dataHistory(big, { '10': 'com.android.vending' }, 3600), [
+    { st: 7200, totalMb: 305, apps: [{ app: 'com.android.vending', mb: 300 }, { app: 'uid 11', mb: 5 }] },
+  ]);
+});

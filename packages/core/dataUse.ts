@@ -112,3 +112,52 @@ export function dataLine(u: DataUse): string {
   const apps = u.apps.length ? u.apps.map((a) => a.app + ' ' + a.mb).join(', ') : u.appsMb == null ? 'per-app not read' : 'no app above 0.01 MB';
   return total + ' · ' + apps + (u.appsMb != null ? ' · all apps ' + u.appsMb + ' MB' : '');
 }
+
+/**
+ * Android keeps its per-app numbers in time buckets (usually two hours each). This reads them
+ * all: one row per app id and bucket start (epoch seconds), bytes in plus out, "UID stats" only.
+ */
+export function parseUidBuckets(text: string): { uid: string; st: number; bytes: number }[] {
+  const lines = String(text ?? '').split('\n');
+  const hasSection = lines.some((l) => /^UID stats:/i.test(l));
+  const sums = new Map<string, number>();
+  let inside = !hasSection;
+  let uid: string | null = null;
+  for (const line of lines) {
+    if (hasSection && /^\S.*stats:\s*$/i.test(line)) {
+      inside = /^UID stats:/i.test(line);
+      uid = null;
+      continue;
+    }
+    if (!inside) continue;
+    const who = line.match(/\buid=(-?\d+)\b/);
+    if (who) {
+      const tag = line.match(/\btag=(0x[0-9a-f]+|\d+)/i)?.[1];
+      uid = Number(who[1]) >= 0 && (!tag || Number(tag) === 0) ? who[1] : null;
+      continue;
+    }
+    if (!uid) continue;
+    const st = line.match(/\bst=(\d+)/);
+    if (!st) continue;
+    // Seconds on current Android; milliseconds on a few old builds.
+    const start = Number(st[1]) > 1e11 ? Math.round(Number(st[1]) / 1000) : Number(st[1]);
+    const bytes = Number(line.match(/\brb=(\d+)/)?.[1] ?? 0) + Number(line.match(/\btb=(\d+)/)?.[1] ?? 0);
+    const key = uid + '|' + start;
+    sums.set(key, (sums.get(key) ?? 0) + bytes);
+  }
+  return [...sums].map(([k, bytes]) => ({ uid: k.split('|')[0], st: Number(k.split('|')[1]), bytes }));
+}
+
+/** The buckets since `sinceSec`, newest last: each with its total and the apps that used the most. */
+export function dataHistory(rows: { uid: string; st: number; bytes: number }[], names: Record<string, string>, sinceSec: number, top = 5) {
+  const by = new Map<number, { uid: string; bytes: number }[]>();
+  for (const r of rows) if (r.st >= sinceSec && r.bytes > 0) by.set(r.st, [...(by.get(r.st) ?? []), r]);
+  return [...by.keys()].sort((a, b) => a - b).map((st) => {
+    const list = by.get(st)!.sort((a, b) => b.bytes - a.bytes);
+    return {
+      st,
+      totalMb: mb(list.reduce((n, x) => n + x.bytes, 0)),
+      apps: list.slice(0, top).filter((x) => x.bytes >= 102400).map((x) => ({ app: uidName(x.uid, names), mb: mb(x.bytes) })),
+    };
+  });
+}
