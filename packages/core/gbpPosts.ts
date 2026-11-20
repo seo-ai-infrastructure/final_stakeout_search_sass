@@ -4,6 +4,7 @@
  * schedules it, reading the posts back, and the next open weekly slot for a listing.
  */
 
+import { readOutletResults, type OutletResult } from './outlets';
 export type PostFormat = 'standard' | 'offer' | 'event' | 'photo';
 export const CTA: { value: string; label: string }[] = [
   { value: '', label: 'No button' },
@@ -104,6 +105,8 @@ export function postRequest(d: PostDraft, profile: string, location: string) {
 }
 
 export type GbpPost = {
+  /** How the same post fared on the other outlets it was sent to (Facebook, LinkedIn); empty when it went to Google alone. */
+  also?: OutletResult[];
   id: string;
   location: string;
   format: string;
@@ -144,6 +147,7 @@ export function readPost(raw: unknown): GbpPost | null {
     at: (state === 'scheduled' ? text(r.scheduled_at) : text(g.attempted_at)) ?? text(r.scheduled_at) ?? text(r.created_at),
     permalink: typeof g.permalink === 'string' && /^https:\/\//.test(g.permalink) ? g.permalink : null,
     image: image && /^https:\/\//.test(image) ? image : null,
+    also: readOutletResults(raw),
   };
 }
 

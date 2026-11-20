@@ -1,6 +1,8 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import GbpPostCalendar from '@/components/GbpPostCalendar';
+import OutletStrip, { OutletMark, type Outlet } from '@/components/OutletStrip';
+import { OUTLET_NAME, OUTLET_TEXT_MAX, outletProblem, type ExtraOutlet } from '@stakeout/core/outlets';
 import { BODY_MAX, CTA, emptyDraft, nextWeeklySlot, postProblem, type GbpPost, type PostDraft, type PostFormat } from '@stakeout/core/gbpPosts';
 
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
@@ -69,6 +71,9 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   const [note, setNote] = useState('');
   const [sure, setSure] = useState('');
   const composer = useRef<HTMLDivElement>(null);
+  // The listing's other outlets (Facebook, LinkedIn), and which of them this post is switched off for.
+  const [outlets, setOutlets] = useState<Outlet[]>([]);
+  const [off, setOff] = useState<ExtraOutlet[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -87,6 +92,13 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   const set = <K extends keyof PostDraft>(k: K, v: PostDraft[K]) => { setD((x) => ({ ...x, [k]: v })); setNote(''); };
   const scheduled = useMemo(() => (posts ?? []).filter((p) => p.state === 'scheduled' && p.at).map((p) => p.at as string), [posts]);
   const problem = postProblem(d);
+  // An outlet takes this post when it is connected, a Page is chosen, and the post suits it. Each
+  // starts switched on; one that cannot take the post says why and is left out.
+  const ready = outlets.filter((o) => o.connected && o.chosen);
+  const whyNot = (o: Outlet) => outletProblem(d, o.outlet, o.chosen ? { profile: '', placement: o.chosen.id, name: o.chosen.name } : undefined);
+  const sending = ready.filter((o) => !off.includes(o.outlet) && !whyNot(o)).map((o) => o.outlet);
+  // The tightest text limit among the outlets this post is going to (Google's, unless that changes).
+  const textMax = Math.min(BODY_MAX, ...sending.map((o) => OUTLET_TEXT_MAX[o]));
   const dated = d.format === 'offer' || d.format === 'event';
   const untouched = !d.body && !d.image && !d.title && !d.startDate;
 
@@ -98,8 +110,9 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   const send = async () => {
     setBusy('send'); setError(''); setNote('');
     try {
-      await call('/api/admin/gbp/posts', 'POST', { profile, location, draft: d });
-      setNote(d.scheduledAt ? 'Scheduled for ' + when(d.scheduledAt) + '.' : 'Sent. It shows as “On Google” below once Google has published it.');
+      await call('/api/admin/gbp/posts', 'POST', { profile, location, draft: d, ...(sending.length ? { outlets: sending } : {}) });
+      const where = sending.length ? ' Also going to ' + sending.map((o) => OUTLET_NAME[o]).join(' and ') + '.' : '';
+      setNote((d.scheduledAt ? 'Scheduled for ' + when(d.scheduledAt) + '.' : 'Sent. It shows as “On Google” below once Google has published it.') + where);
       setD(emptyDraft()); setLater(false);
       await load();
     } catch (e) {
@@ -138,6 +151,8 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
     <section className={card + ' space-y-4'}>
       <h3 className="font-semibold">Posts</h3>
       {posts !== null && <GbpPostCalendar posts={posts} onDay={writeFor} onSchedule={scheduleOne} onCancel={remove} />}
+
+      <OutletStrip profile={profile} location={location} onChange={setOutlets} />
 
       <div ref={composer} className="scroll-mt-20 border-t border-slate-800 pt-4">
         <p className="text-sm font-medium">Write a post</p>
@@ -224,6 +239,32 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
         )}
       </div>
 
+      {ready.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-slate-400">Post to</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 py-0.5 pl-0.5 pr-2.5 text-slate-200" title="Every post goes to the Google listing"><OutletMark outlet="google_business" size={22} /> Google</span>
+          {ready.map((o) => {
+            const why = whyNot(o);
+            const on = sending.includes(o.outlet);
+            return (
+              <button
+                key={o.outlet}
+                type="button"
+                aria-pressed={on}
+                disabled={Boolean(why)}
+                title={why ?? (on ? `Going to ${o.chosen!.name}. Select to leave ${OUTLET_NAME[o.outlet]} out of this post.` : `Select to send this post to ${o.chosen!.name} too.`)}
+                onClick={() => setOff((x) => (x.includes(o.outlet) ? x.filter((y) => y !== o.outlet) : [...x, o.outlet]))}
+                className={'inline-flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 ' + (on ? 'border-slate-600 text-slate-100' : 'border-slate-800 text-slate-500') + (why ? ' cursor-not-allowed' : ' hover:border-slate-500')}
+              >
+                <OutletMark outlet={o.outlet} on={on} size={22} /> {OUTLET_NAME[o.outlet]}
+                {why && <span className="text-amber-300/90">· {why}</span>}
+              </button>
+            );
+          })}
+          {sending.length > 0 && <span className="text-slate-500">Same text and photo everywhere · {textMax.toLocaleString()} characters ({textMax === BODY_MAX ? 'Google’s limit' : 'the tightest limit'}). Buttons, offers and event dates show on Google only.</span>}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <button type="button" onClick={send} disabled={Boolean(busy) || Boolean(problem)} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40">{busy === 'send' ? 'Sending…' : d.scheduledAt ? 'Schedule post' : 'Post to Google'}</button>
         {problem && !untouched && <span className="text-xs text-amber-300">{problem}</span>}
@@ -243,6 +284,22 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
                   <p className="text-xs"><span className={STATE[p.state].tone}>{STATE[p.state].text}</span> <span className="text-slate-500">· {FORMATS.find((f) => f[0] === p.format)?.[1] ?? p.format} · {when(p.at)}</span></p>
                   <p className="mt-1 line-clamp-2 break-words text-sm text-slate-300">{p.title ? p.title + (p.body ? ': ' : '') : ''}{p.body || (p.title ? '' : 'Photo')}</p>
                   {p.error && <p className="mt-1 text-xs text-rose-300">{p.error}</p>}
+                  {(p.also ?? []).length > 0 && (
+                    <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                      {(p.also ?? []).map((a) => (
+                        <span key={a.outlet} className="inline-flex items-center gap-1" title={a.error ?? undefined}>
+                          <OutletMark outlet={a.outlet} size={16} on={a.state !== 'failed'} />
+                          {a.state === 'published' ? (
+                            a.permalink ? <a href={a.permalink} target="_blank" rel="noreferrer" className="text-emerald-300 hover:underline">✓ on {OUTLET_NAME[a.outlet]}</a> : <span className="text-emerald-300">✓ on {OUTLET_NAME[a.outlet]}</span>
+                          ) : a.state === 'failed' ? (
+                            <span className="text-rose-300">⚠ {OUTLET_NAME[a.outlet]}: {a.error ?? 'failed'}</span>
+                          ) : (
+                            <span className="text-slate-400">{OUTLET_NAME[a.outlet]}: waiting</span>
+                          )}
+                        </span>
+                      ))}
+                    </p>
+                  )}
                   <div className="mt-1.5 flex flex-wrap gap-3 text-xs">
                     {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-sky-300">See it on Google</a>}
                     {sure === p.id

@@ -7,6 +7,8 @@ import { allow, gate, paidLocations } from '@/lib/gbpAccess';
 import { postproxy } from '@/lib/postproxy';
 import { BODY_MAX, emptyDraft, postProblem, postRequest, readPost, type GbpPost, type PostDraft } from '@stakeout/core/gbpPosts';
 import { queuesOf } from '@/lib/gbpQueues';
+import { isExtraOutlet, outletProblem, withOutlets, type ListingOutlets } from '@stakeout/core/outlets';
+import { outletsToSend } from '@/lib/outlets';
 
 export const maxDuration = 60;
 
@@ -122,12 +124,22 @@ async function statsOf(t: { profile: string; location: string }, list: string) {
  */
 export async function POST(req: Request) {
   try {
-    const b = (await req.json()) as { profile?: unknown; location?: unknown; draft?: unknown; queue?: unknown; priority?: unknown };
+    const b = (await req.json()) as { profile?: unknown; location?: unknown; draft?: unknown; queue?: unknown; priority?: unknown; outlets?: unknown };
     const t = await gate(b.profile, b.location, 'manage');
     const draft = draftOf(b.draft);
     const problem = postProblem(draft);
     if (problem) throw new InputError(problem);
-    const body: Record<string, unknown> = postRequest(draft, t.profile, t.location);
+    // The same post to the listing's Facebook Page and LinkedIn page too, when asked (admins only for now).
+    let send: ListingOutlets = {};
+    if (Array.isArray(b.outlets) && b.outlets.length) {
+      if (t.u.role !== 'ADMIN') throw new InputError('Posting to other networks is not open on this account yet.', 403);
+      send = await outletsToSend(t, b.outlets);
+      for (const o of b.outlets.map(String).filter(isExtraOutlet)) {
+        const why = outletProblem(draft, o, send[o]);
+        if (why) throw new InputError(why);
+      }
+    }
+    const body: Record<string, unknown> = withOutlets(postRequest(draft, t.profile, t.location), draft, send);
     if (b.queue !== undefined) {
       if (draft.scheduledAt) throw new InputError('A queued post takes the queue’s next slot: leave the time out.');
       const queue = (await queuesOf(t.u, t.profile)).find((x) => x.id === String(b.queue));
