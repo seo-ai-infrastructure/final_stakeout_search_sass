@@ -95,7 +95,9 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
   // An outlet takes this post when it is connected, a Page is chosen, and the post suits it. Each
   // starts switched on; one that cannot take the post says why and is left out.
   const ready = outlets.filter((o) => o.connected && o.chosen);
-  const whyNot = (o: Outlet) => outletProblem(d, o.outlet, o.chosen ? { profile: '', placement: o.chosen.id, name: o.chosen.name } : undefined);
+  // On an empty form nothing is judged yet: the ticks show what a post will go to once written.
+  const fresh = !d.body && !d.image && !d.title && !d.startDate;
+  const whyNot = (o: Outlet) => outletProblem(fresh ? { ...d, body: 'x' } : d, o.outlet, o.chosen ? { profile: '', placement: o.chosen.id, name: o.chosen.name } : undefined);
   const sending = ready.filter((o) => !off.includes(o.outlet) && !whyNot(o)).map((o) => o.outlet);
   // The tightest text limit among the outlets this post is going to (Google's, unless that changes).
   const textMax = Math.min(BODY_MAX, ...sending.map((o) => OUTLET_TEXT_MAX[o]));
@@ -240,33 +242,41 @@ export default function GbpPosts({ profile, location }: { profile: string; locat
       </div>
 
       {ready.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-slate-400">Post to</span>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 py-0.5 pl-0.5 pr-2.5 text-slate-200" title="Every post goes to the Google listing"><OutletMark outlet="google_business" size={22} /> Google</span>
+        <fieldset className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+          <legend className="sr-only">Where this post goes</legend>
+          <span className="text-xs text-slate-400">Post to</span>
+          <label className="inline-flex items-center gap-1.5 text-slate-200" title="Every post goes to the Google listing">
+            <input type="checkbox" checked readOnly disabled className="h-4 w-4 accent-emerald-500" />
+            <OutletMark outlet="google_business" size={20} /> Google
+          </label>
           {ready.map((o) => {
             const why = whyNot(o);
             const on = sending.includes(o.outlet);
             return (
-              <button
+              <label
                 key={o.outlet}
-                type="button"
-                aria-pressed={on}
-                disabled={Boolean(why)}
-                title={why ?? (on ? `Going to ${o.chosen!.name}. Select to leave ${OUTLET_NAME[o.outlet]} out of this post.` : `Select to send this post to ${o.chosen!.name} too.`)}
-                onClick={() => setOff((x) => (x.includes(o.outlet) ? x.filter((y) => y !== o.outlet) : [...x, o.outlet]))}
-                className={'inline-flex items-center gap-1.5 rounded-full border py-0.5 pl-0.5 pr-2.5 ' + (on ? 'border-slate-600 text-slate-100' : 'border-slate-800 text-slate-500') + (why ? ' cursor-not-allowed' : ' hover:border-slate-500')}
+                className={'inline-flex items-center gap-1.5 ' + (why ? 'cursor-not-allowed text-slate-500' : 'cursor-pointer text-slate-200')}
+                title={why ?? (on ? `Going to ${o.chosen!.name}. Untick to leave ${OUTLET_NAME[o.outlet]} out of this post.` : `Tick to send this post to ${o.chosen!.name} too.`)}
               >
-                <OutletMark outlet={o.outlet} on={on} size={22} /> {OUTLET_NAME[o.outlet]}
-                {why && <span className="text-amber-300/90">· {why}</span>}
-              </button>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-emerald-500"
+                  checked={on}
+                  disabled={Boolean(why)}
+                  onChange={() => setOff((x) => (x.includes(o.outlet) ? x.filter((y) => y !== o.outlet) : [...x, o.outlet]))}
+                />
+                <OutletMark outlet={o.outlet} on={on} size={20} /> {OUTLET_NAME[o.outlet]}
+                {/* Why an outlet is left out is said once there is a post to judge, not on an empty form. */}
+                {why && !untouched && <span className="text-xs text-amber-300/90">· {why}</span>}
+              </label>
             );
           })}
-          {sending.length > 0 && <span className="text-slate-500">Same text and photo everywhere · {textMax.toLocaleString()} characters ({textMax === BODY_MAX ? 'Google’s limit' : 'the tightest limit'}). Buttons, offers and event dates show on Google only.</span>}
-        </div>
+          {sending.length > 0 && <span className="basis-full text-xs text-slate-500">Same text and photo everywhere · {textMax.toLocaleString()} characters ({textMax === BODY_MAX ? 'Google’s limit' : 'the tightest limit'}). Buttons, offers and event dates show on Google only.</span>}
+        </fieldset>
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={send} disabled={Boolean(busy) || Boolean(problem)} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40">{busy === 'send' ? 'Sending…' : d.scheduledAt ? 'Schedule post' : 'Post to Google'}</button>
+        <button type="button" onClick={send} disabled={Boolean(busy) || Boolean(problem)} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-40">{busy === 'send' ? 'Sending…' : d.scheduledAt ? 'Schedule' : 'Post'}{busy !== 'send' && ready.length > 0 ? ' to ' + ['Google', ...sending.map((o) => OUTLET_NAME[o])].join(' + ') : ''}</button>
         {problem && !untouched && <span className="text-xs text-amber-300">{problem}</span>}
         {note && <span className="text-xs text-emerald-300">{note}</span>}
       </div>
