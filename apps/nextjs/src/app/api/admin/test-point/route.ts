@@ -6,6 +6,7 @@ import { parseSpec, market, buildGrid, InputError } from '@stakeout/core/grid';
 import { listsEnabled, prepareGridProxies } from '@stakeout/core/proxyLists';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
+import { googleIdField } from '@/lib/googleId';
 import { redis } from '@stakeout/core/redis';
 
 export const maxDuration = 300;
@@ -23,6 +24,8 @@ export async function POST(req: Request) {
       targetType: b.targetType ?? 'mobile_chrome',
       keyword: b.keyword,
       targetBusiness: b.targetBusiness,
+      // Google's ID for the business, from an ID or a pasted Share link (followed here).
+      targetKgmid: await googleIdField(b.targetKgmid),
       centerLat: b.centerLat,
       centerLng: b.centerLng,
       gridSize: 3,

@@ -16,6 +16,7 @@ import { WELCOME } from '@/lib/pricing';
 import { errorResponse } from '@/lib/api';
 import { redis } from '@stakeout/core/redis';
 import { knownSite } from '@/lib/businessSite';
+import { googleIdField } from '@/lib/googleId';
 
 // Preparing proxy lists for every city in a new grid can take many Proxy-Seller calls.
 export const maxDuration = 300;
@@ -23,8 +24,10 @@ export const maxDuration = 300;
 export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser(),
-      body = (await req.json()) as Record<string, unknown>,
-      s = parseSpec(body);
+      body = (await req.json()) as Record<string, unknown>;
+    // A pasted Share link is followed to Google's ID for the business before the scan is checked.
+    if (typeof body.targetKgmid === 'string') body.targetKgmid = await googleIdField(body.targetKgmid);
+    const s = parseSpec(body);
       // Checked here as well as on the page, so a size that is switched off cannot be requested directly.
       if (!OFFERED_GRID_SIZES.includes(s.gridSize))
         throw new InputError(`A ${s.gridSize}×${s.gridSize} grid is not available right now. Choose ${OFFERED_GRID_SIZES.map((n) => n + '×' + n).join(', ')}.`);

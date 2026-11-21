@@ -1,5 +1,6 @@
 import { monthlyText } from './speed';
 import { siteDomain } from './businessSite';
+import { GOOGLE_ID_HELP, googleIdOf } from './businessIds';
 import { asScanNetwork, placedLayout } from './network';
 import { createHash } from 'node:crypto';
 import zipcodes from 'zipcodes';
@@ -90,10 +91,17 @@ export function parseSpec(input: Record<string, unknown>) {
   const typedSite = typeof input.targetDomain === 'string' ? input.targetDomain.trim() : '';
   const targetDomain = siteDomain(typedSite);
   if (typedSite && !targetDomain) throw new InputError('Enter the website as a domain, such as stuartsplumbing.com.');
+  // Optional: Google's ID for the business (/g/…). Google's AI answers link each business they name
+  // to its Google listing, so the answer is matched by this ID first. Anything given must hold one
+  // (a Share link is turned into the ID before this, by the server).
+  const typedId = typeof input.targetKgmid === 'string' ? input.targetKgmid.trim() : '';
+  const targetKgmid = googleIdOf(typedId) || null;
+  if (typedId && !targetKgmid) throw new InputError(GOOGLE_ID_HELP);
   return {
     keyword: keyword.trim(),
     targetBusiness: targetBusiness.trim(),
     targetDomain,
+    targetKgmid,
     centerLat,
     centerLng,
     gridSize,

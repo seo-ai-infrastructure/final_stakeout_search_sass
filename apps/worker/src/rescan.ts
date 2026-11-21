@@ -19,6 +19,7 @@ export async function rescanAt() {
     keyword: old.keyword,
     targetBusiness: old.targetBusiness,
     targetDomain: old.targetDomain ?? '',
+    targetKgmid: old.targetKgmid ?? '',
     centerLat: Number(lat),
     centerLng: Number(lng),
     gridSize: old.gridSize,

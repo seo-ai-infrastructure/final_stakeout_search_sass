@@ -3,6 +3,7 @@ import { parseBusiness } from '@stakeout/core/businesses';
 import { InputError } from '@stakeout/core/grid';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
+import { googleIdField } from '@/lib/googleId';
 
 /** GET /api/businesses: the signed-in user's saved businesses, newest first. */
 export async function GET() {
@@ -19,7 +20,9 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const user = await getAuthenticatedUser();
-    const data = parseBusiness(await req.json().catch(() => null));
+    const raw = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+    if (raw && typeof raw.kgmid === 'string') raw.kgmid = await googleIdField(raw.kgmid);
+    const data = parseBusiness(raw);
     if ((await db.savedBusiness.count({ where: { userId: user.id } })) >= 500)
       throw new InputError('You have 500 saved businesses; delete one to add another.');
     const business = await db.savedBusiness.create({ data: { ...data, userId: user.id } });

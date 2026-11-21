@@ -270,7 +270,7 @@ export function EvidencePanel({
                 <FinderView list={ev.localFinder} isTarget={isTarget} googleLocation={ev.resultsPage?.googleLocation ?? null} />
               )
             ) : view === 'ai' ? (
-              <AiView ev={ev} isTarget={isTarget} target={scan.targetBusiness} />
+              <AiView ev={ev} isTarget={isTarget} target={scan.targetBusiness} targetKgmid={scan.targetKgmid} />
             ) : (
               <PageView ev={ev} isTarget={isTarget} keyword={scan.keyword} />
             )}
@@ -628,10 +628,13 @@ function AiCollapsedNote() {
   );
 }
 
-export function AiView({ ev, isTarget, target }: { ev: Evidence; isTarget: (n: string) => boolean; target: string }) {
+export function AiView({ ev, isTarget, target, targetKgmid }: { ev: Evidence; isTarget: (n: string) => boolean; target: string; targetKgmid?: string | null }) {
   const ai = ev.aiOverview;
   const copy = ev.aiCopy;
   const layout = ev.aiLayout;
+  // With the scan's Google ID, an entry that links a Google listing is the business only if it
+  // links that one (two offices with the same name differ); otherwise the name decides.
+  const isMe = (b: { name: string; kgmid: string }) => (targetKgmid && b.kgmid ? b.kgmid === targetKgmid : isTarget(b.name));
   // An answer with cited sources: shown as Google lays it out, the answer first, then each source.
   if (layout && !(copy && copy.businesses.length)) {
     const name = target.trim().toLowerCase();
@@ -689,10 +692,12 @@ export function AiView({ ev, isTarget, target }: { ev: Evidence; isTarget: (n: s
         </div>
         {(() => {
           // Where the tracked business sits in the AI's own list (1 = named first).
-          const at = copy.businesses.findIndex((b) => isTarget(b.name));
+          const at = copy.businesses.findIndex(isMe);
+          const byId = at >= 0 && Boolean(targetKgmid && copy.businesses[at].kgmid);
           return (
             <p className={`rounded-lg px-2.5 py-1.5 text-xs font-bold ${at >= 0 ? 'bg-emerald-100 text-emerald-900' : 'bg-gray-100 text-gray-700'}`}>
               {at >= 0 ? `${target} is #${at + 1} of ${copy.businesses.length} businesses the AI named` : `${target} is not among the ${copy.businesses.length} businesses the AI named`}
+              {byId && <span className="font-semibold"> · found by its Google ID</span>}
             </p>
           );
         })()}
@@ -708,7 +713,7 @@ export function AiView({ ev, isTarget, target }: { ev: Evidence; isTarget: (n: s
           }
           const b = copy.businesses[blk.business];
           if (!b) return null;
-          const me = isTarget(b.name);
+          const me = isMe(b);
           return (
               <div key={b.kgmid || 'unlinked-' + blk.business} className={`rounded-xl p-3 ${me ? 'border-2 border-emerald-600 bg-emerald-50' : 'border border-gray-200'}`}>
                 <div className="flex items-center gap-2">

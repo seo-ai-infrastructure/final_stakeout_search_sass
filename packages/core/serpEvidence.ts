@@ -5,6 +5,7 @@
  * Pure: no network, no dependencies beyond node:zlib.
  */
 import { gunzipSync } from 'node:zlib';
+import { googleIdsIn } from './businessIds';
 
 /** Files in a .tar.gz evidence bundle, by path. */
 export function untarGz(gz: Uint8Array): Map<string, Buffer> {
@@ -90,6 +91,29 @@ const norm = (s: string) =>
   s.toLowerCase().replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|ltd)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
 /** Same business, tolerant of LLC/Inc/punctuation/"&". */
 export const sameBusiness = (a: string, b: string) => norm(a) === norm(b) && norm(a) !== '';
+
+/**
+ * Whether a business an AI answer names is the tracked one. With the scan's Google ID, an entry
+ * that links a Google listing is the business only if it links that one (two offices with the same
+ * name have different IDs); an entry named without a link, or any entry on a scan without an ID, is
+ * matched by name.
+ */
+export function isAiTarget(b: { name: string; kgmid?: string | null }, target: string, targetKgmid?: string | null): boolean {
+  if (targetKgmid && b.kgmid) return b.kgmid === targetKgmid;
+  return sameBusiness(b.name, target);
+}
+
+/**
+ * The name an AI answer's business is kept under on a scan with a Google ID: the tracked business's
+ * own name when the entry links its listing (so every report reads it as the business however
+ * Google wrote the name), "<name> (another listing)" when it has the same name but links a
+ * different listing, and Google's own name otherwise. Without IDs, always Google's own name.
+ */
+export function aiNameFor(b: { name: string; kgmid?: string | null }, target: string, targetKgmid?: string | null): string {
+  if (!targetKgmid || !b.kgmid) return b.name;
+  if (b.kgmid === targetKgmid) return target;
+  return sameBusiness(b.name, target) ? b.name + ' (another listing)' : b.name;
+}
 
 const isCardContainer = (cls: string) => cls === 'View' || cls === 'Button';
 /** Numbers organic listings in order; duplicates are removed within ads and within organic, never across. */
@@ -389,11 +413,13 @@ export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
  * copied answer contains the business's name, or the first part of it ("Brandon J. Broderick" of
  * "Brandon J. Broderick, Personal Injury Attorney at Law").
  */
-export function aiNamesFirst(copy: string | null | undefined, business: string): boolean {
+export function aiNamesFirst(copy: string | null | undefined, business: string, targetKgmid?: string | null): boolean {
   if (!copy) return false;
   const opening = copy.replace(/\r/g, '').split(/\n\s*\n/)[0] ?? '';
   // An answer that starts straight with a business block has no opening sentence.
   if (BIZ_LINE.test(opening.split('\n')[0].trim()) || /^•/.test(opening.trim())) return false;
+  // The opening links the business's own Google listing: named first, however the name is written.
+  if (targetKgmid && googleIdsIn(opening).includes(targetKgmid)) return true;
   const flat = (t: string) => t.toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
   const hay = ' ' + flat(opening) + ' ';
   const full = flat(business), short = flat(business.split(/[,|–—-]| - /)[0] ?? '');
@@ -623,6 +649,8 @@ export function rankWithoutFinder(
   target: string,
   /** The AI answer as Google's own "Copy text" gave it: names every business in order, cards or not. */
   aiCopy?: string | null,
+  /** The scan's Google ID for the business: the copied answer's entries are matched by it first. */
+  targetKgmid?: string | null,
 ): { rank: number | null; list: string[]; from: 'map_pack' | 'single_business' | 'ai_overview_list' | 'none' } {
   const names = (ls: Listing[] | undefined) => (ls ?? []).filter((y) => !y.ad).map((y) => y.name);
   const pack = pages.filter((x): x is string => !!x).map((x) => names(readResultsPage(x)?.pack)).find((l) => l.length) ?? [];
@@ -632,7 +660,9 @@ export function rankWithoutFinder(
   const cards = pack.length ? [] : (aiSnapshots.filter((x): x is string => !!x).map((x) => names(readAiOverview(x)?.businesses)).find((l) => l.length) ?? []);
   // The screen snapshot only shows business cards. The copied answer also has businesses the
   // answer wrote out in a section of its own, so it is the fuller list whenever it has one.
-  const copied = pack.length || !aiCopy ? [] : readAiCopy(aiCopy).businesses.map((b) => b.name);
+  // Each copied entry links its Google listing: kept under the business's own name when it is the
+  // scan's (see aiNameFor), so the name match below finds it however Google wrote it.
+  const copied = pack.length || !aiCopy ? [] : readAiCopy(aiCopy).businesses.map((b) => aiNameFor(b, target, targetKgmid));
   const ai = copied.length >= cards.length ? copied : cards;
   const list = pack.length ? pack : ai;
   const i = list.findIndex((n) => sameBusiness(n, target));

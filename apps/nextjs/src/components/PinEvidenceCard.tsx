@@ -241,7 +241,7 @@ export function PinEvidenceCard({
                 {rebuilt ? (
                   // The answer as Google laid it out, on a light panel like the page it came from.
                   <div className="max-h-[640px] overflow-y-auto rounded-xl bg-white">
-                    <AiView ev={rebuilt} isTarget={isYou} target={scan.targetBusiness} />
+                    <AiView ev={rebuilt} isTarget={isYou} target={scan.targetBusiness} targetKgmid={scan.targetKgmid} />
                   </div>
                 ) : pin.aiOverviewText ? (
                   <>

@@ -62,6 +62,7 @@ const reportSelect = {
   keyword: true,
   targetBusiness: true,
   targetDomain: true,
+  targetKgmid: true,
   centerLat: true,
   centerLng: true,
   gridSize: true,

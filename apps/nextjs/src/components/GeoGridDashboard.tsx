@@ -180,6 +180,8 @@ export type GridScanData = {
   targetBusiness: string;
   /** The business's own website (a bare domain), when it was given. */
   targetDomain?: string | null;
+  /** Google's ID for the business (/g/…), when it was given: AI answers are matched by it first. */
+  targetKgmid?: string | null;
   keyword: string;
   status: string;
   createdAt: string;

@@ -1,6 +1,6 @@
 import { isGoogleSource } from './googleSource';
 import { canonicalUrl } from './aioChecklist';
-import { isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder, readMapsList, readResultsPage, sameBusiness, uiLabels } from './serpEvidence';
+import { aiNameFor, isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder, readMapsList, readResultsPage, sameBusiness, uiLabels } from './serpEvidence';
 
 /**
  * A compact record of what the phone saw at one point, saved on the point (GridPin.insights) so
@@ -97,6 +97,8 @@ export function buildPinInsights(input: {
   /** Maps app points: every list snapshot in order (the final one included). */
   mapsScreens?: (string | null | undefined)[];
   target: string;
+  /** The scan's Google ID for the business: the AI answer's entries that link it are kept under the business's own name. */
+  targetKgmid?: string | null;
 }): PinInsights {
   const maps = input.mapsScreens?.some((x) => isMapsList(x)) ? readMapsList(input.mapsScreens) : null;
   const list = maps ? [] : input.finder && isLocalFinder(input.finder) ? readLocalFinder(input.finder) : [];
@@ -133,7 +135,7 @@ export function buildPinInsights(input: {
       if (url && !isGoogleSource(domainOf(url) ?? '') && !cites.some((x) => x.url === url) && cites.length < 25) cites.push({ n: c.n, url });
     }
     sources = [...new Set(copy.citations.map((c) => domainOf(c.url)).filter((d): d is string => Boolean(d)))];
-    named = copy.businesses.map((b) => b.name);
+    named = copy.businesses.map((b) => aiNameFor(b, input.target, input.targetKgmid));
   }
   if (!named.length && input.aiExpanded) named = readAiOverview(input.aiExpanded)?.businesses.map((b) => b.name) ?? [];
   // No copied text: the cited websites come straight from the AI Overview in the snapshot.

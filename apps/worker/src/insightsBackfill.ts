@@ -23,8 +23,8 @@ export async function backfillInsights(limit = 500) {
     UPDATE "GridPin" p SET insights = NULL
     WHERE p.insights IS NOT NULL AND p.insights->'ai'->>'shown' = 'true' AND p.insights->>'u' IS NULL AND p."dumpsTarUrl" IS NOT NULL
       AND p."updatedAt" > now() - interval '120 days'`;
-  const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string; target: string }[]>`
-    SELECT p.id, p."scanId", p."dumpsTarUrl", s."targetBusiness" AS target
+  const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string; target: string; kgmid: string | null }[]>`
+    SELECT p.id, p."scanId", p."dumpsTarUrl", s."targetBusiness" AS target, s."targetKgmid" AS kgmid
     FROM "GridPin" p JOIN "GridScan" s ON s.id = p."scanId"
     WHERE p.status = 'COMPLETED' AND p.insights IS NULL AND p."dumpsTarUrl" IS NOT NULL
     ORDER BY p."updatedAt" DESC
@@ -54,6 +54,7 @@ export async function backfillInsights(limit = 500) {
         aiCopy: read('aio_copy.txt'),
         mapsScreens: [...dumps, read('final.xml')],
         target: p.target,
+        targetKgmid: p.kgmid,
       });
       await db.gridPin.update({ where: { id: p.id }, data: { insights } });
       done++;
@@ -84,8 +85,8 @@ export async function backfillInsights(limit = 500) {
  * once (proxyMeta.packChecked), whatever the outcome.
  */
 export async function backfillPackRanks(limit = 200) {
-  const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string; target: string; was: string }[]>`
-    SELECT p.id, p."scanId", p."dumpsTarUrl", s."targetBusiness" AS target, p."proxyMeta"->>'rankFrom' AS was
+  const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string; target: string; kgmid: string | null; was: string }[]>`
+    SELECT p.id, p."scanId", p."dumpsTarUrl", s."targetBusiness" AS target, s."targetKgmid" AS kgmid, p."proxyMeta"->>'rankFrom' AS was
     FROM "GridPin" p JOIN "GridScan" s ON s.id = p."scanId"
     WHERE s."targetType" = 'mobile_chrome' AND p.status = 'COMPLETED'
       AND p."proxyMeta"->>'finderShown' = 'false' AND p."dumpsTarUrl" IS NOT NULL
@@ -110,7 +111,7 @@ export async function backfillPackRanks(limit = 200) {
       };
       const serp = read('serp.xml'),
         final = read('final.xml');
-      found = rankWithoutFinder([serp, final], [read('aio_expanded.xml'), read('aio_initial.xml'), serp, final], p.target, read('aio_copy.txt'));
+      found = rankWithoutFinder([serp, final], [read('aio_expanded.xml'), read('aio_initial.xml'), serp, final], p.target, read('aio_copy.txt'), p.kgmid);
     } catch (e) {
       const err = e as Error & { name?: string };
       // A bundle that is gone cannot be re-read: mark the point checked. Anything else is retried next time.
@@ -144,7 +145,7 @@ export async function rerankScans() {
   const ids = (process.env.RERANK_SCANS ?? '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 12);
   if (!ids.length) return;
   for (const scanId of ids) {
-    const scan = await db.gridScan.findUnique({ where: { id: scanId }, select: { targetBusiness: true } });
+    const scan = await db.gridScan.findUnique({ where: { id: scanId }, select: { targetBusiness: true, targetKgmid: true } });
     if (!scan) continue;
     const pins = await db.gridPin.findMany({ where: { scanId, status: 'COMPLETED', dumpsTarUrl: { not: null } }, select: { id: true, rowIdx: true, colIdx: true, rankFound: true, topCompetitors: true, dumpsTarUrl: true, proxyMeta: true } });
     let changed = 0;
@@ -161,12 +162,12 @@ export async function rerankScans() {
           return null;
         };
         const serp = read('serp.xml'), final = read('final.xml');
-        const found = rankWithoutFinder([serp, final], [read('aio_expanded.xml'), read('aio_initial.xml'), serp, final], scan.targetBusiness, read('aio_copy.txt'));
+        const found = rankWithoutFinder([serp, final], [read('aio_expanded.xml'), read('aio_initial.xml'), serp, final], scan.targetBusiness, read('aio_copy.txt'), scan.targetKgmid);
         const before = JSON.stringify(p.topCompetitors ?? []);
         if (found.from !== 'ai_overview_list' || (JSON.stringify(found.list) === before && p.rankFound === null && meta.aiPosition === found.rank)) continue;
         await db.gridPin.update({
           where: { id: p.id },
-          data: { rankFound: null, topCompetitors: found.list, proxyMeta: { ...meta, rankFrom: found.from, aiPosition: found.rank, aiLead: aiNamesFirst(read('aio_copy.txt'), scan.targetBusiness), rankSource: 'ai_answer_list', reread: { at: new Date().toISOString(), rankWas: p.rankFound, listedWas: (p.topCompetitors as unknown[] | null)?.length ?? 0 } } as object },
+          data: { rankFound: null, topCompetitors: found.list, proxyMeta: { ...meta, rankFrom: found.from, aiPosition: found.rank, aiLead: aiNamesFirst(read('aio_copy.txt'), scan.targetBusiness, scan.targetKgmid), rankSource: 'ai_answer_list', reread: { at: new Date().toISOString(), rankWas: p.rankFound, listedWas: (p.topCompetitors as unknown[] | null)?.length ?? 0 } } as object },
         });
         changed++;
         console.log('[rerank]', scanId, 'point', p.rowIdx + 1 + ',' + (p.colIdx + 1) + ':', 'rank', p.rankFound ?? 'none', '→', found.rank ?? 'none', '· listed', (p.topCompetitors as unknown[] | null)?.length ?? 0, '→', found.list.length);
