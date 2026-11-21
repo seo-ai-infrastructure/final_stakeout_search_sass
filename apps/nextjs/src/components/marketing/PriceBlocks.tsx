@@ -320,7 +320,7 @@ export function SpeedsSection() {
     <section id="speeds" style={SECTION}>
       <div style={WRAP}>
         <Eyebrow>TWO SPEEDS</Eyebrow>
-        <h2 style={H2}>Schedule it, or run it now.</h2>
+        <h2 style={H2}>Schedule Your Scan &amp; Save! Double Your Credits</h2>
         <p style={LEAD}>Most agencies set their keywords once and let them run until reporting day. When a prospect is on the call, Scan Now jumps the line.</p>
         <div style={{ marginTop: 36, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 440px), 1fr))', gap: 20 }}>
           <div style={{ border: LINE, borderRadius: 20, padding: 28, background: '#111823' }}>
