@@ -97,6 +97,26 @@ async function adb(addr: string, args: string[], timeoutMs: number) {
   throw new Error('ADB_COMMAND_FAILED ' + what + ': ' + last);
 }
 
+/**
+ * Forwards a free local TCP port to a socket on the phone (for example Chrome's DevTools socket,
+ * "localabstract:chrome_devtools_remote") and returns the port. ADB phones only. No reconnect on
+ * failure: dropping the connection would also drop every other ADB stream open to that phone.
+ */
+export async function adbForward(d: ShellTarget, remote: string): Promise<number> {
+  if (transportFor(d) !== 'adb') throw new Error('ADB_ONLY');
+  await ensureConnected(d.adbAddr!);
+  const { stdout } = await run('adb', ['-s', d.adbAddr!, 'forward', 'tcp:0', remote], { timeout: 10000 });
+  const port = Number(String(stdout).trim());
+  if (!Number.isInteger(port) || port <= 0) throw new Error('ADB_FORWARD_FAILED ' + String(stdout).replace(/\s+/g, ' ').slice(0, 80));
+  return port;
+}
+
+/** Removes a forward made by adbForward. Never throws. */
+export async function adbForwardRemove(d: ShellTarget, port: number) {
+  if (!d.adbAddr) return;
+  await run('adb', ['-s', d.adbAddr, 'forward', '--remove', 'tcp:' + port], { timeout: 10000 }).catch(() => {});
+}
+
 /** Runs one shell command on the phone and returns its output. */
 export async function shell(d: ShellTarget, command: string, timeoutMs = 30000) {
   if (transportFor(d) === 'adb') return adb(d.adbAddr!, ['shell', command], timeoutMs);

@@ -2,6 +2,9 @@ import { rpaTemplate } from './rpa';
 import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/core/pinInsights';
 import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
+import { summarizeAioSources } from '@stakeout/core/aioSources';
+import { watchAioSources, type AioWatchResult } from './aioWatch';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -956,6 +959,42 @@ async function noteLocationRun(imageId: string, run: LocationRun) {
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/**
+ * Whether a point reads the AI Overview's sources from Chrome: Chrome searches over ADB with AI
+ * Overview tracking on. AIO_SOURCES: "admin" (default) for scans by admin accounts only, "all" for
+ * every scan, "off" for none.
+ */
+async function readsAioSources(scan: GridScan, surface: string, d: LeasedDevice): Promise<boolean> {
+  const mode = (process.env.AIO_SOURCES ?? 'admin').trim().toLowerCase();
+  if (mode === 'off' || surface !== 'chrome' || !scan.trackAiOverviews || transportFor(d) !== 'adb') return false;
+  if (mode === 'all') return true;
+  const owner = await db.user.findUnique({ where: { id: scan.userId }, select: { role: true } }).catch(() => null);
+  return owner?.role === 'ADMIN';
+}
+
+/** Keeps what the watch read: the full read in R2 next to the video, a summary on the point. */
+async function keepAioSources(found: AioWatchResult, prefix: string, targetDomain: string | null, proof: object, tag: string) {
+  const base = { status: found.status, probes: found.probes, reads: found.reads, loads: found.loads };
+  if (found.dossier) {
+    const key = prefix + '/aio-sources.json.gz';
+    await put(key, gzipSync(JSON.stringify(found.dossier)), 'application/gzip');
+    const summary = summarizeAioSources(found.dossier, targetDomain);
+    Object.assign(proof, { aioSources: { ...base, key, ...summary, readMs: found.dossier.meta.readMs, diagnostics: found.dossier.meta.diagnostics } });
+    console.log(
+      `[aio-sources] ${tag}: ${found.status} · ${summary.sentences} sentence(s), ${summary.entries} source entries, ${summary.urls} address(es), ${summary.sites} site(s)` +
+        ` · markers ${JSON.stringify(summary.markers)} · target ${summary.target ? `cited in ${summary.target.cited.length}, listed in ${summary.target.listed.length}` : 'none'}` +
+        ` · ${found.probes} look(s), ${found.reads} read(s), ${found.loads} load(s)`,
+    );
+  } else {
+    Object.assign(proof, { aioSources: { ...base, seen: found.seen, sockets: found.sockets, note: found.note } });
+    console.log(
+      `[aio-sources] ${tag}: ${found.status} · ${found.probes} look(s) · pages ${found.seen.join(' | ').slice(0, 300) || 'none'}` +
+        (found.sockets ? ' · sockets ' + found.sockets : '') +
+        (found.note ? ' · ' + found.note : ''),
+    );
+  }
+}
+
 export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
   const scan = p.scan,
     tagBase = randomBytes(6).toString('hex'),
@@ -1184,6 +1223,13 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       ).replace(/\s+/g, ' ').trim();
     let rpaError: unknown = null;
     let capped = false;
+    // The AI Overview's sources, read from Chrome's results page while the template runs.
+    let templateOver = false;
+    const sourcesWatch = (await readsAioSources(scan, surface, d))
+      ? watchAioSources({ phone: d, keyword: scan.keyword, done: () => templateOver, until: Date.now() + rpaSecs * 1000 }).catch(
+          (e): AioWatchResult => ({ status: 'error', probes: 0, reads: 0, loads: 0, seen: [], note: errMsg(e).slice(0, 120) }),
+        )
+      : null;
     try {
       let stopLooked = Date.now();
       const r = await runRpaSearch({
@@ -1219,10 +1265,16 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       const problem = capped || (e instanceof Error && e.message.startsWith('RPA_SURFACE_ERROR')) ? '' : await templateProblem();
       rpaError = capped ? new Error('POINT_TIME_CAP the search was stopped at the time limit') : problem ? new Error('RPA_SURFACE_ERROR ' + problem.slice(0, 160)) : e;
     } finally {
+      templateOver = true;
       // Template finished: the recorder now reads the results list and stops. Template failed:
       // the recorder keeps only the screen as it is now (abort), so the run can be looked at.
       const failed = rpaError !== null && !/^CANCELLED/.test(errMsg(rpaError));
       await shell(d, (failed ? `touch ${shellQuote(folder + '/abort')}; ` : '') + `touch ${shellQuote(folder + '/stop')}`).catch(() => {});
+    }
+    if (sourcesWatch) {
+      const late: AioWatchResult = { status: 'error', probes: 0, reads: 0, loads: 0, seen: [], note: 'the watch did not stop in time' };
+      const found = await Promise.race([sourcesWatch, sleep(10000).then(() => late)]);
+      await keepAioSources(found, prefix, scan.targetDomain, proof, tag).catch((e) => console.warn('[aio-sources]', tag, 'not kept:', errMsg(e).slice(0, 140)));
     }
     if (rpaError) {
       if (!/^CANCELLED/.test(errMsg(rpaError)))
