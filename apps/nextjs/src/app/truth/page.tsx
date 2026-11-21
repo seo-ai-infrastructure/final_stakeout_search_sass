@@ -1,9 +1,5 @@
 import type { Metadata } from 'next';
-import '@fontsource/ibm-plex-sans/latin-400.css';
-import '@fontsource/ibm-plex-sans/latin-500.css';
-import '@fontsource/ibm-plex-sans/latin-600.css';
-import '@fontsource/ibm-plex-sans-condensed/latin-600.css';
-import '@fontsource/ibm-plex-sans-condensed/latin-700.css';
+import '@/components/marketing/fonts';
 import Truth from '@/components/marketing/Truth';
 
 export const metadata: Metadata = {
