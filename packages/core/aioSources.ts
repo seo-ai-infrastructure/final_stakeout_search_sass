@@ -157,14 +157,27 @@ export const AIO_SOURCES_JS = `(() => {
   // overview: until it has some length, never into a block holding another section's heading.
   let aioBox = null;
   try {
+    let label = null;
     const tw = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
     let tn;
-    while ((tn = tw.nextNode())) if ((tn.nodeValue || '').trim() === 'AI Overview') { aioBox = tn.parentElement; break; }
-    let up = 0;
-    while (
-      aioBox && aioBox.parentElement && aioBox.parentElement !== document.body && (aioBox.textContent || '').length < 600 && up++ < 10 &&
-      !headingsIn(aioBox.parentElement).some((h) => h.t !== 'AI Overview')
-    ) aioBox = aioBox.parentElement;
+    while ((tn = tw.nextNode())) if ((tn.nodeValue || '').trim() === 'AI Overview') { label = tn.parentElement; break; }
+    // With source buttons: the smallest block holding the label and every button (the overview
+    // has to contain all of its own buttons). Without: up from the label until it has some length,
+    // never into a block holding another section's heading.
+    const parts = [label, ...Array.from(buttons)].filter(Boolean);
+    if (buttons.length) {
+      let a = parts[0];
+      for (const e of parts.slice(1)) while (a && !a.contains(e)) a = a.parentElement;
+      aioBox = a;
+    } else if (label) {
+      aioBox = label;
+      let up = 0;
+      while (
+        aioBox.parentElement && aioBox.parentElement !== document.body && (aioBox.textContent || '').length < 600 && up++ < 10 &&
+        !headingsIn(aioBox.parentElement).some((h) => h.t !== 'AI Overview')
+      ) aioBox = aioBox.parentElement;
+    }
+    if (aioBox === document.body || aioBox === document.documentElement) { aioBox = null; diagnostics.push('aio_box_is_page'); }
   } catch (e) { diagnostics.push('aio_box_failed'); }
 
   // The section a node belongs to: the first block above it that holds a section heading, when that
@@ -207,7 +220,16 @@ export const AIO_SOURCES_JS = `(() => {
       if (!node.url && !node.title) continue;
       const key = (node.url && normUrl(node.url)) || 'title:' + node.title;
       const host = c.parentElement;
-      const inAio = Boolean(aioBox && host && aioBox.contains(host));
+      // Which sentence lists it (by its source block's id), if any.
+      const comp = host && host.closest ? host.closest('[data-suuid]') : null;
+      let sentence;
+      if (comp) {
+        const k = (comp.getAttribute('data-suuid') || '').split('|')[1] || '';
+        const cut = k.lastIndexOf('-');
+        sentence = cut > 0 ? uuidIndex.get(k.slice(0, cut)) : undefined;
+      }
+      // In the overview: inside its block, or listed under one of its sentences.
+      const inAio = Boolean((aioBox && host && aioBox.contains(host)) || sentence);
       const where = inAio ? 'AI Overview' : sectionOf(c) || 'no section heading';
       rawByWhere[where] = (rawByWhere[where] || 0) + 1;
       let row = poolMap.get(key);
@@ -237,13 +259,7 @@ export const AIO_SOURCES_JS = `(() => {
       if (!row.title && node.title) row.title = node.title.slice(0, 140);
       if (!row.snippet && node.snippet) row.snippet = node.snippet.slice(0, 220);
       if (inAio) row.inAio++;
-      const comp = host && host.closest ? host.closest('[data-suuid]') : null;
-      if (comp) {
-        const k = (comp.getAttribute('data-suuid') || '').split('|')[1] || '';
-        const cut = k.lastIndexOf('-');
-        const n = cut > 0 ? uuidIndex.get(k.slice(0, cut)) : undefined;
-        if (n && !row.sentences.includes(n)) row.sentences.push(n);
-      }
+      if (sentence && !row.sentences.includes(sentence)) row.sentences.push(sentence);
     }
   } catch (e) { diagnostics.push('comment_scan_failed'); }
 

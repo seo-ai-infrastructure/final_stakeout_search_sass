@@ -27,6 +27,8 @@ export type AioWatchResult = {
   /** What the phone showed while Chrome's DevTools could not be reached: Chrome's process, ADB debugging, DevTools sockets. */
   sockets?: string;
   note?: string;
+  /** Step by step, in seconds from the watch's start: page lists, looks, reads, and why it ended. */
+  trace?: string[];
 };
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -77,17 +79,57 @@ export function evaluate(port: number, targetId: string, expression: string, tim
   });
 }
 
-export async function watchAioSources(opts: { phone: Phone; keyword: string; done: () => boolean; until: number }): Promise<AioWatchResult> {
+/** What the watch needs from the outside, replaceable in tests (default: the phone over ADB). */
+export type WatchDeps = {
+  /** A local port that reaches the named DevTools socket. */
+  forward: (remote: string) => Promise<number>;
+  unforward: (port: number) => Promise<void>;
+  /** The phone's clock, in seconds. */
+  phoneSeconds: () => Promise<number>;
+  /** What the phone shows when Chrome's DevTools cannot be reached. */
+  diag: () => Promise<string>;
+};
+
+export async function watchAioSources(opts: { phone: Phone; keyword: string; done: () => boolean; until: number; deps?: Partial<WatchDeps> }): Promise<AioWatchResult> {
   const { phone, keyword, done, until } = opts;
-  const out: AioWatchResult = { status: 'no_results_page', probes: 0, reads: 0, loads: 0, seen: [] };
+  const deps: WatchDeps = {
+    forward: (remote) => adbForward(phone, 'localabstract:' + remote),
+    unforward: (port) => adbForwardRemove(phone, port),
+    phoneSeconds: async () => Number((await shell(phone, 'date +%s', 8000)).trim()),
+    diag: () =>
+      shell(
+        phone,
+        "echo chrome=$(pidof com.android.chrome) adb=$(settings get global adb_enabled) sockets=$(grep -o '@[A-Za-z0-9_.]*devtools_remote[A-Za-z0-9_]*' /proc/net/unix 2>/dev/null | sort -u | head -5 | tr '\\n' ',')",
+        8000,
+      ),
+    ...opts.deps,
+  };
+  const out: AioWatchResult = { status: 'no_results_page', probes: 0, reads: 0, loads: 0, seen: [], trace: [] };
+  // A short step-by-step account of the watch (seconds from its start), for working out a miss.
+  // The same step again is counted on its line ("x3") rather than written again.
+  const t0 = Date.now();
+  let lastStep = '';
+  let repeats = 1;
+  const step = (s: string) => {
+    const at = ((Date.now() - t0) / 1000).toFixed(1);
+    const trace = out.trace!;
+    if (s === lastStep && trace.length) {
+      repeats++;
+      trace[trace.length - 1] = trace[trace.length - 1].replace(/ x\d+$/, '') + ' x' + repeats;
+      return;
+    }
+    lastStep = s;
+    repeats = 1;
+    if (trace.length < 90) trace.push(at + ' ' + s.slice(0, 240));
+  };
   // The phone's own clock: only pages loaded after now are this point's (the same phone ran the
   // same keyword at another grid point a few minutes ago, and that tab may still be open).
-  const phoneNow = Number((await shell(phone, 'date +%s', 8000).catch(() => '')).trim());
+  const phoneNow = await deps.phoneSeconds().catch(() => NaN);
   const since = Number.isFinite(phoneNow) && phoneNow > 0 ? phoneNow * 1000 - 3000 : Date.now() - 3000;
   let port = 0;
   let remote = 'chrome_devtools_remote';
   try {
-    port = await adbForward(phone, 'localabstract:' + remote);
+    port = await deps.forward(remote);
   } catch (e) {
     return { ...out, status: 'error', note: (e as Error).message.slice(0, 120) };
   }
@@ -98,6 +140,7 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
   let doc = 0;
   let docShape = '';
   let lastLoad = 0;
+  let ended = 'the template ended';
   try {
     while (!done() && Date.now() < until) {
       let targets: Target[];
@@ -106,43 +149,42 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
         targets = (await res.json()) as Target[];
         listFailures = 0;
         reached = true;
-      } catch {
+      } catch (e) {
         // Chrome may not be open yet (the template starts it a few seconds in): keep trying for the
         // whole search. Now and then, look at what the phone has: is Chrome running, is debugging
         // on, which DevTools sockets exist (and switch to Chrome's if it has another name).
+        step('no page list' + (reached ? ' (' + String((e as Error).name || 'error') + ')' : ''));
         listFailures++;
         out.failures = (out.failures ?? 0) + 1;
         if (listFailures === 6 || listFailures % 20 === 0) {
-          const diag = (
-            await shell(
-              phone,
-              "echo chrome=$(pidof com.android.chrome) adb=$(settings get global adb_enabled) sockets=$(grep -o '@[A-Za-z0-9_.]*devtools_remote[A-Za-z0-9_]*' /proc/net/unix 2>/dev/null | sort -u | head -5 | tr '\\n' ',')",
-              8000,
-            ).catch((e) => 'diag failed: ' + (e as Error).message)
-          )
-            .replace(/\s+/g, ' ')
-            .trim()
-            .slice(0, 200);
+          const diag = (await deps.diag().catch((e) => 'diag failed: ' + (e as Error).message)).replace(/\s+/g, ' ').trim().slice(0, 200);
           out.sockets = diag;
           const other = (diag.match(/@([A-Za-z0-9_.]*devtools_remote[A-Za-z0-9_]*)/g) ?? []).map((s) => s.slice(1)).find((s) => s.startsWith('chrome') && s !== remote);
           if (other) {
-            await adbForwardRemove(phone, port);
+            await deps.unforward(port);
             remote = other;
-            port = await adbForward(phone, 'localabstract:' + remote).catch(() => port);
+            port = await deps.forward(remote).catch(() => port);
             out.note = 'switched to ' + remote;
           }
         }
         await pause(1000);
         continue;
       }
-      for (const t of targets) {
+      const pages = targets.filter((t) => t.type === 'page');
+      for (const t of pages) {
         const s = shortUrl(t.url);
-        if (t.type === 'page' && out.seen.length < 12 && !out.seen.includes(s)) out.seen.push(s);
+        if (out.seen.length < 12 && !out.seen.includes(s)) out.seen.push(s);
       }
-      const serp = targets.find((t) => t.type === 'page' && isResultsPage(t.url, keyword));
+      // R: this search's results page; r: another search's; -: anything else.
+      const tabs = 'tabs ' + (pages.map((t) => (isResultsPage(t.url, keyword) ? 'R ' : isResultsPage(t.url) ? 'r ' : '- ') + shortUrl(t.url)).join(' | ') || 'none');
+      const serp = pages.find((t) => isResultsPage(t.url, keyword));
+      if (!serp) step(tabs);
       if (!serp) {
         // The results page was read and is gone (the template opened the full list): done.
-        if (out.dossier) break;
+        if (out.dossier) {
+          ended = 'the results page was read and is gone';
+          break;
+        }
         await pause(1000);
         continue;
       }
@@ -158,6 +200,7 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
         p = null;
       }
       const loadedAt = Number(p?.t ?? 0);
+      step(tabs + ' · ' + (p ? `look ${p.b ?? 0} buttons/${p.s ?? 0} blocks/${p.c ?? 0} entries${p.aio ? ' overview' : ''}${loadedAt >= since ? '' : ' (older page)'}` : 'look: no answer'));
       if (p && loadedAt >= since) {
         if (loadedAt !== lastLoad) {
           lastLoad = loadedAt;
@@ -174,21 +217,26 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
               out.dossier = JSON.parse(raw) as AioDossier;
               doc = loadedAt;
               docShape = shape;
+              step('read ' + out.dossier.clusters.length + ' sentences, ' + Math.round(raw.length / 1024) + ' KB');
             } catch {
               out.note = 'unreadable page answer';
+              step('read: unreadable');
             }
-          }
+          } else step('read: no answer');
         }
       }
       await pause(500);
     }
+    if (Date.now() >= until) ended = 'out of time';
+    step('end: ' + ended);
     if (out.dossier) out.status = out.dossier.clusters.length ? 'captured' : 'no_sources';
     else if (!reached) out.status = 'no_devtools';
     else if (out.loads > 0) out.status = 'no_sources';
     return out;
   } catch (e) {
+    step('end: ' + (e as Error).message.slice(0, 100));
     return { ...out, status: 'error', note: (e as Error).message.slice(0, 120) };
   } finally {
-    await adbForwardRemove(phone, port);
+    await deps.unforward(port);
   }
 }

@@ -992,6 +992,7 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
         aioOnPage: m.aioOnPage,
         anatomy: m.anatomy,
         diagnostics: m.diagnostics,
+        trace: found.trace,
       },
     });
     console.log(
@@ -1006,7 +1007,7 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
           : ''),
     );
   } else {
-    Object.assign(proof, { aioSources: { ...base, seen: found.seen, sockets: found.sockets, failures: found.failures, note: found.note } });
+    Object.assign(proof, { aioSources: { ...base, seen: found.seen, sockets: found.sockets, failures: found.failures, note: found.note, trace: found.trace } });
     console.log(
       `[aio-sources] ${tag}: ${found.status} · ${found.probes} look(s), ${found.failures ?? 0} unanswered · pages ${found.seen.join(' | ').slice(0, 300) || 'none'}` +
         (found.sockets ? ' · sockets ' + found.sockets : '') +
