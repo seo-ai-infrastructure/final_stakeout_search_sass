@@ -217,6 +217,8 @@ export const AIO_SOURCES_JS = `(() => {
       comments++;
       let node;
       try { node = extractNodeData(JSON.parse(decodeEntities(v.slice(9)))); parsedEntries++; } catch (e) { continue; }
+      // Some entries carry the address as Google displays it ("https://site.com › path › page").
+      if (node.url && node.url.includes('›')) node.url = node.url.replace(/\s*›\s*/g, '/');
       if (!node.url && !node.title) continue;
       const key = (node.url && normUrl(node.url)) || 'title:' + node.title;
       const host = c.parentElement;
@@ -524,6 +526,8 @@ export function sampleEntries(d: AioDossier, n = 6) {
 /** A site's name as compared here: lower case, without "www.". */
 export function siteOf(v: string | null | undefined): string | null {
   if (!v) return null;
+  // An address as Google displays it: "https://site.com › path".
+  if (v.includes('›')) v = v.replace(/\s*›\s*/g, '/');
   try {
     const host = v.includes('://') ? new URL(v).hostname : v.split('/')[0];
     const h = host.replace(/^www\./i, '').toLowerCase();

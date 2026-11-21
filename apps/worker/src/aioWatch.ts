@@ -175,8 +175,19 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
         const s = shortUrl(t.url);
         if (out.seen.length < 12 && !out.seen.includes(s)) out.seen.push(s);
       }
-      // R: this search's results page; r: another search's; -: anything else.
-      const tabs = 'tabs ' + (pages.map((t) => (isResultsPage(t.url, keyword) ? 'R ' : isResultsPage(t.url) ? 'r ' : '- ') + shortUrl(t.url)).join(' | ') || 'none');
+      // R: this search's results page; r: another search's results page (with its search text); -: anything else.
+      const queryOf = (u: string) => {
+        try {
+          return (new URL(u).searchParams.get('q') ?? '').slice(0, 60);
+        } catch {
+          return '';
+        }
+      };
+      const tabs =
+        'tabs ' +
+        (pages
+          .map((t) => (isResultsPage(t.url, keyword) ? 'R ' : isResultsPage(t.url) ? `r "${queryOf(t.url)}" ` : '- ') + shortUrl(t.url))
+          .join(' | ') || 'none');
       const serp = pages.find((t) => isResultsPage(t.url, keyword));
       if (!serp) step(tabs);
       if (!serp) {
