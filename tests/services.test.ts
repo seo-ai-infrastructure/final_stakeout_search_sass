@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SERVICES, intakeLines, intakeOf, isService, servicesOpen } from '../apps/nextjs/src/lib/serviceCatalog';
+import { SERVICES, intakeLines, intakeOf, isService, pickPhotos, servicesOpen } from '../apps/nextjs/src/lib/serviceCatalog';
 
 test('services: the two wholesale prices, admins only for now', () => {
   assert.deepEqual([SERVICES.citation_sync.cents, SERVICES.citation_sync.monthly], [19700, false], '$197 once');
@@ -26,6 +26,46 @@ test('services: the citation order form needs the name, address and phone', () =
   const lines = intakeLines('citation_sync', ok as Record<string, unknown>);
   assert.ok(lines.includes('Phone: (863) 877-3108') && lines.includes('Category: (not given)'));
   assert.ok(lines.some((x) => x.startsWith('Existing listings or old NAP variations to watch for during audit: Old: 123 Main St')), 'the audit notes reach the order email under the new label');
+  assert.ok(lines.includes('Description: (not given)') && lines.includes('Photos: (not given)'), 'both are optional');
+});
+
+test('services: the citation order form takes a description and up to ten photo links', () => {
+  const base = { business: 'Stuart’s Plumbing', address: '3233 US-98, Lakeland, FL 33803', phone: '8638773108' };
+  const a = 'https://lh3.googleusercontent.com/p/AF1QipA';
+  const b = 'https://stuartsplumbing.com/img/van.jpg';
+  const ok = intakeOf('citation_sync', { ...base, description: '  Family-run plumbers in Lakeland.\nWater heaters and drains.  ', photos: [a, ` ${b} `, a, ''] }) as { description: string; photos: string[] };
+  assert.equal(ok.description, 'Family-run plumbers in Lakeland.\nWater heaters and drains.', 'trimmed, lines kept');
+  assert.deepEqual(ok.photos, [a, b], 'tidied, once each');
+  assert.deepEqual(
+    intakeLines('citation_sync', ok as unknown as Record<string, unknown>).filter((x) => x.startsWith('Photo')),
+    [`Photo 1: ${a}`, `Photo 2: ${b}`],
+    'one line per photo, so each link can be opened',
+  );
+  assert.throws(() => intakeOf('citation_sync', { ...base, photos: ['http://stuartsplumbing.com/van.jpg'] }), /https/);
+  assert.throws(() => intakeOf('citation_sync', { ...base, photos: ['https://localhost/van.jpg'] }), /https/);
+  assert.throws(() => intakeOf('citation_sync', { ...base, photos: Array.from({ length: 11 }, (_, n) => `${b}?n=${n}`) }), /up to 10/);
+  assert.equal((intakeOf('citation_sync', { ...base, description: 'x'.repeat(2500) }) as { description: string }).description.length, 2000);
+});
+
+test('services: the photos taken from the Google listing', () => {
+  const m = (url: string, category: string, createTime: string, mediaFormat = 'PHOTO') => ({ googleUrl: url, thumbnailUrl: url + '=s200', locationAssociation: { category }, createTime, mediaFormat });
+  const items = [
+    m('https://lh3.googleusercontent.com/old', 'ADDITIONAL', '2024-01-01T00:00:00Z'),
+    m('https://lh3.googleusercontent.com/logo', 'LOGO', '2026-01-01T00:00:00Z'),
+    m('https://lh3.googleusercontent.com/profile', 'PROFILE', '2026-02-01T00:00:00Z'),
+    m('https://lh3.googleusercontent.com/new', 'EXTERIOR', '2026-03-01T00:00:00Z'),
+    m('https://lh3.googleusercontent.com/cover', 'COVER', '2023-05-01T00:00:00Z'),
+    m('https://lh3.googleusercontent.com/clip', 'ADDITIONAL', '2026-04-01T00:00:00Z', 'VIDEO'),
+    { locationAssociation: { category: 'ADDITIONAL' } },
+  ];
+  assert.deepEqual(
+    pickPhotos(items, 'https://lh3.googleusercontent.com/profile').map((p) => p.url.split('/').pop()),
+    ['cover', 'new', 'old'],
+    'cover first, then newest; no logo, no picture already used as the logo, no video',
+  );
+  assert.equal(pickPhotos(items, null).find((p) => p.url.endsWith('profile'))?.thumb, 'https://lh3.googleusercontent.com/profile=s200', 'a profile picture that is not the logo counts, with its thumbnail');
+  const many = Array.from({ length: 14 }, (_, n) => m(`https://lh3.googleusercontent.com/p${n}`, 'ADDITIONAL', `2026-01-${String(n + 1).padStart(2, '0')}T00:00:00Z`));
+  assert.equal(pickPhotos(many, null).length, 10, 'ten at most');
 });
 
 test('services: the traffic order form needs ZIP codes, keywords and where the ads go', () => {

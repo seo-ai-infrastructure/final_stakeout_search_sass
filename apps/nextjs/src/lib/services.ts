@@ -19,7 +19,7 @@ import { usd } from './pricing';
 
 export { SERVICES, STATUSES, isService, servicesOpen, servicesGate, intakeOf, intakeLines } from './serviceCatalog';
 export type { Service, ServiceType, Status, CitationIntake, TrafficIntake } from './serviceCatalog';
-import { SERVICES, STATUSES, isService, intakeOf, intakeLines, line, httpUrl } from './serviceCatalog';
+import { SERVICES, STATUSES, isService, intakeOf, intakeLines, line, httpUrl, pickPhotos, type MediaItem } from './serviceCatalog';
 
 /** A client: one of the account's Google listings, or a business it has scanned but not connected. */
 export type Client = { id: string; name: string; profile: string | null; location: string | null; placeId: string | null; source: 'listing' | 'scans' };
@@ -64,7 +64,19 @@ export async function clientsFor(u: { id: string; role: string }): Promise<Clien
   return [...listings.sort(byName), ...fromScans.sort(byName)].slice(0, 400);
 }
 
-export type Listing = { name: string; address: string; phone: string; website: string; category: string; hours: string; logo: string | null; mapsUrl: string | null };
+export type Listing = {
+  name: string;
+  address: string;
+  phone: string;
+  website: string;
+  category: string;
+  hours: string;
+  description: string;
+  logo: string | null;
+  /** Up to ten of the listing's own photos, cover first: the full-size link and a thumbnail. */
+  photos: { url: string; thumb: string }[];
+  mapsUrl: string | null;
+};
 export type ScanSummary = {
   id: string;
   keyword: string;
@@ -95,7 +107,7 @@ function addressText(loc: GbpLocation): string {
   if (!a) return '';
   return [...(a.addressLines ?? []), a.locality, [a.administrativeArea, a.postalCode].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 }
-type Media = { mediaItems?: { locationAssociation?: { category?: string }; googleUrl?: string }[] };
+type Media = { mediaItems?: MediaItem[] };
 
 /**
  * What the order forms start from: the client's Google listing as it is now, and a summary of its
@@ -110,15 +122,13 @@ export async function clientContext(u: { id: string; role: string }, clientId: s
   if (client.profile && client.location) {
     try {
       const t = { profile: client.profile, location: client.location };
-      const [loc, logo] = await Promise.all([
+      const [loc, media] = await Promise.all([
         readLocation(t.profile, t.location),
         gbpGet<Media>(t, 'media', { page_size: '100' })
-          .then((r) => {
-            const items = r.mediaItems ?? [];
-            return (items.find((m) => m.locationAssociation?.category === 'LOGO') ?? items.find((m) => m.locationAssociation?.category === 'PROFILE'))?.googleUrl ?? null;
-          })
-          .catch(() => null),
+          .then((r) => r.mediaItems ?? [])
+          .catch(() => [] as MediaItem[]),
       ]);
+      const logo = (media.find((m) => m.locationAssociation?.category === 'LOGO') ?? media.find((m) => m.locationAssociation?.category === 'PROFILE'))?.googleUrl ?? null;
       listing = {
         name: loc.title ?? client.name,
         address: addressText(loc),
@@ -126,7 +136,9 @@ export async function clientContext(u: { id: string; role: string }, clientId: s
         website: loc.websiteUri ?? '',
         category: loc.categories?.primaryCategory?.displayName ?? '',
         hours: hoursText(loc),
+        description: typeof loc.profile?.description === 'string' ? loc.profile.description.trim() : '',
         logo,
+        photos: pickPhotos(media, logo),
         mapsUrl: client.placeId ? mapsUrl(client.placeId) : null,
       };
     } catch (e) {

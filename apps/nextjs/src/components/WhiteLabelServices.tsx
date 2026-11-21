@@ -11,7 +11,8 @@ import { useEffect, useState } from 'react';
 type ServiceType = 'citation_sync' | 'traffic_boost';
 type Service = { type: ServiceType; name: string; cents: number; monthly: boolean; resale: string; blurb?: string; includes?: { title: string; note: string }[] };
 type Client = { id: string; name: string; profile: string | null; location: string | null; placeId: string | null; source: 'listing' | 'scans' };
-type Listing = { name: string; address: string; phone: string; website: string; category: string; hours: string; logo: string | null; mapsUrl: string | null };
+type Photo = { url: string; thumb: string };
+type Listing = { name: string; address: string; phone: string; website: string; category: string; hours: string; description: string; logo: string | null; photos: Photo[]; mapsUrl: string | null };
 type Scan = { id: string; keyword: string; gridSize: number; at: string; outerPins: number; weakOuterPinsCount: number; weakZipCodes: string[]; trackedKeywords: string[]; aioCitedDomains: string[] };
 type Ctx = { client: Client; listing: Listing | null; listingProblem: string | null; scan: Scan | null };
 type Order = { id: string; createdAt: string; client: string; service: string; serviceName: string; status: string; cents: number; monthly: boolean; deliverableUrl: string | null; buyer: string | null; intake: string[] | null };
@@ -29,6 +30,17 @@ const MARGIN: Record<ServiceType, (s: Service) => string> = {
   traffic_boost: (s) => `Wholesale: ${usd(s.cents)}/mo (Media Included) · Typical Agency Resale: ${s.resale}`,
 };
 const dateOf = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+/** Matches the server's limits in serviceCatalog.ts. */
+const PHOTO_MAX = 10;
+const DESCRIPTION_CAP = 2000;
+const publicLink = (v: string) => {
+  try {
+    const u = new URL(v);
+    return v.length <= 2000 && u.protocol === 'https:' && u.hostname.includes('.');
+  } catch {
+    return false;
+  }
+};
 
 async function json<T>(r: Response): Promise<T> {
   const d = await r.json().catch(() => ({}));
@@ -243,6 +255,7 @@ function OrderForm({ service, ctx, onClose }: { service: Service; ctx: Ctx; onCl
     website: l?.website ?? '',
     category: l?.category ?? '',
     hours: l?.hours ?? '',
+    description: l?.description ?? '',
     logo: l?.logo ?? '',
     oldNap: '',
     zips: (ctx.scan?.weakZipCodes ?? []).join(', '),
@@ -250,9 +263,21 @@ function OrderForm({ service, ctx, onClose }: { service: Service; ctx: Ctx; onCl
     destination: 'gbp' as 'gbp' | 'landing',
     url: l?.mapsUrl ?? (ctx.client.placeId ? 'https://www.google.com/maps/place/?q=place_id:' + ctx.client.placeId : ''),
   });
+  const [photos, setPhotos] = useState<Photo[]>(l?.photos ?? []);
+  const [photoLink, setPhotoLink] = useState('');
+  const [photoProblem, setPhotoProblem] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  function addPhoto() {
+    const url = photoLink.trim();
+    if (!url) return;
+    if (!publicLink(url)) return setPhotoProblem('Give a public link to the photo, starting with https://.');
+    if (photos.some((p) => p.url === url)) return setPhotoProblem('That photo is already on the list.');
+    setPhotos([...photos, { url, thumb: url }]);
+    setPhotoLink('');
+    setPhotoProblem('');
+  }
   const pickDestination = (d: 'gbp' | 'landing') =>
     setF({ ...f, destination: d, url: d === 'landing' ? (l?.website ?? '') : (l?.mapsUrl ?? (ctx.client.placeId ? 'https://www.google.com/maps/place/?q=place_id:' + ctx.client.placeId : '')) });
 
@@ -262,7 +287,7 @@ function OrderForm({ service, ctx, onClose }: { service: Service; ctx: Ctx; onCl
     setBusy(true);
     try {
       const intake = citation
-        ? { business: f.business, address: f.address, phone: f.phone, website: f.website, category: f.category, hours: f.hours, logo: f.logo, oldNap: f.oldNap }
+        ? { business: f.business, address: f.address, phone: f.phone, website: f.website, category: f.category, hours: f.hours, description: f.description, logo: f.logo, photos: photos.map((p) => p.url), oldNap: f.oldNap }
         : { business: f.business, zips: f.zips, keywords: f.keywords, destination: f.destination, url: f.url };
       const d = await json<{ url: string }>(await fetch('/api/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ service: service.type, client: ctx.client.id, intake }) }));
       window.location.assign(d.url);
@@ -294,12 +319,63 @@ function OrderForm({ service, ctx, onClose }: { service: Service; ctx: Ctx; onCl
               <label className="block text-sm"><span className="font-semibold">Website</span><input value={f.website} onChange={set('website')} placeholder="https://" className={input} /></label>
               <label className="block text-sm"><span className="font-semibold">Hours</span><textarea rows={2} value={f.hours} onChange={set('hours')} className={area} /></label>
               <label className="block text-sm">
+                <span className="font-semibold">Business description</span> <span className="text-slate-400">(each directory gets its own unique version written from this)</span>
+                <textarea rows={4} maxLength={DESCRIPTION_CAP} value={f.description} onChange={set('description')} placeholder="What the business does, its main services and the areas it serves" className={area} />
+              </label>
+              <label className="block text-sm">
                 <span className="font-semibold">Logo</span>
                 <div className="flex items-center gap-3">
                   {f.logo && <img src={f.logo} alt="" width={40} height={40} className="mt-1 h-10 w-10 rounded-md object-cover" />}
                   <input value={f.logo} onChange={set('logo')} placeholder="A link to the logo" className={input} />
                 </div>
               </label>
+              <fieldset className="text-sm">
+                <legend className="font-semibold">
+                  Photos{' '}
+                  <span className="font-normal text-slate-400">
+                    ({photos.length} of {PHOTO_MAX}
+                    {l?.photos.length ? ', starting with the ones on the Google listing' : ''})
+                  </span>
+                </legend>
+                {photos.length > 0 && (
+                  <ul className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-5">
+                    {photos.map((p, n) => (
+                      <li key={p.url} className="relative">
+                        <img src={p.thumb} alt={`Photo ${n + 1}`} className="aspect-square w-full rounded-md border border-slate-800 bg-slate-950 object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => setPhotos(photos.filter((x) => x.url !== p.url))}
+                          aria-label={`Remove photo ${n + 1}`}
+                          className="absolute right-1 top-1 grid h-8 w-8 place-items-center rounded-full bg-black/75 text-base leading-none text-white hover:bg-black"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {photos.length < PHOTO_MAX && (
+                  <div className="flex gap-2">
+                    <input
+                      value={photoLink}
+                      onChange={(e) => setPhotoLink(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addPhoto();
+                        }
+                      }}
+                      aria-label="A link to another photo"
+                      placeholder="A link to another photo (https://…)"
+                      className={input}
+                    />
+                    <button type="button" onClick={addPhoto} className="mt-1 min-h-[44px] shrink-0 rounded-lg border border-slate-600 px-4 text-sm font-semibold text-slate-100 hover:bg-slate-800">
+                      Add
+                    </button>
+                  </div>
+                )}
+                {photoProblem && <p role="alert" className="mt-1 text-xs text-rose-300">{photoProblem}</p>}
+              </fieldset>
               <label className="block text-sm">
                 <span className="font-semibold">Existing listings or old NAP variations to watch for during audit</span> <span className="text-slate-400">(optional)</span>
                 <textarea rows={3} value={f.oldNap} onChange={set('oldNap')} placeholder="Directories the business is already on, and any old names, addresses or phone numbers it has used" className={area} />
@@ -368,6 +444,20 @@ function Orders({ orders, admin, onChanged }: { orders: Order[]; admin: boolean;
   );
 }
 
+/** One line of an order form. A line whose value is a link (the website, the logo, a photo) opens it. */
+function IntakeLine({ text }: { text: string }) {
+  const m = /^([^:]+: )(https:\/\/\S+)$/.exec(text);
+  if (!m) return <>{text}</>;
+  return (
+    <>
+      {m[1]}
+      <a href={m[2]} target="_blank" rel="noreferrer noopener" className="text-emerald-300 underline">
+        {m[2]}
+      </a>
+    </>
+  );
+}
+
 function OrderRow({ o, admin, onChanged }: { o: Order; admin: boolean; onChanged: () => void }) {
   const [status, setStatus] = useState(o.status);
   const [link, setLink] = useState(o.deliverableUrl ?? '');
@@ -396,7 +486,7 @@ function OrderRow({ o, admin, onChanged }: { o: Order; admin: boolean; onChanged
         {admin && o.intake && (
           <details className="mt-1 text-xs text-slate-400">
             <summary className="cursor-pointer text-emerald-300">Order form</summary>
-            <ul className="mt-1 space-y-0.5">{o.intake.map((x) => <li key={x}>{x}</li>)}</ul>
+            <ul className="mt-1 space-y-0.5 [overflow-wrap:anywhere]">{o.intake.map((x) => <li key={x}><IntakeLine text={x} /></li>)}</ul>
           </details>
         )}
       </td>
