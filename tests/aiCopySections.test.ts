@@ -122,3 +122,25 @@ test('a page with no map pack has no local rank; rank totals leave such points o
   const none = metrics([{ rankFound: null, hasAiOverview: true, targetCitedInAi: true, noLocal: true }]);
   assert.deepEqual([none.arp, none.atrp, none.solv, none.aioTriggerRate, none.aioCitationRate], [null, null, null, 100, 100]);
 });
+
+test('the ads a copied answer ends with ("SponsoredYou …", the word glued to the next) are never businesses or answer text', () => {
+  // A bulleted business list, then the AI Overview's ads as Google's copy appends them (2026-11-21 shape).
+  const copy = [
+    '• Truskett Law (https://www.google.com/search?kgmid=%2Fg%2F1260lhvwn)',
+    '\t• Focus: Car wrecks and wrongful death. [1] (https://truskettlaw.com/)',
+    '• Greg Denney Law (https://www.google.com/search?kgmid=%2Fg%2F1tlw9lcz)',
+    '\t• Focus: Auto accidents. [1] (https://gregdenneylaw.com/)',
+    'SponsoredYou might consider these options:',
+    'Richardson Boudreaux',
+    'Since 1984 - Available by Phone 24/7',
+    'Frasier Law',
+    'Free Consultation',
+    'joshandkatebuy.com',
+  ].join('\n');
+  const c = readAiCopy(copy);
+  assert.deepEqual(c.businesses.map((b) => b.name), ['Truskett Law', 'Greg Denney Law']);
+  assert.ok(!c.blocks.some((b) => b.kind !== 'business' && /Richardson|Frasier|joshandkatebuy/.test(b.text)));
+  assert.ok(!c.businesses.some((b) => b.lines.some((l) => /Richardson|Frasier|Sponsored/.test(l))));
+  assert.deepEqual(c.sponsored, ['You might consider these options:', 'Richardson Boudreaux', 'Since 1984 - Available by Phone 24/7', 'Frasier Law', 'Free Consultation', 'joshandkatebuy.com']);
+  assert.equal(rankWithoutFinder([], [], 'Frasier Law', copy).rank, null, 'an advertiser is not in the answer’s list');
+});

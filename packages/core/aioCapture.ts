@@ -12,10 +12,18 @@
  * link), page titles, and when each thing was first seen. A copy that does not match the page read
  * (a clipboard left from another search) is not used.
  *
- * Businesses are one record each, matched by Google business ID and by website domain: a card, a
- * name in the text, a cited page on its site, its listing in the sources row and its ad all join the
- * same record. One firm can hold several listings: on 2026-11-21 "Biby Law Firm" in a closing line
- * was a second Biby listing (another ID) on the same website as Biby's card.
+ * Businesses are one record per Google listing (its business ID), or per website for a business the
+ * answer names without a Google link. What counts is where each match occurs (v281):
+ * - featured: the business's card, or Google's own link on its name in the text (an ID in the answer);
+ * - Google listing referenced: its ID in a numbered citation (the chip under a sentence), which credits
+ *   a source, not a featured business. On 2026-11-21 every lawyer card's chip carried Jeff Martin's ID;
+ * - website cited: its domain in a citation URL, credited to the card the sentence describes, or the
+ *   business the sentence names, or the only business on that website;
+ * - named: its name, or its site's name, in the answer's words without a link (ASH LAW).
+ * Two listings on one website stay two: "Biby Law Firm" in a closing line was another Biby listing
+ * (/g/11lrpbxs5b) than Biby's card (/g/11f5mhtzdr), and a branch is never credited without its own
+ * evidence. Every match keeps its receipt (where it was found: card, text, citation, sources row, ad).
+ * A page with an AI Overview on screen that could not be read is "unparsed", never a row of zeros.
  *
  * - A card's buttons are links that sit together: a photo carrying the business's ID starts a card,
  *   its Directions, Call and Website follow. A link outside such a run never joins a card, and a
@@ -43,6 +51,7 @@ import {
   type AioSourceEntry,
   type FirstSeenPhase,
 } from './aioSources';
+import { knownSite } from './citeSites';
 
 export type AioOverviewMode = 'web_synthesis' | 'local_entity_cards' | 'hybrid' | 'empty';
 export type AioWatcherStopReason = 'template_finished' | 'hard_timeout';
@@ -126,25 +135,59 @@ export interface AioCardActionLink extends Seen {
   utm_params: UtmParams | null;
 }
 
-/** One business, whatever the ways it shows up: matched by Google business ID and website domain. */
+/** Where a business was matched. */
+export type AioMatchRole = 'card' | 'inline_link' | 'prose_name' | 'listing_citation' | 'website_citation' | 'sources_row' | 'ad';
+
+/** The receipt of one match: what was matched, where, and by what (an ID, an address, words). */
+export interface AioReceipt {
+  role: AioMatchRole;
+  sentence_index: number | null;
+  card_position: number | null;
+  business_id: string | null;
+  url: string | null;
+  text: string | null;
+}
+
+/**
+ * One business: a Google listing (by its business ID), or a business the answer names without a
+ * Google link (by its website). Listings that share a website stay apart (same_website_as).
+ */
 export interface AioBusiness {
-  /** Its first Google business ID, or "site:<domain>" for a business known only by its website (an advertiser). */
+  /** Its Google business ID, or "site:<domain>". */
   business_key: string;
-  business_ids: string[];
-  domains: string[];
+  business_id: string | null;
+  domain: string | null;
   business_name: string | null;
+  kind: 'listing' | 'site';
   /** Its business card in the answer (1-based), or null. */
   card_position: number | null;
-  /** Sentences that name it (a name Google links to its listing, or its site's name). */
+  /** Featured: a card, or Google's own link on its name in the text. */
+  featured: boolean;
+  /** Sentences whose text links its listing (Google's link on its name). */
+  linked_in_sentences: number[];
+  /** Sentences whose words name it (or its site) without a link. */
   named_in_sentences: number[];
-  /** Sentences that cite a page on its site or its listing. */
-  cited_in_sentences: number[];
+  /** Sentences with a numbered citation carrying its Google business ID: a source Google referenced. */
+  listing_referenced_in_sentences: number[];
+  /** Sentences citing a page on its website (credited to it: its card's own sentence, the sentence naming it, or the only business on that website). */
+  website_cited_in_sentences: number[];
   /** Its first listing card in the sources row under the answer (1-based), or null. */
   sources_row_position: number | null;
   /** In the Sponsored block inside the AI Overview. */
   advertised: boolean;
-  /** Shown in the answer itself: a card, or named in the text. */
+  /** Shown in the answer: featured, or named in its words. */
   in_answer: boolean;
+  /** Other listings on this page with the same website: the same firm, perhaps, but no branch is credited for another. */
+  same_website_as: string[];
+  receipts: AioReceipt[];
+}
+
+/** A page a sentence cites, by its website, and the business(es) credited with it. */
+export interface AioSiteCitation {
+  sentence_index: number;
+  registrable_domain: string;
+  url: string;
+  credited_to: string[];
 }
 
 /** A listing card in the sources row under the answer, by the Google business ID its link carries. */
@@ -166,8 +209,14 @@ export interface AioAd extends Seen {
 export interface AioCaptureCounts {
   sentences_count: number;
   cited_web_pages_count: number;
+  /** Different websites cited. */
+  websites_cited_count: number;
+  /** Different Google listings referenced in numbered citations. */
   cited_gbp_listings_count: number;
-  /** Businesses (with a Google business ID) shown in the answer: cards and names in the text, one per firm. */
+  card_businesses_count: number;
+  /** Listings featured: cards, and names Google links in the text. */
+  featured_businesses_count: number;
+  /** Businesses in the answer: featured, or named in its words without a link. */
   named_businesses_count: number;
   unreferenced_web_sources_count: number;
   card_action_links_count: number;
@@ -183,16 +232,36 @@ export interface AioCaptureResult {
   keyword: string;
   target_business_id?: string | null;
   target_domain?: string | null;
+  target_name?: string | null;
   map_pack_rank?: number | null;
-  /** Matched by its Google business ID or its website: how, or null when neither matched (or neither is known). */
-  target_match: 'id' | 'domain' | null;
-  target_cited_in_aio: boolean;
-  /** Named in the answer at all: a card or a name in the text. */
-  target_named_in_aio: boolean;
-  target_named_in_aio_cards: boolean;
-  target_named_in_aio_text: boolean;
-  target_in_sources_row: boolean;
-  target_advertised: boolean;
+  /** parsed; unparsed (an AI Overview on screen that could not be read: its flags are null, not false); no_overview. */
+  capture_status: 'parsed' | 'unparsed' | 'no_overview';
+  /**
+   * How the tracked business was found: its Google business ID; its website (the only business on it
+   * here); domain_shared (several listings use its website: none is credited without the ID); its
+   * exact name (named only: an ID the answer links under that name is in target_suggested_id); null.
+   */
+  target_match: 'id' | 'domain' | 'domain_shared' | 'name' | null;
+  /** Featured in the AI Overview: its card, or Google's own link on its name in the text. */
+  target_featured_in_aio: boolean | null;
+  /** Google listing referenced: its business ID in a numbered citation. */
+  target_listing_referenced: boolean | null;
+  /** Website cited: its domain in a citation URL. */
+  target_website_cited: boolean | null;
+  /** Named in the answer's words (its exact name, or its site's name), with or without a link. */
+  target_named_in_prose: boolean | null;
+  target_in_sources_row: boolean | null;
+  target_advertised: boolean | null;
+  /** Website cited or listing referenced. */
+  target_cited_in_aio: boolean | null;
+  /** Featured or named in the answer's words. */
+  target_named_in_aio: boolean | null;
+  target_named_in_aio_cards: boolean | null;
+  target_named_in_aio_text: boolean | null;
+  /** Every match of the tracked business, with where it occurred. */
+  target_receipts: AioReceipt[];
+  /** The ID the answer links under the tracked business's exact name, when no ID is saved for it. */
+  target_suggested_id: string | null;
   overview_mode: AioOverviewMode;
   overview_text: string | null;
   telemetry: AioWatcherTelemetry;
@@ -204,8 +273,10 @@ export interface AioCaptureResult {
   businesses: AioBusiness[];
   listing_sources: AioListingSource[];
   ads: AioAd[];
-  /** Sites a sentence names in its words and cites (Super Lawyers, Opendoor ...). */
+  /** Sites a sentence names in its words and cites (Super Lawyers, ASH LAW, Opendoor ...). */
   named_sites: { sentence_index: number; registrable_domain: string }[];
+  /** Every web page cited, by website, with the business(es) credited (none when several listings share the website). */
+  site_citations: AioSiteCitation[];
   captured_at: string;
 }
 
@@ -275,27 +346,38 @@ function nameFitsDomain(name: string, domain: string): boolean {
   return label.length >= 4 && n.length >= 4 && (n === label || n.startsWith(label) || label.startsWith(n));
 }
 
-/** The sentence's words name the site: "Super Lawyers" for superlawyers.com, "ASH LAW" for ash.law, "Reddit's" for reddit.com. */
-function namesSite(text: string, domain: string): boolean {
+/** The words of a sentence that name the site: "Super Lawyers" for superlawyers.com, "ASH LAW" for ash.law, "Reddit" in "Reddit's". */
+function namedSite(text: string, domain: string): string | null {
   const label = labelOf(domain);
-  if (label.length < 3) return false;
-  const words = text
-    .replace(/['’]s\b/g, '')
-    .split(/[^A-Za-z0-9&]+/)
-    .filter(Boolean)
-    .map((w) => w.toLowerCase().replace(/&/g, ''));
+  if (label.length < 3) return null;
+  const words = text.replace(/['’]s\b/g, '').split(/[^A-Za-z0-9&]+/).filter(Boolean);
+  // A site whose ending is part of its name ("ASH LAW" for ash.law) keeps that word.
+  const ending = domain.split('.').pop()!.toLowerCase();
   for (let i = 0; i < words.length; i++) {
     let acc = '';
     for (let j = i; j < Math.min(words.length, i + 6); j++) {
-      acc += words[j];
-      if (acc === label) return true;
+      acc += words[j].toLowerCase().replace(/&/g, '');
+      if (acc === label) {
+        const withEnding = words[j + 1]?.toLowerCase() === ending && !/^(com|net|org|co|us|io|info|biz)$/.test(ending);
+        return words.slice(i, withEnding ? j + 2 : j + 1).join(' ');
+      }
       if (!label.startsWith(acc)) break;
     }
   }
-  return false;
+  return null;
 }
 
-type CopySentence = { text: string; urls: string[]; mentions: { name: string | null; id: string }[] };
+/** A business's exact name among a sentence's words (case, punctuation and "&"/"and" aside). */
+const flatWords = (s: string) => ' ' + s.toLowerCase().replace(/&/g, ' and ').replace(/['’]s\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim() + ' ';
+const hasName = (text: string, name: string) => {
+  const n = flatWords(name).trim();
+  return n.length >= 4 && flatWords(text).includes(' ' + n + ' ');
+};
+/** The page's text of a card's own description begins with the card's button labels ("CallDirectionsWebsite…"). */
+const buttonsFirst = (t: string) => /^(?:Call|Directions|Website|Menu|Order|Book|Reserve|Appointment){2,}/.test(t.replace(/\s+/g, ''));
+const sorted = (s: Set<number>) => [...s].sort((a, b) => a - b);
+
+type CopySentence = { text: string; urls: string[]; mentions: { name: string | null; id: string }[]; /** The copy's card (1-based) this is the description of: the first citing line under its name. */ card: number | null };
 /** Google's copied answer, as far as a capture needs it. */
 export type CopiedAnswer = { cards: { pos: number; name: string; id: string }[]; sentences: CopySentence[]; sponsored: string[] };
 
@@ -313,9 +395,12 @@ export function readCopiedAnswer(text: string): CopiedAnswer {
   const sentences: CopySentence[] = [];
   const sponsored: string[] = [];
   let ads = false;
+  // The card whose description is still to come: the first citing line under a card's name.
+  let open: number | null = null;
   for (const raw of text.replace(/\r/g, '').split('\n')) {
     const line = raw.trim();
     if (!line) continue;
+    // The ads come after the answer, the word glued to the next ("SponsoredYou might consider…").
     if (ads || /^Sponsored(?![a-z])/.test(line)) {
       ads = true;
       const rest = line.replace(/^Sponsored/, '').trim();
@@ -325,6 +410,7 @@ export function readCopiedAnswer(text: string): CopiedAnswer {
     const card = line.startsWith('•') ? null : CARD_LINE.exec(line);
     if (card && !/\[\d+\] \(/.test(line)) {
       cards.push({ pos: cards.length + 1, name: card[1].trim(), id: decodeURIComponent(card[3]) });
+      open = cards.length;
       continue;
     }
     const urls = [...line.matchAll(CITE)].map((m) => m[2]);
@@ -335,7 +421,8 @@ export function readCopiedAnswer(text: string): CopiedAnswer {
       .replace(/,?\s*\[\d+\]\s*\([^)]*\)/g, '')
       .replace(/\s*\(https?:\/\/[^)\s]*\)/g, '')
       .trim();
-    sentences.push({ text: words, urls, mentions });
+    sentences.push({ text: words, urls, mentions, card: open });
+    open = null;
   }
   return { cards, sentences, sponsored };
 }
@@ -346,9 +433,13 @@ export function buildAioCapture(
     keyword: string;
     targetDomain?: string | null;
     targetBusinessId?: string | null;
+    /** The tracked business's name, matched exactly in the answer's words. */
+    targetName?: string | null;
     mapPackRank?: number | null;
     /** Google's copied answer (the copy button's text), when the template copied it. */
     copy?: string | null;
+    /** Whether the phone's screen showed an AI Overview: one that could not be read is "unparsed", not zeros. */
+    overviewOnScreen?: boolean | null;
     telemetry: WatcherFacts;
     scanPointId?: string | null;
     capturedAt?: string;
@@ -388,14 +479,14 @@ export function buildAioCapture(
 
   // ---- Sentences: the copy's, in its order and its words (the page's text of a sentence also holds
   // its chip's label, "Zillow (+6)", and a card's button labels), each timed by the page read's match.
-  type Sent = { index: number; text: string; cluster: number | null; urls: string[] | null; mentions: CopySentence['mentions'] };
+  type Sent = { index: number; text: string; cluster: number | null; urls: string[] | null; mentions: CopySentence['mentions']; card: number | null };
   const sents: Sent[] = [];
   if (copyUsed) {
-    copied!.sentences.forEach((s, i) => sents.push({ index: sents.length + 1, text: s.text, cluster: copyToCluster[i], urls: s.urls, mentions: s.mentions }));
+    copied!.sentences.forEach((s, i) => sents.push({ index: sents.length + 1, text: s.text, cluster: copyToCluster[i], urls: s.urls, mentions: s.mentions, card: s.card }));
     clusters.forEach((c, j) => {
-      if (!usedCluster.has(j)) sents.push({ index: sents.length + 1, text: c.claimText, cluster: j, urls: null, mentions: [] });
+      if (!usedCluster.has(j)) sents.push({ index: sents.length + 1, text: c.claimText, cluster: j, urls: null, mentions: [], card: null });
     });
-  } else clusters.forEach((c, j) => sents.push({ index: sents.length + 1, text: c.claimText, cluster: j, urls: null, mentions: [] }));
+  } else clusters.forEach((c, j) => sents.push({ index: sents.length + 1, text: c.claimText, cluster: j, urls: null, mentions: [], card: null }));
   const sentences: AioCaptureSentence[] = sents.map((s) => ({
     sentence_index: s.index,
     sentence_text: s.text,
@@ -577,118 +668,199 @@ export function buildAioCapture(
       };
     });
 
-  // ---- Businesses: one record per firm, joined by Google ID and website domain.
-  type Rec = { ids: Set<string>; domains: Set<string>; name: string | null; card: number | null; named: Set<number>; cited: Set<number>; sources: number | null; ad: boolean; order: number };
-  const recs: Rec[] = [];
-  const find = (ids: (string | null | undefined)[], domains: (string | null | undefined)[], create: boolean): Rec | null => {
-    const I = ids.filter(Boolean) as string[];
-    const D = domains.filter(Boolean) as string[];
-    const hits = recs.filter((x) => I.some((i) => x.ids.has(i)) || D.some((dd) => x.domains.has(dd)));
-    if (!hits.length) {
-      if (!create || (!I.length && !D.length)) return null;
-      const rec: Rec = { ids: new Set(I), domains: new Set(D), name: null, card: null, named: new Set(), cited: new Set(), sources: null, ad: false, order: recs.length };
-      recs.push(rec);
-      return rec;
+  // ---- Which sentence is a card's own description: the copy says (the first citing line under a
+  // card's name), unless the page's text of it shows it is not under a card's buttons; without the
+  // copy, the page's sentences that start with a card's buttons, in card order.
+  const keyOfCard = (c: Card) => c.id ?? (cardSite(c) ? 'site:' + cardSite(c) : null);
+  const sentCard = new Map<number, string>();
+  if (copyUsed) {
+    for (const s of sents) {
+      if (!s.card || (s.cluster !== null && !buttonsFirst(clusters[s.cluster].claimText))) continue;
+      const id = copied!.cards[s.card - 1]?.id;
+      if (id) sentCard.set(s.index, id);
     }
-    const [keep, ...rest] = hits.sort((a, b) => a.order - b.order);
-    for (const o of rest) {
-      o.ids.forEach((i) => keep.ids.add(i));
-      o.domains.forEach((dd) => keep.domains.add(dd));
-      o.named.forEach((s) => keep.named.add(s));
-      o.cited.forEach((s) => keep.cited.add(s));
-      keep.name ??= o.name;
-      keep.card ??= o.card;
-      keep.sources = keep.sources === null ? o.sources : o.sources === null ? keep.sources : Math.min(keep.sources, o.sources);
-      keep.ad ||= o.ad;
-      recs.splice(recs.indexOf(o), 1);
+  } else {
+    let k = 0;
+    for (const s of sents) {
+      if (s.cluster === null || !buttonsFirst(clusters[s.cluster].claimText)) continue;
+      const c = known[k++];
+      const key = c ? keyOfCard(c) : null;
+      if (key) sentCard.set(s.index, key);
     }
-    I.forEach((i) => keep.ids.add(i));
-    D.forEach((dd) => keep.domains.add(dd));
-    return keep;
+  }
+
+  // ---- Businesses: one record per Google listing, or per website for a business named without a
+  // Google link. Listings on one website stay apart. Each match keeps its receipt.
+  type Rec = {
+    key: string;
+    id: string | null;
+    domain: string | null;
+    name: string | null;
+    kind: 'listing' | 'site';
+    card: number | null;
+    linked: Set<number>;
+    named: Set<number>;
+    listing: Set<number>;
+    website: Set<number>;
+    sources: number | null;
+    ad: boolean;
+    receipts: AioReceipt[];
   };
+  const recs = new Map<string, Rec>();
+  const make = (key: string, id: string | null, kind: Rec['kind'], domain: string | null = null): Rec => {
+    let r = recs.get(key);
+    if (!r) {
+      r = { key, id, domain, name: null, kind, card: null, linked: new Set(), named: new Set(), listing: new Set(), website: new Set(), sources: null, ad: false, receipts: [] };
+      recs.set(key, r);
+    }
+    return r;
+  };
+  const byDomain = (dd: string) => [...recs.values()].filter((r) => r.domain === dd);
+  const receipt = (r: Rec, x: Partial<AioReceipt> & { role: AioMatchRole }) => r.receipts.push({ sentence_index: null, card_position: null, business_id: r.id, url: null, text: null, ...x });
+
+  // Cards: featured, in their order (the page's; the copy's when the page read missed one).
   for (const c of known) {
-    const rec = find([c.id], [cardSite(c)], true)!;
-    rec.card ??= c.position;
-    rec.name ??= (c.id && names.get(c.id)) || null;
+    const site = cardSite(c);
+    const r = c.id ? make(c.id, c.id, 'listing') : make('site:' + site, null, 'listing', site);
+    r.card ??= c.position;
+    r.domain ??= site;
+    r.name ??= (c.id && names.get(c.id)) || null;
+    receipt(r, { role: 'card', card_position: c.position, url: c.links.find((l) => l.action === 'website')?.r.url ?? null, text: r.name });
   }
   if (copyUsed)
     for (const c of copied!.cards) {
-      const rec = find([c.id], [], true)!;
-      rec.name ??= c.name;
-      if (rec.card === null && !known.length) rec.card = c.pos;
+      const r = make(c.id, c.id, 'listing');
+      r.name ??= c.name;
+      if (r.card === null) {
+        r.card = c.pos;
+        receipt(r, { role: 'card', card_position: c.pos, text: c.name });
+      }
     }
+  // Names Google links in the text (its own link to the listing): featured where they stand. The
+  // business's website is the site the same sentence cites under its name.
   for (const s of sents)
     for (const m of s.mentions) {
-      // The site the same sentence cites under the business's name joins it.
-      const site = (s.urls ?? []).map(domainOf).find((dd) => dd && m.name && nameFitsDomain(m.name, dd)) ?? null;
-      const rec = find([m.id], [site], true)!;
-      rec.named.add(s.index);
-      rec.name ??= m.name;
+      const r = make(m.id, m.id, 'listing');
+      r.name ??= m.name;
+      r.linked.add(s.index);
+      r.domain ??= (s.urls ?? []).map(domainOf).find((dd) => dd && m.name && nameFitsDomain(m.name, dd)) ?? null;
+      receipt(r, { role: 'inline_link', sentence_index: s.index, text: m.name });
     }
+  // A numbered citation carrying a business's ID: a Google listing referenced as a source.
   for (const c of listingCites) {
-    const rec = find([c.business_id], [], Boolean(c.business_id));
-    rec?.cited.add(c.sentence_index);
+    if (!c.business_id) continue;
+    const r = make(c.business_id, c.business_id, 'listing');
+    r.name ??= names.get(c.business_id) ?? null;
+    r.listing.add(c.sentence_index);
+    receipt(r, { role: 'listing_citation', sentence_index: c.sentence_index, url: c.raw_url });
   }
-  for (const c of webCites) find([], [c.registrable_domain], false)?.cited.add(c.sentence_index);
+  // A site the sentence names in its words and cites: the business it names (ASH LAW, Opendoor) —
+  // unless the sentence links that business's listing or is its card's own, or the site is a
+  // directory, review or community site (Super Lawyers, Reddit), which is a source, not a business.
   const named_sites: AioCaptureResult['named_sites'] = [];
   for (const s of sents) {
     const doms = [...new Set(webCites.filter((c) => c.sentence_index === s.index).map((c) => c.registrable_domain).filter(Boolean) as string[])];
-    for (const dd of doms)
-      if (namesSite(s.text, dd)) {
-        named_sites.push({ sentence_index: s.index, registrable_domain: dd });
-        find([], [dd], false)?.named.add(s.index);
-      }
+    for (const dd of doms) {
+      const words = namedSite(s.text, dd);
+      if (!words) continue;
+      named_sites.push({ sentence_index: s.index, registrable_domain: dd });
+      const owners = byDomain(dd);
+      if (owners.some((o) => o.linked.has(s.index) || sentCard.get(s.index) === o.key)) continue;
+      if (!owners.length && knownSite(dd)) continue;
+      // Several listings on that website: which one the words mean is not known.
+      const r = owners.length === 1 ? owners[0] : owners.length === 0 ? make('site:' + dd, null, 'site', dd) : null;
+      if (!r) continue;
+      r.name ??= words;
+      r.named.add(s.index);
+      receipt(r, { role: 'prose_name', sentence_index: s.index, text: words });
+    }
+  }
+  // A listing's exact name in a sentence's words, without a link (and not its own card's sentence).
+  for (const r of recs.values()) {
+    if (r.kind !== 'listing' || !r.name) continue;
+    for (const s of sents) {
+      if (r.linked.has(s.index) || r.named.has(s.index) || sentCard.get(s.index) === r.key || !hasName(s.text, r.name)) continue;
+      r.named.add(s.index);
+      receipt(r, { role: 'prose_name', sentence_index: s.index, text: r.name });
+    }
+  }
+  // A cited page credits its website's business: the card the sentence describes, the business the
+  // sentence links or names, or the only business on that website. Several listings on one website
+  // and none of those: credited to no listing (the brand's site, no branch evidence).
+  const site_citations: AioSiteCitation[] = [];
+  for (const c of webCites) {
+    const dd = c.registrable_domain;
+    if (!dd) continue;
+    const owners = byDomain(dd);
+    let credited = owners.filter((o) => sentCard.get(c.sentence_index) === o.key);
+    if (!credited.length) credited = owners.filter((o) => o.linked.has(c.sentence_index) || o.named.has(c.sentence_index));
+    if (!credited.length && owners.length === 1) credited = owners;
+    for (const r of credited) {
+      r.website.add(c.sentence_index);
+      receipt(r, { role: 'website_citation', sentence_index: c.sentence_index, url: c.raw_url });
+    }
+    site_citations.push({ sentence_index: c.sentence_index, registrable_domain: dd, url: c.clean_url, credited_to: credited.map((r) => r.key) });
   }
   // The sources row: every source viewer link in the overview, by the business ID it carries, in page order.
   const listing_sources: AioListingSource[] = [];
-  const inRow = new Set<string>();
-  for (const r of [...rows].sort((a, b) => a.order - b.order)) {
-    if (!isSourceViewer(r.url)) continue;
-    const id = googleIdOfLink(r.url);
-    if (!id || inRow.has(id)) continue;
-    inRow.add(id);
-    const rec = find([id], [], true)!;
-    rec.sources ??= listing_sources.length + 1;
-    listing_sources.push({ position: listing_sources.length + 1, business_id: id, business_key: null, in_answer: false, ...seen(r) });
+  for (const row of [...rows].sort((a, b) => a.order - b.order)) {
+    if (!isSourceViewer(row.url)) continue;
+    const id = googleIdOfLink(row.url);
+    if (!id || listing_sources.some((l) => l.business_id === id)) continue;
+    const r = make(id, id, 'listing');
+    r.name ??= names.get(id) ?? null;
+    r.sources ??= listing_sources.length + 1;
+    receipt(r, { role: 'sources_row', text: String(listing_sources.length + 1) });
+    listing_sources.push({ position: listing_sources.length + 1, business_id: id, business_key: id, in_answer: false, ...seen(row) });
   }
-  const ads: AioAd[] = adRows.map((r, i) => {
-    const dom = domainOf(r.url ?? r.domain);
-    const rec = find([], [dom], true);
-    if (rec) rec.ad = true;
-    return { position: i + 1, raw_url: r.url, registrable_domain: dom, business_key: null, ...seen(r) };
+  // Ads: the business(es) on the ad's website, or the advertiser on its own.
+  const adName = (dd: string) => adLines.find((l) => {
+    const w = letters(l.split(/\s+/)[0] ?? '');
+    return w.length >= 6 && labelOf(dd).startsWith(w);
+  }) ?? null;
+  const ads: AioAd[] = adRows.map((row, i) => {
+    const dd = domainOf(row.url ?? row.domain);
+    let owners = dd ? byDomain(dd) : [];
+    if (!owners.length && dd) {
+      const r = make('site:' + dd, null, 'site', dd);
+      r.name ??= adName(dd);
+      owners = [r];
+    }
+    for (const r of owners) {
+      r.ad = true;
+      receipt(r, { role: 'ad', url: row.url });
+    }
+    return { position: i + 1, raw_url: row.url, registrable_domain: dd, business_key: owners.length === 1 ? owners[0].key : null, ...seen(row) };
   });
 
-  const keyOf = (x: Rec) => [...x.ids][0] ?? 'site:' + [...x.domains][0];
-  const recOfId = (id: string) => recs.find((x) => x.ids.has(id)) ?? null;
-  const recOfDomain = (dd: string) => recs.find((x) => x.domains.has(dd)) ?? null;
-  const businesses: AioBusiness[] = recs.map((x) => ({
-    business_key: keyOf(x),
-    business_ids: [...x.ids],
-    domains: [...x.domains],
-    business_name: x.name ?? ([...x.ids].map((i) => names.get(i)).find(Boolean) || null),
-    card_position: x.card,
-    named_in_sentences: [...x.named].sort((a, b) => a - b),
-    cited_in_sentences: [...x.cited].sort((a, b) => a - b),
-    sources_row_position: x.sources,
-    advertised: x.ad,
-    in_answer: x.card !== null || x.named.size > 0,
+  const businesses: AioBusiness[] = [...recs.values()].map((r) => ({
+    business_key: r.key,
+    business_id: r.id,
+    domain: r.domain,
+    business_name: r.name ?? (r.id ? (names.get(r.id) ?? null) : null),
+    kind: r.kind,
+    card_position: r.card,
+    featured: r.card !== null || r.linked.size > 0,
+    linked_in_sentences: sorted(r.linked),
+    named_in_sentences: sorted(r.named),
+    listing_referenced_in_sentences: sorted(r.listing),
+    website_cited_in_sentences: sorted(r.website),
+    sources_row_position: r.sources,
+    advertised: r.ad,
+    in_answer: r.card !== null || r.linked.size > 0 || r.named.size > 0,
+    same_website_as: r.domain && r.id ? byDomain(r.domain).filter((o) => o !== r && o.id).map((o) => o.key) : [],
+    receipts: r.receipts,
   }));
-  for (const l of listing_sources) {
-    const rec = recOfId(l.business_id);
-    l.business_key = rec ? keyOf(rec) : null;
-    l.in_answer = Boolean(rec && (rec.card !== null || rec.named.size > 0));
-  }
-  for (const a of ads) {
-    const rec = a.registrable_domain ? recOfDomain(a.registrable_domain) : null;
-    a.business_key = rec ? keyOf(rec) : null;
-  }
+  for (const l of listing_sources) l.in_answer = Boolean(businesses.find((b) => b.business_key === l.business_key)?.in_answer);
 
-  const named = businesses.filter((b) => b.in_answer && b.business_ids.length > 0);
   const counts: AioCaptureCounts = {
     sentences_count: sentences.length,
     cited_web_pages_count: citedUrls.size,
+    websites_cited_count: citedDomains.size,
     cited_gbp_listings_count: new Set(listingCites.map((c) => c.business_id || c.maps_id || c.clean_url)).size,
-    named_businesses_count: named.length,
+    card_businesses_count: businesses.filter((b) => b.card_position !== null).length,
+    featured_businesses_count: businesses.filter((b) => b.featured).length,
+    named_businesses_count: businesses.filter((b) => b.in_answer).length,
     unreferenced_web_sources_count: unreferenced_web_sources.length,
     card_action_links_count: card_action_links.length,
     sources_row_listings_count: listing_sources.length,
@@ -696,33 +868,76 @@ export function buildAioCapture(
     ads_count: ads.length,
   };
   // Business cards against the web pages the sentences cite: mostly cards (local), mostly pages (web), or as many of each (hybrid).
-  const cardCount = known.length || (copyUsed ? copied!.cards.length : 0);
+  const cardCount = counts.card_businesses_count;
   const overview_mode: AioOverviewMode = cardCount && counts.cited_web_pages_count >= cardCount ? 'hybrid' : cardCount ? 'local_entity_cards' : counts.cited_web_pages_count || sentences.length ? 'web_synthesis' : 'empty';
+  // Nothing read although the screen showed an AI Overview: unknown, not "absent".
+  const capture_status: AioCaptureResult['capture_status'] = sentences.length || cardCount ? 'parsed' : opts.overviewOnScreen === false ? 'no_overview' : 'unparsed';
 
-  // ---- The tracked business: by its Google business ID, else its website.
-  const targetSite = registrableDomain(opts.targetDomain);
-  const byId = opts.targetBusinessId ? recOfId(opts.targetBusinessId) : null;
-  const byDomain = !byId && targetSite ? recOfDomain(targetSite) : null;
-  const target = byId ?? byDomain;
-  const t = target ? businesses.find((b) => b.business_key === keyOf(target)) ?? null : null;
-  const targetCited =
-    Boolean(t && t.cited_in_sentences.length) ||
-    Boolean(targetSite && webCites.some((c) => c.registrable_domain === targetSite)) ||
-    Boolean(opts.targetBusinessId && listingCites.some((c) => c.business_id === opts.targetBusinessId));
+  // ---- The tracked business: by its Google business ID; else by its website, when one business
+  // here has it (a business without an ID only, once an ID is saved: another branch is not it);
+  // else by its exact name (named only).
+  const tId = opts.targetBusinessId || null;
+  const tSite = registrableDomain(opts.targetDomain);
+  const tName = opts.targetName?.trim() || null;
+  let t = tId ? (recs.get(tId) ?? null) : null;
+  let how: AioCaptureResult['target_match'] = t ? 'id' : null;
+  if (!t && tSite) {
+    const owners = byDomain(tSite).filter((o) => !tId || !o.id);
+    if (owners.length === 1) {
+      t = owners[0];
+      how = 'domain';
+    } else if (owners.length > 1) how = 'domain_shared';
+  }
+  let suggested: string | null = null;
+  if (!t && !how && tName) {
+    const same = [...recs.values()].find((r) => r.name && flatWords(r.name) === flatWords(tName));
+    if (same) {
+      how = 'name';
+      if (!tId && same.id) suggested = same.id;
+    }
+  }
+  const verified = how === 'id' || how === 'domain';
+  const proseHit = tName ? sents.filter((s) => hasName(s.text, tName)) : [];
+  const flags = {
+    featured: Boolean(verified && t && (t.card !== null || t.linked.size > 0)),
+    listing: tId ? listingCites.some((c) => c.business_id === tId) : Boolean(verified && t && t.listing.size > 0),
+    // Its saved website cited anywhere, or a page on the website the answer ties to it credited to it.
+    website: Boolean(tSite && webCites.some((c) => c.registrable_domain === tSite)) || Boolean(verified && t && t.website.size > 0),
+    prose: Boolean(verified && t && (t.named.size > 0 || t.linked.size > 0)) || proseHit.length > 0,
+    sources: Boolean(verified && t && t.sources !== null),
+    ad: Boolean(verified && t && t.ad),
+    card: Boolean(verified && t && t.card !== null),
+  };
+  const parsed = capture_status === 'parsed';
+  const nul = (v: boolean) => (parsed ? v : null);
+  const target_receipts: AioReceipt[] = [
+    ...(verified && t ? t.receipts : []),
+    ...(tSite ? webCites.filter((c) => c.registrable_domain === tSite && !(verified && t?.website.has(c.sentence_index))).map((c) => ({ role: 'website_citation' as const, sentence_index: c.sentence_index, card_position: null, business_id: null, url: c.raw_url, text: null })) : []),
+    ...(tId && !t ? listingCites.filter((c) => c.business_id === tId).map((c) => ({ role: 'listing_citation' as const, sentence_index: c.sentence_index, card_position: null, business_id: tId, url: c.raw_url, text: null })) : []),
+    ...proseHit.filter((s) => !(verified && t && (t.named.has(s.index) || t.linked.has(s.index)))).map((s) => ({ role: 'prose_name' as const, sentence_index: s.index, card_position: null, business_id: null, url: null, text: tName })),
+  ];
   const stats = d.meta.stats;
   return {
     scan_point_id: opts.scanPointId ?? null,
     keyword: opts.keyword,
-    target_business_id: opts.targetBusinessId ?? null,
+    target_business_id: tId,
     target_domain: opts.targetDomain ?? null,
+    target_name: tName,
     map_pack_rank: opts.mapPackRank ?? null,
-    target_match: byId ? 'id' : byDomain ? 'domain' : null,
-    target_cited_in_aio: targetCited,
-    target_named_in_aio: Boolean(t?.in_answer),
-    target_named_in_aio_cards: Boolean(t && t.card_position !== null),
-    target_named_in_aio_text: Boolean(t && t.named_in_sentences.length),
-    target_in_sources_row: Boolean(t && t.sources_row_position !== null),
-    target_advertised: Boolean(t?.advertised),
+    capture_status,
+    target_match: how,
+    target_featured_in_aio: nul(flags.featured),
+    target_listing_referenced: nul(flags.listing),
+    target_website_cited: nul(flags.website),
+    target_named_in_prose: nul(flags.prose),
+    target_in_sources_row: nul(flags.sources),
+    target_advertised: nul(flags.ad),
+    target_cited_in_aio: nul(flags.website || flags.listing),
+    target_named_in_aio: nul(flags.featured || flags.prose),
+    target_named_in_aio_cards: nul(flags.card),
+    target_named_in_aio_text: nul(Boolean(verified && t && t.linked.size > 0) || flags.prose),
+    target_receipts: parsed ? target_receipts : [],
+    target_suggested_id: suggested,
     overview_mode,
     overview_text: sentences.length ? sentences.map((s) => s.sentence_text).join(' ') : null,
     telemetry: {
@@ -741,24 +956,24 @@ export function buildAioCapture(
     listing_sources,
     ads,
     named_sites,
+    site_citations,
     captured_at: opts.capturedAt ?? new Date().toISOString(),
   };
 }
 
-/** One row per business card, its links joined (as v_aio_local_entity_roster), with what else the answer did with the firm. */
+/** One row per business card, its links joined (as v_aio_local_entity_roster), with what else the answer did with the business. */
 export function entityRoster(c: AioCaptureResult) {
   const byCard = new Map<number, AioCardActionLink[]>();
   for (const l of c.card_action_links) if (l.card_position !== null) byCard.set(l.card_position, [...(byCard.get(l.card_position) ?? []), l]);
   return [...byCard.entries()].map(([card_position, links]) => {
     const site = links.find((l) => l.action_type === 'website');
-    const id = links.find((l) => l.business_id)?.business_id ?? null;
     const firm = c.businesses.find((b) => b.card_position === card_position) ?? null;
     return {
       card_position,
-      business_name: links.find((l) => l.business_name)?.business_name ?? null,
-      business_id: id,
-      /** The firm's other listings the answer showed (another ID on the same website). */
-      other_business_ids: firm ? firm.business_ids.filter((x) => x !== id) : [],
+      business_name: links.find((l) => l.business_name)?.business_name ?? firm?.business_name ?? null,
+      business_id: links.find((l) => l.business_id)?.business_id ?? firm?.business_id ?? null,
+      /** Other listings on this page with the same website (branch relationship not resolved). */
+      same_website_as: firm?.same_website_as ?? [],
       maps_id: links.find((l) => l.maps_id)?.maps_id ?? null,
       street_address: links.find((l) => l.street_address)?.street_address ?? null,
       coordinates: links.find((l) => l.coordinates)?.coordinates ?? null,
@@ -768,7 +983,8 @@ export function entityRoster(c: AioCaptureResult) {
       utm_medium: (site?.utm_params?.utm_medium as string | undefined) ?? null,
       utm_campaign: (site?.utm_params?.utm_campaign as string | undefined) ?? null,
       named_in_sentences: firm?.named_in_sentences ?? [],
-      cited_in_sentences: firm?.cited_in_sentences ?? [],
+      listing_referenced_in_sentences: firm?.listing_referenced_in_sentences ?? [],
+      website_cited_in_sentences: firm?.website_cited_in_sentences ?? [],
       sources_row_position: firm?.sources_row_position ?? null,
       advertised: firm?.advertised ?? false,
       hydrated_after_expand: links.some((l) => l.first_seen_phase === 'post_expand'),
@@ -776,36 +992,42 @@ export function entityRoster(c: AioCaptureResult) {
   });
 }
 
-/** What the point keeps on itself (the full capture goes to storage): counts, telemetry, the firms, the other pages and the ads. */
+/** What the point keeps on itself (the full capture goes to storage): status, the tracked business's flags and receipts, counts, the businesses by role, the ads. */
 export function captureDigest(c: AioCaptureResult) {
   const cited = new Map<string, number>();
   for (const s of c.sentence_citations) if (s.target_type === 'external_web' && s.registrable_domain) cited.set(s.registrable_domain, (cited.get(s.registrable_domain) ?? 0) + 1);
   const unplaced = c.card_action_links.filter((l) => l.card_position === null);
+  const brief = (b: AioBusiness) => ({ key: b.business_key, name: b.business_name, domain: b.domain });
   return {
     capture_version: c.telemetry.capture_version,
+    capture_status: c.capture_status,
     overview_mode: c.overview_mode,
-    target_match: c.target_match,
+    target: {
+      match: c.target_match,
+      featured_in_aio: c.target_featured_in_aio,
+      listing_referenced: c.target_listing_referenced,
+      website_cited: c.target_website_cited,
+      named_in_prose: c.target_named_in_prose,
+      in_sources_row: c.target_in_sources_row,
+      advertised: c.target_advertised,
+      suggested_id: c.target_suggested_id,
+      receipts: c.target_receipts.slice(0, 24).map((r) => ({ ...r, url: r.url?.slice(0, 200) ?? null })),
+    },
     target_cited_in_aio: c.target_cited_in_aio,
     target_named_in_aio: c.target_named_in_aio,
     target_named_in_aio_cards: c.target_named_in_aio_cards,
     target_named_in_aio_text: c.target_named_in_aio_text,
-    target_in_sources_row: c.target_in_sources_row,
-    target_advertised: c.target_advertised,
     map_pack_rank: c.map_pack_rank ?? null,
     telemetry: c.telemetry,
     counts: c.counts,
     cited_sites: [...cited.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([site, n]) => ({ site, citations: n })),
     roster: entityRoster(c).slice(0, 20),
-    named_in_text: c.businesses
-      .filter((b) => b.named_in_sentences.length && b.card_position === null)
-      .slice(0, 12)
-      .map((b) => ({ ids: b.business_ids, name: b.business_name, domains: b.domains, sentences: b.named_in_sentences, cited: b.cited_in_sentences.length > 0 })),
-    sources_only: c.businesses
-      .filter((b) => b.sources_row_position !== null && !b.in_answer)
-      .slice(0, 20)
-      .map((b) => ({ ids: b.business_ids, name: b.business_name, position: b.sources_row_position })),
-    named_sites: c.named_sites.slice(0, 12),
-    ads: c.ads.slice(0, 8).map((a) => ({ domain: a.registrable_domain, url: a.raw_url?.slice(0, 200) ?? null, business: a.business_key })),
+    linked_in_text: c.businesses.filter((b) => b.linked_in_sentences.length && b.card_position === null).slice(0, 12).map((b) => ({ ...brief(b), sentences: b.linked_in_sentences, same_website_as: b.same_website_as, website_cited: b.website_cited_in_sentences })),
+    named_in_prose: c.businesses.filter((b) => b.named_in_sentences.length && !b.featured).slice(0, 12).map((b) => ({ ...brief(b), sentences: b.named_in_sentences, website_cited: b.website_cited_in_sentences })),
+    listings_referenced: c.businesses.filter((b) => b.listing_referenced_in_sentences.length).slice(0, 12).map((b) => ({ ...brief(b), sentences: b.listing_referenced_in_sentences, featured: b.featured })),
+    site_citations: c.site_citations.slice(0, 30).map((s) => ({ sentence: s.sentence_index, site: s.registrable_domain, credited_to: s.credited_to })),
+    sources_only: c.businesses.filter((b) => b.sources_row_position !== null && !b.in_answer).slice(0, 20).map((b) => ({ key: b.business_key, name: b.business_name, position: b.sources_row_position })),
+    ads: c.ads.slice(0, 8).map((a) => ({ domain: a.registrable_domain, url: a.raw_url?.slice(0, 200) ?? null, business: a.business_key, name: c.businesses.find((b) => b.business_key === a.business_key)?.business_name ?? null })),
     unreferenced_web_sources: c.unreferenced_web_sources.slice(0, 12).map((u) => ({ domain: u.registrable_domain, url: u.clean_url.slice(0, 200), title: u.page_title, phase: u.first_seen_phase })),
     unplaced_card_links: unplaced.length ? { count: unplaced.length, urls: unplaced.slice(0, 10).map((l) => l.raw_url?.slice(0, 200) ?? null) } : null,
     promoted_after_expand: c.sentence_citations.filter((s) => s.promoted_after_expand).length,

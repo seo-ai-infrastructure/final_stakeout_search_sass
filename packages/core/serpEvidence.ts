@@ -315,6 +315,8 @@ type AiCopy = {
   outro: string[];
   /** The whole answer in order (headings, paragraphs, bullets and businesses), to rebuild it as shown. */
   blocks: AiCopyBlock[];
+  /** The ads the copy ends with (from "Sponsored", glued to the next word: "SponsoredYou might consider…"): never businesses, citations or answer text. */
+  sponsored: string[];
 };
 
 const BIZ_LINE = /^(.+?) \((https:\/\/www\.google\.com\/search\?kgmid=([^&)\s]+)[^)\s]*)\)$/;
@@ -339,12 +341,19 @@ export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
   // answer names without linking a Google listing (so it has no kgmid).
   let bulleted = false;
   const rawLines = text.replace(/\r/g, '').split('\n');
+  const sponsored: string[] = [];
   for (let li = 0; li < rawLines.length; li++) {
     const raw = rawLines[li];
     const line = raw.trim();
     if (!line) {
       blank = true;
       continue;
+    }
+    // The copy ends with the AI Overview's ads ("SponsoredYou might consider these options:", then
+    // each ad's advertiser, headline and site). They are not the answer: nothing after is read as it.
+    if (/^Sponsored(?![a-z])/.test(line)) {
+      for (const rest of [line.replace(/^Sponsored/, ''), ...rawLines.slice(li + 1)]) if (rest.trim()) sponsored.push(rest.trim());
+      break;
     }
     const afterBlank = blank;
     blank = false;
@@ -404,7 +413,7 @@ export function readAiCopy(text: string, checkAgainst: string[] = []): AiCopy {
   const verified =
     checkAgainst.length > 0 &&
     (businesses.some((x) => hay.includes(norm(x.name))) || intro.some((l) => l.length > 12 && hay.includes(norm(l))));
-  return { intro, businesses, citations, verified, outro, blocks };
+  return { intro, businesses, citations, verified, outro, blocks, sponsored };
 }
 
 /**

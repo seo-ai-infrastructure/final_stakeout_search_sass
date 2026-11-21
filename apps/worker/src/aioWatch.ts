@@ -212,7 +212,7 @@ export async function watchAioSources(opts: {
   };
   const msNow = () => Date.now() - t0;
   const tele: WatcherFacts = {
-    capture_version: 'v280',
+    capture_version: 'v281',
     resolved_via_warmup_tab: false,
     warmup_tab_listed_url: null,
     reads_succeeded: 0,
