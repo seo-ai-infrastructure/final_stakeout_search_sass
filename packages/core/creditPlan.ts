@@ -28,13 +28,27 @@ export function renewPlan(s: PlanState, monthly: number) {
   return { carry, lapse, grant: monthly, balance, bucket, packFloor: balance - bucket };
 }
 
+/**
+ * Clients added mid-month: their sessions join the plan's share now. Nothing carries over or lapses
+ * here; the next renewal treats them like the rest of the month's.
+ */
+export function topUpPlan(s: PlanState, extra: number) {
+  const left = planRemaining(s);
+  const balance = s.balance + extra;
+  const bucket = left + extra;
+  return { grant: extra, balance, bucket, packFloor: balance - bucket };
+}
+
 /** The subscription ended: the plan's unused credits lapse; pack credits stay. */
 export function endPlan(s: PlanState) {
   const lapse = planRemaining(s);
   return { lapse, balance: s.balance - lapse, bucket: 0, packFloor: s.balance - lapse };
 }
 
-/** Where credits come from other than a plan: these never expire. */
-export const PACK_REASONS = ['STRIPE_TOPUP', 'ADMIN_TOPUP', 'WELCOME_GRANT'];
+/**
+ * Where sessions come from other than a plan: a plan's rollover never touches these. (Prospect
+ * Audit Packs and the Black Friday bonus pack are valid for 90 days; everything else never expires.)
+ */
+export const PACK_REASONS = ['STRIPE_TOPUP', 'ADMIN_TOPUP', 'WELCOME_GRANT', 'BONUS_PACK', 'PAYPAL_TOPUP'];
 /** Subscription states in which a plan has ended for good. */
 export const PLAN_ENDED = new Set(['canceled', 'unpaid', 'incomplete_expired']);

@@ -2,7 +2,7 @@ import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
 import { fulfill } from '@/lib/billing';
-import { activate, subscriptionEvent } from '@/lib/gbpBilling';
+import { activate, grantPoints, subscriptionEvent } from '@/lib/gbpBilling';
 import { settle } from '@/lib/creditSub';
 import { stripeSignatureValid } from '@/lib/stripe';
 
@@ -27,6 +27,9 @@ export async function POST(req: Request) {
       : e.type === 'invoice.paid' || e.type === 'invoice.payment_succeeded' ? o?.subscription ?? o?.parent?.subscription_details?.subscription
       : null;
     if (typeof planSub === 'string') await settle(planSub).catch((err) => { console.error('[credit-plan] webhook could not settle:', (err as Error).message); throw err; });
+    // A paid invoice of a seat subscription: its points (grantPoints ignores any other subscription).
+    if ((e.type === 'invoice.paid' || e.type === 'invoice.payment_succeeded') && typeof planSub === 'string' && typeof o?.id === 'string')
+      await grantPoints(planSub, o.id).catch((err) => { console.error('[seats] webhook could not add points:', (err as Error).message); throw err; });
     if (e.type === 'checkout.session.completed' || e.type === 'checkout.session.async_payment_succeeded') {
       const id = e.data?.object?.id;
       // A Google listings subscription: the listings picked for it switch on.

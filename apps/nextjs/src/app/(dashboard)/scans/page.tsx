@@ -22,14 +22,18 @@ type Run = {
   creditsCharged: number;
   creditsRefunded: number;
   prevScanId: string | null;
+  /** 'now' (Scan Now) or 'scheduled'. */
+  speed?: string;
+  /** When a scheduled scan starts. */
+  runAt?: string | null;
 };
 
 const DONE = ['COMPLETED', 'PARTIAL'];
-const statusText: Record<string, string> = { COMPLETED: 'Completed', PARTIAL: 'Partial', RUNNING: 'Running', QUEUED: 'Queued', FAILED: 'Failed' };
-const statusColor = (s: string) => (s === 'COMPLETED' ? 'text-emerald-300' : s === 'RUNNING' || s === 'QUEUED' ? 'text-sky-300' : s === 'PARTIAL' ? 'text-amber-300' : 'text-rose-300');
+const statusText: Record<string, string> = { COMPLETED: 'Completed', PARTIAL: 'Partial', RUNNING: 'Running', QUEUED: 'Queued', FAILED: 'Failed', SCHEDULED: 'Scheduled' };
+const statusColor = (s: string) => (s === 'COMPLETED' ? 'text-emerald-300' : s === 'RUNNING' || s === 'QUEUED' || s === 'SCHEDULED' ? 'text-sky-300' : s === 'PARTIAL' ? 'text-amber-300' : 'text-rose-300');
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 const when = (iso: string) => new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-const repeatText = (s: Run) => (s.scheduleType === 'once' ? 'Once' : s.scheduleType === 'daily' ? 'Every day' : 'Every week');
+const repeatText = (s: Run) => (s.scheduleType === 'once' ? 'Once' : s.scheduleType === 'daily' ? 'Every day' : s.scheduleType === 'biweekly' ? 'Every other week' : 'Every week');
 
 export default function ScanList() {
   const [runs, setRuns] = useState<Run[]>([]),
@@ -65,8 +69,14 @@ export default function ScanList() {
     if (r.ok) await load();
     else setError('Schedule update failed.');
   }
+  async function cancel(s: Run) {
+    if (!window.confirm(`Cancel this scheduled scan?\n\n“${s.keyword}” · ${s.client}\n\nIts points come back to your balance.${s.scheduleType !== 'once' ? ' The repeats it would have started are cancelled too.' : ''}`)) return;
+    const r = await fetch('/api/scans/' + s.id, { method: 'POST', body: JSON.stringify({ action: 'stop' }) });
+    if (!r.ok) return setError((await r.json().catch(() => ({}))).error || 'That scan could not be cancelled.');
+    await load();
+  }
   async function remove(s: Run) {
-    if (!window.confirm(`Delete this scan for good?\n\n“${s.keyword}” · ${s.client}\n\nIts report, videos and evidence are removed and cannot be brought back.${s.scheduleType !== 'once' ? ' Its repeat schedule ends too.' : ''} Credits are not affected.`)) return;
+    if (!window.confirm(`Delete this scan for good?\n\n“${s.keyword}” · ${s.client}\n\nIts report, videos and evidence are removed and cannot be brought back.${s.scheduleType !== 'once' ? ' Its repeat schedule ends too.' : ''} Points are not affected.`)) return;
     const r = await fetch('/api/scans/' + s.id, { method: 'DELETE' });
     if (!r.ok) return setError((await r.json().catch(() => ({}))).error || 'That scan could not be deleted.');
     await load();
@@ -208,7 +218,7 @@ export default function ScanList() {
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead>
                   <tr className="text-xs text-slate-400">
-                    {[current ? 'Keyword' : 'Client / keyword', 'Started', 'Progress', 'SoLV', 'Credits', 'Repeats', 'Report'].map((h) => (
+                    {[current ? 'Keyword' : 'Client / keyword', 'Started', 'Progress', 'SoLV', 'Points', 'Repeats', 'Report'].map((h) => (
                       <th key={h} className="px-4 py-2.5 font-semibold">{h}</th>
                     ))}
                   </tr>
@@ -231,7 +241,11 @@ export default function ScanList() {
                       <td className="px-4 py-3 text-slate-300">{when(s.createdAt)}</td>
                       <td className="px-4 py-3">
                         <span className={'font-semibold ' + statusColor(s.status)}>{statusText[s.status] ?? s.status}</span>
-                        <span className="block text-xs text-slate-400">{s.completedPins} of {s.totalPins} points{s.failedPins ? ` · ${s.failedPins} failed` : ''}</span>
+                        {s.status === 'SCHEDULED' && s.runAt ? (
+                          <span className="block text-xs text-slate-400">Runs {when(s.runAt)}</span>
+                        ) : (
+                          <span className="block text-xs text-slate-400">{s.completedPins} of {s.totalPins} points{s.failedPins ? ` · ${s.failedPins} failed` : ''}{s.speed === 'now' && s.status !== 'COMPLETED' ? ' · Scan Now' : ''}</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-semibold">{s.solv == null ? '—' : s.solv + '%'}</td>
                       <td className="px-4 py-3 text-slate-300">
@@ -251,7 +265,10 @@ export default function ScanList() {
                         {s.prevScanId && DONE.includes(s.status) && (
                           <Link className="ml-3 text-emerald-300" href={'/scans/compare?a=' + s.prevScanId + '&b=' + s.id}>Compare</Link>
                         )}
-                        {!['QUEUED', 'RUNNING', 'AWAITING_EMAIL'].includes(s.status) && (
+                        {s.status === 'SCHEDULED' && (
+                          <button type="button" className="ml-3 font-normal text-slate-500 hover:text-rose-300" onClick={() => cancel(s)}>Cancel</button>
+                        )}
+                        {!['QUEUED', 'RUNNING', 'AWAITING_EMAIL', 'SCHEDULED'].includes(s.status) && (
                           <button type="button" className="ml-3 font-normal text-slate-500 hover:text-rose-300" onClick={() => remove(s)}>Delete</button>
                         )}
                       </td>

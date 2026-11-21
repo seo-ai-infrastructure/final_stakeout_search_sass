@@ -44,6 +44,14 @@ test('refunds and re-runs give back what each point cost, even after the price c
   assert.equal(pointPrice({ network: 'mix', creditsCharged: 0, totalPins: 25 }, pins)({ rowIdx: 0, colIdx: 0 }), 0);
   assert.equal(pointPrice({ network: 'mobile', creditsCharged: 50, totalPins: 25 }, pins)({ rowIdx: 0, colIdx: 1 }), 2);
   assert.equal(pointPrice({ network: 'residential', creditsCharged: 25, totalPins: 25 }, pins)({ rowIdx: 0, colIdx: 0 }), 1);
+  // Scan Now doubles both; scheduled is the plain price. A scan from before Scan Now reads as "now" at the old price.
+  const now = pointPrice({ network: 'mix', creditsCharged: 76, totalPins: 25, speed: 'now' }, pins);
+  assert.deepEqual([now({ rowIdx: 0, colIdx: 0 }), now({ rowIdx: 0, colIdx: 1 }), pinsTotal(pins, now)], [4, 2, 76]);
+  const later = pointPrice({ network: 'mix', creditsCharged: 38, totalPins: 25, speed: 'scheduled' }, pins);
+  assert.deepEqual([later({ rowIdx: 0, colIdx: 0 }), later({ rowIdx: 0, colIdx: 1 }), pinsTotal(pins, later)], [2, 1, 38]);
+  const before = pointPrice({ network: 'mix', creditsCharged: 38, totalPins: 25, speed: 'now' }, pins);
+  assert.deepEqual([before({ rowIdx: 0, colIdx: 0 }), before({ rowIdx: 0, colIdx: 1 }), pinsTotal(pins, before)], [2, 1, 38]);
+  assert.equal(pointPrice({ network: 'residential', creditsCharged: 50, totalPins: 25, speed: 'now' }, pins)({ rowIdx: 0, colIdx: 0 }), 2);
 });
 const pinsTotal = (pins: { rowIdx: number; colIdx: number }[], f: (p: { rowIdx: number; colIdx: number }) => number) => pins.reduce((n, p) => n + f(p), 0);
 

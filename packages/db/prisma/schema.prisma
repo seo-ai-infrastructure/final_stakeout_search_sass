@@ -116,11 +116,19 @@ model GridScan {
   solv             Float?
   aioTriggerRate   Float?
   aioCitationRate  Float?
+  /// 'now' (Scan Now: first in line, 2 points a grid point) or 'scheduled' (1 point, behind Scan Now).
+  speed            String    @default("now")
+  /// A scheduled scan waits (status SCHEDULED) until this moment.
+  runAt            DateTime?
+  /// The free re-run of a first $5 audit, a week later; cleared once it has started.
+  freeRescanAt     DateTime?
   pins             GridPin[]
   createdAt        DateTime  @default(now())
   completedAt      DateTime?
 
   @@index([userId, createdAt])
+  @@index([status, runAt])
+  @@index([freeRescanAt])
 }
 
 model GridPin {
@@ -413,6 +421,14 @@ model GbpSub {
   updatedAt      DateTime  @default(now())
   /// The AI agents add-on is on this subscription.
   agentAddon     Boolean   @default(false)
+  /// Scout seats on the subscription (Command and Dominator seats are its listings on those plans).
+  scoutSeats     Int       @default(0) @map("trackSeats")
+  /// The seats' points held right after the last grant; the rest of the balance then; when that was (packages/core/creditPlan.ts).
+  bucket         Int       @default(0)
+  packFloor      Int       @default(0)
+  grantAt        DateTime?
+  /// Monthly points this month's paid invoices have already covered.
+  grantedPoints  Int       @default(0) @map("grantedSeats")
 }
 
 /// A monthly credit plan as a subscription. `bucket`: the plan credits held right after the last

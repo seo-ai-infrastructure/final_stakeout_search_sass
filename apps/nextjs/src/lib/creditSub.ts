@@ -40,6 +40,8 @@ export async function activePlan(userId: string): Promise<{ plan: string; period
  * new number of credits, from the next renewal.
  */
 export async function startPlan(u: { id: string; email: string }, planKey: string, back: string): Promise<{ url?: string; changed?: string }> {
+  // Monthly credit plans are no longer sold: seats (Scout, Command, Dominator) replaced them.
+  if (planKey) throw new InputError('Monthly credit plans are no longer sold. Choose a seat on the Plan and billing page.', 410);
   const plan = PLANS.find((p) => p.key === planKey);
   if (!plan) throw new InputError('That plan is not available.');
   const mine = await db.creditSub.findUnique({ where: { userId: u.id } });

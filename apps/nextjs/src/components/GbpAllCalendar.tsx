@@ -66,7 +66,7 @@ export default function GbpAllCalendar({ profiles, admin, onOpen }: { profiles: 
   if (!listings.length)
     return (
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-        <p className="font-semibold">The content calendar covers listings on the Manage plan.</p>
+        <p className="font-semibold">The content calendar covers listings on a Command or Dominator seat.</p>
         <p className="mt-1 text-sm text-slate-400">Put a listing on a plan to schedule its Google posts and see them here alongside your other listings.</p>
       </div>
     );

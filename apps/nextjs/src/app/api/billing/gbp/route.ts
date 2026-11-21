@@ -1,18 +1,18 @@
 import { InputError } from '@stakeout/core/grid';
-import { PLANS, isPlan } from '@stakeout/core/gbpPlans';
+import { LINES, isPlan } from '@stakeout/core/gbpPlans';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { target } from '@/lib/gbpAdmin';
-import { activate, addAddon, addListings, billingSummary, portalUrl, removeAddon, removeListing, type Pick } from '@/lib/gbpBilling';
+import { activate, addAddon, addListings, billingSummary, portalUrl, removeAddon, removeListing, setScoutSeats, type Pick } from '@/lib/gbpBilling';
 import { stripeConfigured } from '@/lib/stripe';
 
 export const maxDuration = 60;
 
-/** GET /api/billing/gbp: the plans and their prices, and what this account pays for now. */
+/** GET /api/billing/gbp: the seats and their prices, and what this account pays for now. */
 export async function GET() {
   try {
     const u = await getAuthenticatedUser();
-    return Response.json({ ready: stripeConfigured(), admin: u.role === 'ADMIN', plans: PLANS, ...(await billingSummary(u.id)) });
+    return Response.json({ ready: stripeConfigured(), admin: u.role === 'ADMIN', plans: LINES, ...(await billingSummary(u.id)) });
   } catch (e) {
     return errorResponse(e);
   }
@@ -20,8 +20,9 @@ export async function GET() {
 
 /**
  * POST /api/billing/gbp
- *   { add: [{ profile, location, plan }] }  puts listings on a plan: { url } to Stripe's checkout the
- *                                           first time, { done } when they joined a running subscription
+ *   { add: [{ profile, location, plan }] }  puts listings on Command or Dominator: { url } to Stripe's
+ *                                           checkout the first time, { done } when they joined a running subscription
+ *   { scout: n }                            sets the number of Scout seats (same answers)
  *   { remove: location }                    takes one off (it works until the paid month ends)
  *   { confirm: sessionId }                  back from checkout: switch the listings on now
  *   { portal: true }                        { url } to Stripe's page for the card, invoices and cancelling
@@ -30,14 +31,15 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser();
-    const b = (await req.json()) as { add?: unknown; remove?: unknown; confirm?: unknown; portal?: unknown; addon?: unknown };
+    const b = (await req.json()) as { add?: unknown; remove?: unknown; confirm?: unknown; portal?: unknown; addon?: unknown; scout?: unknown };
     // { addon: true | false }: the AI agents add-on, on or off.
     if (b.addon === true) return Response.json({ ...(await addAddon(u, new URL(req.url).origin)), ...(await billingSummary(u.id)) });
     if (b.addon === false) { await removeAddon(u.id); return Response.json(await billingSummary(u.id)); }
     const origin = new URL(req.url).origin;
+    if (typeof b.scout === 'number') return Response.json({ ...(await setScoutSeats(u, b.scout, origin)), ...(await billingSummary(u.id)) });
     if (Array.isArray(b.add)) {
       const picks: Pick[] = b.add.map((x: { profile?: unknown; location?: unknown; plan?: unknown }) => {
-        if (!isPlan(x?.plan)) throw new InputError('Unknown plan.');
+        if (!isPlan(x?.plan)) throw new InputError('Unknown seat.');
         return { ...target(x.profile, x.location), plan: x.plan };
       });
       return Response.json({ ...(await addListings(u, picks, origin)), ...(await billingSummary(u.id)) });

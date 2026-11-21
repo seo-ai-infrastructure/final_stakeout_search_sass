@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allows, dollars, monthlyCents, planNow, quantityPlan, stripeTiers, unitCents, settlePending, tierNudge } from '../packages/core/gbpPlans';
+import { PLANS, SCOUT, SCAN_NOW_5X5, addedCents, allows, clientSeats, dollars, isLine, isPlan, lineCents, monthlyCents, planNow, quantityPlan, seatGrant, seatPoints, stripeTiers, unitCents, settlePending, tierNudge } from '../packages/core/gbpPlans';
 
 test('one listing costs less the more listings an account pays for', () => {
   assert.equal(unitCents('MANAGE', 1), 2900);
@@ -15,6 +15,53 @@ test('one listing costs less the more listings an account pays for', () => {
   assert.equal(monthlyCents({}), 0);
   assert.equal(dollars(2900), '$29');
   assert.equal(dollars(2950), '$29.50');
+});
+
+test('Scout, Command and Dominator are priced per client on graduated brackets', () => {
+  // Each bracket's price is for the clients inside it.
+  assert.equal(lineCents('COMMAND', 1), 5900);
+  assert.equal(lineCents('COMMAND', 9), 9 * 5900);
+  assert.equal(lineCents('COMMAND', 10), 9 * 5900 + 4900);
+  assert.equal(lineCents('COMMAND', 12), 67800, 'twelve Command clients: 9 × $59 + 3 × $49 = $678');
+  assert.equal(lineCents('COMMAND', 25), 9 * 5900 + 15 * 4900 + 3900);
+  assert.equal(lineCents('COMMAND', 120), 9 * 5900 + 15 * 4900 + 75 * 3900 + 21 * 2900);
+  assert.equal(lineCents('SCOUT', 10), 9 * 3900 + 3200);
+  assert.equal(lineCents('DOMINATOR', 100), 9 * 9900 + 15 * 8500 + 75 * 6900 + 5500);
+  assert.equal(lineCents('SCOUT', 0), 0);
+  // Adding a client never makes the month cheaper, unlike a volume price.
+  for (const line of ['SCOUT', 'COMMAND', 'DOMINATOR'] as const)
+    for (let n = 0; n < 130; n++) assert.ok(lineCents(line, n + 1) > lineCents(line, n), `${line} ${n} → ${n + 1}`);
+  assert.equal(addedCents('COMMAND', 9), 4900);
+  assert.equal(addedCents('SCOUT', 0), 3900);
+  assert.equal(unitCents('DOMINATOR', 10), 8500);
+  assert.equal(monthlyCents({ COMMAND: 2, SCOUT: 3, DOMINATOR: 1 }), 2 * 5900 + 3 * 3900 + 9900);
+  assert.equal(tierNudge('COMMAND', 9), null);
+  assert.equal(PLANS.COMMAND.available && PLANS.DOMINATOR.available && SCOUT.available, true);
+  assert.equal(PLANS.MANAGE.available, false, 'Manage is retired: Command replaced it');
+  assert.deepEqual(stripeTiers('SCOUT').map((t) => t.up_to), [9, 24, 99, 'inf']);
+  assert.equal(isPlan('DOMINATOR'), true);
+  assert.equal(isPlan('SCOUT'), false, 'Scout seats are not a listing plan');
+  assert.equal(isLine('SCOUT'), true);
+});
+
+test('points: each seat adds its points every paid month, and seats added mid-month their share', () => {
+  assert.equal(SCAN_NOW_5X5, 50);
+  assert.equal(PLANS.COMMAND.points, 550, '500 plus one Scan Now 5×5');
+  assert.equal(PLANS.DOMINATOR.points, 1250, '1,100 plus three Scan Now 5×5s');
+  assert.equal(SCOUT.points, 250);
+  assert.equal(seatPoints({ SCOUT: 2, COMMAND: 3, DOMINATOR: 1, MANAGE: 4 }), 500 + 1650 + 1250);
+  assert.equal(clientSeats({ SCOUT: 2, COMMAND: 3, DOMINATOR: 1, MANAGE: 4 }), 6);
+  assert.deepEqual(seatGrant('subscription_create', 1650, 0), { renew: true, points: 1650, granted: 1650 });
+  assert.deepEqual(seatGrant('subscription_cycle', 1100, 1650), { renew: true, points: 1100, granted: 1100 });
+  // Two more Command seats with half the month left: half their points, like half their price.
+  assert.deepEqual(seatGrant('subscription_update', 2750, 1650, 0.5), { renew: false, points: 550, granted: 2750 });
+  // Added a minute before the month ends: next to nothing, as Stripe charges next to nothing.
+  assert.equal(seatGrant('subscription_update', 2750, 1650, 0.0001)?.points, 0);
+  // A seat put back that the month had already paid for, or the add-on added: nothing more.
+  assert.equal(seatGrant('subscription_update', 1650, 1650), null);
+  assert.equal(seatGrant('subscription_update', 1100, 1650), null);
+  assert.equal(seatGrant('manual', 1650, 0), null);
+  assert.deepEqual(seatGrant('subscription_cycle', 0, 550), { renew: true, points: 0, granted: 0 });
 });
 
 test('the brackets go to Stripe with an open last one', () => {
@@ -45,14 +92,25 @@ test('free reads, Manage changes, a paid listing lets an agent in', () => {
   assert.equal(allows('MANAGE', 'agent'), true);
   assert.equal(allows('AGENT', 'manage'), true);
   assert.equal(allows('AGENT', 'agent'), true);
+  assert.equal(allows('COMMAND', 'manage'), true);
+  assert.equal(allows('COMMAND', 'agent'), true);
+  assert.equal(allows('DOMINATOR', 'manage'), true);
 });
 
 test('the subscription follows the listings that are on a plan', () => {
   const rows = [{ plan: 'MANAGE', status: 'ACTIVE' }, { plan: 'MANAGE', status: 'ACTIVE' }, { plan: 'MANAGE', status: 'ENDING' }, { plan: 'AGENT', status: 'PENDING' }];
-  assert.deepEqual(quantityPlan(rows, { MANAGE: 1 }), { want: { MANAGE: 2, AGENT: 0 }, grows: true, same: false, empty: false });
+  assert.deepEqual(quantityPlan(rows, { MANAGE: 1 }), { want: { DOMINATOR: 0, COMMAND: 0, MANAGE: 2, AGENT: 0, SCOUT: 0 }, grows: true, same: false, empty: false });
   assert.equal(quantityPlan(rows, { MANAGE: 3 }).grows, false);
   assert.equal(quantityPlan(rows, { MANAGE: 2 }).same, true);
   assert.equal(quantityPlan([{ plan: 'MANAGE', status: 'ENDING' }], { MANAGE: 1 }).empty, true);
+  // Scout seats stay as they are unless a new number is given.
+  const cmd = [{ plan: 'COMMAND', status: 'ACTIVE' }, { plan: 'DOMINATOR', status: 'ACTIVE' }];
+  assert.deepEqual(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }).want, { DOMINATOR: 1, COMMAND: 1, MANAGE: 0, AGENT: 0, SCOUT: 4 });
+  assert.equal(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }).same, true);
+  assert.equal(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }, 6).grows, true);
+  assert.equal(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }, 2).grows, false);
+  assert.equal(quantityPlan([], { SCOUT: 4 }, 0).empty, true);
+  assert.equal(quantityPlan([], {}, 3).empty, false, 'Scout seats alone are a subscription');
 });
 
 import { PLAYBOOKS, TOOLS, WRITES, annotationsOf, playbookText, rpcAnswer, toolCall } from '../packages/core/agentTools';

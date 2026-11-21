@@ -186,7 +186,7 @@ export default function DemographicDemo() {
   };
 
   return <main className="demographic-demo">
-    <div className="demo-sandbox-banner"><p><b>⚡ LIVE SANDBOX MODE</b> Test-drive the Buying-Power Geo-Grid below with zero credits required. Want a live Android device scan of your market?</p><a href={SPRINT_URL}>Claim 1 of 12 White Label SEO Services Spots →</a></div>
+    <div className="demo-sandbox-banner"><p><b>⚡ LIVE SANDBOX MODE</b> Test-drive the Buying-Power Geo-Grid below with no points needed. Want a live Android device scan of your market?</p><a href={SPRINT_URL}>Claim 1 of 12 White Label SEO Services Spots →</a></div>
     <div className="demo-heading"><div><p className="demo-eyebrow">STAKEOUT SEARCH · BUYING-POWER GEO-GRID™ + AI CITATION TRACKER</p><h1>Stop Chasing Green Pins in Broke Zip Codes.</h1><p>A standard grid gives every coordinate equal weight. Your market isn’t that simple. See U.S. Census income, homeownership and housing age beneath Google Maps and AI visibility scenarios—then bring real Android video receipts into your next client conversation.</p></div><span className="demo-location"><span /> Lakeland, Florida</span></div>
     <div className="demo-disclosure"><b>VERIFIED CENSUS DATA</b><span>{demo.metadata.tractCount} Polk County tracts · Income, homeownership &amp; housing age · 2019–2023 ACS estimates</span><span className="demo-disclosure-divider" /><b>INTERACTIVE SANDBOX</b><span>49 sample pins · Simulated rankings &amp; AI citation rings · Optional 3D buildings · No credits used</span></div>
     <section className="demo-controls" aria-label="Map controls">

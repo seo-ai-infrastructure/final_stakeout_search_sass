@@ -1,3 +1,4 @@
+import { monthlyText } from './speed';
 import { siteDomain } from './businessSite';
 import { asScanNetwork, placedLayout } from './network';
 import { createHash } from 'node:crypto';
@@ -83,7 +84,7 @@ export function parseSpec(input: Record<string, unknown>) {
     ].includes(targetType)
   )
     throw new InputError('Choose a supported Android surface.');
-  if (!['once', 'daily', 'weekly'].includes(scheduleType))
+  if (!['once', 'daily', 'weekly', 'biweekly'].includes(scheduleType))
     throw new InputError('Invalid schedule.');
   // Optional: the business's own website, kept as a bare domain. Anything given must be readable as one.
   const typedSite = typeof input.targetDomain === 'string' ? input.targetDomain.trim() : '';
@@ -234,6 +235,9 @@ export function cronParts(stored: string): { pattern: string; tz: string } {
 export function scheduleText(kind: string, stored: string | null): string | null {
   if (kind === 'once' || !stored) return null;
   const { pattern, tz } = cronParts(stored);
+  // Fixed days of the month (weekly is 4 runs a month, every other week 2).
+  const monthly = monthlyText(pattern);
+  if (monthly) return `${monthly} (${tz})${stored.startsWith('PAUSED:') ? ', paused' : ''}`;
   const [min, hour, , , dow] = pattern.split(' ');
   const h = Number(hour), time = `${h % 12 || 12}:${String(Number(min)).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];

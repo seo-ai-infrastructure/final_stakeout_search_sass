@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { endPlan, planRemaining, renewPlan } from '../packages/core/creditPlan';
+import { PACK_REASONS, endPlan, planRemaining, renewPlan, topUpPlan } from '../packages/core/creditPlan';
 
 test('the first paid month adds the plan’s credits on top of what the account had', () => {
   const r = renewPlan({ balance: 40, bucket: 0, packFloor: 0, bought: 0 }, 700);
@@ -40,4 +40,16 @@ test('a downgrade carries over at the new plan’s cap, and one-time purchases a
   const r = renewPlan(s, 700);
   assert.deepEqual([r.carry, r.lapse, r.balance, r.packFloor], [700, 0, 3500, 2100]);
   assert.deepEqual(endPlan(s), { lapse: 700, balance: 2100, bucket: 0, packFloor: 2100 });
+});
+
+test('clients added mid-month add their sessions to the plan’s share, and packs stay apart', () => {
+  // 625 from the plan at renewal, 100 bought since; 200 used: 425 of the plan left.
+  const s = { balance: 525, bucket: 625, packFloor: 0, bought: 100 };
+  assert.equal(planRemaining(s), 425);
+  const t = topUpPlan(s, 250);
+  assert.deepEqual(t, { grant: 250, balance: 775, bucket: 675, packFloor: 100 });
+  // At the next renewal (now 7 clients, 875 a month), the 675 carry over whole and the pack is untouched.
+  assert.deepEqual(renewPlan({ balance: t.balance, bucket: t.bucket, packFloor: t.packFloor, bought: 0 }, 875), { carry: 675, lapse: 0, grant: 875, balance: 1650, bucket: 1550, packFloor: 100 });
+  assert.ok(PACK_REASONS.includes('BONUS_PACK') && PACK_REASONS.includes('STRIPE_TOPUP'));
+  assert.ok(!PACK_REASONS.includes('CLIENT_SESSIONS'));
 });

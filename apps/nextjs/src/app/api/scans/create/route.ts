@@ -10,6 +10,9 @@ import { listsEnabled, prepareGridProxies } from '@stakeout/core/proxyLists';
 import { assertFleetSupports } from '@stakeout/core/fleet';
 import { requestKeyValid } from '@stakeout/core/requestKey';
 import { getAuthenticatedUser } from '@/lib/auth';
+import { asSpeed, schedulePlan } from '@stakeout/core/speed';
+import { db } from '@stakeout/db';
+import { WELCOME } from '@/lib/pricing';
 import { errorResponse } from '@/lib/api';
 import { redis } from '@stakeout/core/redis';
 import { knownSite } from '@/lib/businessSite';
@@ -67,19 +70,32 @@ export async function POST(req: Request) {
     const pins = placed ? placed.pins : skip.size ? buildGrid(s).filter((p) => !skip.has(p.rowIdx + '_' + p.colIdx)) : undefined;
     // The business's own website, when none was given: taken from what the account already has, so the report can tell when an AI answer cites it.
     if (!s.targetDomain) s.targetDomain = await knownSite(u.id, s.targetBusiness);
-    // A repeating scan can be given its own time of day, in the business's time zone.
+    // Scan Now (first in line, 2 points a grid point) or scheduled (1 point, at the day and hour picked).
+    const speed = asSpeed(body.speed);
     let cron: string | undefined;
-    if (body.scheduleAt !== undefined && body.scheduleAt !== null && body.scheduleAt !== '') {
+    let runAt: Date | undefined;
+    if (speed === 'scheduled') {
+      const plan = schedulePlan({ repeat: body.repeat, date: body.scheduleDate, at: body.scheduleAt, timezone: body.scheduleTimezone });
+      if ('problem' in plan) throw new InputError(plan.problem);
+      runAt = plan.runAt;
+      cron = plan.cron ?? undefined;
+      s.scheduleType = plan.repeat;
+    } else if (body.scheduleAt !== undefined && body.scheduleAt !== null && body.scheduleAt !== '') {
+      // A repeating scan started now can be given its own time of day, in the business's time zone.
       const made = fixedCron(s.scheduleType, body.scheduleAt, body.scheduleTimezone, body.scheduleWeekday);
       if (typeof made !== 'string') throw new InputError(made.problem);
       cron = made;
     }
-    const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins, { cron });
+    // A first $5 audit (the account's first scan, a 5×5, after buying it) is run again free a week later.
+    const firstAudit = s.gridSize === 5 && !(await db.gridScan.count({ where: { userId: u.id } })) &&
+      Boolean(await db.paymentOrder.findFirst({ where: { userId: u.id, item: WELCOME.key, captureId: { not: null }, refundedAt: null }, select: { id: true } }));
+    const freeRescanAt = firstAudit ? new Date((runAt ?? new Date()).getTime() + 7 * 86400000) : undefined;
+    const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins, { cron, speed, runAt, freeRescanAt });
     await wakeWorker('new scan');
     // A customer just started a scan: if the worker has gone quiet, the admins hear about it now.
     await flushAlerts().catch(() => {});
     return Response.json(
-      { scanId: scan.id, creditsCharged: scan.creditsCharged },
+      { scanId: scan.id, creditsCharged: scan.creditsCharged, speed: scan.speed, runAt: scan.runAt?.toISOString() ?? null },
       { status: 202 },
     );
   } catch (e) {

@@ -1,0 +1,37 @@
+/* The home and pricing pages. Everything sits inside .so; the layout itself is in inline styles. */
+html:has(.so) { background: #0B1017; scroll-behavior: smooth; }
+html:has(.so) body { background: #0B1017; }
+@media (prefers-reduced-motion: reduce) { html:has(.so) { scroll-behavior: auto; } }
+
+.so {
+  background: #0B1017;
+  color: #F1F5F9;
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  overflow-x: clip;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.so a { color: inherit; text-decoration: none; }
+.so a:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* Links drawn as buttons brighten instead of underlining. */
+.so a.so-btn:hover { text-decoration: none; filter: brightness(1.12); }
+.so button { cursor: pointer; }
+.so :focus-visible { outline: 3px solid #FF5500; outline-offset: 3px; }
+/* Anchored sections land below the sticky header. */
+.so [id] { scroll-margin-top: 76px; }
+
+/* The header: the full menu on wide screens, a menu button below 1240px. */
+.so-burger { display: none !important; }
+.so-menu { display: none; }
+@media (max-width: 1239px) {
+  .so-wide { display: none !important; }
+  .so-burger { display: inline-flex !important; }
+  .so-menu[data-open='true'] { display: block; }
+}
+
+/* The recording player. */
+.so-dialog { padding: 0; border: 0; background: transparent; color: #F1F5F9; width: min(92vw, 380px); max-width: none; max-height: none; overflow: visible; }
+.so-dialog::backdrop { background: rgba(3, 6, 10, 0.86); }

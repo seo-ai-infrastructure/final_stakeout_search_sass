@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { SiteHeader, SiteFooter } from './SiteChrome';
 import './marketing.css';
 
-export const LEGAL_UPDATED = 'November 18, 2026';
+export const LEGAL_UPDATED = 'November 21, 2026';
 const ENTITY = 'Marketing Divine LLC';
 const PRIVACY = 'privacy@stakeoutsearch.com';
 const SUPPORT = 'support@stakeoutsearch.com';
@@ -96,7 +96,7 @@ export function PrivacyPolicy() {
               <p>We collect only the information necessary to operate, secure and deliver our search telemetry, reporting and local marketing workflows:</p>
               <div className={box}>
                 <h3>A. Account & billing information</h3>
-                <p className="mt-2 text-sm">When you register for an account, purchase scan credits or a plan, or apply for an agency sprint, we collect your name, business email address, company or agency name, white-label branding assets you provide (such as an agency logo) and transaction identifiers. Payment card details are processed directly by our PCI-DSS Level 1 compliant payment processor (Stripe) and are never stored on Stakeout Search servers.</p>
+                <p className="mt-2 text-sm">When you register for an account, purchase points or seats, or apply for an agency sprint, we collect your name, business email address, company or agency name, white-label branding assets you provide (such as an agency logo) and transaction identifiers. Payment card details are processed directly by our PCI-DSS Level 1 compliant payment processor (Stripe) and are never stored on Stakeout Search servers.</p>
               </div>
               <div className={box}>
                 <h3>B. Campaign, business location & public search data</h3>
@@ -148,7 +148,7 @@ export function PrivacyPolicy() {
                 <li>Executing localized mobile search and map grid scans, recording video verification receipts, and computing Share of Local Voice (SoLV) and Buying-Power visibility metrics.</li>
                 <li>Aggregating publicly cited URLs in search results and AI Overviews into actionable SEO checklists.</li>
                 <li>Fulfilling optional one-time or recurring orders you place, such as manual business directory citation submissions or profile updates.</li>
-                <li>Processing payments, managing scan credit balances, issuing automatic credit refunds for failed coordinates, and sending transactional receipts or alerts.</li>
+                <li>Processing payments, managing point balances, issuing automatic point refunds for failed coordinates, and sending transactional receipts or alerts.</li>
                 <li>Enforcing access controls, profile-edit cooldown guardrails, rate limits and platform security.</li>
               </ul>
             </>
@@ -268,7 +268,7 @@ export function TermsOfService() {
     <Page
       badge="Master SaaS & service agreement"
       title="Terms of Service"
-      lead="The legal terms governing your access to Stakeout Search software, scan credits, white-label telemetry reports, third-party integrations and optional fulfillment services."
+      lead="The legal terms governing your access to Stakeout Search software, points and seats, white-label telemetry reports, third-party integrations and optional fulfillment services."
       sections={[
         {
           id: 'agreement',
@@ -276,7 +276,7 @@ export function TermsOfService() {
           body: (
             <>
               <p>These Terms of Service (“Terms”) constitute a legally binding agreement between you (individually or on behalf of the company, agency or legal entity you represent, “Customer” or “you”) and <b>{ENTITY}</b>, a Florida limited liability company doing business as <b>Stakeout Search</b> (“Stakeout Search,” “we,” “us,” or “our”), governing your access to and use of <a href={SITE}>{SITE}</a>, our web applications, telemetry artifacts and optional marketing fulfillment services (collectively, the “Services”).</p>
-              <p>Stakeout Search is offered strictly as a business-to-business (B2B) commercial platform. By registering an account, purchasing scan credits or a plan, or accessing any report, you represent and warrant that you are at least 18 years old, acting in a commercial or professional capacity, and authorized to bind your organization to these Terms and our <Link href="/privacy">Privacy Policy</Link>.</p>
+              <p>Stakeout Search is offered strictly as a business-to-business (B2B) commercial platform. By registering an account, purchasing points or seats, or accessing any report, you represent and warrant that you are at least 18 years old, acting in a commercial or professional capacity, and authorized to bind your organization to these Terms and our <Link href="/privacy">Privacy Policy</Link>.</p>
             </>
           ),
         },
@@ -303,20 +303,24 @@ export function TermsOfService() {
         },
         {
           id: 'credits-billing',
-          title: 'Scan Credits, Plans, Billing & Refunds',
+          title: 'Points, Seats, Billing & Refunds',
           body: (
             <>
               <div className={box}>
-                <h3>A. Scan credit consumption & automatic failed-point refunds</h3>
-                <p className="mt-2 text-sm">Each coordinate point in a geo-grid scan consumes the credits displayed before launch (one credit per point, per keyword, per app). If an individual point fails location verification, network routing or screen capture integrity checks, Stakeout Search automatically refunds that point’s credit to your balance. Credits do not expire while your account is open.</p>
+                <h3>A. Points & automatic failed-point refunds</h3>
+                <p className="mt-2 text-sm">A point is one real phone run at one grid point. A scheduled scan uses one point per grid point, per keyword; Scan Now, which runs ahead of scheduled scans, uses two. The cost is shown before launch. If an individual point fails location verification, network routing or screen capture integrity checks, Stakeout Search automatically refunds that point’s points to your balance.</p>
               </div>
               <div className={box}>
-                <h3>B. Packs & plans</h3>
-                <p className="mt-2 text-sm">Credit packs and monthly plans are purchased as one-time payments through our payment processor (Stripe). They do not renew automatically, and there is nothing to cancel. If we introduce automatically renewing subscriptions, the renewal and cancellation terms will be shown at checkout before you subscribe. Billing questions: {supportMail}.</p>
+                <h3>B. Seats (monthly subscriptions)</h3>
+                <p className="mt-2 text-sm">Scout, Command and Dominator seats are monthly subscriptions billed per client through our payment processor (Stripe), at the graduated prices shown on the pricing page: each bracket’s price applies only to the clients inside it. Seats renew automatically each month until cancelled. Each paid month adds the seats’ points to your balance; seats added during a month are charged for the rest of that month at once and add their points in the same proportion. Unused seat points roll over for one month and then lapse, and when a subscription ends its unused seat points lapse. Removing a seat takes effect without a refund; a Google listing taken off a seat keeps its tools until the end of the month already paid for. You can cancel at any time from the billing portal, and the subscription then ends with the month already paid for. Billing questions: {supportMail}.</p>
               </div>
               <div className={box}>
-                <h3>C. Refund & chargeback policy</h3>
-                <p className="mt-2 text-sm">Because Stakeout Search incurs immediate device, network, storage and manual labor costs upon execution, <b>payments for completed scans, onboarding setups, purchased credits and in-progress manual fulfillment orders are non-refundable</b> except where required by law. Initiating an improper payment chargeback without first contacting support to resolve a billing error will result in immediate account suspension and revocation of public share links.</p>
+                <h3>C. One-time purchases</h3>
+                <p className="mt-2 text-sm">The first 5×5 audit is one per account and one per card; its price is credited against the first month of your first seat, and it is run again once, free, about seven days later. Prospect audits and promotional points (such as Black Friday prospect audits) are valid for 90 days from purchase or grant, after which any of them left unused lapse. Top-up points never expire while your account is open. Points bought as credit packs or plans before seats were introduced keep the terms they were sold under. The white-label setup is a one-time fee, waived from 10 client seats.</p>
+              </div>
+              <div className={box}>
+                <h3>D. Refund & chargeback policy</h3>
+                <p className="mt-2 text-sm">Because Stakeout Search incurs immediate device, network, storage and manual labor costs upon execution, <b>payments for completed scans, purchased points, seats for a month already started and in-progress manual fulfillment orders are non-refundable</b> except where required by law. Initiating an improper payment chargeback without first contacting support to resolve a billing error will result in immediate account suspension and revocation of public share links.</p>
               </div>
             </>
           ),

@@ -1,880 +1,802 @@
-import Link from 'next/link';
-import { PACKS, PLANS, WELCOME, PREPAID, PROMO, promoLive, usd, DEMO_REPORT_URL, WHITE_LABEL } from '@/lib/pricing';
-import { SiteHeader, SiteFooter, JoinLink } from './SiteChrome';
-import { WALL, rankStyle } from './demoData';
-import ReceiptPrinter from './ReceiptPrinter';
-import ExpandShot from './ExpandShot';
-import HeroVideo from './HeroVideo';
-import './marketing.css';
+'use client';
+import { useCallback, useEffect, useState } from 'react';
+import { LINES, type Line } from '@stakeout/core/gbpPlans';
+import { WELCOME, WHITE_LABEL, usd } from '@/lib/pricing';
+import { ACCENT, Arrow, Check, Faq, HREF, OfferBanner, Play, RecordingDialog, SiteFoot, SiteNav, TONE, type FaqItem } from './SiteKit';
+import { AuditCard, Calculator, Eyebrow, SeatCards } from './PriceBlocks';
+import './site.css';
 
-/* ------------------------------------------------------------------ shared bits */
+/**
+ * The home page. Its sections were drawn on the design canvas and carried over as they are, with
+ * the prices, links and wording that match what the app does today. Every screenshot and number
+ * comes from real scans (see NOTE).
+ */
 
-function Check({ className = '' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 20 20" className={'h-5 w-5 flex-none ' + className} aria-hidden="true">
-      <circle cx="10" cy="10" r="9" fill="currentColor" opacity="0.15" />
-      <path d="M6 10.4l2.6 2.6L14.2 7.4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
+const NOTE = 'Every scan screenshot and number on this page comes from real Stakeout scans: Lakeland, FL on Nov 15 and Nov 17, 2026, and Mt. Juliet, TN.';
 
-function Cross() {
-  return (
-    <svg viewBox="0 0 20 20" className="h-5 w-5 flex-none text-[#6b7686]" aria-hidden="true">
-      <circle cx="10" cy="10" r="9" fill="currentColor" opacity="0.15" />
-      <path d="M7 7l6 6M13 7l-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
+const from = (line: Line) => usd(LINES[line].tiers[0].cents);
+const tier = (line: Line, i: number) => usd(LINES[line].tiers[i].cents);
 
-/* ------------------------------------------------------------------ hero visual */
-
-/** The hero phone: a real recording from a real scan, not a mock-up (point 5,5 of a 5×5 grid near Lakeland, FL). */
-function PhoneCapture() {
-  return (
-    <figure className="relative mx-auto w-[280px] sm:w-[300px]">
-      <div className="rounded-[40px] border border-[#2a3442] bg-[#0b0f15] p-2.5 shadow-[0_40px_120px_-30px_rgba(122,167,255,0.35)]">
-        <div className="overflow-hidden rounded-[32px] bg-black">
-          <div className="flex items-center justify-between bg-[#0b0f15] px-4 py-2 text-[11px] text-white">
-            <span className="mk-mono flex items-center gap-1.5 font-semibold">
-              <span className="mk-rec inline-block h-2 w-2 rounded-full bg-[#ff4d4d]" /> REC · real session
-            </span>
-            <span className="mk-mono text-[#9aa7b8]">Android · Chrome</span>
-          </div>
-          <HeroVideo label="Screen recording of a real search for emergency plumber near me, at grid point 5,5 near Lakeland, Florida" />
-        </div>
-      </div>
-      <figcaption className="mt-3 text-center text-[11.5px] leading-snug text-[#9aa7b8]">
-        Real recording, not a mock-up: &ldquo;emergency plumber near me&rdquo;, point 5,5 of a 5×5 grid near Lakeland, FL, 17 Nov 2026 at 8:29 AM EST.
-      </figcaption>
-    </figure>
-  );
-}
-
-/** A real receipt: the run in the hero recording (17 Nov 2026, near Lakeland, FL). */
-const RECEIPT_ROWS: [string, string, boolean?][] = [
-  ['Keyword', 'emergency plumber near me'],
-  ['Grid point', '5,5 · 27.992210, −81.912650'],
-  ['Captured', '2026-11-17 08:29 EST'],
-  ['Device', 'Android phone · Chrome'],
-  ['Network', 'Residential connection'],
-  ['Google located', '33812, Florida – From your device', true],
-  ['Result', 'Named first in Google’s AI Overview', true],
+/** One point of a 7×7 grid: its label, background, text colour, and whether it is the circled point. */
+type Raw = [label: string, bg: string, fg: string, ring: number];
+/** The rank a leading rank-grid tool reported at each point (Lakeland, FL, 15 Nov 2026). */
+const TRACKER: Raw[] = [
+  ["13","#af0a00","#ffffff",0],
+  ["12","#af0a00","#ffffff",0],
+  ["11","#af0a00","#ffffff",0],
+  ["9","#af0a00","#ffffff",0],
+  ["9","#af0a00","#ffffff",0],
+  ["8","#c03f00","#ffffff",0],
+  ["5","#f7c701","#0f172a",0],
+  ["10","#af0a00","#ffffff",0],
+  ["8","#c03f00","#ffffff",0],
+  ["7","#d26e00","#0f172a",0],
+  ["8","#c03f00","#ffffff",0],
+  ["6","#e59c00","#0f172a",0],
+  ["4","#c6b100","#0f172a",0],
+  ["4","#c6b100","#0f172a",0],
+  ["12","#af0a00","#ffffff",0],
+  ["8","#c03f00","#ffffff",0],
+  ["7","#d26e00","#0f172a",0],
+  ["5","#f7c701","#0f172a",0],
+  ["5","#f7c701","#0f172a",0],
+  ["4","#c6b100","#0f172a",0],
+  ["1","#2a6600","#ffffff",0],
+  ["11","#af0a00","#ffffff",0],
+  ["7","#d26e00","#0f172a",0],
+  ["4","#c6b100","#0f172a",0],
+  ["3","#2a6600","#ffffff",0],
+  ["2","#2a6600","#ffffff",0],
+  ["2","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+  ["10","#af0a00","#ffffff",0],
+  ["5","#f7c701","#0f172a",0],
+  ["4","#c6b100","#0f172a",0],
+  ["2","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+  ["11","#af0a00","#ffffff",0],
+  ["8","#c03f00","#ffffff",0],
+  ["5","#f7c701","#0f172a",0],
+  ["3","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+  ["11","#af0a00","#ffffff",1],
+  ["7","#d26e00","#0f172a",0],
+  ["4","#c6b100","#0f172a",0],
+  ["3","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+  ["1","#2a6600","#ffffff",0],
+];
+/** The business's place in Google's AI Overview at the same points, from a real phone. */
+const PHONE: Raw[] = [
+  ["#4","#9333EA","#ffffff",0],
+  ["#3","#9333EA","#ffffff",0],
+  ["#4","#c6b100","#0f172a",0],
+  ["#4","#9333EA","#ffffff",0],
+  ["#5","#9333EA","#ffffff",0],
+  ["#4","#9333EA","#ffffff",0],
+  ["no","#4c1d95","#ddd6fe",0],
+  ["#4","#9333EA","#ffffff",0],
+  ["#3","#9333EA","#ffffff",0],
+  ["no","#4c1d95","#ddd6fe",0],
+  ["#5","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#2","#9333EA","#ffffff",0],
+  ["#3","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["no","#4c1d95","#ddd6fe",0],
+  ["#3","#9333EA","#ffffff",0],
+  ["#2","#9333EA","#ffffff",0],
+  ["#1","#2a6600","#ffffff",0],
+  ["#2","#9333EA","#ffffff",0],
+  ["#2","#9333EA","#ffffff",0],
+  ["#2","#9333EA","#ffffff",0],
+  ["#2","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#2","#9333EA","#ffffff",0],
+  ["✓","#9333EA","#ffffff",0],
+  ["#3","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#4","#9333EA","#ffffff",0],
+  ["#2","#9333EA","#ffffff",0],
+  ["#2","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["✓","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",1],
+  ["#2","#9333EA","#ffffff",0],
+  ["no","#4c1d95","#ddd6fe",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#2a6600","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
+  ["#1","#9333EA","#ffffff",0],
 ];
 
-function Receipt({ className = '' }: { className?: string }) {
+const HOME_FAQ: FaqItem[] = [
+  ['How is this different from other grid trackers?', 'Most grid trackers query Google from a data-center server and split Maps and AI Overviews into separate paid API scans. Stakeout runs every point as a real Android phone session in Chrome or the Google Maps app on a local ISP, records the full screen on video, and tracks the AI Overview right alongside the map pack in a single run—25 points for a scheduled 5×5 grid.'],
+  ['How do GBP API edits protect my listings from suspension?', 'Everyday fields—description, tracking tags, hours, holiday hours, additional categories, attributes, links and photos—are marked Safe. Identity fields that can trigger video verification—name, primary category, primary phone and address—stay locked behind an explicit switch. Once unlocked, it’s one identity field per save and one every 7 days per listing, with an extra warning on lines of business Google checks closely, like personal injury attorneys.'],
+  ['How does the listing watchdog work?', 'Once a day, Stakeout reads every connected listing from Google and compares its name, primary category, phone numbers, website, hours, holiday hours, additional categories, description, address and open status with how you left them. Anything that changed without you—Google’s own rewrite, a public “suggest an edit”, or another manager—shows up under Changes we did not make, so you can keep it or change it back. A review of 2 stars or fewer is emailed to you within the hour.'],
+  ['Can I post to social media at the same time as Google Business Profile?', 'Not yet. Today you compose once, preview it, and publish or schedule it to Google Business Profile from one calendar that covers every location you manage. Publishing to Facebook and LinkedIn is coming soon.'],
+  ['What happens if a scan point fails?', 'You can re-run it in one click, and its points go back to your balance automatically.'],
+  ['Do points expire?', 'Seat points roll over for one month. Top-up points never expire. Prospect audits are valid for 90 days.'],
+  ['Can my clients see the recordings without logging in?', `Yes. Send one share link—no login needed. White-label puts your agency’s logo and custom domain on every report and link: free from ${WHITE_LABEL.freeFrom} clients, or ${usd(WHITE_LABEL.cents)} once.`],
+];
+
+/** The page's moving parts: the report and listing tabs, the 7×7 grids and the recording player. */
+function useHome(live: boolean) {
+  const [tab, setTab] = useState(0);
+  const [feat, setFeat] = useState(0);
+  const [watching, setWatching] = useState(false);
+  // "Listing Watchdog" opens the watchdog tab of the listing suite, from this page or from another (/#watchdog).
+  const goWatch = useCallback(() => {
+    setFeat(3);
+    document.getElementById('google-listings')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+  useEffect(() => {
+    const check = () => window.location.hash === '#watchdog' && goWatch();
+    check();
+    window.addEventListener('hashchange', check);
+    return () => window.removeEventListener('hashchange', check);
+  }, [goWatch]);
+  const ring = (on: number) => (on ? { outline: `3px solid ${ACCENT}`, outlineOffset: '3px' } : {});
+  const cells = (list: Raw[]) => list.map(([label, bg, fg, on]) => ({ label, bg, fg, ring: ring(on) }));
+  const pill = (on: boolean) => (on ? { background: ACCENT, color: '#0B1017', borderColor: ACCENT } : { background: 'transparent', color: '#CBD5E1', borderColor: 'rgba(255, 255, 255, 0.16)' });
+  const card = (on: boolean) => (on ? { background: '#151E2C', color: '#F1F5F9', borderColor: ACCENT } : { background: 'transparent', color: '#CBD5E1', borderColor: 'rgba(255, 255, 255, 0.1)' });
+  const pick = (i: number, cur: number, set: (n: number) => void, look: (on: boolean) => React.CSSProperties) => ({ on: i === cur, pressed: i === cur, style: look(i === cur), pick: () => set(i) });
+  return {
+    ...TONE,
+    live,
+    tracker: cells(TRACKER),
+    phone: cells(PHONE),
+    r0: pick(0, tab, setTab, pill),
+    r1: pick(1, tab, setTab, pill),
+    r2: pick(2, tab, setTab, pill),
+    r3: pick(3, tab, setTab, pill),
+    f0: pick(0, feat, setFeat, card),
+    f1: pick(1, feat, setFeat, card),
+    f2: pick(2, feat, setFeat, card),
+    f3: pick(3, feat, setFeat, card),
+    f4: pick(4, feat, setFeat, card),
+    goWatch,
+    /** Play the hero point's recording over the page (the link still opens the video on its own). */
+    watch: (e: React.MouseEvent) => {
+      e.preventDefault();
+      setWatching(true);
+    },
+    watching,
+    stopWatching: () => setWatching(false),
+  };
+}
+type V = ReturnType<typeof useHome>;
+
+/** Pricing on the home page: the $5 audit, the three seats and the roster calculator. */
+function HomePricing() {
   return (
-    <div className={'mk-receipt w-[300px] rounded-b-xl ' + className}>
-      <div className="mk-perf" aria-hidden="true" />
-      <div className="px-5 pb-5 pt-2">
-        <div className="flex items-baseline justify-between border-b border-dashed border-[#2a3442] pb-2">
-          <span className="mk-display text-sm font-semibold tracking-[0.18em] text-[#f5c451]">RECEIPT</span>
-          <span className="mk-mono text-[11px] text-[#9aa7b8]">#cmwkpqpk40010</span>
-        </div>
-        <dl className="mt-3 space-y-1.5 text-[11.5px]">
-          {RECEIPT_ROWS.map(([k, v, ok]) => (
-            <div key={k} className="flex justify-between gap-3">
-              <dt className="text-[#9aa7b8]">{k}</dt>
-              <dd className={'mk-mono text-right ' + (ok ? 'text-[#3ddc97]' : 'text-[#eef2f7]')}>{v}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="mt-3 flex items-center gap-2 rounded-lg border border-[#2a3442] bg-[#0b0f15] px-3 py-2">
-          <span className="mk-rec inline-block h-2 w-2 rounded-full bg-[#ff4d4d]" aria-hidden="true" />
-          <span className="text-[11.5px]">Screen recording</span>
-          <a href="/api/media/hero" className="ml-auto text-[11px] text-[#7aa7ff] hover:underline">▶ Watch</a>
-        </div>
-        <p className="mk-mono mt-3 break-all text-[10.5px] leading-relaxed text-[#6b7686]">
-          SHA-256 177788ca4a4b57db7dc69b7d00b5c8b8cbee3a3ceb358601b7f56c9a85e55c56
+    <section id="pricing" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: 'clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)' }}>
+        <Eyebrow>PRICING</Eyebrow>
+        <h2 style={{ margin: '16px 0 0', fontWeight: 800, fontSize: 'clamp(32px, 3.6vw, 52px)', lineHeight: 1.12, letterSpacing: '-0.025em', maxWidth: 960 }}>Priced per Client. Not per Pin.</h2>
+        <p style={{ margin: '20px 0 0', fontSize: 18, lineHeight: 1.65, color: '#CBD5E1', maxWidth: 820 }}>
+          Each seat covers one client: scheduled scans of their keywords on real Android phones, a screen recording at every grid point, and AI Overview tracking. Command and Dominator add the Google listing tools. No setup fees, cancel any time.
+        </p>
+        <AuditCard style={{ marginTop: 36 }} />
+        <SeatCards style={{ marginTop: 28 }} />
+        <Calculator style={{ marginTop: 28 }} />
+        <p style={{ margin: '24px 0 0', fontSize: 15.5, lineHeight: 1.6 }}>
+          <a href={HREF.pricing} style={{ color: ACCENT, fontWeight: 700 }}>See full pricing: prospect audits, top-ups, white-label and the seat comparison →</a>
         </p>
       </div>
-    </div>
-  );
-}
-
-
-/* ------------------------------------------------------------------ phone wall */
-
-function PhoneWall() {
-  return (
-    <figure className="rounded-3xl border border-[#1b2431] bg-[#0b0f15] p-4 sm:p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-[12px]">
-        <span className="mk-mono text-[#c9d3df]">“plumber near me” · 5×5 · 1 mi apart</span>
-        <span className="flex items-center gap-3 text-[#9aa7b8]">
-          {[['#3ddc97', 'Top 3'], ['#f5c451', '4–10'], ['#ff8a4c', '11–20'], ['#2a3442', '20+']].map(([c, l]) => (
-            <span key={l} className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: c }} />{l}</span>
-          ))}
-        </span>
-      </div>
-      <div className="grid grid-cols-5 gap-1.5 sm:gap-2" role="img" aria-label="A 5 by 5 grid of phone sessions, strongest in the centre; each square is one recorded search">
-        {WALL.map((r, i) => {
-          const { bg, ink } = rankStyle(r);
-          return (
-            <div key={i} className={'relative flex aspect-[4/5] flex-col items-center justify-center rounded-xl border border-[#1b2431] bg-[#0f141c] ' + (i === 12 ? 'mk-ping ring-2 ring-[#f5c451]' : '')}>
-              <span className="mk-display rounded-md px-2 text-lg font-bold sm:px-2.5 sm:text-2xl" style={{ background: bg, color: ink }}>{r > 20 ? '20+' : r}</span>
-              <span className="mt-1.5 text-[10px] text-[#6b7686] sm:text-xs" aria-hidden="true">▶</span>
-            </div>
-          );
-        })}
-      </div>
-      <figcaption className="mt-4 text-[12px] text-[#6b7686]">Illustrative grid. In a live report every square opens its screen recording and receipt.</figcaption>
-    </figure>
-  );
-}
-
-/* ------------------------------------------------------------------ sections */
-
-const COMPARE: { row: string; typical: string; stakeout: string }[] = [
-  { row: 'Where the search runs', typical: 'A server or an API request', stakeout: 'A real Android phone session, in the real Google Maps app or Chrome' },
-  { row: 'Location', typical: 'Coordinates passed into a query', stakeout: "The phone's GPS is moved to each grid point, and Google's own location line is captured as proof" },
-  { row: 'Network', typical: 'Data-center or random IPs', stakeout: 'Real home and mobile connections: residential inside the point’s ZIP code from a mix of ISPs, or mobile from the nearest major city in the state' },
-  { row: 'Proof', typical: 'A colored dot on a map', stakeout: 'A full screen recording, the screen data and a SHA-256 fingerprint for every point' },
-  { row: 'AI answers', typical: 'A yes or no flag, if tracked at all', stakeout: 'The full AI Overview as it appeared on the phone, with the sources it cited, on the same recording (Ask Maps coming soon)' },
-  { row: 'Ads', typical: 'Often mixed into the ranks', stakeout: 'Listed separately and never counted as a rank' },
-];
-
-const ANATOMY = [
-  { n: '01', title: 'The recording', text: 'The whole search on video, from opening the app to the last result. Play it on a sales call.' },
-  { n: '02', title: 'The exact spot', text: "Grid point and the GPS the phone used, to six decimal places. Google's own location line confirms it." },
-  { n: '03', title: 'The real network', text: 'A residential connection inside the ZIP code, or a mobile connection from the nearest major city. The provider is named on the receipt.' },
-  { n: '04', title: 'The full results', text: 'Every business that ranked, in order, with ads set aside, read from the screen itself.' },
-  { n: '05', title: 'The AI answer', text: 'Whether the AI Overview named the business, and which sources it cited. Ask Maps answers are coming soon.' },
-  { n: '06', title: 'The fingerprint', text: 'A SHA-256 hash of the evidence as captured, so anyone can check it has not changed.' },
-];
-
-const STEPS = [
-  { n: '1', title: 'Drop your grid', text: 'Keyword, business and location. A 3×3, 5×5, 7×7 or 9×9 grid of points, spaced from half a mile to five miles.' },
-  { n: '2', title: 'Phones search every point', text: 'Each point gets its own Android phone session: GPS moved to the point, a real residential or mobile network, search run and recorded.' },
-  { n: '3', title: 'Open the receipts', text: 'Click any point to watch what the phone saw, inspect the results and AI answers, and share it with your client.' },
-];
-
-/* ------------------------------------------------------------------ value section 1: AI answers */
-
-const AIO_SHOTS: { src: string; expand?: boolean; alt: string; tag: string; title: string; text: string }[] = [
-  {
-    src: '/media/aio-1-real-estate.jpg',
-    expand: true,
-    alt: 'An AI Overview for water damage restoration in Tampa with its own map, business cards and Call, Directions and Website buttons, followed by ordinary web results and no 3-pack',
-    tag: '01 · The AI Overview has the map now',
-    title: 'The most valuable real estate of 2027.',
-    text: 'Its own map, business cards and Call buttons. Underneath it: Servpro, then Yelp. No 3-pack anywhere on the page.',
-  },
-  {
-    src: '/media/aio-2-calls.jpg',
-    expand: true,
-    alt: 'An AI Overview that names a plumber and prints its phone number in the first sentence, shown above the Sponsored Plumbers ads and above the Businesses 3-pack',
-    tag: '02 · Tap to call',
-    title: 'This is where the calls come from.',
-    text: 'A plumber’s phone number in the first sentence, above the paid ads and above the 3-pack. The customer calls without scrolling.',
-  },
-  {
-    src: '/media/aio-3-above-ads.jpg',
-    alt: 'An AI Overview naming a plumber with its phone number, shown above the Sponsored Plumbers ads',
-    tag: '03 · Above the ads',
-    title: 'What your current rank tracker is missing.',
-    text: 'Here the AI Overview sits above the paid Local Services Ads. A rank tracker reports none of it.',
-  },
-];
-
-/** Two result pages for the same keyword in the same city: one still has the 3-pack under the AI Overview, one has none. */
-const SERPS: { src: string; expand?: boolean; alt: string; tag: string; tone: string; title: string; text: string; order: [string, string][] }[] = [
-  {
-    src: '/media/aio-4-phone-number.jpg',
-    expand: true,
-    alt: 'A Google results page: the AI Overview names one plumber with its phone number and rating, and the Businesses 3-pack follows underneath',
-    tag: 'The 3-pack is still there',
-    tone: '#f5c451',
-    title: 'The AI Overview lands on a phone number.',
-    text: 'The AI Overview names one plumber and prints its number and its rating. The map and the 3-pack come second.',
-    order: [['AI Overview', '#f5c451'], ['3-pack', '#3ddc97'], ['Web results', '#6b7686']],
-  },
-  {
-    src: '/media/aio-5-no-pack.jpg',
-    alt: 'Another results page for the same search: the AI Overview is followed directly by a Yelp result. There is no map and no Businesses 3-pack',
-    tag: 'No 3-pack at all',
-    tone: '#ff6b6b',
-    title: 'Here, the 3-pack is gone.',
-    text: 'Ads, the AI Overview, then Yelp. No map. No Businesses list. A tracker that only reads the 3-pack has nothing to report here, and the customer still calls someone.',
-    order: [['Ads', '#6b7686'], ['Ad', '#6b7686'], ['AI Overview', '#f5c451'], ['No 3-pack', '#ff6b6b']],
-  },
-];
-
-const PHONE_FRAME = 'w-full overflow-hidden rounded-[28px] border-[6px] border-[#1b2431] bg-white shadow-[0_20px_60px_rgba(0,0,0,0.5)]';
-
-function SerpCompare() {
-  return (
-    <div className="mt-16">
-      <h3 className="mk-display text-center text-3xl font-bold sm:text-4xl">Same keyword. Same city. <span className="mk-gold-text">Two different pages.</span></h3>
-      <div className="mx-auto mt-10 grid max-w-5xl gap-10 md:grid-cols-2">
-        {SERPS.map((p) => (
-          <figure key={p.src} className="flex flex-col items-center text-center">
-            {p.expand ? (
-              <ExpandShot src={p.src} alt={p.alt} thumbHeight={585} maxWidth={320} />
-            ) : (
-              <div className={PHONE_FRAME + ' max-w-[320px]'}>
-                <img src={p.src} alt={p.alt} loading="lazy" className="block w-full" />
-              </div>
-            )}
-            <figcaption className="mt-6 max-w-[400px]">
-              <p className="mk-mono text-[12px] uppercase tracking-widest" style={{ color: p.tone }}>{p.tag}</p>
-              <h4 className="mk-display mt-2 text-2xl font-semibold">{p.title}</h4>
-              <p className="mt-2 leading-relaxed text-[#9aa7b8]">{p.text}</p>
-              <ol className="mt-4 flex flex-wrap justify-center gap-1.5 text-[11px]" aria-label="Order of the page, top to bottom">
-                {p.order.map(([label, color], i) => (
-                  <li key={i} className="rounded-full border px-2.5 py-1 font-semibold" style={{ borderColor: color, color }}>{i + 1}. {label}</li>
-                ))}
-              </ol>
-            </figcaption>
-          </figure>
-        ))}
-      </div>
-      <p className="mt-8 text-center text-[12px] text-[#6b7686]">Real Google results in Chrome on Android: “emergency plumber near me”, Lakeland, FL.</p>
-    </div>
-  );
-}
-
-function AiAnswers() {
-  return (
-    <section className="relative border-y border-[#1b2431] bg-[#080b10]">
-      <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#7aa7ff]">AI Overviews · the new local pack</p>
-        <h2 className="mk-display mx-auto mt-3 max-w-5xl text-center text-4xl font-bold leading-tight sm:text-6xl">
-          The 3-Pack Is Disappearing. <span className="mk-gold-text">The AI Overview Is Taking Its Place.</span>
-        </h2>
-        <p className="mx-auto mt-5 max-w-3xl text-center text-lg leading-relaxed text-[#c9d3df]">
-          On more and more local searches, Google answers with its own list of businesses before the map pack, complete with Call buttons. Most grid trackers never look at it. Stakeout records it at every point.
-        </p>
-
-        <div className="mt-14 grid gap-8 md:grid-cols-3">
-          {AIO_SHOTS.map((a) => (
-            <figure key={a.src} className="flex flex-col items-center text-center">
-              {a.expand ? (
-                <ExpandShot src={a.src} alt={a.alt} thumbHeight={460} />
-              ) : (
-                <div className={PHONE_FRAME + ' max-w-[270px]'}>
-                  <img src={a.src} alt={a.alt} loading="lazy" className="block w-full" />
-                </div>
-              )}
-              <figcaption className="mt-6 max-w-[320px]">
-                <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">{a.tag}</p>
-                <h3 className="mk-display mt-2 text-xl font-semibold">{a.title}</h3>
-                <p className="mt-2 leading-relaxed text-[#9aa7b8]">{a.text}</p>
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-        <p className="mt-8 text-center text-[12px] text-[#6b7686]">Real Google results in Chrome on Android: water damage and emergency plumber searches in Tampa and Lakeland, FL.</p>
-
-        <SerpCompare />
-
-        <ul className="mx-auto mt-16 grid max-w-5xl gap-6 md:grid-cols-3">
-          {[
-            ['Who the AI recommends, at every point', 'The full AI Overview is saved in each receipt, on video, not reduced to a yes or no.'],
-            ['Named, or left out?', 'See the points where the answer includes your client, and where it sends the call to a competitor.'],
-            ['What the AI trusted', 'The sources the AI Overview cited, so you know which reviews, directories and pages to work on.'],
-          ].map(([t, d]) => (
-            <li key={t} className="flex gap-3">
-              <Check className="mt-0.5 shrink-0 text-[#7aa7ff]" />
-              <span><b className="block text-white">{t}</b><span className="text-[#9aa7b8]">{d}</span></span>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-10 text-center">
-          <Link href="/pricing" className="mk-btn-primary inline-block rounded-xl px-6 py-3.5 font-semibold">See who the AI names for your client →</Link>
-          <p className="mt-3 text-sm text-[#9aa7b8]">AI Overview tracking is included with every Chrome scan. Ask Maps is coming soon.</p>
-        </div>
-      </div>
     </section>
   );
 }
 
-/* ------------------------------------------------------------------ value section 2: competitor territory */
-
-const RIVALS: Record<string, { name: string; color: string }> = {
-  Y: { name: 'Your Business', color: '#f5c451' },
-  H: { name: 'Harbor Plumbing Co.', color: '#7aa7ff' },
-  N: { name: 'Northside Drain & Sewer', color: '#b48cff' },
-  A: { name: 'Ace Rooter Service', color: '#3fc7c7' },
-};
-// Who holds #1 at each point of the 5×5 grid.
-const TERRITORY = ['HHNNN', 'HYYNN', 'AYYYN', 'AAYYH', 'YAAHH'].join('').split('');
-
-function Territory() {
-  const count = (k: string) => TERRITORY.filter((t) => t === k).length;
-  const rows = Object.entries(RIVALS)
-    .map(([k, r]) => ({ k, ...r, wins: count(k) }))
-    .sort((a, b) => b.wins - a.wins);
+/* section#top */
+function STop({ v }: { v: V }) {
   return (
-    <section className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 sm:px-8 lg:grid-cols-[1.1fr_1fr]">
-      <div className="grid gap-4 sm:grid-cols-[1fr_1fr]">
-        <figure className="rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-4">
-          <p className="mk-mono mb-3 text-[11px] uppercase tracking-widest text-[#9aa7b8]">Who holds #1, point by point</p>
-          <div className="grid grid-cols-5 gap-1.5" role="img" aria-label="A territory map showing which business ranks first at each of 25 grid points">
-            {TERRITORY.map((t, i) => (
-              <span key={i} className="aspect-square rounded-[5px]" style={{ background: RIVALS[t].color, opacity: t === 'Y' ? 1 : 0.85 }} />
-            ))}
+    <section id="top" style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "clamp(48px, 6vw, 88px) clamp(16px, 2vw, 24px) 48px", display: "flex", flexWrap: "wrap", gap: "56px", alignItems: "center" }}>
+        <div style={{ flex: "1 1 480px", minWidth: "0" }}>
+          <p style={{ margin: "0", display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: "8px", border: "1px solid rgba(255, 255, 255, 0.12)", background: "#111823", borderRadius: "18px", padding: "7px 14px", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.4", color: "#CBD5E1" }}><span aria-hidden="true" style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "999px", background: "#EF4444" }}></span>REC · Real Android Phones · GBP Command · Listing Watchdog</p>
+          <h1 style={{ margin: "24px 0 0", letterSpacing: "-0.025em", color: "#FF4040" }}><span style={{ display: "block", fontWeight: "400", fontSize: "clamp(34px, 3.6vw, 52px)", lineHeight: "1.12", color: "rgb(255, 255, 255)" }}>The Map Pack Isn’t the Top of Google Anymore.</span></h1>
+          <p style={{ margin: "24px 0 0", fontSize: "18px", lineHeight: "1.65", color: "#CBD5E1", maxWidth: "640px" }}>On more and more local searches, Google answers with an AI Overview first, and sometimes shows a single business instead of a map pack. Stakeout sends a real Android phone to every point of your grid to record what customers actually see, then lets you fix GBP rival gaps, post to Google (Facebook &amp; LinkedIn coming soon), and guard every client pin every day from one dashboard.</p>
+          <div style={{ marginTop: "32px", display: "flex", flexWrap: "wrap", gap: "12px" }}>
+            <a className="so-btn" href={HREF.firstAudit} style={{ display: "inline-flex", alignItems: "center", gap: "10px", minHeight: "50px", boxSizing: "border-box", background: v.accent, color: "#0B1017", fontWeight: "700", fontSize: "16px", lineHeight: "1.3", padding: "14px 24px", borderRadius: "12px" }}>Run your first scan for $5<Arrow size={18} /></a>
+            <a className="so-btn" href={HREF.recording} onClick={v.watch} style={{ display: "inline-flex", alignItems: "center", gap: "10px", minHeight: "50px", boxSizing: "border-box", background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.14)", color: "#F1F5F9", fontWeight: "600", fontSize: "16px", lineHeight: "1.3", padding: "14px 22px", borderRadius: "12px" }}><Play size={14} />Watch a recorded search</a>
           </div>
-          <figcaption className="mt-3 text-[11px] text-[#6b7686]">Illustrative territory map.</figcaption>
-        </figure>
-        <div className="rounded-2xl border border-[#1b2431] bg-[#0b0f15] p-4">
-          <p className="mk-mono mb-3 text-[11px] uppercase tracking-widest text-[#9aa7b8]">#1 spots on this grid</p>
-          <ol className="space-y-2.5">
-            {rows.map((r, i) => (
-              <li key={r.k} className={'rounded-xl px-3 py-2.5 ' + (r.k === 'Y' ? 'bg-[#f5c451]/10 ring-1 ring-[#f5c451]/50' : 'bg-[#0f141c]')}>
-                <div className="flex items-center gap-2 text-[13px]">
-                  <span className="mk-mono w-4 text-[#6b7686]">{i + 1}</span>
-                  <span className="h-2.5 w-2.5 rounded-sm" style={{ background: r.color }} />
-                  <span className={'min-w-0 flex-1 truncate ' + (r.k === 'Y' ? 'font-semibold text-white' : 'text-[#c9d3df]')}>{r.name}</span>
-                  <span className="mk-mono font-semibold text-white">{r.wins}</span>
-                </div>
-                <div className="mt-2 h-1.5 rounded-full bg-[#1b2431]">
-                  <div className="h-1.5 rounded-full" style={{ width: `${(r.wins / 25) * 100}%`, background: r.color }} />
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </div>
-      <div>
-        <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Up to 250 competitor positions per 5×5 scan</p>
-        <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
-          Know Who&apos;s Beating You, <span className="mk-gold-text">Street by Street.</span>
-        </h2>
-        <p className="mt-5 text-lg leading-relaxed text-[#c9d3df]">
-          Every point saves the whole top 10, not just your rank. So one scan shows you every competitor, where each one wins, and the exact streets where you lose, with the video to prove it.
-        </p>
-        <ul className="mt-7 space-y-4">
-          {[
-            ['Find the streets you\u2019re losing, and who to', 'Your territory against theirs, point by point.'],
-            ['Spot a new competitor the week they arrive', 'Run the same grid again and see who moved in, and where.'],
-            ['Walk into the pitch with their rival on video', 'Show a prospect the business beating them, on their own street, recorded.'],
-          ].map(([t, d]) => (
-            <li key={t} className="flex gap-3">
-              <Check className="mt-0.5 text-[#f5c451]" />
-              <span><b className="block text-white">{t}</b><span className="text-[#9aa7b8]">{d}</span></span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ value section 3: the itemized receipt */
-
-const ITEMS: [string, string][] = [
-  ['Real Android phone sessions', '25'],
-  ['Screen recordings, about 1 hour in total', '25'],
-  ['GPS-set locations, one per grid point', '25'],
-  ['Residential connections, ISP named', '25'],
-  ['Ranked listings captured (up to 10 per point)', '250'],
-  ['AI Overviews checked', '25'],
-  ['SHA-256 evidence fingerprints', '25'],
-  ['Client share link, no login needed', '1'],
-];
-
-function ValueStack() {
-  return (
-    <section className="border-y border-[#1b2431] bg-[#080b10]">
-      <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">What one 5×5 scan puts in your hands</p>
-          <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">Your Scan, <span className="mk-gold-text">Itemized.</span></h2>
-          <p className="mt-5 text-lg text-[#9aa7b8]">A rank tracker sells you 25 colored dots. Here&apos;s what&apos;s behind ours.</p>
-        </div>
-
-        <div className="mt-14 grid items-start gap-8 lg:grid-cols-[1.15fr_1fr]">
-          <div className="mk-receipt mx-auto w-full max-w-[560px] rounded-b-2xl">
-            <div className="mk-perf" aria-hidden="true" />
-            <div className="px-6 pb-7 pt-3 sm:px-9">
-              <div className="flex items-baseline justify-between border-b border-dashed border-[#2a3442] pb-3">
-                <span className="mk-display text-lg font-semibold tracking-[0.2em] text-[#f5c451]">STAKEOUT · 5×5 SCAN</span>
-                <span className="mk-mono text-[11px] text-[#9aa7b8]">“plumber near me”</span>
-              </div>
-              <ul className="mk-mono mt-4 space-y-3 text-[13px] sm:text-[14px]">
-                {ITEMS.map(([label, qty]) => (
-                  <li key={label} className="flex items-baseline gap-2">
-                    <span className="text-[#eef2f7]">{label}</span>
-                    <span className="flex-1 translate-y-[-3px] border-b border-dotted border-[#2a3442]" aria-hidden="true" />
-                    <span className="font-semibold text-[#f5c451]">×{qty}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-6 border-t border-dashed border-[#2a3442] pt-4">
-                <div className="mk-mono flex justify-between text-[13px] text-[#9aa7b8]"><span>Time to run</span><span className="text-white">minutes, not hours</span></div>
-                <div className="mk-mono mt-2 flex justify-between text-[13px] text-[#9aa7b8]"><span>Your driving</span><span className="text-white">0 miles</span></div>
-                <div className="mk-mono mt-2 flex justify-between text-[13px] text-[#9aa7b8]"><span>Failed points</span><span className="text-[#3ddc97]">credited back automatically</span></div>
-              </div>
-              <p className="mk-mono mt-6 text-center text-[11px] tracking-widest text-[#6b7686]">*** EVERY DATA POINT COMES WITH A RECEIPT ***</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-[#2a3442] bg-[#0c1118] p-7">
-              <p className="mk-mono text-[12px] uppercase tracking-widest text-[#ff8a4c]">The manual way</p>
-              <h3 className="mk-display mt-2 text-3xl font-semibold">One person. One phone. Half a working day.</h3>
-              <dl className="mt-6 grid grid-cols-2 gap-3">
-                {[
-                  ['~24 mi', 'of driving between 25 points a mile apart'],
-                  ['~4 hrs', 'driving, parking, searching, recording'],
-                  ['250', 'listings to write down by hand, at most'],
-                  ['0', 'fingerprints proving nothing was edited'],
-                ].map(([n, l]) => (
-                  <div key={l} className="rounded-xl border border-[#1b2431] bg-[#0f141c] px-4 py-3.5">
-                    <dt className="mk-display text-3xl font-bold text-white">{n}</dt>
-                    <dd className="mt-1 text-[12px] leading-snug text-[#9aa7b8]">{l}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="mt-5 text-sm leading-relaxed text-[#9aa7b8]">And you&apos;d still have one phone, one network and one moment in time, repeated every time a client asks how it&apos;s going.</p>
-            </div>
-            <div className="rounded-2xl border border-[#f5c451]/40 bg-[#f5c451]/[0.06] p-7">
-              <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">The Stakeout way</p>
-              <p className="mt-2 text-lg leading-relaxed text-[#eef2f7]">Type a keyword, pick a grid, and every point gets its own real phone session, many running at once. Open the receipts with your coffee.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ page */
-
-/* ------------------------------------------------------------------ real proof */
-
-const PROOF_FRAMES: [string, string, string][] = [
-  ['/media/real-proof-location.jpg', 'Google placed the phone', 'Google’s own location line: “Mt. Juliet, TN”, from the phone’s GPS, not a guess from its IP.'],
-  ['/media/real-proof-ranks.jpg', 'The ranks, as Google showed them', 'The sponsored card above (never counted), then #1 Steve And Son, #2 McIntyre Painting at 2.0 mi, #3 Mount Juliet Painting.'],
-  ['/media/real-proof-finder.jpg', 'The Local Finder behind it', 'Tapping “More businesses” opens the full list: every business at this point, read from the screen in order.'],
-];
-
-/** Frames from the hero recording: what a receipt is made of. */
-function RealProof() {
-  return (
-    <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
-      <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#3ddc97]">Not a mock-up · frames from the recording above</p>
-      <h2 className="mk-display mx-auto mt-3 max-w-4xl text-center text-4xl font-bold leading-tight sm:text-5xl">
-        One point, <span className="mk-gold-text">three pieces of proof.</span>
-      </h2>
-      <div className="mt-12 grid gap-6 md:grid-cols-3">
-        {PROOF_FRAMES.map(([src, title, text]) => (
-          <figure key={src} className="overflow-hidden rounded-2xl border border-[#1b2431] bg-[#0c1118]">
-            <img src={src} alt={title} loading="lazy" className="block h-72 w-full object-cover object-top" />
-            <figcaption className="p-5">
-              <p className="font-semibold">{title}</p>
-              <p className="mt-1.5 text-sm leading-relaxed text-[#9aa7b8]">{text}</p>
-            </figcaption>
-          </figure>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ buying power */
-
-const MONEY_POINTS: [string, string][] = [
-  ['Buying-Power SoLV', 'Your share of the top 3 weighted by owner-occupied homes × median income, next to the standard score: visible to 31% of searches can mean 46% of the money.'],
-  ['Neighborhood data at every point', 'U.S. Census ACS 2020–2024 for every block group, tract and ZIP: household income, homeowners, home value, year built.'],
-  ['Who owns the valuable ground', 'Each competitor’s share of the grid’s buying power where they hold the top 3.'],
-  ['Your winning radius', 'How far from your business you hold the top 3, from Google’s own distances.'],
-  ['Paid pressure', 'Who advertises at your points, and how many ads sit above you.'],
-  ['What AI cites', 'The websites Google’s AI Overviews linked to across your grid, so you know which listings to fix first.'],
-];
-
-/** The real 3D report: rank against buying power. */
-function WhereTheMoneyIs() {
-  return (
-    <section className="border-y border-[#1b2431] bg-[#080b10]">
-      <div className="mx-auto grid max-w-7xl items-center gap-14 px-5 py-24 sm:px-8 lg:grid-cols-[1.25fr_1fr]">
-        <figure>
-          <img src="/media/real-report-3d.jpg" alt="A real Stakeout report in 3D: each grid point is a column, its height the point’s share of the grid’s buying power and its colour the rank there" loading="lazy" className="w-full rounded-2xl border border-[#1b2431]" />
-          <figcaption className="mt-3 text-[12px] leading-relaxed text-[#6b7686]">
-            A real report (Mt. Juliet, TN, 5×5). Column height: the point’s share of the grid’s buying power. Colour: the rank there. The grey × is a point that failed; one click re-ran it, and failed points are credited back automatically.
-          </figcaption>
-        </figure>
-        <div>
-          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Ranks meet the U.S. Census</p>
-          <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-6xl">
-            Find the <span className="mk-gold-text">Highest-Paying</span> Customers.
-          </h2>
-          <p className="mt-5 leading-relaxed text-[#9aa7b8]">
-            A #1 in a neighborhood of renters isn’t worth a #1 among homeowners. Skip the blind grid: point a scan at the highest-income neighborhoods in your client’s service area, and every report maps the ranks onto income and homeownership, in 2D or 3D.
-          </p>
-          <Link href={DEMO_REPORT_URL} className="mt-6 inline-block rounded-xl border border-[#f5c451]/50 px-5 py-3 font-semibold text-[#ffdf8e] hover:bg-[#f5c451]/10">
-            Open a real report: the top-income neighborhoods around Lakeland, FL →
-          </Link>
-          <ul className="mt-8 space-y-4">
-            {MONEY_POINTS.map(([t, d]) => (
-              <li key={t} className="flex gap-3">
-                <Check className="mt-1 shrink-0 text-[#3ddc97]" />
-                <span>
-                  <span className="font-semibold">{t}.</span> <span className="text-[#9aa7b8]">{d}</span>
-                </span>
-              </li>
-            ))}
+          <p style={{ margin: "14px 0 0", fontSize: "14px", lineHeight: "1.6", color: "#94A3B8", maxWidth: "640px" }}>Your first 5×5 audit is {usd(WELCOME.cents)}, and it comes off your first month. Seats from {from('SCOUT')} per client a month; Command, with the Google listing tools, from {from('COMMAND')}.</p>
+          <ul style={{ listStyle: "none", padding: "0", margin: "32px 0 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: "14px 28px", fontSize: "15px", lineHeight: "1.5", color: "#CBD5E1" }}>
+            <li style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}><Check size={18} top={2} /><span>MP4 screen recording + SHA-256 receipt at every grid point</span></li>
+            <li style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}><Check size={18} top={2} /><span>The phone’s GPS set at each point + real city-level residential ISPs (provider named)</span></li>
+            <li style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}><Check size={18} top={2} /><span>AI Overview + Map Pack tracked together in one run</span></li>
+            <li style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}><Check size={18} top={2} /><span>1-click GBP API edits, Google posts &amp; a daily listing watchdog</span></li>
           </ul>
         </div>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ pricing and FAQ */
-
-const PRICE_ROWS: [string, string][] = [
-  ['Every grid point, Chrome or Google Maps app', '1 credit'],
-  ['AI Overview tracking (Chrome)', 'included'],
-  ['A point that fails', 'credited back automatically'],
-  ['Re-running a failed point', '1 click, same price'],
-];
-
-const FAQ: [string, string][] = [
-  ['Are these really phones?', 'Yes. Every point is its own Android session in the real Chrome or Google Maps app, recorded from the search to the last result.'],
-  ['How do you know Google used the right location?', 'The phone’s GPS is moved to each grid point, and in Chrome the location is refreshed and proven by Google’s own location line, saved on every receipt. A point where Google used anything else is refused, not counted.'],
-  ['What happens when a point fails?', 'Its credits come back automatically, and you can re-run it from the report in one click.'],
-  ['What do my clients see?', 'A share link to the report, no login: the grid, every recording, the receipts and the neighborhood data.'],
-  ['Do you track Ask Maps?', 'Not yet: it’s coming soon. Google Maps app scans already track the results list, with ads set aside. AI Overviews are tracked in Chrome today.'],
-];
-
-function Pricing() {
-  return (
-    <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-      <div className="grid gap-12 lg:grid-cols-2">
-        <div>
-          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Pricing</p>
-          <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">
-            One credit per point. <span className="mk-gold-text">That’s it.</span>
-          </h2>
-          <dl className="mt-8 divide-y divide-[#1b2431] rounded-2xl border border-[#1b2431] bg-[#0c1118]">
-            {PRICE_ROWS.map(([k, v]) => (
-              <div key={k} className="flex items-baseline justify-between gap-4 px-5 py-4">
-                <dt className="text-[#c9d3df]">{k}</dt>
-                <dd className="mk-mono shrink-0 font-semibold text-[#eef2f7]">{v}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-4 text-sm leading-relaxed text-[#9aa7b8]">
-            Your first 5×5 scan is {usd(WELCOME.cents)}: no onboarding fee. Monthly plans start at {usd(PLANS[0].cents)} for {PLANS[0].credits} credits and roll unused credits over a month. Seeing your Search Console and Analytics is free, and managing a Google listing is $29 a location a month.{' '}
-            <Link href="/pricing" className="font-semibold text-[#7aa7ff] hover:underline">See pricing</Link>
-          </p>
-        </div>
-        <div>
-          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">Questions</p>
-          <div className="mt-6 space-y-3">
-            {FAQ.map(([q, a]) => (
-              <details key={q} className="group rounded-2xl border border-[#1b2431] bg-[#0c1118] px-5 py-4">
-                <summary className="cursor-pointer list-none font-semibold marker:hidden">
-                  {q}
-                  <span className="float-right text-[#6b7686] transition group-open:rotate-45">+</span>
-                </summary>
-                <p className="mt-3 text-sm leading-relaxed text-[#9aa7b8]">{a}</p>
-              </details>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** What an agency does with a receipt: the four conversations it is used in. */
-const AGENCY_USES: [string, string, string][] = [
-  ['Prospecting', 'Make the gap concrete.', 'Show a prospect the neighborhood they know, the competitor who appeared there, and the recording that proves it.'],
-  ['Onboarding', 'Set a baseline nobody can dispute.', 'Day one, on video: where the client appeared and where they did not, before your work starts.'],
-  ['Monthly reviews', 'Explain what changed.', 'When a point moves, open it. The search, the time and the results are there to look at together.'],
-  ['Renewals', 'Let them inspect the work.', `Send one link, no login. The client can click any point and watch the search behind it. Your logo and domain for a one-time ${usd(WHITE_LABEL.cents)} setup.`],
-];
-
-function AgencyUses() {
-  return (
-    <section className="border-y border-[#1b2431] bg-[#080b10]">
-      <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#f5c451]">For agencies</p>
-        <h2 className="mk-display mx-auto mt-3 max-w-4xl text-center text-4xl font-bold leading-tight sm:text-6xl">
-          Walk Into Your Next Pitch with the <span className="mk-gold-text">Search on Video.</span>
-        </h2>
-        <p className="mx-auto mt-5 max-w-2xl text-center text-lg leading-relaxed text-[#9aa7b8]">
-          “Where did that ranking come from?” Open the recording.
-        </p>
-        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {AGENCY_USES.map(([tag, title, text]) => (
-            <article key={tag} className="rounded-2xl border border-[#1b2431] bg-[#0c1118] p-7">
-              <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">{tag}</p>
-              <h3 className="mk-display mt-2 text-xl font-semibold">{title}</h3>
-              <p className="mt-3 leading-relaxed text-[#9aa7b8]">{text}</p>
-            </article>
-          ))}
-        </div>
-        <div className="mt-10 text-center">
-          <Link href="/pricing" className="mk-btn-primary inline-block rounded-xl px-6 py-3.5 font-semibold">Run your first scan for {usd(WELCOME.cents)} →</Link>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export default function Landing() {
-  return (
-    <div className="mk min-h-screen overflow-x-hidden">
-      {promoLive() && (
-        <Link href="/pricing" className="block bg-[#f5c451] px-4 py-2.5 text-center text-sm font-semibold text-[#06080c] hover:bg-[#ffd76a]">
-          {PROMO.name}: no onboarding fee. Try a real scan from {usd(WELCOME.cents)}, or take 3 months of any plan and save up to {usd(Math.max(...PREPAID.map((x) => x.saves)))}. Ends {PROMO.endsText} →
-        </Link>
-      )}
-      <SiteHeader />
-
-      {/* HERO */}
-      <section className="relative">
-        <div className="mk-glow pointer-events-none absolute inset-0" aria-hidden="true" />
-        <div className="mk-grid-bg pointer-events-none absolute inset-0 opacity-60" aria-hidden="true" />
-        <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-5 pb-20 pt-14 sm:px-8 lg:grid-cols-[1.05fr_1fr] lg:pb-28 lg:pt-20">
-          <div>
-            <p className="mk-mono inline-flex items-center gap-2 rounded-full border border-[#2a3442] bg-[#0c1118] px-3.5 py-1.5 text-[12px] text-[#9aa7b8]">
-              <span className="mk-rec inline-block h-2 w-2 rounded-full bg-[#ff4d4d]" aria-hidden="true" />
-              REC · real Android phone sessions · Google Maps & Chrome
-            </p>
-            <h1 className="mk-display mt-6 text-[44px] font-bold leading-[1.02] sm:text-6xl lg:text-[68px]">
-              When a Client Questions the Ranking, <span className="mk-gold-text">Show Them the Search.</span>
-            </h1>
-            <p className="mk-display mt-5 text-2xl font-semibold text-[#eef2f7] sm:text-3xl">Every data point comes with a <span className="mk-gold-text">receipt.</span></p>
-            <p className="mt-6 max-w-xl text-lg font-medium leading-relaxed text-[#eef2f7] sm:text-xl">
-              The <span className="text-[#f5c451]">ONLY</span> local SEO tool on the market measuring <span className="underline decoration-[#f5c451] decoration-2 underline-offset-4">REAL</span> results for real people on real mobile devices.
-            </p>
-            <p className="mt-4 max-w-xl leading-relaxed text-[#9aa7b8]">
-              At every point of your grid, a real Android phone moves its GPS to that spot, searches on a real residential or mobile connection, and records the whole search. You get the rank, plus the video, the screen data and a fingerprint that proves it.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link href="/pricing" className="mk-btn-primary rounded-xl px-6 py-3.5 text-base font-semibold">Run your first scan for {usd(WELCOME.cents)} →</Link>
-              <Link href="/demo" className="rounded-xl border border-[#2a3442] bg-[#0c1118] px-6 py-3.5 text-base font-semibold hover:border-[#3a4658]">Watch a recorded search</Link>
+        <div style={{ flex: "1.1 1 540px", minWidth: "0", display: "flex", flexWrap: "wrap", gap: "24px", justifyContent: "center", alignItems: "flex-start" }}>
+          <figure style={{ margin: "0", flex: "0 1 290px", minWidth: "0" }}>
+            <div style={{ borderRadius: "36px", border: "9px solid #1E2836", overflow: "hidden", background: "#FFFFFF", boxShadow: "0 40px 80px -30px rgba(0, 0, 0, 0.85)" }}>
+              <img src="/home/hero-plumber-ai-overview.jpg" width={720} height={1320} decoding="async" alt="Google results on an Android phone: an AI Overview names Stuart’s Plumbing in its first sentence with its phone number, then a single business card and a Yelp result. There is no map pack." style={{ display: "block", width: "100%", height: "auto" }} />
             </div>
-            <p className="mt-3 text-sm text-[#9aa7b8]">Pack credits never expire. Failed points are credited back.</p>
-            <ul className="mt-9 grid max-w-xl grid-cols-1 gap-x-6 gap-y-3 text-sm text-[#c9d3df] sm:grid-cols-2">
-              {['Video receipt for every grid point', 'GPS set on the phone itself', 'Local residential and mobile networks', 'AI Overviews tracked · Ask Maps soon'].map((t) => (
-                <li key={t} className="flex items-center gap-2.5"><Check className="text-[#3ddc97]" />{t}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="relative flex justify-center lg:justify-end">
-            <div className="relative">
-              <PhoneCapture />
-              <Receipt className="absolute -left-[300px] top-[250px] hidden rotate-[-5deg] xl:block" />
-            </div>
-          </div>
-        </div>
-        <div className="mx-auto -mt-6 mb-10 flex max-w-7xl justify-center px-5 xl:hidden">
-          <Receipt className="rotate-[-2deg]" />
-        </div>
-      </section>
-
-
-      <RealProof />
-
-      <AgencyUses />
-
-      {/* A PHONE AT EVERY POINT */}
-      <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
-        <div className="grid items-center gap-12 lg:grid-cols-[1fr_1.15fr]">
-          <div>
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">One grid. 25 phone sessions. 25 recordings.</p>
-            <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">See Through Your <span className="mk-gold-text">Customers&apos; Eyes.</span></h2>
-            <p className="mt-5 max-w-xl text-lg leading-relaxed text-[#9aa7b8]">
-              Other trackers color a dot. Stakeout runs a separate phone session at each point of your grid and keeps the recording. In a live report, click any square to watch exactly what the phone saw from that spot.
-            </p>
-            <dl className="mt-8 grid max-w-xl grid-cols-3 gap-4">
-              {[['25', 'phone sessions'], ['25', 'screen recordings'], ['25', 'fingerprinted receipts']].map(([n, l]) => (
-                <div key={l} className="rounded-xl border border-[#1b2431] bg-[#0c1118] px-4 py-4">
-                  <dt className="sr-only">{l}</dt>
-                  <dd className="mk-display text-3xl font-bold text-[#f5c451]">{n}</dd>
-                  <dd className="text-sm text-[#9aa7b8]">{l}</dd>
-                </div>
-              ))}
+            <figcaption style={{ marginTop: "14px", fontSize: "12.5px", lineHeight: "1.55", color: "#94A3B8" }}>Real Google results on an Android phone: “emergency plumber near me”, Lakeland, FL. The AI Overview names one plumber and its number. No map pack on the page.</figcaption>
+          </figure>
+          <div style={{ flex: "1 1 260px", maxWidth: "330px", minWidth: "0", background: "#111823", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px", fontFamily: "'JetBrains Mono', monospace", fontSize: "12.5px", lineHeight: "1.5", color: "#CBD5E1", boxShadow: "0 30px 70px -25px rgba(0, 0, 0, 0.8)" }}>
+            <p style={{ margin: "0", fontWeight: "700", letterSpacing: "0.08em", color: "#F1F5F9" }}>RECEIPT{' '}<span style={{ color: v.accent }}>#cmwkpqpk40010</span></p>
+            <p style={{ margin: "10px 0 0", display: "inline-block", border: "1px solid rgba(16, 185, 129, 0.45)", background: "rgba(16, 185, 129, 0.1)", color: "#34D399", borderRadius: "999px", padding: "3px 10px", fontSize: "11.5px", lineHeight: "1.5" }}>One real point. Not a mock-up.</p>
+            <dl style={{ margin: "16px 0 0", paddingTop: "14px", borderTop: "1px dashed rgba(255, 255, 255, 0.16)", display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: "10px 14px" }}>
+              <dt style={{ color: "#94A3B8" }}>Search</dt>
+              <dd style={{ margin: "0", color: "#F1F5F9" }}>“emergency plumber near me”</dd>
+              <dt style={{ color: "#94A3B8" }}>Business</dt>
+              <dd style={{ margin: "0", color: "#F1F5F9" }}>Stuart’s Plumbing</dd>
+              <dt style={{ color: "#94A3B8" }}>Point</dt>
+              <dd style={{ margin: "0", color: "#F1F5F9" }}>5,5 of a 5×5 grid · Eaton Park, near Lakeland, FL 33840</dd>
+              <dt style={{ color: "#94A3B8" }}>Time</dt>
+              <dd style={{ margin: "0", color: "#F1F5F9" }}>Nov 17, 2026 · 8:29 AM EST</dd>
+              <dt style={{ color: "#94A3B8" }}>Device</dt>
+              <dd style={{ margin: "0", color: "#F1F5F9" }}>Android phone · Chrome</dd>
+              <dt style={{ color: "#94A3B8" }}>Network</dt>
+              <dd style={{ margin: "0", color: "#F1F5F9" }}>Spectrum</dd>
+              <dt style={{ color: "#94A3B8" }}>Local result</dt>
+              <dd style={{ margin: "0", color: "#F1F5F9" }}>#1, the only business shown</dd>
+              <dt style={{ color: "#94A3B8" }}>AI Overview</dt>
+              <dd style={{ margin: "0", color: "#C4A1FF" }}>Named (first of 5)</dd>
+              <dt style={{ color: "#94A3B8" }}>SHA-256</dt>
+              <dd style={{ margin: "0", color: "#F1F5F9", wordBreak: "break-all" }}>177788ca4a4b57db…a85e55c56</dd>
             </dl>
-          </div>
-          <PhoneWall />
-        </div>
-      </section>
-
-      {/* SEE GOOGLE THROUGH YOUR CUSTOMERS' EYES */}
-      <section className="border-y border-[#1b2431] bg-[#080b10]">
-        <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-          <h2 className="mk-display mx-auto max-w-5xl text-center text-5xl font-bold leading-[1.04] sm:text-6xl lg:text-7xl">
-            See Google Through Your <span className="mk-gold-text">Customers&apos; Eyes.</span>
-          </h2>
-          <p className="mx-auto mt-6 max-w-3xl text-center text-lg leading-relaxed text-[#9aa7b8]">
-            Your customers don&apos;t search from a data center. They search on a phone, standing in a neighborhood, on Comcast or TDS or AT&amp;T. That is the Google Stakeout measures, and records.
-          </p>
-          <div className="mt-14 grid gap-5 md:grid-cols-2">
-            {[
-              {
-                tag: 'Google Maps app',
-                title: 'The Maps results list',
-                points: ['The results list, top 10, with Sponsored and Google Verified ads set aside', 'Every scroll on video, every screen read', 'Ask Maps answers: coming soon'],
-              },
-              {
-                tag: 'Chrome on Android',
-                title: 'The local pack, and AI Overviews',
-                points: ['Precise device location accepted, then proven by Google’s own location line', 'AI Overview text and the sources it cited', 'The full business list behind “More businesses”'],
-              },
-            ].map((c) => (
-              <article key={c.tag} className="rounded-2xl border border-[#1b2431] bg-[#0c1118] p-7">
-                <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">{c.tag}</p>
-                <h3 className="mk-display mt-2 text-2xl font-semibold">{c.title}</h3>
-                <ul className="mt-5 space-y-3 text-[#c9d3df]">
-                  {c.points.map((p) => (
-                    <li key={p} className="flex gap-2.5"><Check className="mt-0.5 text-[#f5c451]" />{p}</li>
-                  ))}
-                </ul>
-              </article>
-            ))}
+            <a className="so-btn" href={HREF.recording} onClick={v.watch} style={{ marginTop: "18px", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", minHeight: "44px", boxSizing: "border-box", border: "1px solid rgba(255, 255, 255, 0.16)", borderRadius: "10px", padding: "10px 12px", color: "#F1F5F9", fontFamily: "Inter, sans-serif", fontWeight: "600", fontSize: "14px", lineHeight: "1.3" }}><Play size={13} />Watch this point’s recording</a>
+            <p style={{ margin: "16px 0 0", textAlign: "center", color: "#7C8BA1", fontSize: "10.5px", lineHeight: "1.5", letterSpacing: "0.1em" }}>EVERY DATA POINT COMES WITH A RECEIPT</p>
           </div>
         </div>
-      </section>
+      </div>
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "0 clamp(16px, 2vw, 24px) 64px" }}>
+        <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "18px", background: "#111823", padding: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 230px), 1fr))", gap: "20px 28px" }}>
+          <div>
+            <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.08em", color: "#94A3B8" }}>THE SCAN BEHIND THIS RECEIPT</p>
+            <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.5", color: "#CBD5E1" }}>Lakeland, FL · 5×5 grid · Nov 17, 2026</p>
+          </div>
+          <div>
+            <p style={{ margin: "0", fontWeight: "800", fontSize: "32px", lineHeight: "1.15", letterSpacing: "-0.02em" }}>25 of 25</p>
+            <p style={{ margin: "6px 0 0", fontSize: "14px", lineHeight: "1.5", color: "#94A3B8" }}>points done in under 20 minutes</p>
+          </div>
+          <div>
+            <p style={{ margin: "0", fontWeight: "800", fontSize: "32px", lineHeight: "1.15", letterSpacing: "-0.02em", color: "#C4A1FF" }}>21 of 25</p>
+            <p style={{ margin: "6px 0 0", fontSize: "14px", lineHeight: "1.5", color: "#94A3B8" }}>named in Google’s AI Overview</p>
+          </div>
+          <div>
+            <p style={{ margin: "0", fontWeight: "800", fontSize: "32px", lineHeight: "1.15", letterSpacing: "-0.02em" }}>9 of 25</p>
+            <p style={{ margin: "6px 0 0", fontSize: "14px", lineHeight: "1.5", color: "#94A3B8" }}>in the local results—a map-pack-only grid would report the other 16 as “not found”</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
-      {/* COMPARISON */}
-      <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#f5c451]">Why it&apos;s different</p>
-        <h2 className="mk-display mx-auto mt-3 max-w-4xl text-center text-4xl font-bold leading-tight sm:text-5xl">
-          A colored dot is a claim. A receipt is proof.
-        </h2>
-        <div className="mt-12 overflow-x-auto rounded-2xl border border-[#1b2431]">
-          <table className="w-full min-w-[720px] border-collapse text-left">
+/* section#honest-math */
+function SHonestMath({ v }: { v: V }) {
+  return (
+    <section id="honest-math" style={{ background: "#0E141D", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)" }}>
+        <div style={{ maxWidth: "900px", margin: "0 auto", textAlign: "center" }}>
+          <p style={{ margin: "0", display: "inline-flex", alignItems: "center", gap: "12px", background: "#0B0F14", border: "3px solid #FF2424", borderRadius: "999px", padding: "10px 22px 10px 16px", fontWeight: "800", fontSize: "15px", lineHeight: "1.3", letterSpacing: "0.06em", color: "#FFFFFF" }}><span aria-hidden="true" style={{ flex: "none", display: "inline-block", width: "14px", height: "14px", borderRadius: "999px", background: "#FF2424" }}></span>THE 100-CREDIT SHELL GAME</p>
+          <h2 style={{ margin: "24px 0 0", fontWeight: "800", fontSize: "clamp(34px, 4vw, 58px)", lineHeight: "1.12", letterSpacing: "-0.025em" }}>Don’t Punish Us for Being Honest.</h2>
+          <p style={{ margin: "24px 0 0", fontSize: "18px", lineHeight: "1.7", color: "#CBD5E1" }}>Only one question matters in local SEO:{' '}<span style={{ color: "#FFFFFF", fontWeight: "600" }}>“What does my customer actually see when they pull out their phone and search?”</span>{' '}Your customer doesn’t search Google from a dropdown menu—so why are you burning up to 4× the credits running separate API scans just to guess what’s on one screen?</p>
+        </div>
+        <ol style={{ listStyle: "none", padding: "0", margin: "52px 0 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "20px" }}>
+          <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "24px", background: "#111823" }}>
+            <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.06em", color: "#F87171" }}>01 · THE PRE-ENABLED +25 TRAP</p>
+            <p style={{ margin: "12px 0 0", fontSize: "15px", lineHeight: "1.65", color: "#CBD5E1" }}>Pick 1 keyword on a 5×5 grid (25 pins). An unlabeled sparkle switch sits{' '}<strong style={{ color: "#FFFFFF" }}>ON by default</strong>{' '}next to Run Scan—instantly turning a 25-pin check into a{' '}<strong style={{ color: "#F87171" }}>50-credit</strong>{' '}charge (and turning a 9-pin 3×3 into 34 credits).</p>
+          </li>
+          <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "24px", background: "#111823" }}>
+            <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.06em", color: "#F87171" }}>02 · FORCED SEPARATE SCANS</p>
+            <p style={{ margin: "12px 0 0", fontSize: "15px", lineHeight: "1.65", color: "#CBD5E1" }}>Google Maps and Google AI Overviews live in{' '}<strong style={{ color: "#FFFFFF" }}>separate single-select dropdowns</strong>. Checking both forces you to run{' '}<strong style={{ color: "#F87171" }}>two separate 5×5 scans</strong>{' '}(up to 100 credits total) for one keyword.</p>
+          </li>
+          <li style={{ border: `1px solid ${v.accentLine}`, borderRadius: "16px", padding: "24px", background: "#111823" }}>
+            <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.06em", color: v.accent }}>03 · ONE PHONE CAPTURES EVERYTHING</p>
+            <p style={{ margin: "12px 0 0", fontSize: "15px", lineHeight: "1.65", color: "#CBD5E1" }}>Stakeout deploys a real Android phone on a local ISP at every GPS point—recording{' '}<strong style={{ color: "#FFFFFF" }}>Ads, AI Overviews, Cited URLs, and the Local Pack</strong>{' '}together on one screen for{' '}<strong style={{ color: v.accent }}>25 points flat</strong> on a scheduled scan.</p>
+          </li>
+        </ol>
+        <div style={{ marginTop: "28px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 480px), 1fr))", gap: "24px", alignItems: "stretch" }}>
+          <div style={{ border: "1px solid rgba(239, 68, 68, 0.3)", borderRadius: "20px", background: "#111823", padding: "28px", display: "flex", flexDirection: "column" }}>
+            <p style={{ margin: "0", display: "inline-block", alignSelf: "flex-start", fontFamily: "'JetBrains Mono', monospace", fontSize: "11.5px", lineHeight: "1.5", color: "#F87171", background: "rgba(239, 68, 68, 0.12)", padding: "4px 10px", borderRadius: "8px" }}>UP TO 4× BURN</p>
+            <p style={{ margin: "14px 0 0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.06em", color: "#F87171" }}>THE “1 PIN = 1 CREDIT” INDUSTRY LEADER</p>
+            <p style={{ margin: "6px 0 0", fontWeight: "700", fontSize: "21px", lineHeight: "1.3" }}>Split Dropdowns &amp; Pre-Checked Surcharges</p>
+            <div style={{ marginTop: "20px", background: "#FFFFFF", color: "#0F172A", borderRadius: "12px", padding: "18px", textAlign: "center" }}>
+              <p style={{ margin: "0", fontSize: "13px", lineHeight: "1.4", fontWeight: "700" }}>Confirm Scans</p>
+              <p style={{ margin: "8px 0 0", fontSize: "14px", lineHeight: "1.5" }}>You are about to run{' '}<strong>1 scan</strong>{' '}which will use{' '}<strong style={{ color: "#B91C1C" }}>50 credits</strong>.</p>
+              <p style={{ margin: "8px 0 0", fontSize: "12px", lineHeight: "1.5", color: "#475569" }}>5×5 Grid (25 pins) · 1 Keyword · Checks ONLY 1 dropdown surface</p>
+            </div>
+            <ul style={{ listStyle: "none", padding: "0", margin: "20px 0 0", fontFamily: "'JetBrains Mono', monospace", fontSize: "13px", lineHeight: "1.5", display: "grid", gap: "10px" }}>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", borderBottom: "1px solid rgba(255, 255, 255, 0.06)", paddingBottom: "10px", color: "#CBD5E1" }}><span>5×5 Map Grid (25 pins)</span><span style={{ flex: "none" }}>25 credits</span></li>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", borderBottom: "1px solid rgba(255, 255, 255, 0.06)", paddingBottom: "10px", color: "#F87171" }}><span>+ Unlabeled AI Switch (On by default)</span><span style={{ flex: "none" }}>+25 credits</span></li>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", borderBottom: "1px solid rgba(255, 255, 255, 0.06)", paddingBottom: "10px", color: "#F87171" }}><span>+ 2nd Separate Scan for AI Overviews</span><span style={{ flex: "none" }}>+50 credits</span></li>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", borderBottom: "1px solid rgba(255, 255, 255, 0.06)", paddingBottom: "10px", color: "#94A3B8" }}><span>Proves if AI wiped out the 3-Pack?</span><span style={{ flex: "none" }}>No (Split APIs)</span></li>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", color: "#94A3B8" }}><span>Unused monthly credits</span><span style={{ flex: "none" }}>Wiped every 30 days</span></li>
+            </ul>
+            <div style={{ marginTop: "auto", paddingTop: "24px" }}>
+              <div style={{ borderTop: "1px solid rgba(239, 68, 68, 0.25)", paddingTop: "18px" }}>
+                <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", color: "#94A3B8" }}>REAL BURN (MAPS + AIO · 5×5)</p>
+                <p style={{ margin: "6px 0 0", fontFamily: "'JetBrains Mono', monospace", fontWeight: "700", fontSize: "24px", lineHeight: "1.3", color: "#F87171" }}>100 CREDITS · 2 SCANS</p>
+              </div>
+            </div>
+          </div>
+          <div style={{ border: `2px solid ${v.accent}`, borderRadius: "20px", background: "#111927", padding: "28px", display: "flex", flexDirection: "column", boxShadow: `0 0 44px ${v.accentGlow}` }}>
+            <p style={{ margin: "0", display: "inline-block", alignSelf: "flex-start", fontFamily: "'JetBrains Mono', monospace", fontSize: "11.5px", lineHeight: "1.5", color: v.accent, background: v.accentSoft, padding: "4px 10px", borderRadius: "8px" }}>ALL-IN-ONE</p>
+            <p style={{ margin: "14px 0 0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.06em", color: v.accent }}>STAKEOUT SEARCH · REAL ANDROID TELEMETRY</p>
+            <p style={{ margin: "6px 0 0", fontWeight: "700", fontSize: "21px", lineHeight: "1.3" }}>One Real Phone. One Unified Screen.</p>
+            <div style={{ marginTop: "20px", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "12px", background: "#0B1017", padding: "18px" }}>
+              <p style={{ margin: "0", display: "flex", alignItems: "center", gap: "8px", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.06em", color: v.accent }}><span aria-hidden="true" style={{ flex: "none", display: "inline-block", width: "8px", height: "8px", borderRadius: "999px", background: "#EF4444" }}></span>REC · EXACTLY WHAT YOUR CUSTOMER SEES</p>
+              <p style={{ margin: "10px 0 0", fontSize: "14px", lineHeight: "1.65", color: "#E2E8F0" }}>Every grid point runs a real Android session on a local ISP—capturing{' '}<strong>Ads, Google’s AI Overview, Cited Sources, and the Local Pack</strong>{' '}together on video in a single run.</p>
+            </div>
+            <ul style={{ listStyle: "none", padding: "0", margin: "20px 0 0", fontFamily: "'JetBrains Mono', monospace", fontSize: "13px", lineHeight: "1.5", display: "grid", gap: "10px" }}>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "10px", color: "#F1F5F9" }}><span>5×5 Real-Device Grid (25 phone sessions)</span><span style={{ flex: "none", fontWeight: "700" }}>25 points</span></li>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "10px", color: "#34D399" }}><span>+ Google AI Overview &amp; Cited URLs</span><span style={{ flex: "none" }}>0 EXTRA</span></li>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "10px", color: "#34D399" }}><span>+ 25 MP4 Screen Recordings + SHA-256 Proof</span><span style={{ flex: "none" }}>0 EXTRA</span></li>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", borderBottom: "1px solid rgba(255, 255, 255, 0.08)", paddingBottom: "10px", color: "#34D399" }}><span>+ 2D &amp; 3D U.S. Census Buying-Power Map</span><span style={{ flex: "none" }}>0 EXTRA</span></li>
+              <li style={{ display: "flex", justifyContent: "space-between", gap: "14px", color: "#34D399" }}><span>Unused points</span><span style={{ flex: "0 1 auto", textAlign: "right" }}>Seat points roll over 1 mo · Top-ups NEVER EXPIRE</span></li>
+            </ul>
+            <div style={{ marginTop: "auto", paddingTop: "24px" }}>
+              <div style={{ borderTop: `1px solid ${v.accentLine}`, paddingTop: "18px" }}>
+                <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", color: "#94A3B8" }}>REAL BURN (MAPS + AIO · 5×5)</p>
+                <p style={{ margin: "6px 0 0", fontFamily: "'JetBrains Mono', monospace", fontWeight: "700", fontSize: "24px", lineHeight: "1.3", color: v.accent }}>25 POINTS. 1 SCAN.</p><p style={{ margin: "6px 0 0", fontSize: "12.5px", lineHeight: "1.5", color: "#94A3B8" }}>Scheduled. Scan Now jumps the queue for 50.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style={{ marginTop: "28px", overflowX: "auto", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "18px", background: "#111823" }}>
+          <table style={{ width: "100%", minWidth: "760px", borderCollapse: "collapse", fontSize: "14.5px", lineHeight: "1.55" }}>
+            <caption style={{ textAlign: "left", padding: "22px 24px 8px", fontWeight: "700", fontSize: "20px", lineHeight: "1.3", color: "#F1F5F9" }}>Side by Side, Line by Line</caption>
             <thead>
-              <tr className="bg-[#0c1118] text-sm">
-                <th scope="col" className="w-[22%] px-6 py-4 font-medium text-[#9aa7b8]" />
-                <th scope="col" className="w-[30%] px-6 py-4 font-medium text-[#9aa7b8]">Typical rank tracker</th>
-                <th scope="col" className="px-6 py-4 font-semibold text-[#f5c451]">Stakeout Search</th>
+              <tr>
+                <th scope="col" style={{ textAlign: "left", verticalAlign: "bottom", padding: "14px 24px", width: "30%", color: "#94A3B8", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>What Happens on One 5×5 Keyword Audit (25 Pins)</th>
+                <th scope="col" style={{ textAlign: "left", verticalAlign: "bottom", padding: "14px 24px", width: "36%", color: "#F87171", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>The “1 Pin = 1 Credit” Industry Leader</th>
+                <th scope="col" style={{ textAlign: "left", verticalAlign: "bottom", padding: "14px 24px", color: v.accent, fontWeight: "700", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>Stakeout Search</th>
               </tr>
             </thead>
             <tbody>
-              {COMPARE.map((r) => (
-                <tr key={r.row} className="border-t border-[#1b2431]">
-                  <th scope="row" className="px-6 py-5 align-top font-semibold">{r.row}</th>
-                  <td className="px-6 py-5 align-top text-[#9aa7b8]"><span className="flex gap-2.5"><Cross />{r.typical}</span></td>
-                  <td className="bg-[#f5c451]/[0.04] px-6 py-5 align-top"><span className="flex gap-2.5"><Check className="text-[#3ddc97]" />{r.stakeout}</span></td>
-                </tr>
-              ))}
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "16px 24px", fontWeight: "600", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>How the Search Runs</th><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#CBD5E1", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Split server queries picked one-by-one from a dropdown menu</td><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#F1F5F9", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>1 real Android phone capturing the actual customer screen</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "16px 24px", fontWeight: "600", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>5×5 Map Grid (25 Pins)</th><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#CBD5E1", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}><span style={{ fontFamily: "'JetBrains Mono', monospace" }}>25 credits</span></td><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#F1F5F9", fontFamily: "'JetBrains Mono', monospace", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>25 points scheduled · 50 Scan Now</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "16px 24px", fontWeight: "600", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Unlabeled AI Summary Switch (On by Default)</th><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#CBD5E1", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}><span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#F87171" }}>+25 credit surcharge</span>{' '}<em>(50 credits total for 1 scan)</em></td><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}><span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#34D399" }}>0 extra</span>{' '}(No hidden toggles)</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "16px 24px", fontWeight: "600", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Google AI Overview + Cited Sources</th><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#CBD5E1", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}><span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#F87171" }}>+50 credits</span>{' '}<em>(requires running a 2nd separate scan)</em></td><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}><span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#34D399" }}>0 extra</span>{' '}(Captured on the exact same phone screen)</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "16px 24px", fontWeight: "600", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Shows If AI Replaced the 3-Pack{' '}<span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "11.5px", fontWeight: "500", color: "#CBD5E1", border: "1px solid rgba(255, 255, 255, 0.14)", borderRadius: "6px", padding: "1px 6px" }}>No LP</span>?</th><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#CBD5E1", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}><strong style={{ color: "#F87171" }}>Never</strong>{' '}<em>(two separate grids—blind to real page layout)</em></td><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}><strong style={{ color: "#34D399" }}>Yes</strong>{' '}(Recorded on MP4 video with SHA-256 receipt)</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "16px 24px", fontWeight: "600", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>2D &amp; 3D U.S. Census Buying-Power Map</th><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#94A3B8", fontStyle: "italic", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Not available</td><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}><span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#34D399" }}>0 extra</span>{' '}(Included on every report)</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "16px 24px", fontWeight: "600", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Unused at Month-End</th><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#CBD5E1", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Confiscated at billing reset</td><td style={{ verticalAlign: "top", padding: "16px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Seat points roll over 1 month · top-ups never expire</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "18px 24px", fontWeight: "800", color: "#F1F5F9", letterSpacing: "0.02em" }}>REAL COST OF ONE COMPLETE 5×5 AUDIT</th><td style={{ verticalAlign: "top", padding: "18px 24px", color: "#F87171", fontWeight: "700" }}>Up to 100 Credits + 2 Separate Scans{' '}<em style={{ fontWeight: "400", color: "#CBD5E1" }}>(for spoofed dots)</em></td><td style={{ verticalAlign: "top", padding: "18px 24px", color: v.accent, fontWeight: "800" }}>25 Points. 1 Scan. 25 Real Video Receipts.</td></tr>
             </tbody>
           </table>
         </div>
-      </section>
+      </div>
+    </section>
+  );
+}
 
-      <AiAnswers />
-
-      <Territory />
-      <WhereTheMoneyIs />
-
-      {/* THE TAGLINE: EVERY DATA POINT COMES WITH A RECEIPT */}
-      <section className="relative overflow-hidden border-y border-[#1b2431]">
-        <div className="mk-glow pointer-events-none absolute inset-0" aria-hidden="true" />
-        <div className="mk-grid-bg pointer-events-none absolute inset-0 opacity-40" aria-hidden="true" />
-        <div className="relative mx-auto max-w-7xl px-5 py-24 sm:px-8">
-          <div className="mx-auto max-w-5xl text-center">
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Not a slogan. A feature.</p>
-            <h2 className="mk-display mt-4 text-[48px] font-bold leading-[0.98] sm:text-7xl lg:text-[104px]">
-              Every Data Point<br />Comes with a <span className="mk-gold-text">Receipt.</span>
-            </h2>
-            <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-[#9aa7b8]">
-              Other tools give you a number. We give you the number, and everything behind it. Go on: tap any point and pull its receipt.
-            </p>
+/* section#real-vs-reported */
+function SRealVsReported({ v }: { v: V }) {
+  return (
+    <section id="real-vs-reported" style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)" }}>
+        <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12.5px", lineHeight: "1.5", letterSpacing: "0.12em", color: v.accent }}>SAME KEYWORD · SAME BUSINESS · SAME 49 POINTS</p>
+        <h2 style={{ margin: "16px 0 0", fontWeight: "800", fontSize: "clamp(32px, 3.6vw, 52px)", lineHeight: "1.12", letterSpacing: "-0.025em", maxWidth: "960px" }}>The Rank Tracker Said #11. Google’s AI Named Them First.</h2>
+        <p style={{ margin: "20px 0 0", fontSize: "18px", lineHeight: "1.65", color: "#CBD5E1", maxWidth: "820px" }}>We scanned Stuart’s Plumbing for “emergency plumber near me” in Lakeland, FL on the exact same 7×7 grid a leading rank-grid tool tracks. Where that tool reported #8 or worse, a real phone found Google’s AI Overview naming the business at 15 of those 16 points.</p>
+        <div style={{ marginTop: "44px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 460px), 1fr))", gap: "24px" }}>
+          <div style={{ background: "#111823", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "18px", padding: "clamp(16px, 2.4vw, 28px)" }}>
+            <p style={{ margin: "0", fontWeight: "700", fontSize: "20px", lineHeight: "1.3" }}>A leading rank-grid tool</p>
+            <p style={{ margin: "6px 0 24px", fontSize: "14px", lineHeight: "1.5", color: "#94A3B8" }}>The local rank it reported at each point</p>
+            <div role="img" aria-label="A leading rank-grid tool’s 7 by 7 map: ranks 8 to 13 across the west and north, 1 to 3 only in the south-east" style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: "clamp(4px, 0.6vw, 8px)", maxWidth: "400px", margin: "0 auto" }}>
+              {v.tracker.map((c, i) => (
+                <div key={i} style={{ aspectRatio: "1 / 1", borderRadius: "999px", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'JetBrains Mono', monospace", fontSize: "clamp(10px, 1vw, 13px)", lineHeight: "1", fontWeight: "700", border: "2px solid rgba(255, 255, 255, 0.85)", background: c.bg, color: c.fg, ...c.ring }}>{c.label}</div>
+              ))}
+            </div>
           </div>
-          <div className="mt-16">
-            <ReceiptPrinter />
-          </div>
-        </div>
-      </section>
-
-      {/* ANATOMY OF A RECEIPT */}
-      <section className="border-y border-[#1b2431] bg-[#080b10]">
-        <div className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-          <div>
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">What&apos;s on a receipt</p>
-            <h2 className="mk-display mt-3 text-4xl font-bold leading-tight sm:text-5xl">Everything your client could ask. Answered on one page.</h2>
-            <div className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
-              {ANATOMY.map((a) => (
-                <div key={a.n}>
-                  <p className="mk-mono text-sm text-[#7aa7ff]">{a.n}</p>
-                  <h3 className="mt-1 text-lg font-semibold">{a.title}</h3>
-                  <p className="mt-1.5 leading-relaxed text-[#9aa7b8]">{a.text}</p>
-                </div>
+          <div style={{ background: "#111823", border: "1px solid rgba(168, 85, 247, 0.35)", borderRadius: "18px", padding: "clamp(16px, 2.4vw, 28px)" }}>
+            <p style={{ margin: "0", fontWeight: "700", fontSize: "20px", lineHeight: "1.3" }}>Stakeout — a real phone at each point</p>
+            <p style={{ margin: "6px 0 24px", fontSize: "14px", lineHeight: "1.5", color: "#94A3B8" }}>Place in Google’s AI Overview</p>
+            <div role="img" aria-label="Stakeout’s 7 by 7 map of the same points: an AI Overview at 46 of 49 points, naming the business at 42 and first at 18" style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: "clamp(4px, 0.6vw, 8px)", maxWidth: "400px", margin: "0 auto" }}>
+              {v.phone.map((c, i) => (
+                <div key={i} style={{ aspectRatio: "1 / 1", borderRadius: "999px", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'JetBrains Mono', monospace", fontSize: "clamp(10px, 1vw, 13px)", lineHeight: "1", fontWeight: "700", border: "2px solid rgba(255, 255, 255, 0.85)", background: c.bg, color: c.fg, ...c.ring }}>{c.label}</div>
               ))}
             </div>
           </div>
         </div>
-      </section>
+        <div style={{ marginTop: "20px", display: "flex", flexWrap: "wrap", gap: "10px 22px", fontSize: "13px", lineHeight: "1.5", color: "#94A3B8" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}><span aria-hidden="true" style={{ flex: "none", width: "11px", height: "11px", borderRadius: "999px", background: "#2a6600", display: "inline-block" }}></span>#1–3 local rank</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}><span aria-hidden="true" style={{ flex: "none", width: "11px", height: "11px", borderRadius: "999px", background: "#f7c701", display: "inline-block" }}></span>#4–5</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}><span aria-hidden="true" style={{ flex: "none", width: "11px", height: "11px", borderRadius: "999px", background: "#d26e00", display: "inline-block" }}></span>#6–8</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}><span aria-hidden="true" style={{ flex: "none", width: "11px", height: "11px", borderRadius: "999px", background: "#af0a00", display: "inline-block" }}></span>#9 and below</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}><span aria-hidden="true" style={{ flex: "none", width: "11px", height: "11px", borderRadius: "999px", background: "#9333EA", display: "inline-block" }}></span>#1–5: place in the AI Overview (✓ named, no place)</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}><span aria-hidden="true" style={{ flex: "none", width: "11px", height: "11px", borderRadius: "999px", background: "#4c1d95", display: "inline-block" }}></span>no: left out of the AI Overview</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: "7px" }}><span aria-hidden="true" style={{ flex: "none", width: "13px", height: "13px", borderRadius: "999px", border: `3px solid ${v.accent}`, boxSizing: "border-box", display: "inline-block" }}></span>the same point on both maps: tool #11, AI Overview #1</span>
+        </div>
+        <p style={{ margin: "10px 0 0", fontSize: "13px", lineHeight: "1.5", color: "#94A3B8" }}>On the phone map, the 3 points with no AI Overview show the local rank instead.</p>
+        <div style={{ marginTop: "40px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))", gap: "16px" }}>
+          <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px 24px", background: "#111823" }}>
+            <p style={{ margin: "0", fontWeight: "800", fontSize: "36px", lineHeight: "1.15", letterSpacing: "-0.02em" }}>46 of 49</p>
+            <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.5", color: "#94A3B8" }}>points showed an AI Overview</p>
+          </div>
+          <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px 24px", background: "#111823" }}>
+            <p style={{ margin: "0", fontWeight: "800", fontSize: "36px", lineHeight: "1.15", letterSpacing: "-0.02em", color: "#C4A1FF" }}>42 of 49</p>
+            <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.5", color: "#94A3B8" }}>named Stuart’s Plumbing in it (first at 18)</p>
+          </div>
+          <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px 24px", background: "#111823" }}>
+            <p style={{ margin: "0", fontWeight: "800", fontSize: "36px", lineHeight: "1.15", letterSpacing: "-0.02em" }}>25 of 49</p>
+            <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.5", color: "#94A3B8" }}>showed one business instead of a map pack</p>
+          </div>
+        </div>
+        <p style={{ margin: "24px 0 0", fontSize: "13px", lineHeight: "1.6", color: "#94A3B8", maxWidth: "860px" }}>Stakeout scan of Nov 15, 2026: 7×7 grid, points 1 mile apart, Android phone in Chrome on home internet at each point.</p>
+        <a className="so-btn" href={HREF.sevenGrid} style={{ marginTop: "12px", display: "inline-flex", alignItems: "center", gap: "8px", minHeight: "44px", color: v.accent, fontWeight: "700", fontSize: "16px", lineHeight: "1.4" }}>Open this scan’s live report<Arrow size={16} /></a>
+      </div>
+    </section>
+  );
+}
 
-      {/* HOW IT WORKS + ISP */}
-      <section className="mx-auto max-w-7xl px-5 py-24 sm:px-8">
-        <h2 className="mk-display text-center text-4xl font-bold sm:text-5xl">How a scan runs</h2>
-        <ol className="mt-12 grid gap-5 md:grid-cols-3">
-          {STEPS.map((s) => (
-            <li key={s.n} className="rounded-2xl border border-[#1b2431] bg-[#0c1118] p-7">
-              <span className="mk-display flex h-10 w-10 items-center justify-center rounded-full bg-[#f5c451] text-lg font-bold text-[#1a1300]">{s.n}</span>
-              <h3 className="mt-5 text-xl font-semibold">{s.title}</h3>
-              <p className="mt-2 leading-relaxed text-[#9aa7b8]">{s.text}</p>
+/* section#ai-overviews */
+function SAiOverviews({ v }: { v: V }) {
+  return (
+    <section id="ai-overviews" style={{ background: "#0E141D", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)" }}>
+        <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12.5px", lineHeight: "1.5", letterSpacing: "0.12em", color: "#C4A1FF" }}>AI OVERVIEWS · THE NEW LOCAL PACK</p>
+        <h2 style={{ margin: "16px 0 0", fontWeight: "800", fontSize: "clamp(32px, 3.6vw, 52px)", lineHeight: "1.12", letterSpacing: "-0.025em", maxWidth: "960px" }}>This Is Where the Calls Start Now.</h2>
+        <p style={{ margin: "20px 0 0", fontSize: "18px", lineHeight: "1.65", color: "#CBD5E1", maxWidth: "800px" }}>Google’s AI Overview can name a business, print its phone number in the first sentence, and sit above the paid ads. A tracker that only reads the map pack reports none of it.</p>
+        <div style={{ marginTop: "44px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "28px" }}>
+          <figure style={{ margin: "0", display: "flex", flexDirection: "column", gap: "18px" }}>
+            <img src="/home/aio-lakeland-plumber.jpg" width={720} height={1320} loading="lazy" decoding="async" alt="An AI Overview for an emergency plumber in Lakeland that names a plumber and prints its phone number in the first sentence, above the sponsored ads and the map pack" style={{ display: "block", width: "100%", height: "520px", objectFit: "cover", objectPosition: "top", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.1)", background: "#FFFFFF" }} />
+            <figcaption>
+              <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.08em", color: v.accent }}>01 · TAP TO CALL</p>
+              <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "21px", lineHeight: "1.3", color: "#F1F5F9" }}>A phone number in the first sentence.</p>
+              <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Above the paid ads and above the map pack. The customer calls without scrolling. Lakeland, FL.</p>
+            </figcaption>
+          </figure>
+          <figure style={{ margin: "0", display: "flex", flexDirection: "column", gap: "18px" }}>
+            <img src="/home/aio-tampa-water-damage.jpg" width={720} height={1320} loading="lazy" decoding="async" alt="An AI Overview for water damage restoration in Tampa with its own map and a business card with Call, Directions and Website buttons, followed by Servpro and Yelp, with no map pack" style={{ display: "block", width: "100%", height: "520px", objectFit: "cover", objectPosition: "top", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.1)", background: "#FFFFFF" }} />
+            <figcaption>
+              <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.08em", color: v.accent }}>02 · ITS OWN MAP</p>
+              <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "21px", lineHeight: "1.3", color: "#F1F5F9" }}>The AI Overview has the map now.</p>
+              <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Business cards with Call, Directions and Website buttons inside the answer. Servpro and Yelp underneath. No 3-pack on the page. Tampa, FL.</p>
+            </figcaption>
+          </figure>
+          <figure style={{ margin: "0", display: "flex", flexDirection: "column", gap: "18px" }}>
+            <img src="/home/aio-tampa-plumber.jpg" width={514} height={852} loading="lazy" decoding="async" alt="An AI Overview for an emergency plumber in Tampa naming a plumber with its phone number, directly above the sponsored Local Services Ads" style={{ display: "block", width: "100%", height: "520px", objectFit: "cover", objectPosition: "top", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.1)", background: "#FFFFFF" }} />
+            <figcaption>
+              <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.08em", color: v.accent }}>03 · ABOVE THE ADS</p>
+              <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "21px", lineHeight: "1.3", color: "#F1F5F9" }}>Ahead of the paid listings.</p>
+              <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>The AI Overview names a plumber and its number directly above the Local Services Ads. Tampa, FL.</p>
+            </figcaption>
+          </figure>
+        </div>
+        <div style={{ marginTop: "56px" }}>
+          <p style={{ margin: "0", fontWeight: "700", fontSize: "24px", lineHeight: "1.3" }}>What Stakeout records about the AI Overview, at every point</p>
+          <ol style={{ listStyle: "none", padding: "0", margin: "24px 0 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: "16px" }}>
+            <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px", background: "#111823" }}>
+              <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", color: "#C4A1FF" }}>01</p>
+              <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "17px", lineHeight: "1.35" }}>Whether one appeared</p>
+              <p style={{ margin: "6px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Point by point, so you see where the AI answers first.</p>
             </li>
-          ))}
+            <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px", background: "#111823" }}>
+              <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", color: "#C4A1FF" }}>02</p>
+              <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "17px", lineHeight: "1.35" }}>Your place in its list</p>
+              <p style={{ margin: "6px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>First, named further down, or left out.</p>
+            </li>
+            <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px", background: "#111823" }}>
+              <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", color: "#C4A1FF" }}>03</p>
+              <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "17px", lineHeight: "1.35" }}>Position zero</p>
+              <p style={{ margin: "6px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Named in its opening sentence, ahead of any list.</p>
+            </li>
+            <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px", background: "#111823" }}>
+              <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", color: "#C4A1FF" }}>04</p>
+              <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "17px", lineHeight: "1.35" }}>Every site it cited</p>
+              <p style={{ margin: "6px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>And whether your own website is one of them.</p>
+            </li>
+            <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px", background: "#111823" }}>
+              <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", color: "#C4A1FF" }}>05</p>
+              <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "17px", lineHeight: "1.35" }}>Every business it named</p>
+              <p style={{ margin: "6px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>In order, right next to their local rank.</p>
+            </li>
+            <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "22px", background: "#111823" }}>
+              <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", color: "#C4A1FF" }}>06</p>
+              <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "17px", lineHeight: "1.35" }}>N/A, not 20+, when there’s no map pack</p>
+              <p style={{ margin: "6px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>A page where Google removed the 3-pack isn’t falsely counted as a rank loss.</p>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* section#how-it-works */
+function SHowItWorks({ v }: { v: V }) {
+  return (
+    <section id="how-it-works" style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)" }}>
+        <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12.5px", lineHeight: "1.5", letterSpacing: "0.12em", color: v.accent }}>HOW A SCAN RUNS</p>
+        <h2 style={{ margin: "16px 0 0", fontWeight: "800", fontSize: "clamp(32px, 3.6vw, 52px)", lineHeight: "1.12", letterSpacing: "-0.025em", maxWidth: "960px" }}>A Real Phone at Every Point. A Recording of Every Search.</h2>
+        <ol style={{ listStyle: "none", padding: "0", margin: "44px 0 0", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: "20px" }}>
+          <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "24px", background: "#111823" }}>
+            <p style={{ margin: "0", display: "inline-flex", width: "38px", height: "38px", alignItems: "center", justifyContent: "center", borderRadius: "10px", background: v.accentSoft, color: v.accent, fontFamily: "'JetBrains Mono', monospace", fontWeight: "700", lineHeight: "1" }}>1</p>
+            <p style={{ margin: "16px 0 0", fontWeight: "700", fontSize: "20px", lineHeight: "1.3" }}>Pick a grid</p>
+            <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Business, keyword, and a 3×3 to 9×9 grid with points 0.5 to 5 miles apart—or put points directly in the highest-income neighborhoods.</p>
+          </li>
+          <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "24px", background: "#111823" }}>
+            <p style={{ margin: "0", display: "inline-flex", width: "38px", height: "38px", alignItems: "center", justifyContent: "center", borderRadius: "10px", background: v.accentSoft, color: v.accent, fontFamily: "'JetBrains Mono', monospace", fontWeight: "700", lineHeight: "1" }}>2</p>
+            <p style={{ margin: "16px 0 0", fontWeight: "700", fontSize: "20px", lineHeight: "1.3" }}>A phone goes to every point</p>
+            <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Its GPS is set to that spot, searching on home internet in that point’s city or on a mobile carrier. Many points run in parallel.</p>
+          </li>
+          <li style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "16px", padding: "24px", background: "#111823" }}>
+            <p style={{ margin: "0", display: "inline-flex", width: "38px", height: "38px", alignItems: "center", justifyContent: "center", borderRadius: "10px", background: v.accentSoft, color: v.accent, fontFamily: "'JetBrains Mono', monospace", fontWeight: "700", lineHeight: "1" }}>3</p>
+            <p style={{ margin: "16px 0 0", fontWeight: "700", fontSize: "20px", lineHeight: "1.3" }}>Every search is recorded</p>
+            <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>The MP4 video, ranked results with ads set aside, the full Local Finder list, AI Overview text + citations, and a SHA-256 fingerprint.</p>
+          </li>
         </ol>
+        <p style={{ margin: "60px 0 0", fontWeight: "700", fontSize: "24px", lineHeight: "1.3" }}>One real point, three frames from its recording</p>
+        <p style={{ margin: "6px 0 0", fontSize: "15px", lineHeight: "1.5", color: "#94A3B8" }}>Mt. Juliet, TN · exterior painting contractor</p>
+        <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "28px" }}>
+          <figure style={{ margin: "0", display: "flex", flexDirection: "column", gap: "16px" }}><img src="/home/mt-juliet-location.jpg" width={540} height={560} loading="lazy" decoding="async" alt="Google’s own location line on the phone reading Mt. Juliet, TN" style={{ display: "block", width: "100%", height: "360px", objectFit: "cover", objectPosition: "top", borderRadius: "16px", border: "1px solid rgba(255, 255, 255, 0.1)" }} /><figcaption>
+  <p style={{ margin: "0", fontWeight: "700", fontSize: "17px", lineHeight: "1.35", color: "#F1F5F9" }}>Google placed the phone</p>
+  <p style={{ margin: "6px 0 0", fontSize: "14.5px", lineHeight: "1.6", color: "#94A3B8" }}>Google’s own location line reads “Mt. Juliet, TN”, set by the phone’s GPS.</p>
+</figcaption></figure>
+          <figure style={{ margin: "0", display: "flex", flexDirection: "column", gap: "16px" }}><img src="/home/mt-juliet-map-pack.jpg" width={540} height={620} loading="lazy" decoding="async" alt="The map pack as Google showed it on the phone: a sponsored card, then #1 Steve And Son Painting and #2 McIntyre Painting" style={{ display: "block", width: "100%", height: "360px", objectFit: "cover", objectPosition: "top", borderRadius: "16px", border: "1px solid rgba(255, 255, 255, 0.1)" }} /><figcaption>
+  <p style={{ margin: "0", fontWeight: "700", fontSize: "17px", lineHeight: "1.35", color: "#F1F5F9" }}>The ranks, as Google showed them</p>
+  <p style={{ margin: "6px 0 0", fontSize: "14.5px", lineHeight: "1.6", color: "#94A3B8" }}>Sponsored cards are set apart and never counted as a rank: #1 Steve And Son Painting, #2 McIntyre Painting.</p>
+</figcaption></figure>
+          <figure style={{ margin: "0", display: "flex", flexDirection: "column", gap: "16px" }}><img src="/home/mt-juliet-local-finder.jpg" width={540} height={620} loading="lazy" decoding="async" alt="The Local Finder list that opens behind the map pack" style={{ display: "block", width: "100%", height: "360px", objectFit: "cover", objectPosition: "top", borderRadius: "16px", border: "1px solid rgba(255, 255, 255, 0.1)" }} /><figcaption>
+  <p style={{ margin: "0", fontWeight: "700", fontSize: "17px", lineHeight: "1.35", color: "#F1F5F9" }}>The full list behind the map pack</p>
+  <p style={{ margin: "6px 0 0", fontSize: "14.5px", lineHeight: "1.6", color: "#94A3B8" }}>Tapping “More businesses” opens the Local Finder, so every ranked competitor is captured in order.</p>
+</figcaption></figure>
+        </div>
+        <div style={{ marginTop: "60px", overflowX: "auto", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "18px", background: "#111823" }}>
+          <table style={{ width: "100%", minWidth: "720px", borderCollapse: "collapse", fontSize: "15px", lineHeight: "1.55" }}>
+            <caption style={{ textAlign: "left", padding: "22px 24px 8px", fontWeight: "700", fontSize: "20px", lineHeight: "1.3", color: "#F1F5F9" }}>A colored dot is a claim. A recording is proof.</caption>
+            <thead>
+              <tr><th scope="col" style={{ textAlign: "left", padding: "14px 24px", width: "20%", color: "#94A3B8", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>Feature</th><th scope="col" style={{ textAlign: "left", padding: "14px 24px", width: "34%", color: "#94A3B8", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>Typical rank tracker</th><th scope="col" style={{ textAlign: "left", padding: "14px 24px", color: v.accent, fontWeight: "700", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>Stakeout Search</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "15px 24px", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Where it searches</th><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#94A3B8", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>A server or an API request</td><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>A real Android phone, in Chrome or the Google Maps app</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "15px 24px", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Location</th><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#94A3B8", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Coordinates passed into a query</td><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>The phone’s GPS set at each point, with Google’s own location line recorded</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "15px 24px", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Network</th><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#94A3B8", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Data-center or random IPs</td><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Home internet in the point’s city, or a mobile carrier, named on every receipt</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "15px 24px", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>AI Overview</th><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#94A3B8", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>A yes or no flag, if tracked at all</td><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>The full text, your place in it, and the sites it cited</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "15px 24px", fontWeight: "600", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Ads</th><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#94A3B8", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Often mixed into the ranks</td><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#F1F5F9", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>Listed separately and never counted as a rank</td></tr>
+              <tr><th scope="row" style={{ textAlign: "left", verticalAlign: "top", padding: "15px 24px", fontWeight: "600" }}>Proof</th><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#94A3B8" }}>A colored dot on a map</td><td style={{ verticalAlign: "top", padding: "15px 24px", color: "#F1F5F9" }}>A screen recording and SHA-256 fingerprint for every point</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
 
-        <div className="mt-8 grid items-center gap-8 rounded-2xl border border-[#2a3442] bg-gradient-to-br from-[#0f1520] to-[#0b0f15] p-8 md:grid-cols-[1fr_auto]">
-          <div>
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">Only on real connections · the honest version</p>
-            <h3 className="mk-display mt-2 text-3xl font-semibold">Pick the internet provider your customers use.</h3>
-            <p className="mt-3 max-w-2xl leading-relaxed text-[#9aa7b8]">
-              Run a grid on one ISP, or spread it across several. Each point keeps its ISP on every run, so this month compares like for like with last month, and every receipt names the provider it ran on.
-            </p>
-            <dl className="mt-5 grid max-w-2xl gap-4 sm:grid-cols-2">
-              <div className="rounded-xl border border-[#1b2431] bg-[#0b0f15] p-4">
-                <dt className="font-semibold text-[#eef2f7]">Residential</dt>
-                <dd className="mt-1 text-sm leading-relaxed text-[#9aa7b8]">Home internet inside the point’s own ZIP code, from a mix of the providers people there use. As local as a network gets.</dd>
-              </div>
-              <div className="rounded-xl border border-[#1b2431] bg-[#0b0f15] p-4">
-                <dt className="font-semibold text-[#eef2f7]">Mobile</dt>
-                <dd className="mt-1 text-sm leading-relaxed text-[#9aa7b8]">A carrier connection from the nearest major city in the same state. Carriers hand out addresses by region, not by street, and we say so.</dd>
-              </div>
-            </dl>
-            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[#9aa7b8]">
-              Either way, the phone’s GPS sits on the grid point itself, and Google’s own location line on the recording shows where it placed the search.
-            </p>
+/* section#report */
+function SReport({ v }: { v: V }) {
+  return (
+    <section id="report" style={{ background: "#0E141D", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)" }}>
+        <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12.5px", lineHeight: "1.5", letterSpacing: "0.12em", color: v.accent }}>THE REPORT YOUR CLIENT OPENS</p>
+        <h2 style={{ margin: "16px 0 0", fontWeight: "800", fontSize: "clamp(32px, 3.6vw, 52px)", lineHeight: "1.12", letterSpacing: "-0.025em", maxWidth: "960px" }}>Open Any Point. Watch What the Phone Saw.</h2>
+        <p style={{ margin: "20px 0 0", fontSize: "18px", lineHeight: "1.65", color: "#CBD5E1", maxWidth: "840px" }}>Send one link, no login. Your client clicks any point and watches the recording, the results, the AI Overview, and who is ahead, street by street. Every point saves the whole top 10—holding up to 250 competitor positions in one 5×5 scan.</p>
+        <div role="group" aria-label="Report views" style={{ marginTop: "40px", display: "flex", flexWrap: "wrap", gap: "10px" }}>
+          <button type="button" aria-pressed={v.r0.pressed} onClick={v.r0.pick} style={{ minHeight: "44px", padding: "10px 16px", borderRadius: "999px", borderWidth: "1px", borderStyle: "solid", fontFamily: "Inter, sans-serif", fontSize: "14px", lineHeight: "1.3", fontWeight: "600", cursor: "pointer", ...v.r0.style }}>Evidence for every point</button>
+          <button type="button" aria-pressed={v.r1.pressed} onClick={v.r1.pick} style={{ minHeight: "44px", padding: "10px 16px", borderRadius: "999px", borderWidth: "1px", borderStyle: "solid", fontFamily: "Inter, sans-serif", fontSize: "14px", lineHeight: "1.3", fontWeight: "600", cursor: "pointer", ...v.r1.style }}>Your place in the AI Overview, mapped</button>
+          <button type="button" aria-pressed={v.r2.pressed} onClick={v.r2.pick} style={{ minHeight: "44px", padding: "10px 16px", borderRadius: "999px", borderWidth: "1px", borderStyle: "solid", fontFamily: "Inter, sans-serif", fontSize: "14px", lineHeight: "1.3", fontWeight: "600", cursor: "pointer", ...v.r2.style }}>What the AI trusts</button>
+          <button type="button" aria-pressed={v.r3.pressed} onClick={v.r3.pick} style={{ minHeight: "44px", padding: "10px 16px", borderRadius: "999px", borderWidth: "1px", borderStyle: "solid", fontFamily: "Inter, sans-serif", fontSize: "14px", lineHeight: "1.3", fontWeight: "600", cursor: "pointer", ...v.r3.style }}>Who’s winning your best neighborhoods</button>
+        </div>
+        {v.r0.on && (
+          <>
+            <figure style={{ margin: "24px 0 0", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <img src="/home/report-point-inspector.jpg" width={1498} height={722} loading="lazy" decoding="async" alt="The point inspector of a real report: the phone recording, the 3-pack, the Local Finder and the AI Overview for one point, with paid advertisers kept apart and the neighborhood’s Census median income" style={{ display: "block", width: "100%", height: "auto", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.12)", boxShadow: "0 40px 90px -40px rgba(0, 0, 0, 0.9)" }} />
+              <figcaption style={{ fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}><strong style={{ color: "#F1F5F9" }}>Evidence for every point.</strong>{' '}Point R3·C5: the recording, #1 in the 3-pack, #1 in the Local Finder and #1 in the AI Overview, with paid advertisers kept apart and the neighborhood’s Census median household income ($109,563).</figcaption>
+            </figure>
+          </>
+        )}
+        {v.r1.on && (
+          <>
+            <figure style={{ margin: "24px 0 0", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <img src="/home/report-ai-overview-map.jpg" width={969} height={518} loading="lazy" decoding="async" alt="A real map of the business’s place in Google’s AI Overview at each point in Lakeland" style={{ display: "block", width: "100%", height: "auto", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.12)", boxShadow: "0 40px 90px -40px rgba(0, 0, 0, 0.9)" }} />
+              <figcaption style={{ fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}><strong style={{ color: "#F1F5F9" }}>Your place in the AI Overview, mapped.</strong>{' '}Purple pins mark your place in the AI Overview at every point, in 2D or 3D, with Combined, Pack rank, AI place and Ads above views.</figcaption>
+            </figure>
+          </>
+        )}
+        {v.r2.on && (
+          <>
+            <figure style={{ margin: "24px 0 0", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <img src="/home/report-ai-overview-coverage.jpg" width={1481} height={715} loading="lazy" decoding="async" alt="AI Overview coverage for a real scan: the websites the AI cited and the businesses it named" style={{ display: "block", width: "100%", height: "auto", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.12)", boxShadow: "0 40px 90px -40px rgba(0, 0, 0, 0.9)" }} />
+              <figcaption style={{ fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}><strong style={{ color: "#F1F5F9" }}>What the AI trusts.</strong>{' '}An AI Overview at 25 of 25 points, Stuart’s Plumbing named at 21, every domain it cited, and every business it named.</figcaption>
+            </figure>
+          </>
+        )}
+        {v.r3.on && (
+          <>
+            <figure style={{ margin: "24px 0 0", display: "flex", flexDirection: "column", gap: "16px" }}>
+              <img src="/home/report-leaderboard.jpg" width={1488} height={728} loading="lazy" decoding="async" alt="Competitor leaderboard of a real scan: top-3 share, buying-power share, average rank, found share, rank spread and AI mentions for each business" style={{ display: "block", width: "100%", height: "auto", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.12)", boxShadow: "0 40px 90px -40px rgba(0, 0, 0, 0.9)" }} />
+              <figcaption style={{ fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}><strong style={{ color: "#F1F5F9" }}>Who’s winning your best neighborhoods.</strong>{' '}Top-3 share, buying-power share, average rank, how often each was found, rank spread, and how often the AI named them.</figcaption>
+            </figure>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* section#buying-power */
+function SBuyingPower({ v }: { v: V }) {
+  return (
+    <section id="buying-power" style={{ borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)", display: "flex", flexWrap: "wrap", gap: "48px", alignItems: "center" }}>
+        <div style={{ flex: "1 1 440px", minWidth: "0" }}>
+          <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12.5px", lineHeight: "1.5", letterSpacing: "0.12em", color: v.accent }}>U.S. CENSUS BUYING POWER</p>
+          <h2 style={{ margin: "16px 0 0", fontWeight: "800", fontSize: "clamp(32px, 3.6vw, 52px)", lineHeight: "1.12", letterSpacing: "-0.025em" }}>Rank Where the Money Is, Not Just Where the Map Is.</h2>
+          <p style={{ margin: "20px 0 0", fontSize: "17px", lineHeight: "1.7", color: "#CBD5E1" }}>A #1 rank in a neighborhood of renters isn’t worth a #1 among $800K homeowners. Every Stakeout report weighs rank by owner-occupied homes and median household income (U.S. Census ACS) at each point—proving when being visible to 31% of searches actually captures 46% of the market’s buying power. Or skip the square grid completely and drop pins strictly in the highest-income neighborhoods.</p>
+          <a className="so-btn" href={HREF.report} style={{ marginTop: "18px", display: "inline-flex", alignItems: "center", gap: "8px", minHeight: "44px", color: v.accent, fontWeight: "700", fontSize: "16px", lineHeight: "1.4" }}>Open a live report, no account needed<Arrow size={16} /></a>
+        </div>
+        <figure style={{ flex: "1.2 1 520px", minWidth: "0", margin: "0" }}>
+          <img src="/media/real-report-3d.jpg" width={842} height={422} loading="lazy" decoding="async" alt="The 3D buying-power view of a real report near Mt. Juliet, TN: a column over each grid point, taller where more of the grid's buying power sits, colored by the business's rank there" style={{ display: "block", width: "100%", height: "auto", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.12)", boxShadow: "0 40px 90px -40px rgba(0, 0, 0, 0.9)" }} />
+          <figcaption style={{ marginTop: "12px", fontSize: "13.5px", lineHeight: "1.55", color: "#94A3B8" }}>3D buying-power view of a real report, Mt. Juliet, TN. Column height: each point’s share of the grid’s buying power. Color: the rank there.</figcaption>
+        </figure>
+      </div>
+    </section>
+  );
+}
+
+/* section#google-listings */
+function SGoogleListings({ v }: { v: V }) {
+  return (
+    <section id="google-listings" style={{ background: "#0E141D", borderBottom: "1px solid rgba(255, 255, 255, 0.06)" }}>
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)" }}>
+        <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12.5px", lineHeight: "1.5", letterSpacing: "0.12em", color: v.accent }}>BEYOND THE GRID · FULL EXECUTION &amp; DEFENSE SUITE</p>
+        <h2 style={{ margin: "16px 0 0", fontWeight: "800", fontSize: "clamp(32px, 3.6vw, 52px)", lineHeight: "1.12", letterSpacing: "-0.025em", maxWidth: "1000px" }}>Spot the Gap on the Grid. Fix the Listing in One Click. Then Guard It.</h2>
+        <p style={{ margin: "20px 0 0", fontSize: "18px", lineHeight: "1.65", color: "#CBD5E1", maxWidth: "860px" }}>Why pay for four disconnected SEO, social, and monitoring tools? Connect Google Business Profile, Search Console and Analytics right beside your scans (Facebook and LinkedIn are coming soon)—turning rank insights into live profile updates, scheduled posts, and a daily check for hijacked listings.</p>
+        <div style={{ marginTop: "44px", display: "flex", flexWrap: "wrap", gap: "24px", alignItems: "flex-start" }}>
+          <div role="group" aria-label="Execution and defense suite" style={{ flex: "1 1 300px", minWidth: "0", display: "grid", gap: "10px" }}>
+            <button type="button" aria-pressed={v.f0.pressed} onClick={v.f0.pick} style={{ width: "100%", minHeight: "60px", display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderRadius: "14px", borderWidth: "1px", borderStyle: "solid", fontFamily: "Inter, sans-serif", fontSize: "15.5px", lineHeight: "1.35", fontWeight: "600", textAlign: "left", cursor: "pointer", ...v.f0.style }}><span style={{ flex: "none", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", color: v.accent }}>01</span><span>1-Click Rival Gap Closer</span></button>
+            <button type="button" aria-pressed={v.f1.pressed} onClick={v.f1.pick} style={{ width: "100%", minHeight: "60px", display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderRadius: "14px", borderWidth: "1px", borderStyle: "solid", fontFamily: "Inter, sans-serif", fontSize: "15.5px", lineHeight: "1.35", fontWeight: "600", textAlign: "left", cursor: "pointer", ...v.f1.style }}><span style={{ flex: "none", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", color: v.accent }}>02</span><span>Suspension-Safe GBP API Editor</span></button>
+            <button type="button" aria-pressed={v.f2.pressed} onClick={v.f2.pick} style={{ width: "100%", minHeight: "60px", display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderRadius: "14px", borderWidth: "1px", borderStyle: "solid", fontFamily: "Inter, sans-serif", fontSize: "15.5px", lineHeight: "1.35", fontWeight: "600", textAlign: "left", cursor: "pointer", ...v.f2.style }}><span style={{ flex: "none", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", color: v.accent }}>03</span><span>1-Click Google Post Publisher</span></button>
+            <button type="button" aria-pressed={v.f3.pressed} onClick={v.f3.pick} style={{ width: "100%", minHeight: "60px", display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderRadius: "14px", borderWidth: "1px", borderStyle: "solid", fontFamily: "Inter, sans-serif", fontSize: "15.5px", lineHeight: "1.35", fontWeight: "600", textAlign: "left", cursor: "pointer", ...v.f3.style }}><span style={{ flex: "none", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", color: v.accent }}>04</span><span>Daily Edit Watchdog + Instant Review Alerts</span></button>
+            <button type="button" aria-pressed={v.f4.pressed} onClick={v.f4.pick} style={{ width: "100%", minHeight: "60px", display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderRadius: "14px", borderWidth: "1px", borderStyle: "solid", fontFamily: "Inter, sans-serif", fontSize: "15.5px", lineHeight: "1.35", fontWeight: "600", textAlign: "left", cursor: "pointer", ...v.f4.style }}><span style={{ flex: "none", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", color: v.accent }}>05</span><span>GBP Insights + Search Console + GA4 + AI Agents</span></button>
           </div>
-          <div className="flex flex-wrap gap-2 md:max-w-[260px] md:justify-end" aria-label="Example ISPs in one market">
-            {['Comcast Cable', 'TDS Telecom', 'Any ISP', 'Mix of ISPs'].map((t, i) => (
-              <span key={t} className={'rounded-full border px-4 py-2 text-sm ' + (i < 2 ? 'border-[#f5c451]/50 bg-[#f5c451]/10 text-[#ffdf8e]' : 'border-[#2a3442] text-[#c9d3df]')}>{t}</span>
-            ))}
+          <div style={{ flex: "999 1 600px", minWidth: "0" }}>
+            {v.f0.on && (
+              <>
+                <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "20px", background: "#111823", padding: "clamp(20px, 3vw, 32px)" }}>
+                  <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.1em", color: v.accent }}>01 · RIVAL GAP CLOSER</p>
+                  <h3 style={{ margin: "10px 0 0", fontWeight: "800", fontSize: "clamp(24px, 2.4vw, 32px)", lineHeight: "1.2", letterSpacing: "-0.015em" }}>Steal What Top-3 Rivals Have on Their Listing—In One Click.</h3>
+                  <p style={{ margin: "14px 0 0", fontSize: "16px", lineHeight: "1.7", color: "#CBD5E1" }}>Stakeout reads the top-ranking competitors from your scan and flags exactly what your listing is missing: 46 services missing a description, 22 unset attributes, missing booking links, or upcoming Holiday hours missing (Thanksgiving in 6d). Simply tick the missing rival services (Car Accident Lawyer · 1 of 3 top rivals) or attributes that apply and push them live via the GBP API.</p>
+                  <div style={{ marginTop: "18px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    <span style={{ fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#FBBF24", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.5)", borderRadius: "999px", padding: "5px 12px" }}>Holiday hours missing (Thanksgiving in 6d)</span>
+                    <span style={{ fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#FBBF24", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.5)", borderRadius: "999px", padding: "5px 12px" }}>46 services missing a description</span>
+                    <span style={{ fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#FBBF24", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.5)", borderRadius: "999px", padding: "5px 12px" }}>22 unset attributes</span>
+                  </div>
+                </div>
+              </>
+            )}
+            {v.f1.on && (
+              <>
+                <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "20px", background: "#111823", padding: "clamp(20px, 3vw, 32px)" }}>
+                  <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.1em", color: v.accent }}>02 · SUSPENSION-SAFE EDITOR</p>
+                  <h3 style={{ margin: "10px 0 0", fontWeight: "800", fontSize: "clamp(24px, 2.4vw, 32px)", lineHeight: "1.2", letterSpacing: "-0.015em" }}>Update Listings Fast—Without Triggering Video Verification.</h3>
+                  <p style={{ margin: "14px 0 0", fontSize: "16px", lineHeight: "1.7", color: "#CBD5E1" }}>Built-in suspension guardrails separate green Safe Everyday Edits (descriptions, 1-click UTM tracking tags, categories, hours, holiday chips, social links, attributes, and photos—what Google draws on for its AI answers) from Identity: verification risk fields (name, primary category, primary phone, address). High-risk identity edits stay locked behind an explicit safety switch, enforce a 1-field-per-7-days cooldown, and warn operators on high-scrutiny verticals like Personal Injury Attorney before saving.</p>
+                  <div style={{ marginTop: "18px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#34D399", background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.45)", borderRadius: "999px", padding: "5px 12px" }}><span aria-hidden="true" style={{ flex: "none", display: "inline-block", width: "7px", height: "7px", borderRadius: "999px", background: "#10B981" }}></span>Safe everyday edits</span>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#FBBF24", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.5)", borderRadius: "999px", padding: "5px 12px" }}><span aria-hidden="true" style={{ flex: "none", display: "inline-block", width: "7px", height: "7px", borderRadius: "999px", background: "#F59E0B" }}></span>Identity: verification risk · locked</span>
+                  </div>
+                </div>
+              </>
+            )}
+            {v.f2.on && (
+              <>
+                <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "20px", background: "#111823", padding: "clamp(20px, 3vw, 32px)" }}>
+                  <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.1em", color: v.accent }}>03 · ONE-CLICK PUBLISHER</p>
+                  <h3 style={{ margin: "10px 0 0", fontWeight: "800", fontSize: "clamp(24px, 2.4vw, 32px)", lineHeight: "1.2", letterSpacing: "-0.015em" }}>Write Once. Publish to Google in One Click.</h3>
+                  <p style={{ margin: "14px 0 0", fontSize: "16px", lineHeight: "1.7", color: "#CBD5E1" }}>Compose an update once, preview it, and publish or schedule it to your Google Business Profile in a single click. Facebook and LinkedIn publishing is coming soon. Manage 86+ client locations on one master monthly calendar—complete with a “Nothing coming up” radar that flags any client with an empty week in the next four weeks alongside a 1-click Plan its posts button.</p>
+                  <div style={{ marginTop: "18px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    <span style={{ fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#34D399", background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.45)", borderRadius: "999px", padding: "5px 12px" }}>Google</span>
+                    <span style={{ fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#34D399", background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.45)", borderRadius: "999px", padding: "5px 12px" }}>Facebook · soon</span>
+                    <span style={{ fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#34D399", background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.45)", borderRadius: "999px", padding: "5px 12px" }}>LinkedIn · soon</span>
+                    <span style={{ fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#FBBF24", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.5)", borderRadius: "999px", padding: "5px 12px" }}>Nothing coming up: 1-click Plan its posts</span>
+                  </div>
+                </div>
+              </>
+            )}
+            {v.f3.on && (
+              <>
+                <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "20px", background: "#111823", padding: "clamp(20px, 3vw, 32px)" }}>
+                  <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.1em", color: v.accent }}>04 · WATCHDOG &amp; REVIEW ALERTS</p>
+                  <h3 style={{ margin: "10px 0 0", fontWeight: "800", fontSize: "clamp(24px, 2.4vw, 32px)", lineHeight: "1.2", letterSpacing: "-0.015em" }}>If Someone Edits Your Listing, You Know by Morning.</h3>
+                  <p style={{ margin: "14px 0 0", fontSize: "16px", lineHeight: "1.7", color: "#CBD5E1" }}>Never lose rankings silently to a malicious “Suggest an edit” or an unannounced Google rewrite. Every morning, the Watchdog reads each connected listing and compares its name, categories, phone numbers, website, hours, holiday hours, description, address and open status with how you left them—anything you didn’t make shows up under Changes we did not make. Instant Review Alerts email your team within the hour whenever a review of 2 stars or fewer lands—with direct 1-click in-app replies.</p>
+                  <div style={{ marginTop: "18px", display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    <span style={{ fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#FBBF24", background: "rgba(245, 158, 11, 0.08)", border: "1px solid rgba(245, 158, 11, 0.5)", borderRadius: "999px", padding: "5px 12px" }}>Changes we did not make</span>
+                    <span style={{ fontSize: "13px", lineHeight: "1.4", fontWeight: "600", color: "#F87171", background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.45)", borderRadius: "999px", padding: "5px 12px" }}>2 stars or fewer: emailed within the hour</span>
+                  </div>
+                </div>
+              </>
+            )}
+            {v.f4.on && (
+              <>
+                <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "20px", background: "#111823", padding: "clamp(20px, 3vw, 32px)" }}>
+                  <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.1em", color: v.accent }}>05 · INSIGHTS, GSC, GA4 &amp; AI AGENTS</p>
+                  <h3 style={{ margin: "10px 0 0", fontWeight: "800", fontSize: "clamp(24px, 2.4vw, 32px)", lineHeight: "1.2", letterSpacing: "-0.015em" }}>Rank Is the Cause. Calls Are the Proof.</h3>
+                  <p style={{ margin: "14px 0 0", fontSize: "16px", lineHeight: "1.7", color: "#CBD5E1" }}>Track GBP calls, direction requests, website clicks, Search Console queries/indexation, and GA4 visits sent by AI assistants on one screen—plus programmatic access for your own internal AI agents included.</p>
+                </div>
+              </>
+            )}
           </div>
         </div>
-      </section>
-
-      <ValueStack />
-
-      {/* CALLS TO ACTION */}
-      <Pricing />
-
-      <section className="mx-auto max-w-7xl px-5 pb-24 sm:px-8">
-        <div className="grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-          <div className="relative overflow-hidden rounded-3xl border border-[#2a3442] bg-[#0c1118] p-10">
-            <div className="mk-glow pointer-events-none absolute inset-0" aria-hidden="true" />
-            <div className="relative">
-              <h2 className="mk-display text-4xl font-bold leading-tight sm:text-5xl">Stop defending the dashboard. <span className="mk-gold-text">Start showing proof.</span></h2>
-              <p className="mt-4 max-w-xl text-lg text-[#9aa7b8]">Explore the live demo map, no account needed, then run your first real grid.</p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <Link href="/demo" className="mk-btn-primary rounded-xl px-6 py-3.5 font-semibold">See the live demo map →</Link>
-                <JoinLink className="rounded-xl border border-[#2a3442] px-6 py-3.5 font-semibold hover:border-[#3a4658]" />
-              </div>
+        <div style={{ marginTop: "24px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: "16px" }}>
+          <div style={{ border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: "18px", padding: "24px", background: "#111823" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 16px" }}>
+              <p style={{ margin: "0", fontWeight: "700", fontSize: "19px", lineHeight: "1.3" }}>Your Website</p>
+              <p style={{ margin: "0", fontSize: "13px", lineHeight: "1.5", fontWeight: "700", color: "#34D399", background: "rgba(16, 185, 129, 0.12)", border: "1px solid rgba(16, 185, 129, 0.35)", padding: "3px 10px", borderRadius: "999px" }}>Free</p>
             </div>
+            <p style={{ margin: "12px 0 0", fontSize: "15px", lineHeight: "1.65", color: "#CBD5E1" }}>Connect Search Console &amp; Google Analytics (clicks, queries, page indexation, real leads/calls, and AI assistant referral traffic) free with any account.</p>
           </div>
-          <div className="rounded-3xl border border-[#2a3442] bg-gradient-to-b from-[#16130a] to-[#0c1118] p-10">
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">For agencies</p>
-            <h3 className="mk-display mt-2 text-3xl font-semibold">Want it done for you?</h3>
-            <p className="mt-3 leading-relaxed text-[#9aa7b8]">Bring the account where you&apos;ve tried everything. We find the visibility gap, do the recovery work and deliver white-label proof.</p>
-            <Link href="/agency" className="mt-7 inline-block rounded-xl border border-[#f5c451]/50 px-6 py-3.5 font-semibold text-[#ffdf8e] hover:bg-[#f5c451]/10">Agency Rescue Sprints →</Link>
+          <div style={{ border: `1px solid ${v.accentLine}`, borderRadius: "18px", padding: "24px", background: "#111823" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "8px 16px" }}>
+              <p style={{ margin: "0", fontWeight: "700", fontSize: "19px", lineHeight: "1.3" }}>Command</p>
+              <p style={{ margin: "0", fontSize: "13px", lineHeight: "1.5", fontWeight: "700", color: v.accent, background: v.accentSoft, border: `1px solid ${v.accentLine}`, padding: "3px 10px", borderRadius: "999px" }}>from {from('COMMAND')} / client / mo</p>
+            </div>
+            <p style={{ margin: "12px 0 0", fontSize: "15px", lineHeight: "1.65", color: "#CBD5E1" }}>Weekly real-phone tracking plus Full GBP Insights, Rival Gap Closer, Suspension-Safe GBP API Editor, 1-Click Google Post Publisher, Multi-Listing Calendar, Daily Edit Watchdog, &lt;1-Hour Review Alerts and AI agents ({tier('COMMAND', 1)} a client from 10 clients, {tier('COMMAND', 2)} from 25, {tier('COMMAND', 3)} from 100). Dominator, from {from('DOMINATOR')}, adds more keywords and bigger grids.</p>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
+  );
+}
 
-      <SiteFooter note="The hero recording and the receipt beside it are real (near Lakeland, FL, 17 Nov 2026), as are the proof frames and the 3D report (Mt. Juliet, TN, 9 Nov 2026). The grids, the territory map, the interactive receipt printer and the AI answer examples are illustrative." />
+/* section#start */
+function SStart({ v }: { v: V }) {
+  return (
+    <section id="start">
+      <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)" }}>
+        <div style={{ border: `1px solid ${v.accentLine}`, borderRadius: "26px", background: "#111823", padding: "clamp(32px, 5vw, 64px)", textAlign: "center" }}>
+          <h2 style={{ margin: "0", fontWeight: "800", fontSize: "clamp(34px, 4.2vw, 60px)", lineHeight: "1.1", letterSpacing: "-0.025em" }}>Stop Defending the Dashboard.{' '}<span style={{ color: v.accent }}>Show Them the Search.</span></h2>
+          <p style={{ margin: "20px auto 0", fontSize: "18px", lineHeight: "1.65", color: "#CBD5E1", maxWidth: "640px" }}>Open a real report with no account—then run your first 5×5 grid for $5.</p>
+          <div style={{ marginTop: "30px", display: "flex", flexWrap: "wrap", gap: "12px", justifyContent: "center" }}>
+            <a className="so-btn" href={HREF.firstAudit} style={{ display: "inline-flex", alignItems: "center", gap: "10px", minHeight: "50px", boxSizing: "border-box", background: v.accent, color: "#0B1017", fontWeight: "700", fontSize: "16px", lineHeight: "1.3", padding: "14px 24px", borderRadius: "12px" }}>Run your first scan for $5<Arrow size={18} /></a>
+            <a className="so-btn" href={HREF.report} style={{ display: "inline-flex", alignItems: "center", minHeight: "50px", boxSizing: "border-box", background: "rgba(255, 255, 255, 0.06)", border: "1px solid rgba(255, 255, 255, 0.14)", color: "#F1F5F9", fontWeight: "600", fontSize: "16px", lineHeight: "1.3", padding: "14px 22px", borderRadius: "12px" }}>Explore the live demo</a>
+          </div>
+          <p style={{ margin: "24px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Want it done for you?{' '}<a href={HREF.agency} style={{ color: v.accent, fontWeight: "700" }}>See Agency Rescue Sprints →</a></p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function Body({ v }: { v: V }) {
+  return (
+    <>
+      <OfferBanner live={v.live} href="#pricing" />
+      <SiteNav page="home" onWatchdog={v.goWatch} />
+      <STop v={v} />
+      <SHonestMath v={v} />
+      <SRealVsReported v={v} />
+      <SAiOverviews v={v} />
+      <SHowItWorks v={v} />
+      <SReport v={v} />
+      <SBuyingPower v={v} />
+      <SGoogleListings v={v} />
+      <HomePricing />
+      <Faq id="faq" items={HOME_FAQ} wide />
+      <SStart v={v} />
+      <SiteFoot note={NOTE} />
+    </>
+  );
+}
+
+
+
+export default function Landing({ live }: { live: boolean }) {
+  const v = useHome(live);
+  return (
+    <div className="so">
+      <Body v={v} />
+      <RecordingDialog open={v.watching} onClose={v.stopWatching} />
     </div>
   );
 }

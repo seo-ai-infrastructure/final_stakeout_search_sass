@@ -32,7 +32,7 @@ export async function allow(u: Account, profile: string, location: string | null
   const account = await db.gbpAccount.findFirst({ where: { userId: u.id, profileId: profile }, select: { id: true } });
   // The same answer whether the account is someone else's or does not exist.
   if (!account) throw new InputError('Unknown profile.', 404);
-  // Through an AI agent, even reading a listing takes a paid plan (agent access comes with Manage).
+  // Through an AI agent, even reading a listing takes a paid plan (agent access comes with Command and Dominator).
   if (isAgent() && (location || need !== 'free')) need = 'agent';
   if (need === 'free') return;
   if (!location) throw new InputError('Pick a listing first.');
@@ -96,7 +96,7 @@ export async function agentOpen(u: Account): Promise<boolean> {
   if (u.role === 'ADMIN') return true;
   return (await hasAddon(u.id)) || (await paidLocations(u.id)).size > 0;
 }
-export const AGENT_CLOSED = 'AI agent access comes with any listing on the Manage plan, or as an add-on for an account without one. See the Connected Accounts page, under AI agents.';
+export const AGENT_CLOSED = 'AI agent access comes with any listing on a Command or Dominator seat, or as an add-on for an account without one. See the Connected Accounts page, under AI agents.';
 
 /**
  * For reads that are not about one listing (Search Console, Analytics): through an AI agent they

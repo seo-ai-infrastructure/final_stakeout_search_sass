@@ -73,7 +73,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
           <li>Start scans, within the monthly credit limit you set for agents</li>
         </ul>
         <p className="mt-3 text-xs text-slate-500">It can never change a listing’s name, categories, phone, website or address, and it never sees your password. You can disconnect it at any time on the Connected Accounts page, under AI agents.</p>
-        {!open && <p className="mt-3 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">Agent access is not switched on for this account yet, so the app will connect but be refused until it is. It comes with any listing on the Manage plan.</p>}
+        {!open && <p className="mt-3 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">Agent access is not switched on for this account yet, so the app will connect but be refused until it is. It comes with any listing on a Command or Dominator seat.</p>}
 
         <form method="post" action="/api/oauth/decision" className="mt-5 flex flex-wrap gap-3">
           {Object.entries(fields).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}

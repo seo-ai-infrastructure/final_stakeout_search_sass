@@ -15,6 +15,7 @@ import { RERUN_MARKER, rerunCharge, rerunIsp } from './rerun';
 import { nudgeAlerts, pushAlert, scanAlert } from './alerts';
 import { creditsPerPoint, getSettings } from './settings';
 import { pointPrice, scanCost } from './network';
+import { speedFactor, type Speed } from './speed';
 
 export async function createScan(
   userId: string,
@@ -22,7 +23,17 @@ export async function createScan(
   key: string,
   lead?: { email: string; holdForEmail?: boolean },
   templatePins?: ReturnType<typeof buildGrid>,
-  opts?: { free?: boolean; /** A repeating scan's own schedule (see fixedCron), in place of the usual hour. */ cron?: string },
+  opts?: {
+    free?: boolean;
+    /** A repeating scan's own schedule (see fixedCron and schedulePlan), in place of the usual hour. */
+    cron?: string;
+    /** Scan Now (first in line, 2 points a grid point) or scheduled (1 point, behind Scan Now). Scan Now when not given. */
+    speed?: Speed;
+    /** A scheduled scan waits until then. */
+    runAt?: Date;
+    /** A first $5 audit: when its free re-run is due. */
+    freeRescanAt?: Date;
+  },
 ) {
   const prior = await db.gridScan.findUnique({ where: { requestKey: key } });
   if (prior) {
@@ -39,7 +50,11 @@ export async function createScan(
     middle = pins.find((p) => p.rowIdx === mid && p.colIdx === mid) ?? pins[Math.floor((pins.length - 1) / 2)];
   // One credit per grid point, or the mobile-data price per point on a mobile scan (an admin
   // setting, 2 by default). AI Overview tracking is part of every Chrome scan, not an add-on.
-  const cost = lead || opts?.free ? 0 : s.network === 'residential' ? pins.length : scanCost(s.network, pins, creditsPerPoint('mobile', await getSettings()));
+  // Scan Now costs twice the scheduled price: it jumps ahead of every scheduled scan.
+  const speed: Speed = opts?.speed === 'scheduled' ? 'scheduled' : 'now';
+  const base = s.network === 'residential' ? pins.length : scanCost(s.network, pins, creditsPerPoint('mobile', await getSettings()));
+  const cost = lead || opts?.free ? 0 : base * speedFactor(speed);
+  const waits = Boolean(opts?.runAt && opts.runAt.getTime() > Date.now() + 60000);
   try {
     return await db.$transaction(
       async (tx) => {
@@ -51,7 +66,10 @@ export async function createScan(
             campaignId: campaignId(userId, s),
             leadEmail: lead?.email,
             // Teasers can be held until the lead confirms the inbox (released by /api/auth/verify).
-            ...(lead?.holdForEmail ? { status: 'AWAITING_EMAIL' } : {}),
+            ...(lead?.holdForEmail ? { status: 'AWAITING_EMAIL' } : waits ? { status: 'SCHEDULED' } : {}),
+            speed,
+            runAt: opts?.runAt ?? null,
+            freeRescanAt: opts?.freeRescanAt ?? null,
             shareToken: lead ? randomBytes(24).toString('hex') : null,
             scheduleCron: (s.scheduleType !== 'once' && opts?.cron) || scheduleCron(s.scheduleType),
             totalPins: pins.length,
@@ -74,7 +92,7 @@ export async function createScan(
             data: { creditBalance: { decrement: cost } },
           });
           if (debit.count !== 1)
-            throw new InputError('Insufficient credits for this scan.', 402);
+            throw new InputError('Not enough points for this scan.', 402);
           await tx.creditLedger.create({
             data: {
               userId,
@@ -238,12 +256,14 @@ export async function cloneScheduledRun(
   if (template.pins.length !== template.totalPins)
     throw new Error('Template pin count mismatch.');
   try {
+    // Each run of a repeating scan is a scheduled run: 1 point a grid point, behind Scan Now.
     return await createScan(
       template.userId,
       { ...parseSpec(template), scheduleType: 'once' },
       'cron:' + template.id + ':' + occurrenceId,
       undefined,
       template.pins,
+      { speed: 'scheduled' },
     );
   } catch (e) {
     if (!(e instanceof InputError) || e.status !== 402) throw e;
@@ -253,6 +273,30 @@ export async function cloneScheduledRun(
     });
     return null;
   }
+}
+
+/**
+ * The free re-runs of first $5 audits that are due: each runs the audit's grid again, free, as a
+ * scheduled scan, once (its request key makes a second start impossible). Returns how many started.
+ */
+export async function startFreeRescans(now = new Date()) {
+  const due = await db.gridScan.findMany({
+    where: { freeRescanAt: { lte: now } },
+    include: { pins: { select: { rowIdx: true, colIdx: true, lat: true, lng: true, zip: true, city: true, stateCode: true }, orderBy: [{ rowIdx: 'asc' }, { colIdx: 'asc' }] } },
+    take: 20,
+  });
+  let started = 0;
+  for (const scan of due) {
+    try {
+      await createScan(scan.userId, { ...parseSpec(scan), scheduleType: 'once' }, 'rescan7:' + scan.id, undefined, scan.pins, { free: true, speed: 'scheduled' });
+      started++;
+    } catch (e) {
+      console.warn('[free-rescan] could not start the re-run of', scan.id, (e as Error).message);
+    }
+    // Started or impossible (the grid can no longer be read): either way it is not tried again.
+    await db.gridScan.update({ where: { id: scan.id }, data: { freeRescanAt: null } });
+  }
+  return started;
 }
 
 /**
@@ -278,7 +322,7 @@ export async function requestRerun(scanId: string, userId: string, pinIds?: stri
     async (tx) => {
       const scan = await tx.gridScan.findFirst({
         where: { id: scanId, userId },
-        select: { id: true, creditsCharged: true, totalPins: true, ispMode: true, isps: true, network: true },
+        select: { id: true, creditsCharged: true, totalPins: true, ispMode: true, isps: true, network: true, speed: true },
       });
       if (!scan) throw new InputError('Scan unavailable.', 404);
       const points = await tx.gridPin.findMany({

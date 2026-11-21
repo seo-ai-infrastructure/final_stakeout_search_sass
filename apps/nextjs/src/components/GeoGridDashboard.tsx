@@ -662,7 +662,7 @@ export function GeoGridDashboard({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-4 py-3">
           <p className="min-w-0 flex-1 text-sm text-slate-200">
             <span className="font-semibold text-slate-50">{scan.bridge.business} {scan.bridge.why === 'rank' ? 'missed the top 3' : 'was left out of the AI Overview'} on {scan.bridge.weak} of {scan.bridge.total} points.</span>{' '}
-            <span className="text-slate-400">Put its Google listing on the Manage plan ({scan.bridge.monthly} a month) for Business Profile insights, the gaps against the competitors above it, and scheduled posts.</span>
+            <span className="text-slate-400">Put its Google listing on a Command seat ({scan.bridge.monthly} a month) for Business Profile insights, the gaps against the competitors above it, and scheduled posts.</span>
           </p>
           <a href="/profiles?tab=listing" className="whitespace-nowrap rounded-lg bg-emerald-500 px-3.5 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-400">Manage this listing · {scan.bridge.monthly}/mo</a>
         </div>
@@ -730,14 +730,14 @@ export function GeoGridDashboard({
         <p>
           {scan.status} · {scan.completedPins}/{scan.totalPins} completed · {scan.failedPins} failed
         </p>
-        {!shared && (scan.status === 'RUNNING' || scan.status === 'QUEUED') && (
+        {!shared && (scan.status === 'RUNNING' || scan.status === 'QUEUED' || scan.status === 'SCHEDULED') && (
           <button
             type="button"
             disabled={stopBusy}
             onClick={stop}
             className="rounded-lg border border-rose-500/60 px-3 py-1 font-semibold text-rose-300 hover:bg-rose-500/10 disabled:opacity-50"
           >
-            {stopBusy ? 'Stopping…' : 'Stop scan'}
+            {stopBusy ? 'Stopping…' : scan.status === 'SCHEDULED' ? 'Cancel scheduled scan' : 'Stop scan'}
           </button>
         )}
         {!shared && scan.failedPins > 0 && (

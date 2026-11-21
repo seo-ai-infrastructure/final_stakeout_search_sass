@@ -1,361 +1,66 @@
-import Link from 'next/link';
-import { OFFERED_GRID_SIZES } from '@stakeout/core/gridSizes';
-import { SiteHeader, SiteFooter, SIGNUPS_OPEN } from './SiteChrome';
-import { PLANS as LISTING_PLANS, AGENT_ADDON, dollars } from '@stakeout/core/gbpPlans';
-import { ONBOARDING, PACKS, PLANS, WELCOME, PREPAID, PROMO, WHITE_LABEL, perCredit, promoLive, usd } from '@/lib/pricing';
-import './marketing.css';
+'use client';
+import { WELCOME, WHITE_LABEL, usd } from '@/lib/pricing';
+import { ACCENT, Arrow, Check, Faq, HREF, OfferBanner, SiteFoot, SiteNav, TONE } from './SiteKit';
+import { AuditCard, CalculatorSection, CompareSection, Eyebrow, PRICING_FAQ, ProspectsSection, SeatsSection, SpeedsSection } from './PriceBlocks';
+import './site.css';
 
-const BRANDING = 'mailto:sass@stakeoutsearch.com?subject=White%20label%20setup';
-const ACCESS = 'mailto:sass@stakeoutsearch.com?subject=Access%20to%20Stakeout%20Search';
-
-const INCLUDED = [
-  `${ONBOARDING.credits.toLocaleString('en-US')} credits to start scanning`,
-  'An onboarding call',
-  'Your businesses and service areas set up for you',
-  'A first visibility audit, with recordings you can show your client',
-];
-
-const CREDIT_RULES: [string, string][] = [
-  ['One grid point, in Chrome or the Google Maps app', '1 credit'],
-  ['AI Overview tracking (Chrome)', 'included'],
-  ['A point that fails', 'credited back automatically'],
-  ['Re-running a failed point', 'one click, same price'],
-];
-
-// The sizes on offer right now.
-const GRIDS: [string, number][] = OFFERED_GRID_SIZES.map((n) => [`${n} × ${n}`, n * n]);
-
-const FAQ: [string, string][] = [
-  ['How is this different from other grid trackers?', 'Most trackers ask Google for results from a server and show you a number. We send a real Android phone to each pin, run the search in Chrome or the Google Maps app, and record the screen. You get the ranking and the video that proves it.'],
-  ['My client says they see something different on their phone. Now what?', 'Open that pin and play the recording. It shows the search being typed, the location Google itself reported for the phone, and the results as they appeared. That is the conversation other tools leave you to argue from memory.'],
-  ['What does a credit buy?', 'One pin: a real phone moved to that spot, the search run and recorded, and a receipt with the results, the location Google used and a fingerprint of the evidence. AI Overview tracking is included.'],
-  ['Do credits expire?', 'Credits from packs never expire. Credits from a monthly plan roll over for one month: what you do not use carries into the next month, up to one month’s worth, and they are used before your pack credits. If you cancel a plan, its unused credits end with the month you paid for.'],
-  ['What happens if a pin fails?', 'Its credit goes straight back to your balance, and you can run it again with one click.'],
-  ['Do I have to pay for onboarding?', `No. Your first pack is ${usd(WELCOME.cents)} for ${WELCOME.credits} credits (one per account and card): run a scan today. Onboarding (${usd(ONBOARDING.cents)}, with ${ONBOARDING.credits.toLocaleString('en-US')} credits) is there if you want us to set you up and run your first audit with you.`],
-  ['Why do packs cost more per credit than plans?', `A pack is for trying it, or for a one-off job. Once you scan every week, a plan costs less per credit: ${usd(Math.round(perCredit(PLANS[0]) * 100))} on ${PLANS[0].name} against ${usd(Math.round(perCredit(PACKS[1]) * 100))} on the ${PACKS[1].name}.`],
-  ['Is there a contract?', 'No. A plan renews each month on the card you paid with, and you can change plan or cancel whenever you like from your account. A change of plan starts at the next renewal.'],
-  ['What is free?', 'Connecting your Google login to see your website’s Search Console and Analytics in one place: clicks, searches, positions, leads and where visits came from. No card, no trial clock.'],
-  ['What is the Manage plan?', `It is for your Google Business listing, priced per location per month: ${dollars(LISTING_PLANS.MANAGE.tiers[0].cents)} each, less as you add locations. You get the listing’s own numbers from Google (calls, direction requests, the searches that showed it), edits, scheduled posts, a review inbox, a daily check for changes you did not make, and the gaps against the businesses outranking you. You connect Google first, see your listings, and pay only for the ones you pick.`],
-  ['Can my own AI agent use it?', `Yes. Agent access is included with any listing on Manage: your agent can run scans, read your numbers and do the everyday work on those listings. It can never change a listing’s name, categories, phone, website or address. With no listing on Manage, agent access for scans and website numbers is ${dollars(AGENT_ADDON.cents)} a month.`],
-  ['Can I put my own brand on reports?', `Yes. Every scan has a share link your client can open without an account. For a one-time ${usd(WHITE_LABEL.cents)} setup, all your reporting carries your logo on your own domain, share links included.`],
-];
-
-/** The way in: create an account while sign-ups are open, otherwise ask for an invitation by email. */
-function AccessButton({ className, label = 'Run your first scan' }: { className: string; label?: string }) {
-  return SIGNUPS_OPEN ? (
-    <Link href="/login?mode=register" className={className}>{label}</Link>
-  ) : (
-    <a href={ACCESS} className={className}>Request access</a>
-  );
-}
-
-/** What agencies complain about in grid trackers, and what we do about each. */
-const ANSWERS: [string, string, string][] = [
-  ['“The tracker says #1. My client says that’s not what they see.”', 'Show them the video.', 'Every pin is a real phone at that spot, screen-recorded from the search to the last result, with the location Google itself reported. The argument ends when you press play.'],
-  ['“My credits vanish at the end of the month.”', 'Packs never expire. Plans roll over.', 'Credits from a pack stay until you use them. On a monthly plan, what you do not use carries into the next month. A pin that fails is credited back automatically.'],
-  ['“I can’t hand this report to a client.”', 'A report built to be shown.', `One link, no login: the map, the competitors, the AI Overview and the recording behind every pin. White label is a one-time ${usd(WHITE_LABEL.cents)} setup: your logo, your domain, share links included.`],
-];
-
-/** How we differ from the usual grid tracker, row by row. */
-const VERSUS: [string, string, string][] = [
-  ['How each pin is searched', 'A request sent from a server', 'A real Android phone, in Chrome or the Maps app'],
-  ['Where it searches', 'Often Maps only', 'Google Search and the Maps app: you choose'],
-  ['Proof you can show a client', 'A number on a map', 'A screen recording and a receipt for every pin'],
-  ['Where Google placed the searcher', 'Assumed', 'Google’s own location line, captured on screen'],
-  ['Paid ads in the results', 'Can be counted as rankings', 'Labelled as ads, kept apart from your rank'],
-  ['A link your client can open', 'Often a higher-priced tier', 'On every pack and plan, no login'],
-  ['AI Overview tracking', 'Extra, or not offered', 'Included with every Chrome pin'],
-  ['Unused credits', 'Often expire each month', 'Packs never expire; plan credits roll over a month'],
-  ['A pin that fails', 'Varies', 'Credited back automatically'],
-];
-
-const TRUST = ['No setup fee', 'Pack credits never expire', 'Failed pins credited back', 'No contract'];
-
-export default function PricingPage() {
-  // The offer leaves the page when it ends (the page is rebuilt every hour).
-  const live = promoLive();
+/** The pricing page: seats per client, the $5 first audit, prospect audits and the extras. */
+export default function PricingPage({ live }: { live: boolean }) {
+  const promises = ['No setup or onboarding fees', 'Cancel any time', `White-label free from ${WHITE_LABEL.freeFrom} clients`, 'A video receipt at every grid point'];
   return (
-    <div className="mk min-h-screen overflow-x-hidden">
-      {live && (
-        <p className="bg-[#f5c451] px-4 py-2.5 text-center text-sm font-semibold text-[#06080c]">
-          {PROMO.name}: no setup fee, and 3 months of any plan for up to {usd(Math.max(...PREPAID.map((x) => x.saves)))} less. Ends {PROMO.endsText}.
-        </p>
-      )}
-      <SiteHeader />
-
-      <section className="relative">
-        <div className="mk-glow pointer-events-none absolute inset-0" aria-hidden="true" />
-        <div className="relative mx-auto max-w-7xl px-5 pb-14 pt-16 text-center sm:px-8 sm:pt-24">
-          <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">Pricing</p>
-          <h1 className="mk-display mx-auto mt-3 max-w-5xl text-5xl font-bold leading-[1.05] sm:text-7xl">
-            “That’s not what I see on my phone.” <span className="mk-gold-text">Show them the video.</span>
-          </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-[#9aa7b8]">
-            Other grid trackers give you a number. We send a real phone to every pin, run the search in Google Search or the Maps app, and record it, so every ranking comes with proof your client can watch.
-          </p>
-          <p className="mk-display mt-8 text-2xl font-bold text-[#eef2f7]">1 credit = 1 pin. Start for {usd(WELCOME.cents)}.</p>
-          <AccessButton className="mk-btn-primary mt-6 inline-block rounded-xl px-8 py-4 text-lg font-semibold" />
-          <ul className="mx-auto mt-6 flex max-w-3xl flex-wrap justify-center gap-x-6 gap-y-2 text-sm text-[#c9d3df]">
-            {TRUST.map((t) => (
-              <li key={t} className="flex items-center gap-2">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#3ddc97]" />
-                {t}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-5 pb-20 sm:px-8">
-        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#f5c451]">Step 1 · try it today</p>
-        <h2 className="mk-display mx-auto mt-3 max-w-3xl text-center text-4xl font-bold leading-tight sm:text-5xl">Start with a pack.</h2>
-        <p className="mx-auto mt-4 max-w-2xl text-center text-[#9aa7b8]">Paid once. No plan, no setup fee, no call. Your first recording is minutes away.</p>
-        <div className="mx-auto mt-10 flex max-w-3xl flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-[#3ddc97] bg-[#0c1118] p-6">
-          <div className="min-w-0">
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#3ddc97]">Your first scan</p>
-            <h3 className="mk-display mt-1 text-2xl font-bold">{WELCOME.name}: {usd(WELCOME.cents)}</h3>
-            <p className="mt-1 text-sm text-[#9aa7b8]">{WELCOME.credits} credits, enough for one 5×5 scan with a recording of every pin. One per account and per card.</p>
-          </div>
-          <AccessButton label={'Run my first scan for ' + usd(WELCOME.cents)} className="mk-btn-primary block rounded-xl px-6 py-3.5 text-center font-semibold" />
-        </div>
-        <p className="mx-auto mt-10 max-w-2xl text-center text-sm text-[#9aa7b8]">After that, top up whenever you like:</p>
-        <div className="mt-6 grid items-stretch gap-6 lg:grid-cols-3">
-          {PACKS.map((p) => (
-            <div key={p.key} className={'relative flex flex-col rounded-2xl border bg-[#0c1118] p-8 ' + (p.featured ? 'border-2 border-[#f5c451] lg:-my-3 lg:py-11' : 'border-[#1b2431]')}>
-              {p.featured && <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#f5c451] px-4 py-1 text-xs font-bold text-[#06080c]">Most popular</span>}
-              <h3 className="mk-display text-2xl font-bold">{p.name}</h3>
-              <p className="mt-1 text-sm text-[#9aa7b8]">{p.fits}</p>
-              <p className="mt-5">
-                <span className="mk-display text-6xl font-bold text-[#eef2f7]">{usd(p.cents)}</span>
-                <span className="text-[#9aa7b8]"> once</span>
-              </p>
-              <p className="mt-3 text-xl font-semibold text-[#eef2f7]">{p.credits.toLocaleString('en-US')} credits</p>
-              <p className="mk-mono mt-1 text-sm text-[#9aa7b8]">{usd(Math.round(perCredit(p) * 100))} per credit</p>
-              <ul className="mt-6 flex-1 space-y-2 text-sm text-[#c9d3df]">
-                <li>1 credit = 1 pin</li>
-                <li>Screen recording and receipt for every pin</li>
-                <li>Google Search or the Maps app</li>
-                <li>A share link your client can open</li>
-                <li>AI Overview tracking included</li>
-                <li>Credits never expire</li>
-                <li>Failed pins credited back</li>
-              </ul>
-              <AccessButton label={'Get ' + p.credits + ' credits'} className={'mt-8 block rounded-xl px-6 py-3.5 text-center font-semibold ' + (p.featured ? 'mk-btn-primary' : 'border border-[#2a3442] text-[#eef2f7] hover:bg-[#111823]')} />
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="border-y border-[#1b2431] bg-[#080b10]">
-        <div className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
-          <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#7aa7ff]">Why agencies switch</p>
-          <h2 className="mk-display mx-auto mt-3 max-w-3xl text-center text-4xl font-bold leading-tight sm:text-5xl">The three complaints we kept hearing.</h2>
-          <div className="mt-12 grid gap-6 lg:grid-cols-3">
-            {ANSWERS.map(([pain, answer, how]) => (
-              <div key={answer} className="rounded-2xl border border-[#1b2431] bg-[#0c1118] p-8">
-                <p className="text-[15px] italic leading-relaxed text-[#9aa7b8]">{pain}</p>
-                <h3 className="mk-display mt-5 text-2xl font-bold text-[#3ddc97]">{answer}</h3>
-                <p className="mt-3 leading-relaxed text-[#c9d3df]">{how}</p>
-              </div>
-            ))}
-          </div>
-          <div className="mx-auto mt-14 max-w-4xl overflow-hidden rounded-2xl border border-[#1b2431] bg-[#0c1118]">
-            <table className="w-full text-left text-sm sm:text-base">
-              <thead>
-                <tr className="text-[#9aa7b8]">
-                  <th className="px-5 py-4 font-medium" />
-                  <th className="px-5 py-4 font-medium">Most grid trackers</th>
-                  <th className="px-5 py-4 font-semibold text-[#f5c451]">Stakeout</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1b2431]">
-                {VERSUS.map(([k, them, us]) => (
-                  <tr key={k}>
-                    <td className="px-5 py-4 text-[#9aa7b8]">{k}</td>
-                    <td className="px-5 py-4 text-[#c9d3df]">{them}</td>
-                    <td className="px-5 py-4 font-semibold text-[#eef2f7]">{us}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
-        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#f5c451]">Step 2 · when you scan every week</p>
-        <h2 className="mk-display mx-auto mt-3 max-w-3xl text-center text-4xl font-bold leading-tight sm:text-5xl">Then pay less for every pin.</h2>
-        <p className="mx-auto mt-4 max-w-2xl text-center text-[#9aa7b8]">Monthly plans that renew until you cancel, no contract. Unused credits roll over one month.</p>
-        <div className="mt-12 grid items-stretch gap-6 lg:grid-cols-3">
-          {PLANS.map((p) => {
-            const offer = PREPAID.find((x) => x.plan === p.key);
-            return (
-              <div key={p.key} className={'relative flex flex-col rounded-2xl border bg-[#0c1118] p-8 ' + (p.featured ? 'border-2 border-[#3ddc97] lg:-my-3 lg:py-11' : 'border-[#1b2431]')}>
-                {p.featured && <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-[#3ddc97] px-4 py-1 text-xs font-bold text-[#06080c]">Most agencies</span>}
-                <h3 className="mk-display text-2xl font-bold">{p.name}</h3>
-                <p className="mt-1 text-sm text-[#9aa7b8]">{p.fits}</p>
-                <p className="mt-5">
-                  <span className="mk-display text-6xl font-bold text-[#eef2f7]">{usd(p.cents)}</span>
-                  <span className="text-[#9aa7b8]"> / month</span>
-                </p>
-                <p className="mt-3 text-xl font-semibold text-[#eef2f7]">{p.credits.toLocaleString('en-US')} credits</p>
-                <p className="mk-mono mt-1 text-sm text-[#3ddc97]">{usd(Math.round(perCredit(p) * 100))} per credit</p>
-                <ul className="mt-6 flex-1 space-y-2 text-sm text-[#c9d3df]">
-                  <li>1 credit = 1 pin</li>
-                  <li>Everything in the packs</li>
-                  <li>Renews monthly; unused credits roll over one month</li>
-                  <li>White label: {usd(WHITE_LABEL.cents)} one-time setup</li>
-                </ul>
-                {live && offer && (
-                  <p className="mt-6 rounded-xl border border-[#f5c451]/40 bg-[#f5c451]/10 px-4 py-3 text-sm text-[#f5c451]">
-                    <b>{PROMO.name}:</b> 3 months for {usd(offer.cents)}. Save {usd(offer.saves)}. Ends {PROMO.endsText}.
-                  </p>
-                )}
-                <AccessButton label={'Choose ' + p.name} className={'mt-6 block rounded-xl px-6 py-3.5 text-center font-semibold ' + (p.featured ? 'mk-btn-primary' : 'border border-[#2a3442] text-[#eef2f7] hover:bg-[#111823]')} />
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-5 pb-20 sm:px-8">
-        <p className="mk-mono text-center text-[12px] uppercase tracking-widest text-[#3ddc97]">Your Google listing · per location</p>
-        <h2 className="mk-display mx-auto mt-3 max-w-3xl text-center text-4xl font-bold leading-tight sm:text-5xl">Free to see. {dollars(LISTING_PLANS.MANAGE.tiers[0].cents)} a month to manage.</h2>
-        <p className="mx-auto mt-4 max-w-2xl text-center text-[#9aa7b8]">Scans show where you rank. This is everything you do about it, without spending a credit.</p>
-        <div className="mt-12 grid items-stretch gap-6 lg:grid-cols-2">
-          <div className="flex flex-col rounded-2xl border border-[#1b2431] bg-[#0c1118] p-8">
-            <h3 className="mk-display text-2xl font-bold">Free</h3>
-            <p className="mt-1 text-sm text-[#9aa7b8]">Your website, from your own Google login</p>
-            <p className="mt-5"><span className="mk-display text-6xl font-bold text-[#eef2f7]">$0</span></p>
-            <ul className="mt-6 flex-1 space-y-2 text-sm text-[#c9d3df]">
-              <li>Search Console: clicks, searches, positions, pages</li>
-              <li>Whether Google has indexed your page, and under which address</li>
-              <li>Analytics: real leads and calls, not inflated key events</li>
-              <li>Visits sent by AI assistants, and your top visitor towns</li>
-              <li>The searches where you are seen and not clicked</li>
-              <li>No card. No trial clock.</li>
-            </ul>
-            <AccessButton label="Connect Search Console and Analytics" className="mt-8 block rounded-xl border border-[#2a3442] px-6 py-3.5 text-center font-semibold text-[#eef2f7] hover:bg-[#111823]" />
-          </div>
-          <div className="relative flex flex-col rounded-2xl border-2 border-[#3ddc97] bg-[#0c1118] p-8">
-            <h3 className="mk-display text-2xl font-bold">Manage</h3>
-            <p className="mt-1 text-sm text-[#9aa7b8]">Your Google Business Profile, per location</p>
-            <p className="mt-5"><span className="mk-display text-6xl font-bold text-[#eef2f7]">{dollars(LISTING_PLANS.MANAGE.tiers[0].cents)}</span><span className="text-[#9aa7b8]"> / location / month</span></p>
-            <p className="mk-mono mt-2 text-sm text-[#3ddc97]">{LISTING_PLANS.MANAGE.tiers.slice(1).map((t, i) => `${dollars(t.cents)} from ${(LISTING_PLANS.MANAGE.tiers[i].upTo ?? 0) + 1}`).join(' · ')}</p>
-            <ul className="mt-6 flex-1 space-y-2 text-sm text-[#c9d3df]">
-              <li>Calls, direction requests and the exact searches that showed your listing</li>
-              <li>The categories, services and attributes rivals outranking you have and you do not</li>
-              <li>Edit hours, description, services, attributes, photos and links</li>
-              <li>Schedule Google posts, and answer reviews from one inbox</li>
-              <li>A daily watchdog: told when Google or anyone else changes your listing</li>
-              <li>Access for your own AI agents, included</li>
-              <li>Connect first, see your listings, pay only for the ones you pick</li>
-            </ul>
-            <AccessButton label="Connect my Google Business Profile" className="mk-btn-primary mt-8 block rounded-xl px-6 py-3.5 text-center font-semibold" />
-            <p className="mt-2 text-center text-xs text-[#9aa7b8]">Every location gets the lower price once you pass a bracket. Cancel any time.</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="border-y border-[#1b2431] bg-[#080b10]">
-        <div className="mx-auto grid max-w-7xl gap-12 px-5 py-20 sm:px-8 lg:grid-cols-2">
-          <div>
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">How credits work</p>
-            <h2 className="mk-display mt-3 text-4xl font-bold leading-tight">One pin, one credit.</h2>
-            <dl className="mt-8 divide-y divide-[#1b2431] rounded-2xl border border-[#1b2431] bg-[#0c1118]">
-              {CREDIT_RULES.map(([k, v]) => (
-                <div key={k} className="flex items-baseline justify-between gap-4 px-5 py-4">
-                  <dt className="text-[#c9d3df]">{k}</dt>
-                  <dd className="mk-mono shrink-0 font-semibold text-[#eef2f7]">{v}</dd>
-                </div>
+    <div className="so">
+      <OfferBanner live={live} href={live ? '#plans' : '#audit'} />
+      <SiteNav page="pricing" />
+      <main>
+        <section id="top" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+          <div style={{ maxWidth: 1240, margin: '0 auto', padding: 'clamp(56px, 7vw, 96px) clamp(16px, 2vw, 24px) clamp(40px, 5vw, 64px)' }}>
+            <Eyebrow>PRICING</Eyebrow>
+            <h1 style={{ margin: '18px 0 0', fontWeight: 400, fontSize: 'clamp(38px, 4.4vw, 62px)', lineHeight: 1.08, letterSpacing: '-0.03em', maxWidth: 900 }}>
+              Priced per client.
+              <br />
+              Not per pin.
+            </h1>
+            <p style={{ margin: '24px 0 0', fontSize: 19, lineHeight: 1.65, color: '#CBD5E1', maxWidth: 760 }}>
+              Each seat covers one client: scheduled scans of their keywords on real Android phones, a screen recording at every grid point, and AI Overview tracking. Command and Dominator add the Google listing tools.
+            </p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '32px 0 0', display: 'flex', flexWrap: 'wrap', gap: '12px 28px', fontSize: 15, lineHeight: 1.5, color: '#CBD5E1' }}>
+              {promises.map((p) => (
+                <li key={p} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <Check size={18} top={2} />
+                  <span>{p}</span>
+                </li>
               ))}
-            </dl>
+            </ul>
+            <AuditCard style={{ marginTop: 44 }} />
           </div>
-          <div>
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#7aa7ff]">How much does a scan cost?</p>
-            <h2 className="mk-display mt-3 text-4xl font-bold leading-tight">Count the pins.</h2>
-            <p className="mt-3 text-[#9aa7b8]">A 3 × 3 grid has 9 pins, so it costs 9 credits.</p>
-            <table className="mt-6 w-full overflow-hidden rounded-2xl border border-[#1b2431] bg-[#0c1118] text-left">
-              <thead className="text-sm text-[#9aa7b8]">
-                <tr>
-                  <th className="px-5 py-4 font-medium">Grid</th>
-                  <th className="px-5 py-4 font-medium">Credits</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1b2431]">
-                {GRIDS.map(([name, n]) => (
-                  <tr key={name}>
-                    <td className="px-5 py-4 font-semibold text-[#eef2f7]">{name}</td>
-                    <td className="mk-mono px-5 py-4 text-[#c9d3df]">{n}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        </section>
+        <CalculatorSection />
+        <SeatsSection />
+        <SpeedsSection />
+        <ProspectsSection />
+        <CompareSection />
+        <Faq id="faq" items={PRICING_FAQ} />
+        <section id="start">
+          <div style={{ maxWidth: 1240, margin: '0 auto', padding: 'clamp(56px, 7vw, 96px) clamp(16px, 2vw, 24px)' }}>
+            <div style={{ border: `1px solid ${TONE.accentLine}`, background: TONE.accentSoft, borderRadius: 24, padding: 'clamp(28px, 4vw, 56px)', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '24px 48px' }}>
+              <div style={{ flex: '1 1 520px', minWidth: 0 }}>
+                <h2 style={{ margin: 0, fontWeight: 800, fontSize: 'clamp(30px, 3.2vw, 46px)', lineHeight: 1.12, letterSpacing: '-0.025em' }}>Start with one {usd(WELCOME.cents)} audit.</h2>
+                <p style={{ margin: '14px 0 0', fontSize: 17, lineHeight: 1.65, color: '#CBD5E1', maxWidth: 620 }}>See what a real phone sees at every point of your client’s grid. Your {usd(WELCOME.cents)} comes off your first month.</p>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+                <a className="so-btn" href={HREF.firstAudit} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, minHeight: 52, boxSizing: 'border-box', background: ACCENT, color: '#0B1017', fontWeight: 700, fontSize: 16, lineHeight: 1.3, padding: '14px 24px', borderRadius: 12, whiteSpace: 'nowrap' }}>
+                  Run your first audit for {usd(WELCOME.cents)}
+                  <Arrow />
+                </a>
+                <a className="so-btn" href={HREF.support} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 52, boxSizing: 'border-box', border: '1px solid rgba(255, 255, 255, 0.2)', color: '#F1F5F9', fontWeight: 600, fontSize: 16, lineHeight: 1.3, padding: '14px 22px', borderRadius: 12, whiteSpace: 'nowrap' }}>
+                  Talk to us
+                </a>
+              </div>
+            </div>
           </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-5xl px-5 pt-16 sm:px-8">
-        <div className="flex flex-col items-start justify-between gap-6 rounded-2xl border border-[#f5c451]/40 bg-[#0c1118] p-8 sm:flex-row sm:items-center">
-          <div>
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#f5c451]">White label · for agencies</p>
-            <h2 className="mk-display mt-2 text-3xl font-bold">Your logo. Your domain. Your reports.</h2>
-            <p className="mt-2 max-w-xl text-[#9aa7b8]">All your reporting under your brand, on your own domain, including the share links you send to clients. Set up once, on packs or plans.</p>
-          </div>
-          <div className="shrink-0 text-left sm:text-right">
-            <p className="mk-display text-4xl font-bold text-[#eef2f7]">{usd(WHITE_LABEL.cents)}</p>
-            <p className="text-sm text-[#9aa7b8]">one-time setup</p>
-            <a href={BRANDING} className="mt-2 inline-block text-sm font-semibold text-[#7aa7ff] hover:underline">Set up white label</a>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-5xl px-5 py-16 sm:px-8">
-        <div className="flex flex-col items-start justify-between gap-6 rounded-2xl border border-[#1b2431] bg-[#0c1118] p-8 sm:flex-row sm:items-center">
-          <div>
-            <p className="mk-mono text-[12px] uppercase tracking-widest text-[#9aa7b8]">Optional · done for you</p>
-            <h2 className="mk-display mt-2 text-3xl font-bold">Want us to set it all up?</h2>
-            <p className="mt-2 max-w-xl text-[#9aa7b8]">{INCLUDED.join(' · ')}.</p>
-          </div>
-          <div className="shrink-0 text-left sm:text-right">
-            <p className="mk-display text-4xl font-bold text-[#eef2f7]">{usd(ONBOARDING.cents)}</p>
-            <p className="text-sm text-[#9aa7b8]">one time</p>
-            <a href={ACCESS} className="mt-2 inline-block text-sm font-semibold text-[#7aa7ff] hover:underline">Ask about onboarding</a>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-3xl px-5 pb-20 sm:px-8">
-        <h2 className="mk-display text-center text-4xl font-bold leading-tight">Questions</h2>
-        <div className="mt-8 space-y-3">
-          {FAQ.map(([q, a]) => (
-            <details key={q} className="group rounded-2xl border border-[#1b2431] bg-[#0c1118] px-5 py-4">
-              <summary className="cursor-pointer list-none font-semibold marker:hidden">
-                {q}
-                <span className="float-right text-[#6b7686] transition group-open:rotate-45">+</span>
-              </summary>
-              <p className="mt-3 text-sm leading-relaxed text-[#9aa7b8]">{a}</p>
-            </details>
-          ))}
-        </div>
-      </section>
-
-      <section className="border-t border-[#1b2431] bg-[#080b10]">
-        <div className="mx-auto max-w-4xl px-5 py-20 text-center sm:px-8">
-          <h2 className="mk-display text-4xl font-bold leading-tight sm:text-5xl">
-            See your first pin on video <span className="mk-gold-text">for {usd(WELCOME.cents)}.</span>
-          </h2>
-          <p className="mx-auto mt-4 max-w-xl text-[#9aa7b8]">
-            {live ? `No setup fee. ${PROMO.name} plan pricing ends ${PROMO.endsText}.` : 'No setup fee, no contract, and pack credits that never expire.'}
-          </p>
-          <AccessButton className="mk-btn-primary mt-8 inline-block rounded-xl px-8 py-4 text-lg font-semibold" />
-          <p className="mt-4 text-sm text-[#9aa7b8]">
-            Or <Link href="/demo" className="text-[#7aa7ff] hover:underline">explore the live demo map</Link> first.
-          </p>
-        </div>
-      </section>
-
-      <SiteFooter />
+        </section>
+      </main>
+      <SiteFoot note="Prices in US dollars. Seats are billed monthly per client; Command and Dominator are per Google listing." />
     </div>
   );
 }

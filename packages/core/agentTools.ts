@@ -7,7 +7,7 @@
  * never change a listing's name, categories, phone, website or address: those stay with a person
  * on the site. Three more things keep it from doing harm by accident: services are patched, never
  * sent as a whole list; a reply to a low-rated review waits as a draft for a person; and scans
- * count against a monthly credit limit the account sets.
+ * count against a monthly point limit the account sets.
  */
 import { withUtm } from './gbpExtras';
 export type Tool = { name: string; description: string; inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] } };
@@ -48,8 +48,8 @@ export const AGENT_GRID = 5;
 export const AGENT_GRIDS = [3, 5, 7, 9, 11];
 
 export const TOOLS: Tool[] = [
-  tool('get_workspace_briefing', 'Start here. One short read of what needs attention across the account: changes to listings nobody here made, reviews without a reply (and agent drafts waiting for a person), posts scheduled or failed, the latest scans against the ones before, and the scan credits agents have left this month.'),
-  tool('list_listings', 'The Google Business listings this account has connected, each with the plan it is on. Listing tools work on listings on the Manage plan.'),
+  tool('get_workspace_briefing', 'Start here. One short read of what needs attention across the account: changes to listings nobody here made, reviews without a reply (and agent drafts waiting for a person), posts scheduled or failed, the latest scans against the ones before, and the scan points agents have left this month.'),
+  tool('list_listings', 'The Google Business listings this account has connected, each with the plan it is on. Listing tools work on listings on a Command or Dominator seat.'),
   tool('get_listing', 'A listing as Google has it now: name, address, phone, website, categories, description, hours, and the edits made to it from here.', listing, L),
   tool('get_listing_details', 'A listing’s attributes, services and booking/order links, with what Google allows to be set for its categories.', listing, L),
   tool('get_listing_insights', 'Google’s own numbers for a listing: calls, website clicks, direction requests and views day by day, and the searches people found it with.', { ...listing, days }, L),
@@ -126,14 +126,14 @@ export const TOOLS: Tool[] = [
   tool('compare_scans', 'Two scans of the same grid, point by point: the rank before and after at each point, how many points got better or worse, the change in top-three placements and average rank, which other businesses gained or lost top-three places, and what makes the comparison less than fair (a different hour of the day, a different search). Scans of different grids are refused.', { scanA: str('A scan’s `id` from list_scans.'), scanB: str('Another scan’s `id`. The earlier of the two is taken as “before”.'), timezone: str('The time zone to show the scans’ times in, e.g. America/New_York. Default UTC.') }, ['scanA', 'scanB']),
   tool('set_scan_schedule', 'Pauses or resumes a repeating scan. A paused scan runs no more and charges nothing until it is resumed.', { scanId: str('The repeating scan’s `id` from list_scans.'), action: { type: 'string', enum: ['pause', 'resume'] } }, ['scanId', 'action']),
   tool('get_scan', 'One scan: where the business ranked at each point of the grid; the other businesses seen most often among the first three results (`inTopThreeAtPoints`: a business is counted wherever it is in the first three, whether or not it is above the scanned business there), the first three of them with their categories, rating and review count where known; and how often Google gave an AI answer, how often it cited the business or its website, and the sites it cited most. A scan run in the Google Maps app has no AI answers to record, and says so.', { scanId: str('The scan’s `id` from list_scans.') }, ['scanId']),
-  tool('start_scan', 'Starts a rank scan: a grid of points around a place, each searched in Google on a real phone. Google’s AI Overview is recorded at every point, at no extra cost. Costs one credit per point: 25 for the default 5×5. A larger grid is only run when gridSize is given, and every scan counts against the monthly credit limit the account sets for its agents. It can be made to repeat every day or week at a set time of day; a repeating scan is refused when a month of its runs would cost more than that limit.', {
+  tool('start_scan', 'Starts a rank scan: a grid of points around a place, each searched in Google on a real phone. Google’s AI Overview is recorded at every point, at no extra cost. It runs right away (Scan Now) at 2 points a grid point: 50 for the default 5×5. A larger grid is only run when gridSize is given, and every scan counts against the monthly point limit the account sets for its agents. It can be made to repeat every day or week at a set time of day; a repeating scan is refused when a month of its runs would cost more than that limit.', {
     keyword: str('The search to track, e.g. "plumber near me".'),
     business: str('The business name exactly as on Google.'),
     lat: { type: 'number', description: 'Centre of the grid.' },
     lng: { type: 'number', description: 'Centre of the grid.' },
-    gridSize: { type: 'integer', enum: AGENT_GRIDS, description: 'Points per side. Default 5 (25 credits). 7 is 49 credits, 9 is 81, 11 is 121.' },
+    gridSize: { type: 'integer', enum: AGENT_GRIDS, description: 'Points per side. Default 5: 25 grid points, 50 points to run now. 7 is 49 grid points, 9 is 81, 11 is 121.' },
     spacingMiles: { type: 'number', enum: [0.5, 1, 2, 3, 5], description: 'Distance between points. Default 1.' },
-    repeat: { type: 'string', enum: ['once', 'daily', 'weekly'], description: 'Default once. A repeating scan runs now and then again on its schedule, charging credits each time, until it is paused or the account runs out of credits.' },
+    repeat: { type: 'string', enum: ['once', 'daily', 'weekly'], description: 'Default once. A repeating scan runs now and then again on its schedule, charging points each time (each scheduled run 1 a grid point), until it is paused or the account runs out of points.' },
     at: str('For a repeating scan: the time of day to run it, HH:MM in 24-hour time, e.g. 07:30. Scans compared over time should run at the same hour, since Google ranks a business higher while it is shown as open. Left out, it runs at 13:00 UTC.'),
     timezone: str('The time zone `at` is in, by name, e.g. America/New_York. Needed with `at`.'),
     weekday: { type: 'integer', minimum: 0, maximum: 6, description: 'For a weekly scan: the day, 0 Sunday to 6 Saturday. Default 1 (Monday).' },
@@ -141,7 +141,7 @@ export const TOOLS: Tool[] = [
   }, ['keyword', 'business', 'lat', 'lng']),
 ];
 
-/** Tools that change something or spend credits: an agent's client asks the person before running them. */
+/** Tools that change something or spend points: an agent's client asks the person before running them. */
 export const WRITES = new Set(['reply_to_review', 'create_post', 'update_post', 'enqueue_post', 'create_queue', 'delete_post', 'update_listing', 'upsert_services', 'remove_services', 'update_attributes', 'manage_action_links', 'add_media', 'delete_media', 'resolve_change', 'start_scan', 'set_scan_schedule']);
 /** What a client is told about a tool, so it can ask before a change and run a read straight away. */
 export const annotationsOf = (name: string) => (WRITES.has(name) ? { readOnlyHint: false, destructiveHint: true, openWorldHint: true } : { readOnlyHint: true, destructiveHint: false, openWorldHint: true });
@@ -307,7 +307,7 @@ export function rpcAnswer(m: Rpc): object | null | 'call' {
         protocolVersion: MCP_VERSIONS.includes(String(p.protocolVersion)) ? p.protocolVersion : MCP_VERSIONS[0],
         capabilities: { tools: {}, prompts: {} },
         serverInfo: { name: 'stakeout-search', title: 'Stakeout Search', version: '1.1.0' },
-        instructions: 'Local rank scans and Google Business Profile management. Start with get_workspace_briefing, then list_listings or list_scans. Listing tools need the listing to be on the Manage plan. Name, categories, phone, website and address are never editable here. A reply to a review of three stars or fewer is saved as a draft for a person, not sent. Scans cost credits and count against a monthly limit: ask before starting one.',
+        instructions: 'Local rank scans and Google Business Profile management. Start with get_workspace_briefing, then list_listings or list_scans. Listing tools need the listing to be on a Command or Dominator seat. Name, categories, phone, website and address are never editable here. A reply to a review of three stars or fewer is saved as a draft for a person, not sent. Scans cost points (Scan Now 2 a grid point, scheduled 1) and count against a monthly limit: ask before starting one.',
       });
     case 'ping': return rpcResult(m.id, {});
     case 'tools/list':

@@ -1,9 +1,9 @@
 import { db } from '@stakeout/db';
 import { stripe, stripeTestMode } from './stripe';
 import { InputError } from '@stakeout/core/grid';
-import { ONBOARDING, WELCOME, currentPlan, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
+import { ONBOARDING, WELCOME, WHITE_LABEL_ITEM, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
-import { activePlan } from './creditSub';
+import { clientSeatCount } from './gbpBilling';
 
 /** Accounts created before this pricing took effect, and admins, go straight to the plans. */
 const PRICING_START = new Date('2026-11-12T00:00:00Z');
@@ -24,18 +24,15 @@ export async function onboardingOf(users: { id: string; role: string; createdAt:
 }
 
 /**
- * What this account can buy now: the welcome pack before its first purchase, its plan's top-up while
- * it is on a plan, credit packs and monthly plans, the three-month offer while it runs, and the
- * optional onboarding until it is paid for or waived. Prices live in lib/pricing.ts.
+ * What this account can buy once now: the first audit before its first purchase, prospect audits,
+ * a top-up while it holds a seat, and the white-label setup below 10 seats. Prices live in lib/pricing.ts.
  */
 export async function catalogFor(user: { id: string; role: string; createdAt: Date }): Promise<PriceItem[]> {
-  const [onboarding, paid] = await Promise.all([
-    onboardingOf([user]),
-    db.paymentOrder.findMany({ where: { userId: user.id, captureId: { not: null }, refundedAt: null }, select: { item: true, credits: true, createdAt: true } }),
+  const [paid, seats] = await Promise.all([
+    db.paymentOrder.findMany({ where: { userId: user.id, captureId: { not: null }, refundedAt: null }, select: { item: true } }),
+    clientSeatCount(user.id),
   ]);
-  // On a plan: a running subscription, or the three-month offer bought in the last 95 days.
-  const plan = (await activePlan(user.id))?.plan ?? currentPlan(paid);
-  return itemsFor({ onboarded: onboarding.get(user.id) !== 'no', admin: user.role === 'ADMIN', firstPurchase: paid.length === 0 && !plan, plan });
+  return itemsFor({ admin: user.role === 'ADMIN', firstPurchase: paid.length === 0 && seats === 0, seats, whiteLabel: paid.some((o) => o.item === WHITE_LABEL_ITEM.key) });
 }
 
 /**
@@ -71,7 +68,7 @@ type Session = {
 };
 
 /**
- * Records a paid checkout, once: the credits go on the account and the admins are told. Called when
+ * Records a paid checkout, once: the points go on the account and the admins are told. Called when
  * the buyer comes back from Stripe and again by Stripe's webhook; whichever is first counts. The
  * session is read back from Stripe and must match what was ordered, to the cent.
  */
@@ -95,7 +92,7 @@ export async function fulfill(sessionId: string) {
     s.metadata?.credits !== String(purchase.credits)
   )
     throw new InputError('Payment is pending or could not be matched to this purchase.', 409);
-  // The welcome pack is one per account and one per card. Stripe cannot refuse a card before it is
+  // The first audit is one per account and one per card. Stripe cannot refuse a card before it is
   // charged, so a second one is sent straight back and adds nothing.
   let card: string | null = null;
   if (purchase.item === WELCOME.key && purchase.captureId === null) {
@@ -106,7 +103,7 @@ export async function fulfill(sessionId: string) {
       select: { id: true },
     });
     if (had) {
-      // The money goes back first (asking twice refunds once), then the order is closed without credits.
+      // The money goes back first (asking twice refunds once), then the order is closed without points.
       if (intent) await stripe('/refunds', 'POST', { payment_intent: intent, reason: 'duplicate' }, 'refund-' + intent);
       const closed = await db.paymentOrder.updateMany({ where: { id: sessionId, captureId: null }, data: { captureId: payment, cardFingerprint: card, refundedAt: new Date() } });
       const user = await db.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
@@ -120,8 +117,11 @@ export async function fulfill(sessionId: string) {
     const claimed = await tx.paymentOrder.updateMany({ where: { id: sessionId, captureId: null }, data: { captureId: payment, ...(card ? { cardFingerprint: card } : {}) } });
     if (claimed.count) {
       fresh = true;
-      await tx.creditLedger.create({ data: { userId: purchase.userId, amount: purchase.credits, reason: 'STRIPE_TOPUP', externalEventId: 'stripe:' + payment } });
-      await tx.user.update({ where: { id: purchase.userId }, data: { creditBalance: { increment: purchase.credits } } });
+      // An item with no points (the white-label setup) adds nothing to the balance.
+      if (purchase.credits > 0) {
+        await tx.creditLedger.create({ data: { userId: purchase.userId, amount: purchase.credits, reason: 'STRIPE_TOPUP', externalEventId: 'stripe:' + payment } });
+        await tx.user.update({ where: { id: purchase.userId }, data: { creditBalance: { increment: purchase.credits } } });
+      }
     }
     return tx.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
   });

@@ -14,7 +14,8 @@ import {
 import { rescanAt } from './rescan';
 import { WAKE_CHANNEL, mayRest } from '@stakeout/core/wake';
 import { r2DryRunDaily } from './r2Report';
-import { cloneScheduledRun, settlePin, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
+import { cloneScheduledRun, settlePin, startFreeRescans, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
+import { queuePriority } from '@stakeout/core/speed';
 import { listsForPin, proxyPlace, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
@@ -355,7 +356,20 @@ const jobOptions = {
   removeOnFail: { age: 86400 },
 };
 
+/** When the next scheduled scan or free re-run is due (ms), so a resting worker wakes for it. */
+let nextDue = Infinity;
+async function readNextDue() {
+  const [run, rescan] = await Promise.all([
+    db.gridScan.findFirst({ where: { status: 'SCHEDULED', runAt: { not: null } }, orderBy: { runAt: 'asc' }, select: { runAt: true } }),
+    db.gridScan.findFirst({ where: { freeRescanAt: { not: null } }, orderBy: { freeRescanAt: 'asc' }, select: { freeRescanAt: true } }),
+  ]);
+  nextDue = Math.min(run?.runAt?.getTime() ?? Infinity, rescan?.freeRescanAt?.getTime() ?? Infinity);
+}
+
 async function dispatch() {
+  // Scheduled scans whose time has come join the queue (behind Scan Now: see the priority below).
+  const due = await db.gridScan.updateMany({ where: { status: 'SCHEDULED', runAt: { lte: new Date() } }, data: { status: 'QUEUED' } });
+  if (due.count) console.log('[schedule]', due.count, 'scheduled scan(s) due: queued');
   const queued = await db.gridScan.findMany({
     where: { dispatchedAt: null, status: 'QUEUED' },
     include: { pins: { select: { id: true } } },
@@ -371,11 +385,13 @@ async function dispatch() {
         s.scheduleCron.replace(/^PAUSED:/, ''),
       );
     }
+    // Scan Now points go first (no priority is first in line); scheduled ones wait behind them.
+    const priority = queuePriority(s.speed);
     await pins.addBulk(
       s.pins.map((p) => ({
         name: 'measure',
         data: { pinId: p.id },
-        opts: { ...jobOptions, jobId: p.id },
+        opts: { ...jobOptions, jobId: p.id, ...(priority ? { priority } : {}) },
       })),
     );
     await db.gridScan.updateMany({
@@ -711,6 +727,7 @@ let lastBusy = Date.now(),
   lastFull = 0,
   lastRestReport = 0,
   resting = false;
+let lastFreeRescans = 0;
 const IDLE_AFTER_MS = Number(process.env.IDLE_AFTER_MINUTES ?? 15) * 60000,
   IDLE_EVERY_MS = Number(process.env.IDLE_DB_MINUTES ?? 20) * 60000;
 let busy = false,
@@ -754,7 +771,7 @@ async function tick() {
   if (busy) return;
   busy = true;
   try {
-    if (mayRest(Date.now(), lastBusy, lastFull, IDLE_AFTER_MS, IDLE_EVERY_MS)) {
+    if (mayRest(Date.now(), lastBusy, lastFull, IDLE_AFTER_MS, IDLE_EVERY_MS) && Date.now() < nextDue) {
       if (!resting) console.log(`[rest] nothing open for ${Math.round(IDLE_AFTER_MS / 60000)} min: the database is left alone, looked at every ${Math.round(IDLE_EVERY_MS / 60000)} min or on a wake-up call`);
       resting = true;
       if (Date.now() - lastRestReport > 60000) {
@@ -768,6 +785,13 @@ async function tick() {
     lastFull = Date.now();
     await dispatch();
     await startReruns();
+    // Every 10 minutes: free re-runs of first audits that are due, and when the next scheduled work is.
+    if (Date.now() - lastFreeRescans > 10 * 60000 || Date.now() >= nextDue) {
+      lastFreeRescans = Date.now();
+      const started = await startFreeRescans().catch((e) => (console.warn('[free-rescan] skipped:', (e as Error).message), 0));
+      if (started) { lastBusy = Date.now(); console.log('[free-rescan] started', started); }
+      await readNextDue().catch(() => {});
+    }
     // Every 30 minutes: points still without insights get them from their stored bundles.
     if (Date.now() - lastInsightsBackfill > 30 * 60000) {
       lastInsightsBackfill = Date.now();

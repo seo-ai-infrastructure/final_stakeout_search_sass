@@ -22,6 +22,7 @@ import {
 import { type IspMode, type IspOption } from '@/components/IspSelectorDropdown';
 import { NETWORK_LABELS, pinNetwork, placedLayout, type ScanNetwork } from '@stakeout/core/network';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
+import { stateTimezone } from '@stakeout/core/fleetHealth';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';
 /** A size carried over from an older scan or a saved business that is no longer offered falls back to 5×5. */
@@ -50,6 +51,11 @@ export function NewScanWizard() {
   const [scheduleType, setScheduleType] = useState<'once' | 'daily' | 'weekly'>(
     'once',
   );
+  // Scan Now (first in line, 2 points a grid point) or scheduled (1 point) at a day and hour, once or repeating.
+  const [speed, setSpeed] = useState<'now' | 'scheduled'>('now');
+  const [repeat, setRepeat] = useState<'once' | 'weekly' | 'biweekly'>('weekly');
+  const [runDate, setRunDate] = useState(() => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+  const [runTime, setRunTime] = useState('09:00');
   // Market & ISP State
   const [detectedZip, setDetectedZip] = useState('33801');
   const [detectedCity, setDetectedCity] = useState('Lakeland');
@@ -96,7 +102,7 @@ export function NewScanWizard() {
   const waterLayers = useRef<string[]>([]);
   // The phones a scan will run on, by model.
   const [phones, setPhones] = useState<{ brand: string; model: string }[]>([]);
-  const [launched, setLaunched] = useState<{ ids: string[]; summary: string; points: number; repeat: boolean } | null>(null);
+  const [launched, setLaunched] = useState<{ ids: string[]; summary: string; points: number; repeat: boolean; scheduled?: string } | null>(null);
   const incoming = useRef<string[]>([]);
   function addKeyword() {
     const v = keyword.trim();
@@ -118,6 +124,8 @@ export function NewScanWizard() {
     setIspSelected(b.isps ?? []);
     setTrackAiOverviews(b.trackAiOverviews);
     setScheduleType(b.scheduleType);
+    // A business saved as repeating is scheduled weekly by default.
+    if (b.scheduleType !== 'once') { setSpeed('scheduled'); setRepeat('weekly'); }
     // Keywords that arrived with the page (from a Google profile's search terms) stay picked whichever business is chosen.
     setKeywordList([...new Set([...b.keywords, ...incoming.current])]);
     setPicked(incoming.current.length ? incoming.current : b.keywords.slice(0, 1));
@@ -223,7 +231,7 @@ export function NewScanWizard() {
     const body = {
       name: targetBusiness, centerLabel: addressQuery || [detectedCity, detectedState, detectedZip].filter(Boolean).join(' '),
       centerLat, centerLng, keywords, targetType, gridSize, spacingKm, ispMode: 'any', isps: [],
-      trackAiOverviews, scheduleType,
+      trackAiOverviews, scheduleType: speed === 'scheduled' && repeat !== 'once' ? 'weekly' : 'once',
     };
     const res = await fetch(businessId ? '/api/businesses/' + businessId : '/api/businesses', {
       method: businessId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -339,7 +347,7 @@ export function NewScanWizard() {
     }
     return pts;
   }, [centerLat, centerLng, gridSize, spacingKm, skipped, outOfShape, shape, areas]);
-  // 4. Credit cost: one credit per grid point. AI Overview tracking is included.
+  // 4. Point cost: one point per grid point (before the Scan Now ×2). AI Overview tracking is included.
   const creditSummary = useMemo(() => {
     const totalPins = shape === 'wealth' ? previewPoints.filter((p) => !p.skipped).length : gridSize * gridSize - allSkipped.length;
     const isDesktop = targetType.startsWith('desktop_');
@@ -727,7 +735,7 @@ export function NewScanWizard() {
       setErrorMsg('Enter the business name and at least one keyword.');
       return;
     }
-    if (creditBalance < creditSummary.totalCost * runKeywords.length) {
+    if (creditBalance < creditSummary.totalCost * runKeywords.length * speedX) {
       setIsTopUpOpen(true);
       return;
     }
@@ -757,7 +765,9 @@ export function NewScanWizard() {
           spacingKm,
           targetType,
           trackAiOverviews,
-          scheduleType,
+          scheduleType: 'once',
+          speed,
+          ...(speed === 'scheduled' ? { repeat, scheduleDate: runDate, scheduleAt: runTime, scheduleTimezone: businessTz } : {}),
           skip: shape === 'wealth' ? [] : allSkipped,
           // Top income: the points are the areas' own middles, not grid points.
           ...(shape === 'wealth' ? { points: previewPoints.filter((p) => !p.isCenter && !p.skipped).map((p) => ({ lat: p.lat, lng: p.lng })) } : {}),
@@ -772,13 +782,14 @@ export function NewScanWizard() {
       }
       started.push(data.scanId);
       }
-      const cost = creditSummary.totalCost * runKeywords.length;
+      const cost = creditSummary.totalCost * runKeywords.length * speedX;
       setCreditBalance((b) => b - cost);
       setLaunched({
         ids: started,
         points: creditSummary.totalPins * runKeywords.length,
-        repeat: scheduleType !== 'once',
-        summary: `${creditSummary.totalPins} points × ${runKeywords.length} keyword${runKeywords.length > 1 ? 's' : ''} · ${cost} credits used`,
+        repeat: speed === 'scheduled' && repeat !== 'once',
+        scheduled: speed === 'scheduled' ? runWhen : undefined,
+        summary: `${creditSummary.totalPins} grid points × ${runKeywords.length} keyword${runKeywords.length > 1 ? 's' : ''}${speed === 'now' ? ' × 2 (Scan Now)' : ''} · ${cost} points used`,
       });
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -789,7 +800,16 @@ export function NewScanWizard() {
   const runKeywords = picked.length ? picked : [keyword.trim()].filter(Boolean);
   const shownKeywords = [...new Set([...keywordList, ...picked])];
   const points = creditSummary.totalPins;
-  const totalCost = creditSummary.totalCost * Math.max(1, runKeywords.length);
+  // Scan Now costs 2 points a grid point; a scheduled scan 1.
+  const speedX = speed === 'now' ? 2 : 1;
+  const businessTz = stateTimezone(detectedState || 'FL');
+  const runWhen = (() => { const [y, m, d] = runDate.split('-').map(Number); const [h, mi] = runTime.split(':').map(Number); const dt = new Date(y, (m || 1) - 1, d || 1, h || 0, mi || 0); return `${dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} at ${dt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} (${businessTz.replace('America/', '').replace('_', ' ')} time)`; })();
+  const runDay = Number(runDate.slice(8, 10)) || 1;
+  const repeatDays = repeat === 'weekly' ? [0, 7, 14, 21].map((n) => ((runDay - 1) % 7) + 1 + n) : repeat === 'biweekly' ? [0, 14].map((n) => ((runDay - 1) % 14) + 1 + n) : [];
+  const ord = (n: number) => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
+  const repeatNote = repeat === 'once' ? '' : `Then on the ${repeatDays.slice(0, -1).map(ord).join(', ')} and ${ord(repeatDays[repeatDays.length - 1])} of each month.`;
+  const scheduleProblem = speed === 'scheduled' && repeat !== 'once' && runDay > 28 ? 'A repeating scan starts on the 1st to the 28th.' : '';
+  const totalCost = creditSummary.totalCost * Math.max(1, runKeywords.length) * speedX;
   const creditsLeft = creditBalance - totalCost;
   const spacingMi = Number((spacingKm / 1.60934).toFixed(1));
   const spanMi = Number(((gridSize - 1) * spacingMi).toFixed(1));
@@ -826,7 +846,7 @@ export function NewScanWizard() {
   const field = 'min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-white placeholder-slate-500';
   // The map opens on a default spot. Until the pin has been moved off it (a search result picked,
   // the map clicked, the pin dragged, a saved business or a past scan loaded), no scan can start:
-  // a scan around the wrong town is worthless and still costs credits.
+  // a scan around the wrong town is worthless and still costs points.
   const placed = centerLat !== 28.039465 || centerLng !== -81.949804;
   const steps: { done: boolean; title: string; how: string }[] = [
     { done: Boolean(targetBusiness.trim()), title: 'Type the business name', how: 'Exactly as it shows on Google.' },
@@ -851,7 +871,7 @@ export function NewScanWizard() {
             <p className={'text-sm font-extrabold ' + (nextStep === -1 ? 'text-emerald-300' : 'text-rose-200')}>{nextStep === -1 ? 'Ready. Check the grid on the map, then launch.' : 'How to run a scan'}</p>
             {nextStep !== -1 && (
               <ol className="mt-2 space-y-1.5">
-                {[...steps, { done: false, title: 'Press Launch', how: 'One credit per grid point.' }].map((x, i) => (
+                {[...steps, { done: false, title: 'Press Launch', how: 'One point per grid point; Scan Now uses 2.' }].map((x, i) => (
                   <li key={x.title} className={'flex gap-2 text-[13px] ' + (x.done ? 'text-slate-500' : i === nextStep ? 'text-white' : 'text-slate-300')}>
                     <span className={'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ' + (x.done ? 'bg-emerald-500/20 text-emerald-300' : i === nextStep ? 'bg-rose-500 text-white' : 'bg-slate-700 text-slate-200')}>{x.done ? '✓' : i + 1}</span>
                     <span><span className={'font-semibold ' + (x.done ? 'line-through' : '')}>{x.title}</span>{!x.done && i === nextStep && <span className="block text-xs text-rose-100/90">{x.how}</span>}</span>
@@ -948,7 +968,7 @@ export function NewScanWizard() {
             <p className="text-xs text-slate-400">{surfaces.find((x) => x.id === targetType)?.note}</p>
             <p className="flex items-center gap-1.5 text-xs text-purple-300">
               <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              {askMapsSoon ? 'A phone video for every point is included.' : 'AI Overviews, cited sites and phone videos included, no extra credits.'}
+              {askMapsSoon ? 'A phone video for every point is included.' : 'AI Overviews, cited sites and phone videos included, no extra points.'}
             </p>
           </section>
           {/* Grid and network */}
@@ -963,7 +983,7 @@ export function NewScanWizard() {
                   className={`flex flex-col items-center gap-1 rounded-lg border py-2 ${gridSize === n ? 'border-emerald-400 bg-emerald-400/15' : 'border-slate-700 hover:border-slate-500'}`}>
                   <span aria-hidden className="h-7 w-7" style={{ backgroundImage: `radial-gradient(circle, ${gridSize === n ? '#34d399' : '#7c8ba5'} ${n > 6 ? 1 : 1.5}px, transparent ${n > 6 ? 1.4 : 2}px)`, backgroundSize: `${28 / n}px ${28 / n}px` }} />
                   <span className="text-sm font-bold text-white">{n}×{n}</span>
-                  <span className="text-[11px] text-slate-400">{network === 'mix' ? `${n * n}–${n * n * (mobileData?.creditsPerPoint ?? 2)}` : n * n * creditSummary.costPerPin} credits</span>
+                  <span className="text-[11px] text-slate-400">{network === 'mix' ? `${n * n}–${n * n * (mobileData?.creditsPerPoint ?? 2)}` : n * n * creditSummary.costPerPin} pts</span>
                 </button>
               ))}
             </div>
@@ -1019,7 +1039,7 @@ export function NewScanWizard() {
                 <legend className="text-xs font-semibold text-slate-300">Network</legend>
                 <div className="grid gap-1.5" role="radiogroup" aria-label="Network">
                   {(['residential', 'mobile', 'mix'] as const).map((id) => {
-                    const price = id === 'residential' ? '1 credit a point' : id === 'mobile' ? `${mobileData.creditsPerPoint} credits a point` : `1–${mobileData.creditsPerPoint} credits a point`;
+                    const price = id === 'residential' ? '1 point a grid point' : id === 'mobile' ? `${mobileData.creditsPerPoint} points a grid point` : `1–${mobileData.creditsPerPoint} points a grid point`;
                     const off = id !== 'residential' && !mobileData.ready;
                     return (
                       <button key={id} type="button" role="radio" aria-checked={network === id} disabled={off} onClick={() => setNetwork(id)}
@@ -1047,39 +1067,55 @@ export function NewScanWizard() {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="leading-tight">
-                <span className="text-xl font-extrabold text-white">{totalCost}</span> <span className="text-[13px] text-slate-300">credits</span>
+                <span className="text-xl font-extrabold text-white">{totalCost}</span> <span className="text-[13px] text-slate-300">points</span>
                 {creditsLeft >= 0 ? (
                   <span className="text-xs text-slate-400"> · {creditsLeft.toLocaleString()} left</span>
                 ) : (
-                  <button type="button" onClick={() => setIsTopUpOpen(true)} className="ml-1 text-xs font-semibold text-rose-300 underline">{(-creditsLeft).toLocaleString()} short: top up</button>
+                  <button type="button" onClick={() => setIsTopUpOpen(true)} className="ml-1 text-xs font-semibold text-rose-300 underline">{(-creditsLeft).toLocaleString()} short: get points</button>
                 )}
               </p>
               <p className="truncate text-xs text-slate-400">
-                {points} points × {Math.max(1, runKeywords.length)} keyword{runKeywords.length > 1 ? 's' : ''}
-                {eta ? ` · ${eta}` : ''}
+                {points} grid points × {Math.max(1, runKeywords.length)} keyword{runKeywords.length > 1 ? 's' : ''}{speed === 'now' ? ' × 2' : ''}
+                {speed === 'now' && eta ? ` · ${eta}` : ''}
               </p>
             </div>
-            <select
-              aria-label="Repeat this scan"
-              value={scheduleType}
-              onChange={(e) => setScheduleType(e.target.value as 'once' | 'daily' | 'weekly')}
-              className="min-h-[40px] shrink-0 rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs font-semibold text-slate-200"
-            >
-              <option value="once">Run once</option>
-              <option value="weekly">Every Monday</option>
-              <option value="daily">Every day, 8 am ET</option>
-            </select>
+            <div role="group" aria-label="When it runs" className="inline-flex shrink-0 overflow-hidden rounded-lg border border-slate-700 text-xs font-semibold">
+              <button type="button" aria-pressed={speed === 'now'} onClick={() => setSpeed('now')} className={'min-h-[40px] px-2.5 ' + (speed === 'now' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}>Scan Now · 2×</button>
+              <button type="button" aria-pressed={speed === 'scheduled'} onClick={() => setSpeed('scheduled')} className={'min-h-[40px] px-2.5 ' + (speed === 'scheduled' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}>Schedule · 1×</button>
+            </div>
           </div>
-          <button type="submit" disabled={isSubmitting || Boolean(blockedWhy)}
+          {speed === 'scheduled' && (
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="sr-only" htmlFor="run-date">First run date</label>
+                <input id="run-date" type="date" value={runDate} onChange={(e) => setRunDate(e.target.value)} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200" />
+                <label className="sr-only" htmlFor="run-time">Time</label>
+                <input id="run-time" type="time" step={900} value={runTime} onChange={(e) => setRunTime(e.target.value)} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200" />
+                <label className="sr-only" htmlFor="run-repeat">Repeat</label>
+                <select id="run-repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as 'once' | 'weekly' | 'biweekly')} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs font-semibold text-slate-200">
+                  <option value="once">Just once</option>
+                  <option value="weekly">Weekly (4 runs a month)</option>
+                  <option value="biweekly">Every other week (2 a month)</option>
+                </select>
+              </div>
+              <p className="text-[11px] leading-snug text-slate-400">
+                {runWhen}. {repeatNote} Results within 3 hours. Google ranks a business lower while it is closed, so pick an hour when it is open.
+              </p>
+              {scheduleProblem && <p className="text-[11px] font-semibold text-rose-300">{scheduleProblem}</p>}
+            </div>
+          )}
+          <button type="submit" disabled={isSubmitting || Boolean(blockedWhy) || Boolean(scheduleProblem)}
             className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-300">
             {isSubmitting ? (
               <><Loader2 className="h-4 w-4 animate-spin" aria-hidden />Starting…</>
             ) : blockedWhy ? (
               blockedWhy
             ) : creditsLeft < 0 ? (
-              'Top up to run'
+              'Get points to run'
+            ) : speed === 'scheduled' ? (
+              <>{runKeywords.length > 1 ? `Schedule ${runKeywords.length} real-phone scans` : 'Schedule real-phone scan'}<ArrowRight className="h-4 w-4" aria-hidden /></>
             ) : (
-              <>{runKeywords.length > 1 ? `Launch ${runKeywords.length} real-phone scans` : 'Launch real-phone scan'}<ArrowRight className="h-4 w-4" aria-hidden /></>
+              <>{runKeywords.length > 1 ? `Scan Now: ${runKeywords.length} real-phone scans` : 'Scan Now on real phones'}<ArrowRight className="h-4 w-4" aria-hidden /></>
             )}
           </button>
         </div>
@@ -1165,7 +1201,7 @@ export function NewScanWizard() {
           {onWater.length > 0 && (
             <button type="button" onClick={() => setSkipped((list) => [...new Set([...list, ...onWater])])}
               className="pointer-events-auto min-h-[46px] rounded-xl border border-amber-500/60 bg-amber-950/80 px-3.5 text-[13px] font-semibold text-amber-100 shadow-2xl">
-              Skip {onWater.length} point{onWater.length === 1 ? '' : 's'} on water · save {onWater.length * Math.max(1, runKeywords.length)} credit{onWater.length * Math.max(1, runKeywords.length) === 1 ? '' : 's'}
+              Skip {onWater.length} point{onWater.length === 1 ? '' : 's'} on water · save {onWater.length * Math.max(1, runKeywords.length)} point{onWater.length * Math.max(1, runKeywords.length) === 1 ? '' : 's'}
             </button>
           )}
         </div>
@@ -1201,7 +1237,7 @@ export function NewScanWizard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4">
           <div role="dialog" aria-modal="true" aria-label="Scan queued" className="w-full max-w-lg space-y-3.5 rounded-2xl border border-slate-700 bg-slate-900 p-6">
             <div>
-              <h2 className="text-xl font-extrabold text-white">{launched.ids.length > 1 ? `${launched.ids.length} scans queued` : 'Scan queued'}</h2>
+              <h2 className="text-xl font-extrabold text-white">{launched.scheduled ? (launched.ids.length > 1 ? `${launched.ids.length} scans scheduled` : 'Scan scheduled') : launched.ids.length > 1 ? `${launched.ids.length} scans queued` : 'Scan queued'}</h2>
               <p className="mt-1 text-sm text-slate-300">{launched.summary}</p>
             </div>
             {phoneModels(launched.points).length > 0 && (
@@ -1218,11 +1254,11 @@ export function NewScanWizard() {
               </div>
             )}
             <p className="text-[13px] text-slate-300">
-              {launched.repeat ? 'This scan repeats on its schedule. ' : ''}First results in a few minutes{eta ? `; everything done in ${eta}` : ''}. Each point records its search, ads, AI Overview and a phone video.
+              {launched.scheduled ? `It runs ${launched.scheduled}, with results within 3 hours. ${launched.repeat ? 'It then repeats on its schedule. ' : ''}` : `First results in a few minutes${eta ? `; everything done in ${eta}` : ''}. `}Each point records its search, ads, AI Overview and a phone video.
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => router.push(launched.ids.length > 1 ? '/scans' : `/scans/${launched.ids[0]}`)}
-                className="min-h-[48px] flex-1 rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950">Watch it run</button>
+                className="min-h-[48px] flex-1 rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950">{launched.scheduled ? 'See your scans' : 'Watch it run'}</button>
               <button type="button" onClick={() => { setLaunched(null); setIsSubmitting(false); submissionKey.current = null; setSkipped([]); }}
                 className="min-h-[48px] flex-1 rounded-xl border border-slate-700 px-4 text-sm font-semibold text-slate-100">Set up another scan</button>
             </div>

@@ -5,8 +5,7 @@ import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { catalogFor } from '@/lib/billing';
 import { stripe, stripeConfigured } from '@/lib/stripe';
-import { activePlan, planPortal, settleIfDue, startPlan } from '@/lib/creditSub';
-import { PLANS } from '@/lib/pricing';
+import { activePlan, planPortal, settleIfDue } from '@/lib/creditSub';
 
 /** What this account can buy, and whether checkout is switched on. */
 export async function GET() {
@@ -32,7 +31,7 @@ export async function POST(req: Request) {
     const u = await getAuthenticatedUser(),
       { item: key, credits, returnTo, portal } = await req.json(),
       catalog = await catalogFor(u),
-      // By its key; a page loaded before keys were sent names its credits instead, which only counts when one item has that many.
+      // By its key; a page loaded before keys were sent names its points instead, which only counts when one item has that many.
       byCredits = catalog.filter((p) => p.credits === credits),
       item = typeof key === 'string' ? catalog.find((p) => p.key === key) : byCredits.length === 1 ? byCredits[0] : undefined;
     const origin = new URL(req.url).origin,
@@ -40,8 +39,7 @@ export async function POST(req: Request) {
     // { portal: true }: Stripe's page for the plan's card, invoices and cancelling.
     if (portal === true) return Response.json({ url: await planPortal(u.id, back) });
     if (!item) throw new InputError('That is not available for this account.');
-    // A monthly plan is a subscription: checkout the first time, a change of plan after that.
-    if (PLANS.some((p) => p.key === item.key)) return Response.json(await startPlan(u, item.key, back));
+    const what = item.credits ? `${item.credits.toLocaleString('en-US')} points${item.validityDays ? `, valid for ${item.validityDays} days` : ''}. 1 point = 1 real phone run at 1 grid point.` : item.blurb;
     const session = await stripe<{ id: string; url: string }>(
       '/checkout/sessions',
       'POST',
@@ -52,8 +50,8 @@ export async function POST(req: Request) {
         client_reference_id: u.id,
         customer_email: u.email,
         metadata: { userId: u.id, credits: item.credits, item: item.key },
-        payment_intent_data: { description: `Stakeout ${item.name}: ${item.credits} credits`, metadata: { userId: u.id, credits: item.credits, item: item.key } },
-        line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: item.cents, product_data: { name: `Stakeout Search · ${item.name}`, description: `${item.credits.toLocaleString('en-US')} credits. 1 credit = 1 pin.` } } }],
+        payment_intent_data: { description: `Stakeout ${item.name}${item.credits ? `: ${item.credits} points` : ''}`, metadata: { userId: u.id, credits: item.credits, item: item.key } },
+        line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: item.cents, product_data: { name: `Stakeout Search · ${item.name}`, description: what, metadata: { item: item.key, points: String(item.credits), ...(item.validityDays ? { validity_days: String(item.validityDays) } : {}) } } } }],
         success_url: back + '?paid={CHECKOUT_SESSION_ID}',
         cancel_url: back + '?paid=cancelled',
       },

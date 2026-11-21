@@ -15,7 +15,7 @@ import { removeStakeoutSchedule } from '@stakeout/core/scheduleHelper';
 type C = { params: Promise<{ scanId: string }> };
 
 /**
- * For a customer's own finished 5×5 scan of a business that has no listing on the Manage plan: how
+ * For a customer's own finished 5×5 scan of a business that has no listing on a Command seat: how
  * many points it missed the top three on, so the page can point at what would move them.
  */
 async function bridgeFor(id: string, me: { id: string; role: string; email?: string }) {
@@ -28,7 +28,7 @@ async function bridgeFor(id: string, me: { id: string; role: string; email?: str
   const paid = await paidLocations(me.id);
   const plans = paid.size ? await db.gbpPlan.findMany({ where: { userId: me.id, locationId: { in: [...paid.keys()] } }, select: { title: true } }) : [];
   if (plans.some((p) => (p.title ?? '').trim().toLowerCase() === name)) return null;
-  return { ...found, business: scan.targetBusiness, monthly: dollars(unitCents('MANAGE', 1)) };
+  return { ...found, business: scan.targetBusiness, monthly: dollars(unitCents('COMMAND', 1)) };
 }
 export async function GET(_: Request, c: C) {
   try {
@@ -53,7 +53,7 @@ export async function POST(req: Request, c: C) {
     // pending is settled and refunded, and the worker cancels a phone task that is under way.
     if (action === 'stop') {
       const open = await db.gridScan.findFirst({
-        where: { id, ...(me.role === 'ADMIN' ? {} : { userId }), status: { in: ['QUEUED', 'RUNNING'] } },
+        where: { id, ...(me.role === 'ADMIN' ? {} : { userId }), status: { in: ['QUEUED', 'RUNNING', 'SCHEDULED'] } },
         select: { id: true },
       });
       if (!open) throw new InputError('This scan is not running.', 400);
@@ -109,7 +109,7 @@ export async function DELETE(_: Request, c: C) {
       me = await getAuthenticatedUser();
     const s = await db.gridScan.findFirst({ where: { id, ...(me.role === 'ADMIN' ? {} : { userId: me.id }) }, select: { id: true, status: true, scheduleType: true } });
     if (!s) throw new InputError('Scan unavailable.', 404);
-    if (['QUEUED', 'RUNNING', 'AWAITING_EMAIL'].includes(s.status)) throw new InputError('This scan is still running. Stop it first, then delete it.', 409);
+    if (['QUEUED', 'RUNNING', 'AWAITING_EMAIL', 'SCHEDULED'].includes(s.status)) throw new InputError(s.status === 'SCHEDULED' ? 'This scan is scheduled. Cancel it first (its points come back), then delete it.' : 'This scan is still running. Stop it first, then delete it.', 409);
     if (s.scheduleType !== 'once') {
       await removeStakeoutSchedule(id).catch((e) => console.warn('[delete] schedule not removed:', (e as Error).message));
     }

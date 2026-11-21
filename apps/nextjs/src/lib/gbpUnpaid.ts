@@ -33,7 +33,7 @@ export async function sweepUnpaid(now = new Date(), onlyUser?: string): Promise<
             [
               everPaid ? `${a.name ?? 'Your Google Business account'} had no listing on a plan for ${UNPAID_DAYS} days, so we disconnected it. Nothing changed on Google.` : `${a.name ?? 'Your Google Business account'} was connected but no listing was put on a plan within ${UNPAID_FIRST_MINUTES} minutes, so we disconnected it. Nothing changed on Google.`,
               'Your Search Console and Analytics are still connected and still free.',
-              'To pick up where you left off, connect it again and put a listing on the Manage plan.',
+              'To pick up where you left off, connect it again and put a listing on a Command seat.',
             ],
             { label: 'Connect it again', url: appUrl('/profiles?tab=listing') },
           ).catch((e) => console.error('[gbp-unpaid] email not sent:', (e as Error).message));

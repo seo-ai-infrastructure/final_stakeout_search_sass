@@ -24,6 +24,8 @@ export async function GET() {
         gridSize: true,
         creditsCharged: true,
         creditsRefunded: true,
+        speed: true,
+        runAt: true,
       },
       orderBy: { createdAt: 'desc' },
       take: 200,

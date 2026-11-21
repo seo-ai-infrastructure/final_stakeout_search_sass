@@ -36,7 +36,7 @@ export function scanCost(network: string | null | undefined, pins: { rowIdx: num
  * a mix, where mobile points cost the mobile price and home-internet points 1.
  */
 export function pointPrice(
-  scan: { network?: string | null; creditsCharged: number; totalPins: number },
+  scan: { network?: string | null; creditsCharged: number; totalPins: number; speed?: string | null },
   pins: { rowIdx: number; colIdx: number }[],
 ): (pin: { rowIdx: number; colIdx: number }) => number {
   if (scan.network !== 'mix') {
@@ -44,10 +44,15 @@ export function pointPrice(
     return () => per;
   }
   if (!scan.creditsCharged) return () => 0;
+  // A home point costs 1 when scheduled, and 2 on Scan Now; the mobile points share the rest. A scan
+  // from before Scan Now reads as "now" but was charged 1 a home point: the charge itself tells them
+  // apart, as at 2 a home point what is left is a whole, even share of at least 2 a mobile point.
   const mobile = pins.filter((p) => pinNetwork('mix', p.rowIdx, p.colIdx) === 'mobile').length;
   const home = pins.length - mobile;
-  const m = mobile ? Math.max(0, Math.round((scan.creditsCharged - home) / mobile)) : 0;
-  return (pin) => (pinNetwork('mix', pin.rowIdx, pin.colIdx) === 'mobile' ? m : 1);
+  const rest2 = scan.creditsCharged - home * 2;
+  const home1 = scan.speed === 'scheduled' ? 1 : mobile ? (rest2 >= mobile * 2 && rest2 % mobile === 0 ? 2 : 1) : rest2 === 0 ? 2 : 1;
+  const m = mobile ? Math.max(0, Math.round((scan.creditsCharged - home * home1) / mobile)) : 0;
+  return (pin) => (pinNetwork('mix', pin.rowIdx, pin.colIdx) === 'mobile' ? m : home1);
 }
 
 /**

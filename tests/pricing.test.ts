@@ -1,35 +1,41 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ALL_ITEMS, ONBOARDING, PACKS, PLANS, PREPAID, PROMO, TOPUPS, WELCOME, currentPlan, itemKeyOf, itemsFor, perCredit, promoLive, scans5x5, usd } from '../apps/nextjs/src/lib/pricing';
+import { ALL_ITEMS, BONUS_POINTS, PROMO, PROSPECT_PACKS, TOPUP, WELCOME, WHITE_LABEL, currentPlan, itemKeyOf, itemsFor, perCredit, promoLive, scans5x5, usd } from '../apps/nextjs/src/lib/pricing';
+import { LINES, lineCents } from '../packages/core/gbpPlans';
 
-test('pricing: the agreed prices, and every item identifiable by its key', () => {
-  assert.deepEqual([ONBOARDING.cents, ONBOARDING.credits, ONBOARDING.name], [99700, 1000, 'Onboarding']);
-  assert.deepEqual(PACKS.map((p) => [p.name, p.cents, p.credits]), [['Single Scan', 900, 25], ['Starter Pack', 3500, 100], ['Pro Pack', 9900, 300]]);
-  assert.deepEqual(PLANS.map((p) => [p.name, p.cents, p.credits]), [['Starter', 19700, 700], ['Growth', 39700, 1600], ['Agency', 69700, 3500]]);
+test('pricing: the agreed one-time prices, and every item identifiable by its key', () => {
+  assert.deepEqual([WELCOME.key, WELCOME.cents, WELCOME.credits], ['welcome', 500, 50], 'one Scan Now 5×5 for $5');
+  assert.deepEqual(PROSPECT_PACKS.map((p) => [p.key, p.audits, p.cents, p.credits, p.saves, p.validityDays]), [['prospect-1', 1, 1500, 50, 0, 90], ['prospect-5', 5, 4900, 250, 2600, 90], ['prospect-12', 12, 9900, 600, 8100, 90]]);
+  for (const p of PROSPECT_PACKS) assert.equal(p.saves, p.audits * PROSPECT_PACKS[0].cents - p.cents, 'the saving the page shows: ' + p.key);
+  assert.deepEqual([TOPUP.key, TOPUP.cents, TOPUP.credits], ['topup-100', 2500, 100]);
+  assert.deepEqual([WHITE_LABEL.cents, WHITE_LABEL.freeFrom], [9700, 10]);
+  assert.equal(BONUS_POINTS, 250, 'five Scan Now 5×5 audits');
   assert.equal(new Set(ALL_ITEMS.map((i) => i.key)).size, ALL_ITEMS.length, 'checkout tells items apart by key');
-  assert.deepEqual([WELCOME.cents, WELCOME.credits], [500, 25]);
-  assert.deepEqual(PACKS.map((p) => perCredit(p).toFixed(2)), ['0.36', '0.35', '0.33'], 'a bigger pack costs less per credit');
-  assert.deepEqual(PLANS.map((p) => perCredit(p).toFixed(2)), ['0.28', '0.25', '0.20'], 'the rate falls as the plan grows');
-  assert.ok(Math.min(...PACKS.map(perCredit)) > Math.max(...PLANS.map(perCredit)), 'any pack costs more per credit than any plan');
-  // Three months paid once: three times the plan's credits, for less than three months of it.
-  for (const o of PREPAID) {
-    const plan = PLANS.find((p) => p.key === o.plan)!;
-    assert.equal(o.credits, plan.credits * 3, o.key);
-    assert.equal(o.saves, plan.cents * 3 - o.cents, o.key);
-    assert.ok(o.saves > 0 && perCredit(o) < perCredit(plan), o.key);
-  }
+  // A top-up costs more a point than any seat at its first price, so a bigger seat is always the better deal.
+  for (const line of ['SCOUT', 'COMMAND', 'DOMINATOR'] as const) assert.ok(perCredit(TOPUP) > LINES[line].tiers[0].cents / 100 / LINES[line].points, line);
+  // The pricing page's worked example: twelve clients on Command.
+  assert.equal(lineCents('COMMAND', 12), 9 * 5900 + 3 * 4900);
+  assert.equal(usd(lineCents('COMMAND', 12)), '$678');
 });
 
-test('pricing: nobody has to buy onboarding; the dated offer is on sale only until it ends', () => {
-  const during = Date.parse(PROMO.ends) - 1000, after = Date.parse(PROMO.ends) + 1000;
+test('pricing: the first audit on a first purchase only, a top-up only with a seat, white-label until 10 seats', () => {
   const keys = (s: Parameters<typeof itemsFor>[0]) => itemsFor(s).map((i) => i.key);
-  assert.deepEqual(keys({ onboarded: false, now: during }), ['pack-25', 'pack-100', 'pack-300', 'starter', 'growth', 'agency', 'starter-3', 'growth-3', 'agency-3', 'onboarding']);
-  assert.deepEqual(keys({ onboarded: true, now: during }), ['pack-25', 'pack-100', 'pack-300', 'starter', 'growth', 'agency', 'starter-3', 'growth-3', 'agency-3']);
-  assert.deepEqual(keys({ onboarded: false, now: after }), ['pack-25', 'pack-100', 'pack-300', 'starter', 'growth', 'agency', 'onboarding']);
+  assert.deepEqual(keys({ firstPurchase: true }), ['welcome', 'prospect-1', 'prospect-5', 'prospect-12', 'white-label']);
+  assert.deepEqual(keys({}), ['prospect-1', 'prospect-5', 'prospect-12', 'white-label']);
+  assert.deepEqual(keys({ seats: 3 }), ['prospect-1', 'prospect-5', 'prospect-12', 'topup-100', 'white-label']);
+  assert.deepEqual(keys({ seats: 10 }), ['prospect-1', 'prospect-5', 'prospect-12', 'topup-100'], 'white-label is free from 10 seats');
+  assert.deepEqual(keys({ seats: 3, whiteLabel: true }), ['prospect-1', 'prospect-5', 'prospect-12', 'topup-100']);
+  const everything = keys({ firstPurchase: true, seats: 50, admin: true });
+  for (const old of ['onboarding', 'pack-25', 'pack-100', 'starter', 'growth-3', 'topup-agency']) assert.ok(!everything.includes(old), old + ' is no longer sold');
+});
+
+test('pricing: the Black Friday bonus runs until the end of December 1; prices print as dollars', () => {
+  const during = Date.parse(PROMO.ends) - 1000, after = Date.parse(PROMO.ends) + 1000;
   assert.equal(promoLive(during), true);
   assert.equal(promoLive(after), false);
-  assert.deepEqual([usd(ONBOARDING.cents), usd(7000), usd(35), usd(19700)], ['$997', '$70', '$0.35', '$197']);
-  assert.equal(scans5x5(700), 28);
+  assert.equal(PROMO.ends, '2026-12-02T05:00:00Z', 'midnight in New York');
+  assert.deepEqual([usd(500), usd(4900), usd(7000), usd(35), usd(98)], ['$5', '$49', '$70', '$0.35', '$0.98']);
+  assert.equal(scans5x5(550), 22);
 });
 
 test('Stripe: form fields, refusals explained, and only signed webhooks believed', async () => {
@@ -56,21 +62,22 @@ test('Stripe: form fields, refusals explained, and only signed webhooks believed
 test('the $1 payment test is for admins only; the payment alert says who paid and what to do', async () => {
   const { ADMIN_TEST, paymentNotice } = await import('../apps/nextjs/src/lib/pricing');
   assert.deepEqual([ADMIN_TEST.cents, ADMIN_TEST.credits], [100, 5]);
-  assert.ok(!itemsFor({ onboarded: true }).some((i) => i.key === 'admin-test'), 'customers never see it');
-  assert.ok(!itemsFor({ onboarded: false }).some((i) => i.key === 'admin-test'));
-  assert.equal(itemsFor({ onboarded: true, admin: true }).at(-1)?.key, 'admin-test');
-  const base = { buyer: 'a@b.com', balance: 1000, orderId: 'O1', captureId: 'C1' };
-  const on = paymentNotice({ ...base, credits: 1000, cents: 99700, sandbox: false });
-  assert.equal(on.subject, 'Payment: Onboarding, $997, a@b.com');
-  assert.match(on.lines[0], /a@b\.com paid \$997 for Onboarding \(1,000 credits\)\. Their balance is now 1,000\./);
-  assert.ok(on.lines.some((l) => /book their onboarding call/.test(l)));
-  assert.ok(!on.lines.some((l) => /TEST payment/.test(l)));
-  const sb = paymentNotice({ ...base, credits: 700, cents: 19700, sandbox: true });
-  assert.equal(sb.subject, '[Test] Payment: Starter, $197, a@b.com');
-  assert.ok(sb.lines.some((l) => /no real money moved/.test(l)) && !sb.lines.some((l) => /onboarding call/.test(l)));
+  assert.ok(!itemsFor({ firstPurchase: true, seats: 5 }).some((i) => i.key === 'admin-test'), 'customers never see it');
+  assert.equal(itemsFor({ admin: true }).at(-1)?.key, 'admin-test');
+  const base = { buyer: 'a@b.com', balance: 300, orderId: 'O1', captureId: 'C1' };
+  const five = paymentNotice({ ...base, credits: 250, cents: 4900, sandbox: false, item: 'prospect-5' });
+  assert.equal(five.subject, 'Payment: 5 prospect audits, $49, a@b.com');
+  assert.match(five.lines[0], /a@b\.com paid \$49 for 5 prospect audits \(250 points\)\. Their balance is now 300\./);
+  assert.ok(!five.lines.some((l) => /TEST payment/.test(l)));
+  const wl = paymentNotice({ ...base, credits: 0, cents: 9700, sandbox: true, item: 'white-label' });
+  assert.equal(wl.subject, '[Test] Payment: White-label setup, $97, a@b.com');
+  assert.ok(wl.lines.some((l) => /set up their logo and domain/.test(l)) && wl.lines.some((l) => /no real money moved/.test(l)));
+  assert.match(paymentNotice({ ...base, credits: 50, cents: 500, sandbox: false, item: 'welcome', refunded: true }).subject, /^Refunded: second first audit/);
+  // Purchases from before the seats keep their names.
+  assert.equal(paymentNotice({ ...base, credits: 1000, cents: 99700, sandbox: false }).subject, 'Payment: Onboarding, $997, a@b.com');
 });
 
-test('onboarding status: optional for everyone; offered until bought or waived', async () => {
+test('onboarding status (sold until November 2026): paid beats waived beats exempt', async () => {
   const { onboardingStatus } = await import('../apps/nextjs/src/lib/pricing');
   const a = { paid: false, waived: false, admin: false, beforePricing: false };
   assert.equal(onboardingStatus(a), 'no');
@@ -78,13 +85,6 @@ test('onboarding status: optional for everyone; offered until bought or waived',
   assert.equal(onboardingStatus({ ...a, paid: true, waived: true }), 'paid');
   assert.equal(onboardingStatus({ ...a, admin: true }), 'exempt');
   assert.equal(onboardingStatus({ ...a, beforePricing: true }), 'exempt');
-  // Everyone can buy packs and plans; onboarding is offered only while it has not been bought or waived.
-  for (const st of ['no', 'waived', 'paid', 'exempt'] as const) {
-    const keys = itemsFor({ onboarded: st !== 'no' }).map((i) => i.key);
-    assert.equal(keys[0], 'pack-25', st);
-    assert.ok(keys.includes('starter'), st);
-    assert.equal(keys.includes('onboarding'), st === 'no', st);
-  }
 });
 
 test('AI Overview tracking is part of every Chrome scan, whatever is sent; Maps scans have none', async () => {
@@ -158,21 +158,7 @@ test('a customer receipt carries only receipt fields, never how the run was done
   assert.deepEqual(r.point, { row: 4, column: 1, latitude: 27.9, longitude: -82, city: 'Lakeland', state: 'FL', zip: '33811' });
 });
 
-test('pricing: the welcome pack is for a first purchase; a plan brings its own top-up at the plan rate', () => {
-  const keys = (s: Parameters<typeof itemsFor>[0]) => itemsFor(s).map((i) => i.key);
-  assert.equal(keys({ onboarded: true, firstPurchase: true })[0], 'welcome');
-  assert.ok(!keys({ onboarded: true, firstPurchase: false }).includes('welcome'));
-  assert.ok(!keys({ onboarded: true }).some((k) => k.startsWith('topup')), 'no top-up without a plan');
-  assert.deepEqual(keys({ onboarded: true, plan: 'growth' }).filter((k) => k.startsWith('topup')), ['topup-growth']);
-  // A top-up costs what the plan costs per credit, to the cent, and less than any pack.
-  for (const t of TOPUPS) {
-    const plan = PLANS.find((p) => p.key === t.plan)!;
-    assert.equal(perCredit(t).toFixed(2), perCredit(plan).toFixed(2), t.key);
-    assert.ok(perCredit(t) < Math.min(...PACKS.map(perCredit)), t.key);
-  }
-});
-
-test('pricing: the plan an account is on comes from what it paid for, and lapses', () => {
+test('pricing: the old credit plan an account was on comes from what it paid for, and lapses', () => {
   const now = Date.parse('2026-11-19T00:00:00Z'), ago = (d: number) => new Date(now - d * 86400000);
   assert.equal(currentPlan([], now), null);
   assert.equal(currentPlan([{ item: 'pack-100', credits: 100, createdAt: ago(1) }], now), null, 'a pack is not a plan');
