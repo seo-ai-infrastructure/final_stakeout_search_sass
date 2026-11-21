@@ -12,7 +12,7 @@ import './site.css';
  * comes from real scans (see NOTE).
  */
 
-const NOTE = 'Every scan screenshot and number on this page comes from real Stakeout scans: Lakeland, FL on Nov 15 and Nov 17, 2026, and Mt. Juliet, TN.';
+const NOTE = 'Every scan screenshot and number on this page comes from real Stakeout scans in November 2026: Lakeland and Tampa, FL; Mt. Juliet, TN; and Long Island, NY.';
 
 const from = (line: Line) => usd(LINES[line].tiers[0].cents);
 const tier = (line: Line, i: number) => usd(LINES[line].tiers[i].cents);
@@ -449,19 +449,19 @@ function SAiOverviews({ v }: { v: V }) {
         <p style={{ margin: "20px 0 0", fontSize: "18px", lineHeight: "1.65", color: "#CBD5E1", maxWidth: "800px" }}>Google’s AI Overview can name a business, print its phone number in the first sentence, and sit above the paid ads. A tracker that only reads the map pack reports none of it.</p>
         <div style={{ marginTop: "44px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: "28px" }}>
           <figure style={{ margin: "0", display: "flex", flexDirection: "column", gap: "18px" }}>
-            <img src="/home/aio-lakeland-plumber.jpg" width={720} height={1320} loading="lazy" decoding="async" alt="An AI Overview for an emergency plumber in Lakeland that names a plumber and prints its phone number in the first sentence, above the sponsored ads and the map pack" style={{ display: "block", width: "100%", height: "520px", objectFit: "cover", objectPosition: "top", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.1)", background: "#FFFFFF" }} />
+            <img src="/home/aio-lakeland-two-plumbers.jpg" width={378} height={612} loading="lazy" decoding="async" alt="An AI Overview for emergency plumbing in Lakeland, FL that names Stuart’s Plumbing and 1-Tom-Plumber Lakeland with both phone numbers in its first sentence, above the businesses list" style={{ display: "block", width: "100%", height: "520px", objectFit: "cover", objectPosition: "top", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.1)", background: "#FFFFFF" }} />
             <figcaption>
               <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.08em", color: v.accent }}>01 · TAP TO CALL</p>
               <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "21px", lineHeight: "1.3", color: "#F1F5F9" }}>A phone number in the first sentence.</p>
-              <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Above the paid ads and above the map pack. The customer calls without scrolling. Lakeland, FL.</p>
+              <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Two plumbers and both numbers in the AI Overview’s first sentence, above the businesses list. The customer calls without scrolling. Lakeland, FL.</p>
             </figcaption>
           </figure>
           <figure style={{ margin: "0", display: "flex", flexDirection: "column", gap: "18px" }}>
-            <img src="/home/aio-tampa-water-damage.jpg" width={720} height={1320} loading="lazy" decoding="async" alt="An AI Overview for water damage restoration in Tampa with its own map and a business card with Call, Directions and Website buttons, followed by Servpro and Yelp, with no map pack" style={{ display: "block", width: "100%", height: "520px", objectFit: "cover", objectPosition: "top", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.1)", background: "#FFFFFF" }} />
+            <img src="/home/aio-attorneys-map.jpg" width={362} height={732} loading="lazy" decoding="async" alt="An AI Overview for best personal injury attorneys near me on Long Island, NY, with its own map and business cards for two law firms, each with Call, Directions and Website buttons and a line on what the firm handles" style={{ display: "block", width: "100%", height: "520px", objectFit: "cover", objectPosition: "top", borderRadius: "18px", border: "1px solid rgba(255, 255, 255, 0.1)", background: "#FFFFFF" }} />
             <figcaption>
               <p style={{ margin: "0", fontFamily: "'JetBrains Mono', monospace", fontSize: "12px", lineHeight: "1.5", letterSpacing: "0.08em", color: v.accent }}>02 · ITS OWN MAP</p>
               <p style={{ margin: "8px 0 0", fontWeight: "700", fontSize: "21px", lineHeight: "1.3", color: "#F1F5F9" }}>The AI Overview has the map now.</p>
-              <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Business cards with Call, Directions and Website buttons inside the answer. Servpro and Yelp underneath. No 3-pack on the page. Tampa, FL.</p>
+              <p style={{ margin: "8px 0 0", fontSize: "15px", lineHeight: "1.6", color: "#94A3B8" }}>Its own map, then business cards with Call, Directions and Website buttons and a line on what each firm handles, all inside the answer. Personal injury attorneys, Long Island, NY.</p>
             </figcaption>
           </figure>
           <figure style={{ margin: "0", display: "flex", flexDirection: "column", gap: "18px" }}>
