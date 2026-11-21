@@ -553,3 +553,30 @@ model Kept {
 
   @@id([scope, key])
 }
+
+/// A white-label service an agency ordered for one of its clients (citations, local traffic),
+/// fulfilled by hand. Statuses: awaiting_payment, intake_submitted, live, completed, paused.
+model ServiceOrder {
+  id             String   @id
+  /// The account that ordered it.
+  userId         String   @map("workspace_id")
+  /// The client's Google listing ("accounts/…/locations/…"), or a business from scans ("scan:<name>").
+  locationId     String   @map("location_id")
+  clientName     String   @map("client_name")
+  /// citation_sync | traffic_boost
+  serviceType    String   @map("service_type")
+  /// The Stripe checkout, then the subscription of a monthly service.
+  stripeRef      String   @map("stripe_checkout_or_sub_id")
+  checkoutId     String   @unique @map("checkout_id")
+  status         String   @default("awaiting_payment")
+  cents          Int
+  /// What the agency filled in: the business details, keywords, areas, where the ads go.
+  intake         Json     @map("intake_payload_json")
+  /// The proof report for the client (a link), once there is one.
+  deliverableUrl String?  @map("deliverable_url")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt])
+  @@map("service_orders")
+}

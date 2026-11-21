@@ -4,6 +4,7 @@ import { errorResponse } from '@/lib/api';
 import { fulfill } from '@/lib/billing';
 import { activate, grantPoints, subscriptionEvent } from '@/lib/gbpBilling';
 import { settle } from '@/lib/creditSub';
+import { confirmService, serviceSubEvent } from '@/lib/services';
 import { stripeSignatureValid } from '@/lib/stripe';
 
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,11 @@ export async function POST(req: Request) {
         await activate(id).catch((err) => {
           if (!(err instanceof InputError && err.status === 409)) throw err;
         });
+      // A white-label service order (a citation build, or a monthly traffic campaign).
+      if (typeof id === 'string' && e.data?.object?.metadata?.kind === 'service')
+        await confirmService(id).catch((err) => {
+          if (!(err instanceof InputError && err.status === 409)) throw err;
+        });
       // A session still waiting on a slow payment method is reported again when it is paid.
       if (typeof id === 'string' && (await db.paymentOrder.findUnique({ where: { id } })))
         await fulfill(id).catch((err) => {
@@ -46,6 +52,9 @@ export async function POST(req: Request) {
     // A renewal, a failed card, a cancellation: the subscription is read back from Stripe as it is now.
     if ((e.type === 'customer.subscription.updated' || e.type === 'customer.subscription.deleted') && e.data?.object?.metadata?.kind === 'gbp' && typeof e.data.object.id === 'string')
       await subscriptionEvent(e.data.object.id);
+    // A monthly service's card failed, it was cancelled, or it resumed.
+    if ((e.type === 'customer.subscription.updated' || e.type === 'customer.subscription.deleted') && e.data?.object?.metadata?.kind === 'service' && typeof e.data.object.id === 'string')
+      await serviceSubEvent(e.data.object.id);
     return Response.json({ ok: true });
   } catch (e) {
     return errorResponse(e);

@@ -39,12 +39,17 @@ export async function catalogFor(user: { id: string; role: string; createdAt: Da
  * Tells the admins a payment was recorded (to PAYMENT_ALERT_EMAIL if set, otherwise every admin
  * account). Never throws: a failed email must not undo or block a payment that went through.
  */
+/** Who hears about payments: PAYMENT_ALERT_EMAIL if set, otherwise every admin account. */
+export async function paymentAlertRecipients(): Promise<string[]> {
+  const to = (process.env.PAYMENT_ALERT_EMAIL ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  return to.length ? to : (await db.user.findMany({ where: { role: 'ADMIN' }, select: { email: true } })).map((u) => u.email);
+}
+
 async function alertPayment(p: { userId: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; item?: string | null; refunded?: boolean; brief?: CampaignBrief | null }) {
   try {
     if (!mailerConfigured()) return;
     const buyer = await db.user.findUnique({ where: { id: p.userId }, select: { email: true } });
-    const to = (process.env.PAYMENT_ALERT_EMAIL ?? '').split(',').map((x) => x.trim()).filter(Boolean);
-    const recipients = to.length ? to : (await db.user.findMany({ where: { role: 'ADMIN' }, select: { email: true } })).map((u) => u.email);
+    const recipients = await paymentAlertRecipients();
     const n = paymentNotice({ ...p, buyer: buyer?.email ?? 'An account', sandbox: stripeTestMode() });
     for (const email of recipients)
       await sendNoticeEmail(email, n.subject, n.lines, { label: 'Open accounts', url: appUrl('/admin/devices') }).catch((e) =>
