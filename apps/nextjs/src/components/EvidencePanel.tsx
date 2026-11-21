@@ -433,6 +433,8 @@ export function EvidencePanel({
             <div className="mt-4 flex flex-wrap gap-2">
               {pin.metaJsonUrl && <a className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-emerald-300 hover:border-emerald-400" href={pin.metaJsonUrl}>Receipt</a>}
               {pin.dumpsTarUrl && <a className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-emerald-300 hover:border-emerald-400" href={pin.dumpsTarUrl}>Raw bundle (admin)</a>}
+              {pin.aioCaptureUrl && <a className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-emerald-300 hover:border-emerald-400" href={pin.aioCaptureUrl} target="_blank" rel="noreferrer">AI capture (admin)</a>}
+              {pin.aioReadUrl && <a className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-emerald-300 hover:border-emerald-400" href={pin.aioReadUrl} target="_blank" rel="noreferrer">AI page read (admin)</a>}
             </div>
           )}
         </div>

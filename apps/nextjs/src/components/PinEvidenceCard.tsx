@@ -161,6 +161,16 @@ export function PinEvidenceCard({
                 Raw bundle (admin)
               </a>
             )}
+            {!shared && pin.aioCaptureUrl && (
+              <a className={btn} href={pin.aioCaptureUrl} target="_blank" rel="noreferrer" title="What the AI Overview watch recorded at this point: sentences, citations, business cards and other pages">
+                AI capture (admin)
+              </a>
+            )}
+            {!shared && pin.aioReadUrl && (
+              <a className={btn} href={pin.aioReadUrl} target="_blank" rel="noreferrer" title="The full read of the results page the capture was built from">
+                AI page read (admin)
+              </a>
+            )}
           </div>
         )}
       </div>

@@ -120,6 +120,15 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
         metaJsonUrl: !token && p.metaJsonUrl ? route + 'meta' : null,
         dumpsTarUrl: opts.admin && !token && p.dumpsTarUrl ? route + 'bundle' : null,
         hasBundle: Boolean(p.dumpsTarUrl),
+        // The AI Overview watch's own files (admins only): the capture, and the page read behind it.
+        ...(() => {
+          const kept = (m?.aioSources ?? null) as { key?: unknown; capture?: { key?: unknown } } | null;
+          const ok = opts.admin && !token;
+          return {
+            aioCaptureUrl: ok && typeof kept?.capture?.key === 'string' ? route + 'aio' : null,
+            aioReadUrl: ok && typeof kept?.key === 'string' ? route + 'aio-read' : null,
+          };
+        })(),
         // Only what a report shows: the provider's name, and where a rank came from when no Local
         // Finder opened. The exit's city is not sent: a point is located by its GPS, not its IP.
         proxyMeta: m

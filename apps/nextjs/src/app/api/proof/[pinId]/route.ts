@@ -5,6 +5,14 @@ import { bucket, r2, signedRead } from '@stakeout/core/r2';
 import { customerReceipt } from '@/lib/receipt';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
+import { gunzipSync } from 'node:zlib';
+
+export const runtime = 'nodejs';
+
+/** The two files the AI Overview watch keeps next to a point's video (admins only): the capture
+ * built from the page, and the full read of the page it was built from. */
+const AIO_FILES = { aio: 'aio-capture.json.gz', 'aio-read': 'aio-sources.json.gz' } as const;
+
 export async function GET(
   req: Request,
   c: { params: Promise<{ pinId: string }> },
@@ -14,19 +22,39 @@ export async function GET(
       share = p.get('share'),
       kind = p.get('kind') ?? 'video';
     if (
-      !['video', 'meta', 'bundle'].includes(kind) ||
+      !['video', 'meta', 'bundle', ...Object.keys(AIO_FILES)].includes(kind) ||
       (share && kind !== 'video')
     )
       throw new InputError('Unavailable proof.', 404);
     const me = share ? null : await getAuthenticatedUser();
     const admin = me?.role === 'ADMIN';
-    // The raw bundle shows how a search is carried out: admins only.
-    if (kind === 'bundle' && !admin) throw new InputError('Unavailable proof.', 404);
+    const aioKind = Object.hasOwn(AIO_FILES, kind);
+    // The raw bundle and the AI Overview files show how a search is carried out: admins only.
+    if ((kind === 'bundle' || aioKind) && !admin) throw new InputError('Unavailable proof.', 404);
     const scope = me ? readScope(me) : { shareToken: share! };
     const pin = await db.gridPin.findFirst({
       where: { id: (await c.params).pinId, scan: scope },
       include: { scan: { select: { keyword: true, targetBusiness: true } } },
     });
+    if (aioKind) {
+      const file = AIO_FILES[kind as keyof typeof AIO_FILES];
+      // The keys the worker wrote on the point (aioSources.key, aioSources.capture.key), only ever
+      // inside this point's own scan folder.
+      const kept = (pin?.proxyMeta as { aioSources?: { key?: unknown; capture?: { key?: unknown } } } | null)?.aioSources;
+      const stored = kind === 'aio' ? kept?.capture?.key : kept?.key;
+      if (!pin || typeof stored !== 'string' || !stored.startsWith('scans/' + pin.scanId + '/') || !stored.endsWith('/' + file))
+        throw new InputError('No AI Overview capture for this point.', 404);
+      const obj = await r2().send(new GetObjectCommand({ Bucket: bucket, Key: stored }));
+      const body = gunzipSync(Buffer.from(await obj.Body!.transformToByteArray())).toString('utf8');
+      const name = `${kind === 'aio' ? 'aio-capture' : 'aio-page-read'}-${pin.id}.json`;
+      return new Response(body, {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Content-Disposition': `${p.get('download') ? 'attachment' : 'inline'}; filename="${name}"`,
+          'Cache-Control': 'private, no-store',
+        },
+      });
+    }
     const key =
       pin &&
       (kind === 'video'

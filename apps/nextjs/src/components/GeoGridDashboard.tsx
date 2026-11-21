@@ -155,6 +155,9 @@ export type GridPinData = {
   metaJsonUrl?: string | null;
   /** The raw evidence bundle: sent to admins only. */
   dumpsTarUrl?: string | null;
+  /** The AI Overview capture and the page read behind it (JSON): sent to admins only. */
+  aioCaptureUrl?: string | null;
+  aioReadUrl?: string | null;
   /** Evidence was kept for this point (so its page can be rebuilt), whoever is looking. */
   hasBundle?: boolean;
   proxyMeta: {
