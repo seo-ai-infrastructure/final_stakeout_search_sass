@@ -3,7 +3,7 @@ import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/co
 import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
-import { sampleEntries, summarizeAioSources } from '@stakeout/core/aioSources';
+import { poolDigest, sampleEntries, summarizeAioSources } from '@stakeout/core/aioSources';
 import { watchAioSources, type AioWatchResult } from './aioWatch';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -981,12 +981,29 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
     const summary = summarizeAioSources(found.dossier, targetDomain);
     const m = found.dossier.meta;
     Object.assign(proof, {
-      aioSources: { ...base, key, ...summary, sample: sampleEntries(found.dossier), readMs: m.readMs, htmlLength: m.htmlLength, aioOnPage: m.aioOnPage, anatomy: m.anatomy, diagnostics: m.diagnostics },
+      aioSources: {
+        ...base,
+        key,
+        ...summary,
+        sample: sampleEntries(found.dossier),
+        pool: poolDigest(found.dossier),
+        readMs: m.readMs,
+        htmlLength: m.htmlLength,
+        aioOnPage: m.aioOnPage,
+        anatomy: m.anatomy,
+        diagnostics: m.diagnostics,
+      },
     });
     console.log(
       `[aio-sources] ${tag}: ${found.status} · ${summary.sentences} sentence(s), ${summary.entries} source entries, ${summary.urls} address(es), ${summary.sites} site(s)` +
         ` · markers ${JSON.stringify(summary.markers)} · target ${summary.target ? `cited in ${summary.target.cited.length}, listed in ${summary.target.listed.length}` : 'none'}` +
-        ` · ${found.probes} look(s), ${found.reads} read(s), ${found.loads} load(s)`,
+        ` · ${found.probes} look(s), ${found.reads} read(s), ${found.loads} load(s)` +
+        (found.dossier.pool?.breakdown
+          ? (() => {
+              const b = found.dossier.pool.breakdown;
+              return ` · page: ${b.entries} hidden entries, ${b.addresses} address(es); in the overview ${b.inOverview} (${b.underSentences} under sentences, ${b.inOverviewUnderNoSentence} under none), elsewhere ${b.outsideOverview}`;
+            })()
+          : ''),
     );
   } else {
     Object.assign(proof, { aioSources: { ...base, seen: found.seen, sockets: found.sockets, failures: found.failures, note: found.note } });

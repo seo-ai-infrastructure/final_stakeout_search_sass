@@ -93,9 +93,10 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
   }
   let listFailures = 0;
   let reached = false;
-  // The newest results-page load that had an AI Overview, and the most source buttons read from it.
+  // The newest results-page load that had an AI Overview, and what the page looked like when read
+  // (source buttons, source blocks, hidden entries): any change there is read again.
   let doc = 0;
-  let docButtons = -1;
+  let docShape = '';
   let lastLoad = 0;
   try {
     while (!done() && Date.now() < until) {
@@ -131,7 +132,7 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
             out.note = 'switched to ' + remote;
           }
         }
-        await pause(2000);
+        await pause(1000);
         continue;
       }
       for (const t of targets) {
@@ -142,12 +143,15 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
       if (!serp) {
         // The results page was read and is gone (the template opened the full list): done.
         if (out.dossier) break;
-        await pause(1500);
+        await pause(1000);
         continue;
       }
+      // While this search's results page is open it is looked at every half second (a look takes a
+      // few milliseconds), so the last read is never more than about half a second old when the
+      // template moves on.
       out.probes++;
-      const probe = await evaluate(port, serp.id, AIO_PROBE_JS, 3000);
-      let p: { t?: number; b?: number; aio?: boolean } | null = null;
+      const probe = await evaluate(port, serp.id, AIO_PROBE_JS, 1500);
+      let p: { t?: number; b?: number; s?: number; c?: number; aio?: boolean } | null = null;
       try {
         p = probe ? JSON.parse(probe) : null;
       } catch {
@@ -159,25 +163,24 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
           lastLoad = loadedAt;
           out.loads++;
         }
-        const buttons = Number(p.b ?? 0);
-        // Read a load once it shows an AI Overview, and again if more source buttons appear in it.
-        const newer = loadedAt !== doc;
-        if ((p.aio || buttons > 0) && (newer || buttons > docButtons)) {
+        const shape = `${p.b ?? 0}/${p.s ?? 0}/${p.c ?? 0}`;
+        // Read a load once it shows an AI Overview, and again whenever its sources change (more
+        // buttons after "Show more", more hidden entries as the page fills in).
+        if ((p.aio || Number(p.b ?? 0) > 0) && (loadedAt !== doc || shape !== docShape) && out.reads < 12) {
           const raw = await evaluate(port, serp.id, AIO_SOURCES_JS, 8000);
           out.reads++;
           if (raw) {
             try {
               out.dossier = JSON.parse(raw) as AioDossier;
               doc = loadedAt;
-              docButtons = out.dossier.meta.markers?.buttons ?? buttons;
+              docShape = shape;
             } catch {
               out.note = 'unreadable page answer';
             }
           }
-          if (out.reads >= 6) break;
         }
       }
-      await pause(1500);
+      await pause(500);
     }
     if (out.dossier) out.status = out.dossier.clusters.length ? 'captured' : 'no_sources';
     else if (!reached) out.status = 'no_devtools';

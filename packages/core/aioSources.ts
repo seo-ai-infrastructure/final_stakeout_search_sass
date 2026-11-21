@@ -13,17 +13,32 @@
  * are not Google's internal candidate pool, and nothing here says why one was shown and not another.
  */
 
-/** Cheap look at the page: is this the results page, and are the AI Overview's source buttons in it yet. */
+/**
+ * Cheap look at the page (a few milliseconds, small answer): when it was loaded, how many source
+ * buttons, source blocks and hidden source entries it has, and whether an AI Overview is on it. A
+ * change in these counts is what makes the watch read the page again.
+ */
 export const AIO_PROBE_JS = `(() => {
-  const body = document.body;
-  const text = body ? (body.textContent || '').slice(0, 400000) : '';
   const b = document.querySelectorAll('button[data-icl-uuid]').length;
+  let c = 0;
+  try {
+    const it = document.createNodeIterator(document.documentElement, NodeFilter.SHOW_COMMENT);
+    let n;
+    while ((n = it.nextNode())) if ((n.nodeValue || '').startsWith('TgQPHd|||')) c++;
+  } catch (e) {}
+  let aio = b > 0;
+  if (!aio && document.body) {
+    const tw = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let tn;
+    while ((tn = tw.nextNode())) if ((tn.nodeValue || '').trim() === 'AI Overview') { aio = true; break; }
+  }
   return JSON.stringify({
     u: location.href,
     t: Math.round(performance.timeOrigin),
     b,
     s: document.querySelectorAll('[data-suuid]').length,
-    aio: b > 0 || /AI Overview/i.test(text),
+    c,
+    aio,
   });
 })()`;
 
@@ -118,14 +133,140 @@ export const AIO_SOURCES_JS = `(() => {
     components.get(parent).push({ el, prefix: parts[0], suffix: key.slice(cut + 1) });
   });
 
-  let comments = 0;
+  const buttons = document.querySelectorAll('button[data-icl-uuid]');
+  const uuidIndex = new Map();
+  buttons.forEach((b, i) => uuidIndex.set(b.getAttribute('data-icl-uuid'), i + 1));
+
+  // The page's section headings ("People also ask", "Things to know", "Videos" ...): role=heading
+  // and h2 elements outside links (a result's own title is a link, not a section).
+  const heads = [];
+  try {
+    document.querySelectorAll('[role="heading"], h2').forEach((h) => {
+      if (h.closest('a')) return;
+      const t = (h.textContent || '').replace(/\\s+/g, ' ').trim();
+      if (t && t.length <= 80) heads.push({ el: h, t });
+    });
+  } catch (e) { diagnostics.push('headings_failed'); }
+  const headsIn = new Map();
+  const headingsIn = (el) => {
+    if (!headsIn.has(el)) headsIn.set(el, heads.filter((h) => el.contains(h.el)));
+    return headsIn.get(el);
+  };
+
+  // The "AI Overview" label (one pass over the text nodes), then up to the block that holds the
+  // overview: until it has some length, never into a block holding another section's heading.
+  let aioBox = null;
+  try {
+    const tw = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+    let tn;
+    while ((tn = tw.nextNode())) if ((tn.nodeValue || '').trim() === 'AI Overview') { aioBox = tn.parentElement; break; }
+    let up = 0;
+    while (
+      aioBox && aioBox.parentElement && aioBox.parentElement !== document.body && (aioBox.textContent || '').length < 600 && up++ < 10 &&
+      !headingsIn(aioBox.parentElement).some((h) => h.t !== 'AI Overview')
+    ) aioBox = aioBox.parentElement;
+  } catch (e) { diagnostics.push('aio_box_failed'); }
+
+  // The section a node belongs to: the first block above it that holds a section heading, when that
+  // block holds one section only (a block holding several, or the overview, is the page itself).
+  const sectionOf = (node) => {
+    let a = node.parentElement, up = 0;
+    while (a && a !== document.body && up++ < 25) {
+      const hs = headingsIn(a);
+      if (hs.length) {
+        const names = new Set(hs.map((h) => h.t));
+        return names.size === 1 && !(aioBox && a.contains(aioBox)) ? hs[0].t : null;
+      }
+      a = a.parentElement;
+    }
+    return null;
+  };
+  // One address however it is written: no "www.", no trailing slash, no #fragment.
+  const normUrl = (u) => {
+    try {
+      const x = new URL(u);
+      return (x.hostname.replace(/^www\\./i, '') + x.pathname.replace(/\\/+$/, '') + x.search).toLowerCase();
+    } catch (e) { return null; }
+  };
+
+  // Every source entry on the page, not only those attached to a sentence: one row per address,
+  // with how often it appears, whether it sits inside the overview block, which sentences (if
+  // any) list it, and the section it sits under, in page order.
+  let comments = 0, parsedEntries = 0;
+  const poolMap = new Map();
+  const rawByWhere = {};
   try {
     const it = document.createNodeIterator(document.documentElement, NodeFilter.SHOW_COMMENT);
     let c;
-    while ((c = it.nextNode())) if ((c.nodeValue || '').startsWith('TgQPHd|||')) comments++;
+    while ((c = it.nextNode())) {
+      const v = c.nodeValue || '';
+      if (!v.startsWith('TgQPHd|||')) continue;
+      comments++;
+      let node;
+      try { node = extractNodeData(JSON.parse(decodeEntities(v.slice(9)))); parsedEntries++; } catch (e) { continue; }
+      if (!node.url && !node.title) continue;
+      const key = (node.url && normUrl(node.url)) || 'title:' + node.title;
+      const host = c.parentElement;
+      const inAio = Boolean(aioBox && host && aioBox.contains(host));
+      const where = inAio ? 'AI Overview' : sectionOf(c) || 'no section heading';
+      rawByWhere[where] = (rawByWhere[where] || 0) + 1;
+      let row = poolMap.get(key);
+      if (!row) {
+        if (poolMap.size >= 400) continue;
+        const attr = host && host.closest ? host.closest('[data-attrid]') : null;
+        row = {
+          order: poolMap.size + 1,
+          url: node.url,
+          domain: node.domain,
+          title: node.title ? node.title.slice(0, 140) : null,
+          snippet: node.snippet ? node.snippet.slice(0, 220) : null,
+          mid: node.mid,
+          coords: node.coords,
+          related: node.syntheticQuery,
+          count: 0,
+          inAio: 0,
+          sentences: [],
+          where,
+          sections: [],
+          attrid: attr ? attr.getAttribute('data-attrid') : null,
+        };
+        poolMap.set(key, row);
+      }
+      row.count++;
+      if (!row.sections.includes(where)) row.sections.push(where);
+      if (!row.title && node.title) row.title = node.title.slice(0, 140);
+      if (!row.snippet && node.snippet) row.snippet = node.snippet.slice(0, 220);
+      if (inAio) row.inAio++;
+      const comp = host && host.closest ? host.closest('[data-suuid]') : null;
+      if (comp) {
+        const k = (comp.getAttribute('data-suuid') || '').split('|')[1] || '';
+        const cut = k.lastIndexOf('-');
+        const n = cut > 0 ? uuidIndex.get(k.slice(0, cut)) : undefined;
+        if (n && !row.sentences.includes(n)) row.sentences.push(n);
+      }
+    }
   } catch (e) { diagnostics.push('comment_scan_failed'); }
 
-  const buttons = document.querySelectorAll('button[data-icl-uuid]');
+  // How the page's entries break down: all of them against different addresses; inside the
+  // overview (listed under a sentence, or in the overview but under no sentence); by section.
+  const rows = Array.from(poolMap.values());
+  const uniqueByWhere = {};
+  for (const r of rows) for (const w of r.sections) uniqueByWhere[w] = (uniqueByWhere[w] || 0) + 1;
+  const sections = Object.keys(rawByWhere)
+    .map((w) => ({ section: w, entries: rawByWhere[w], addresses: uniqueByWhere[w] || 0 }))
+    .sort((a, b) => b.entries - a.entries)
+    .slice(0, 15);
+  const breakdown = {
+    entries: comments,
+    parsed: parsedEntries,
+    addresses: rows.length,
+    inOverview: rows.filter((r) => r.inAio > 0).length,
+    underSentences: rows.filter((r) => r.sentences.length > 0).length,
+    inOverviewUnderNoSentence: rows.filter((r) => r.inAio > 0 && r.sentences.length === 0).length,
+    outsideOverview: rows.filter((r) => r.inAio === 0).length,
+    sections,
+  };
+
   if (!buttons.length) diagnostics.push('no_markers_found');
   const clusters = [];
   buttons.forEach((button, idx) => {
@@ -203,13 +344,7 @@ export const AIO_SOURCES_JS = `(() => {
     }
   } catch (e) { diagnostics.push('anatomy_scripts_failed'); }
   try {
-    // The "AI Overview" label (one pass over the text nodes), then up to the block that holds the overview.
-    let box = null;
-    const tw = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
-    let tn;
-    while ((tn = tw.nextNode())) if ((tn.nodeValue || '').trim() === 'AI Overview') { box = tn.parentElement; break; }
-    let up = 0;
-    while (box && box.parentElement && box.parentElement !== document.body && (box.textContent || '').length < 600 && up++ < 10) box = box.parentElement;
+    const box = aioBox;
     if (box) {
       const counts = {};
       box.querySelectorAll('*').forEach((el) => { for (const a of Array.from(el.attributes)) if (a.name !== 'class' && a.name !== 'style') counts[a.name] = (counts[a.name] || 0) + 1; });
@@ -242,6 +377,7 @@ export const AIO_SOURCES_JS = `(() => {
       diagnostics,
     },
     clusters,
+    pool: { comments, parsed: parsedEntries, breakdown, entries: rows },
   });
 })()`;
 
@@ -292,7 +428,62 @@ export type AioDossier = {
     diagnostics?: string[];
   };
   clusters: AioSentence[];
+  /** Every hidden source entry on the page, one row per address (see AIO_SOURCES_JS). */
+  pool?: {
+    comments: number;
+    parsed: number;
+    breakdown?: AioPoolBreakdown;
+    entries: AioPoolRow[];
+  };
 };
+
+export type AioPoolRow = {
+  order: number;
+  url: string | null;
+  domain: string | null;
+  title: string | null;
+  snippet: string | null;
+  mid: string | null;
+  coords: { lng: number; lat: number } | null;
+  related: string | null;
+  /** Times this address appears on the page, and how many of those are inside the overview block. */
+  count: number;
+  inAio: number;
+  /** The overview sentences (1-based) that list it. */
+  sentences: number[];
+  /** The section it first appears under ("AI Overview", "People also ask" ...), and every section it appears under. */
+  where: string;
+  sections: string[];
+  attrid: string | null;
+};
+
+export type AioPoolBreakdown = {
+  /** Hidden entries on the page, how many could be read, and how many different addresses they point to. */
+  entries: number;
+  parsed: number;
+  addresses: number;
+  /** Addresses inside the overview block; listed under a sentence; in the block but under no sentence; elsewhere on the page. */
+  inOverview: number;
+  underSentences: number;
+  inOverviewUnderNoSentence: number;
+  outsideOverview: number;
+  /** Entries and different addresses under each section heading, most first. */
+  sections: { section: string; entries: number; addresses: number }[];
+};
+
+/** For the point's summary: the breakdown plus a few addresses from each group worth a look. */
+export function poolDigest(d: AioDossier) {
+  const rows = d.pool?.entries ?? [];
+  const pick = (r: AioPoolRow) => ({ site: siteOf(r.url) ?? siteOf(r.domain), title: r.title, url: r.url?.slice(0, 200) ?? null, mid: r.mid, related: r.related, at: r.coords ? `${r.coords.lat},${r.coords.lng}` : null, where: r.where });
+  return {
+    breakdown: d.pool?.breakdown ?? null,
+    inOverviewUnderNoSentence: rows.filter((r) => r.inAio > 0 && r.sentences.length === 0).slice(0, 10).map(pick),
+    outsideOverview: rows.filter((r) => r.inAio === 0).slice(0, 10).map(pick),
+    withEntityIds: rows.filter((r) => r.mid).length,
+    withCoordinates: rows.filter((r) => r.coords).length,
+    withRelatedSearch: rows.filter((r) => r.related).length,
+  };
+}
 
 /** A few source entries as read, for a quick look on the point without opening the full read. */
 export function sampleEntries(d: AioDossier, n = 6) {

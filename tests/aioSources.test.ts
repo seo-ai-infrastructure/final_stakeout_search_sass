@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AIO_PROBE_JS, AIO_SOURCES_JS, isResultsPage, siteOf, summarizeAioSources, type AioDossier } from '../packages/core/aioSources';
+import { AIO_PROBE_JS, AIO_SOURCES_JS, isResultsPage, poolDigest, siteOf, summarizeAioSources, type AioDossier } from '../packages/core/aioSources';
 
 const entry = (url: string | null, domain: string | null = null) => ({
   extracted: { title: 't', snippet: 's', url, domain, mid: null, coords: null, syntheticQuery: null },
@@ -56,6 +56,31 @@ test('aio sources: only this search’s results page, never the full list of bus
   assert.ok(isResultsPage('https://www.google.co.uk/search?q=plumber'));
   assert.equal(siteOf('https://WWW.Example.com/a'), 'example.com');
   assert.equal(siteOf('localhost'), null);
+});
+
+test('aio sources: the whole-page digest picks the overview entries under no sentence and the ones elsewhere', () => {
+  const row = (order: number, url: string, inAio: number, sentences: number[], where: string, extra: Record<string, unknown> = {}) => ({
+    order, url, domain: null, title: 't' + order, snippet: null, mid: null, coords: null, related: null, count: 1, inAio, sentences, where, sections: [where], attrid: null, ...extra,
+  });
+  const d: AioDossier = {
+    ...dossier,
+    pool: {
+      comments: 6,
+      parsed: 5,
+      entries: [
+        row(1, 'https://www.opendoor.com/', 2, [1], 'AI Overview'),
+        row(2, 'https://topdollarhomeoffer.com/', 1, [], 'AI Overview'),
+        row(3, 'https://www.homelight.com/sell/tulsa', 0, [], 'People also ask'),
+        row(4, 'https://example.com/p', 0, [], 'no section heading', { mid: '/g/11abc', coords: { lat: 36.1, lng: -95.9 }, related: 'plumber tulsa open now' }),
+      ],
+    },
+  };
+  const g = poolDigest(d);
+  assert.deepEqual(g.inOverviewUnderNoSentence.map((r) => r.site), ['topdollarhomeoffer.com']);
+  assert.deepEqual(g.outsideOverview.map((r) => [r.site, r.where]), [['homelight.com', 'People also ask'], ['example.com', 'no section heading']]);
+  assert.deepEqual([g.withEntityIds, g.withCoordinates, g.withRelatedSearch], [1, 1, 1]);
+  assert.equal(g.outsideOverview[1].at, '36.1,-95.9');
+  assert.equal(poolDigest(dossier).breakdown, null, 'a read without the whole-page pass');
 });
 
 test('aio sources: the page scripts are single expressions that return JSON text', () => {
