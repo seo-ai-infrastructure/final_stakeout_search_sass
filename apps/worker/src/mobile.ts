@@ -989,9 +989,9 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
         ` · ${found.probes} look(s), ${found.reads} read(s), ${found.loads} load(s)`,
     );
   } else {
-    Object.assign(proof, { aioSources: { ...base, seen: found.seen, sockets: found.sockets, note: found.note } });
+    Object.assign(proof, { aioSources: { ...base, seen: found.seen, sockets: found.sockets, failures: found.failures, note: found.note } });
     console.log(
-      `[aio-sources] ${tag}: ${found.status} · ${found.probes} look(s) · pages ${found.seen.join(' | ').slice(0, 300) || 'none'}` +
+      `[aio-sources] ${tag}: ${found.status} · ${found.probes} look(s), ${found.failures ?? 0} unanswered · pages ${found.seen.join(' | ').slice(0, 300) || 'none'}` +
         (found.sockets ? ' · sockets ' + found.sockets : '') +
         (found.note ? ' · ' + found.note : ''),
     );

@@ -22,7 +22,9 @@ export type AioWatchResult = {
   loads: number;
   /** Pages Chrome had open (host, path and parameter names only). */
   seen: string[];
-  /** The DevTools sockets the phone has, when Chrome's could not be reached. */
+  /** Page-list calls that got no answer. */
+  failures?: number;
+  /** What the phone showed while Chrome's DevTools could not be reached: Chrome's process, ADB debugging, DevTools sockets. */
   sockets?: string;
   note?: string;
 };
@@ -83,12 +85,14 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
   const phoneNow = Number((await shell(phone, 'date +%s', 8000).catch(() => '')).trim());
   const since = Number.isFinite(phoneNow) && phoneNow > 0 ? phoneNow * 1000 - 3000 : Date.now() - 3000;
   let port = 0;
+  let remote = 'chrome_devtools_remote';
   try {
-    port = await adbForward(phone, 'localabstract:chrome_devtools_remote');
+    port = await adbForward(phone, 'localabstract:' + remote);
   } catch (e) {
     return { ...out, status: 'error', note: (e as Error).message.slice(0, 120) };
   }
   let listFailures = 0;
+  let reached = false;
   // The newest results-page load that had an AI Overview, and the most source buttons read from it.
   let doc = 0;
   let docButtons = -1;
@@ -100,12 +104,34 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
         const res = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2000) });
         targets = (await res.json()) as Target[];
         listFailures = 0;
+        reached = true;
       } catch {
-        if (++listFailures >= 5) {
-          out.status = 'no_devtools';
-          break;
+        // Chrome may not be open yet (the template starts it a few seconds in): keep trying for the
+        // whole search. Now and then, look at what the phone has: is Chrome running, is debugging
+        // on, which DevTools sockets exist (and switch to Chrome's if it has another name).
+        listFailures++;
+        out.failures = (out.failures ?? 0) + 1;
+        if (listFailures === 6 || listFailures % 20 === 0) {
+          const diag = (
+            await shell(
+              phone,
+              "echo chrome=$(pidof com.android.chrome) adb=$(settings get global adb_enabled) sockets=$(grep -o '@[A-Za-z0-9_.]*devtools_remote[A-Za-z0-9_]*' /proc/net/unix 2>/dev/null | sort -u | head -5 | tr '\\n' ',')",
+              8000,
+            ).catch((e) => 'diag failed: ' + (e as Error).message)
+          )
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 200);
+          out.sockets = diag;
+          const other = (diag.match(/@([A-Za-z0-9_.]*devtools_remote[A-Za-z0-9_]*)/g) ?? []).map((s) => s.slice(1)).find((s) => s.startsWith('chrome') && s !== remote);
+          if (other) {
+            await adbForwardRemove(phone, port);
+            remote = other;
+            port = await adbForward(phone, 'localabstract:' + remote).catch(() => port);
+            out.note = 'switched to ' + remote;
+          }
         }
-        await pause(1500);
+        await pause(2000);
         continue;
       }
       for (const t of targets) {
@@ -154,15 +180,8 @@ export async function watchAioSources(opts: { phone: Phone; keyword: string; don
       await pause(1500);
     }
     if (out.dossier) out.status = out.dossier.clusters.length ? 'captured' : 'no_sources';
-    else if (out.status === 'no_results_page' && out.loads > 0) out.status = 'no_sources';
-    if (out.status === 'no_devtools') {
-      out.sockets = (
-        await shell(phone, "grep -o '@[A-Za-z0-9_.]*devtools_remote[A-Za-z0-9_]*' /proc/net/unix 2>/dev/null | sort -u | head -5", 8000).catch(() => '')
-      )
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 160);
-    }
+    else if (!reached) out.status = 'no_devtools';
+    else if (out.loads > 0) out.status = 'no_sources';
     return out;
   } catch (e) {
     return { ...out, status: 'error', note: (e as Error).message.slice(0, 120) };
