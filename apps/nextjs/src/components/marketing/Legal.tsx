@@ -316,7 +316,7 @@ export function TermsOfService() {
               </div>
               <div className={box}>
                 <h3>C. One-time purchases</h3>
-                <p className="mt-2 text-sm">The first 5×5 audit is one per account and one per card; its price is credited against the first month of your first seat, and it is run again once, free, about seven days later. Prospect audits and promotional points (such as Black Friday prospect audits) are valid for 90 days from purchase or grant, after which any of them left unused lapse. Top-up points never expire while your account is open. Points bought as credit packs or plans before seats were introduced keep the terms they were sold under. The white-label setup is a one-time fee, waived from 10 client seats.</p>
+                <p className="mt-2 text-sm">The first 5×5 audit is one per account and one per card; its price is credited against the first month of your first seat, and it is run again once, free, about seven days later. Prospect audits and promotional points (such as Black Friday prospect audits) are valid for 90 days from purchase or grant, after which any of them left unused lapse. Top-up points never expire while your account is open. Points bought as credit packs or plans before seats were introduced keep the terms they were sold under. The white-label setup is a one-time fee, waived from 10 client seats. A local engagement campaign is a one-time purchase per campaign, of which $150 is spent on Google ads that we set up and run by hand after purchase; it sends people to the business’s listing and does not guarantee calls, sales or rankings.</p>
               </div>
               <div className={box}>
                 <h3>D. Refund & chargeback policy</h3>

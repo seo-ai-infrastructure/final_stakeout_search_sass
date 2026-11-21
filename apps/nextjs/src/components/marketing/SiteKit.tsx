@@ -18,6 +18,8 @@ export const HREF = {
   seats: signUp('/profiles?tab=plan'),
   /** A prospect audit pack, by its price list key. */
   prospects: (key: string) => signUp('/scans?buy=' + key),
+  /** Any one-time item, by its price list key: the points dialog opens on it. */
+  buy: (key: string) => signUp('/scans?buy=' + key),
   login: '/login',
   pricing: '/pricing',
   /** A real report anyone can open (Lakeland, FL, 5×5, 17 Nov 2026). */
