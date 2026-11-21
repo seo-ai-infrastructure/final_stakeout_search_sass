@@ -64,7 +64,7 @@ export type AioWatchResult = {
   trace?: string[];
   /** The phone as the keyword was typed, when the results page left Chrome's list, and when the overview was copied. */
   snapshots?: PhoneSnapshot[];
-  /** The watch in the capture schema's terms (v279): looks that found the overview and ones that missed, first read and last good look (ms into the watch), whether the page was read through a tab listed under its warm-up address, and why the watch stopped. */
+  /** The watch in the capture schema's terms (since v279): looks that found the overview and ones that missed, first read and last good look (ms into the watch), whether the page was read through a tab listed under its warm-up address, and why the watch stopped. */
   telemetry?: WatcherFacts;
 };
 
@@ -212,7 +212,7 @@ export async function watchAioSources(opts: {
   };
   const msNow = () => Date.now() - t0;
   const tele: WatcherFacts = {
-    capture_version: 'v279',
+    capture_version: 'v280',
     resolved_via_warmup_tab: false,
     warmup_tab_listed_url: null,
     reads_succeeded: 0,

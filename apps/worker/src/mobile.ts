@@ -1,6 +1,6 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/core/pinInsights';
-import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst, readAiCopy } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { poolDigest, sampleEntries, summarizeAioSources } from '@stakeout/core/aioSources';
@@ -1594,23 +1594,24 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       // "Position zero": named in the answer's opening sentences, ahead of any list.
       if (b.aiCopy) Object.assign(proof, { aiLead: aiNamesFirst(b.aiCopy, scan.targetBusiness, scan.targetKgmid) });
     } else Object.assign(proof, { rankSource: 'maps_list' });
-    // The v279 capture of the AI Overview (capture schema): its sentences and their citations, the
-    // web pages it holds under no sentence, and each business card's links joined into one row per
-    // firm. Built now that the copied answer (business names by Google ID) and the rank are known:
-    // all of it to storage, the counts, telemetry and firms on the point.
+    // The capture of the AI Overview (capture schema): its sentences and their citations, the
+    // businesses it shows (cards and names in the text, one record per firm by Google ID and
+    // website), the sources row, the ads and the pages it holds under no sentence. Built now that
+    // Google's copied answer (the referee for sentences, citations and named businesses) and the rank
+    // are known: all of it to storage, the counts, telemetry and firms on the point.
     const mapPackRank = aiList ? (aiRankOnly ? null : aiList.rank) : result.targetRank;
     if (watched?.dossier && watched.telemetry) {
       try {
-        const names = b.aiCopy ? new Map(readAiCopy(b.aiCopy).businesses.filter((x) => x.kgmid).map((x) => [x.kgmid, x.name] as const)) : undefined;
-        const capture = buildAioCapture(watched.dossier, { keyword: scan.keyword, targetDomain: scan.targetDomain, targetBusinessId: scan.targetKgmid, mapPackRank, names, telemetry: watched.telemetry, scanPointId: p.id });
+        const capture = buildAioCapture(watched.dossier, { keyword: scan.keyword, targetDomain: scan.targetDomain, targetBusinessId: scan.targetKgmid, mapPackRank, copy: b.aiCopy ?? null, telemetry: watched.telemetry, scanPointId: p.id });
         await put(prefix + '/aio-capture.json.gz', gzipSync(JSON.stringify(capture)), 'application/gzip');
         const kept = (proof as { aioSources?: Record<string, unknown> }).aioSources;
         if (kept) kept.capture = { key: prefix + '/aio-capture.json.gz', ...captureDigest(capture) };
         const t = capture.telemetry;
+        const n = capture.counts;
         console.log(
-          `[aio-capture] ${tag}: ${capture.overview_mode} · ${capture.counts.sentences_count} sentence(s), ${capture.counts.cited_web_pages_count} web page(s) and ${capture.counts.cited_gbp_listings_count} listing(s) cited,` +
-            ` ${capture.counts.unreferenced_web_sources_count} other page(s), ${capture.counts.card_action_links_count} card link(s) in ${entityRoster(capture).length} card(s)` +
-            ` · target cited ${capture.target_cited_in_aio}, named ${capture.target_named_in_aio_cards}, map pack ${mapPackRank ?? '-'}` +
+          `[aio-capture] ${tag}: ${capture.overview_mode}${t.copy_used ? ' (copy used)' : ' (no copy)'} · ${n.sentences_count} sentence(s), ${n.cited_web_pages_count} web page(s) and ${n.cited_gbp_listings_count} listing(s) cited` +
+            ` · ${n.named_businesses_count} business(es) in the answer (${entityRoster(capture).length} card(s)), ${n.sources_only_businesses_count} more only in the sources row (${n.sources_row_listings_count} listing(s)), ${n.ads_count} ad(s), ${n.unreferenced_web_sources_count} other page(s)` +
+            ` · target ${capture.target_match ? 'matched by ' + capture.target_match : 'not matched'}: named ${capture.target_named_in_aio} (card ${capture.target_named_in_aio_cards}, text ${capture.target_named_in_aio_text}), cited ${capture.target_cited_in_aio}, map pack ${mapPackRank ?? '-'}` +
             ` · ${t.stop_reason}, expanded ${t.expanded_seen} (+${t.post_expand_added_sentences} sentence(s), +${t.post_expand_added_entries} entr(ies)), first read ${t.first_read_ms ?? '-'} ms, last good look ${t.last_valid_read_ms ?? '-'} ms, ${t.reads_succeeded} good / ${t.reads_missed} missed${t.resolved_via_warmup_tab ? ', via the warm-up tab' : ''}`,
         );
       } catch (e) {

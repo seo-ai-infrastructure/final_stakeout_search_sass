@@ -692,8 +692,13 @@ export function mergeReads(prev: AioDossier | undefined, next: AioDossier, atMs:
       ...(next.pool ? { pool: { ...next.pool, entries: next.pool.entries.map(s) } } : {}),
     };
   }
-  const stats: AioReadStats = { ...(prev.meta.stats ?? { initialSentenceCount: prev.clusters.length, initialEntryCount: entryCount(prev), expandedSeen: false, postExpandAddedSentences: 0, postExpandAddedEntries: 0 }) };
-  if (next.clusters.length > prev.clusters.length || entryCount(next) > entryCount(prev) || textLength(next) > textLength(prev) + 20) stats.expandedSeen = true;
+  // The starting point is the first read with sentences: a read of the overview still loading (no
+  // sentences yet) is not "before Show more", so what the next read finds is still initial.
+  const settled = prev.clusters.length > 0;
+  const stats: AioReadStats = settled
+    ? { ...(prev.meta.stats ?? { initialSentenceCount: prev.clusters.length, initialEntryCount: entryCount(prev), expandedSeen: false, postExpandAddedSentences: 0, postExpandAddedEntries: 0 }) }
+    : { initialSentenceCount: next.clusters.length, initialEntryCount: entryCount(next), expandedSeen: false, postExpandAddedSentences: 0, postExpandAddedEntries: 0 };
+  if (settled && (next.clusters.length > prev.clusters.length || entryCount(next) > entryCount(prev) || textLength(next) > textLength(prev) + 20)) stats.expandedSeen = true;
   const phase: FirstSeenPhase = stats.expandedSeen ? 'post_expand' : 'initial';
   const fresh = <T extends SeenStamp>(x: T): T => ({ ...x, firstSeenMs: atMs, lastSeenMs: atMs, phase });
   const again = <T extends SeenStamp>(x: T): T => ({ ...x, lastSeenMs: atMs });
@@ -854,6 +859,46 @@ function realUrl(v: string | null | undefined): string | null {
 
 /** The address a link really goes to: Google's wrapper unwrapped, display forms ("site.com › path") made links. */
 export const realAddress = (v: string | null | undefined): string | null => (v ? realUrl(displayToUrl(v)) : null);
+
+/** An address written the way an ad (or a result) displays it, "site.com › path", not a link. */
+export const isDisplayAddress = (v: string | null | undefined): boolean => Boolean(v && /›|\s\/\s/.test(v));
+
+/** Google's source viewer ("/searchviewer/10?svid=…"): a listing card in the sources row under the answer, or a sentence's link chip. */
+export function isSourceViewer(url: string | null | undefined): boolean {
+  const u = parse(url);
+  return Boolean(u && isGoogleHost(u.hostname) && /^\/searchviewer(\/|$)/.test(u.pathname));
+}
+
+/**
+ * The Google business ID behind a link: a source viewer link keeps it in its svid (a small protobuf
+ * holding "/g/…" as a length-prefixed string), a search link in its kgmid.
+ */
+export function googleIdOfLink(url: string | null | undefined): string | null {
+  const u = parse(url);
+  if (!u || !isGoogleHost(u.hostname)) return null;
+  const kg = u.searchParams.get('kgmid');
+  if (kg && /^\/[gm]\/[0-9a-z_]{4,}$/i.test(kg)) return kg;
+  const svid = u.searchParams.get('svid');
+  if (!svid) return null;
+  let bin: string;
+  try {
+    let b = svid.replace(/-/g, '+').replace(/_/g, '/');
+    while (b.length % 4) b += '=';
+    bin = atob(b);
+  } catch {
+    return null;
+  }
+  const at = /\/[gm]\//g;
+  for (let m = at.exec(bin); m; m = at.exec(bin)) {
+    // The byte before a protobuf string is its length: read exactly that many characters.
+    const len = m.index > 0 ? bin.charCodeAt(m.index - 1) : 0;
+    const exact = len >= 4 && len <= 40 ? bin.slice(m.index, m.index + len) : '';
+    if (/^\/[gm]\/[0-9a-z_]+$/i.test(exact)) return exact;
+    const loose = /^\/[gm]\/[0-9a-z_]{4,}/i.exec(bin.slice(m.index));
+    if (loose) return loose[0];
+  }
+  return null;
+}
 
 export type AioSourcesSummary = {
   /** Sentences of the AI Overview with a source button. */
