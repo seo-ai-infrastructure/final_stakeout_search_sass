@@ -18,6 +18,12 @@ import { adbForward, adbForwardRemove, shell } from './deviceShell';
  * the overview (<run>_aio_copy.txt). A snapshot holds the app in front, every DevTools socket on
  * the phone, and everything each socket lists. A socket other than Chrome's that lists this
  * search's results page is followed: the page is looked at and read there.
+ *
+ * Chrome on the phones keeps listing the tab under the address it had before the keyword (the
+ * results page, preloaded while the keyword is typed, takes the tab over without the list catching
+ * up: seen on every point on 2026-11-21). So after the keyword each listed tab is also asked where
+ * it really is (location.href), and a tab that is this search's results page is looked at and
+ * read through, whatever address it is listed under.
  */
 
 type Phone = { imageId: string; adbAddr: string | null };
@@ -33,8 +39,8 @@ export type PhoneSnapshot = {
   front: string[];
   /** DevTools sockets on the phone (Chrome's own, WebViews'), by name. */
   sockets: string[];
-  /** Everything each socket lists (every kind of target), with the app and browser behind it. */
-  lists: { socket: string; app: string | null; browser: string | null; targets: { type: string; url: string; title: string }[]; error?: string }[];
+  /** Everything each socket lists (every kind of target), with the app and browser behind it; a page also with the address it reports itself (`real`), which can differ from the one listed. */
+  lists: { socket: string; app: string | null; browser: string | null; targets: { type: string; url: string; title: string; real?: string }[]; error?: string }[];
 };
 
 export type AioWatchResult = {
@@ -130,6 +136,8 @@ export type WatchDeps = {
   waitForFile: (paths: string[], ms: number) => Promise<string | null>;
   /** The focused window, the resumed activity, the Chrome and Google app processes, and the DevTools sockets ("sockets ..." line). */
   front: () => Promise<string>;
+  /** One Runtime.evaluate on a page: its string answer, or null. */
+  evaluate: (port: number, targetId: string, expression: string, timeoutMs: number) => Promise<string | null>;
 };
 
 export async function watchAioSources(opts: {
@@ -175,6 +183,7 @@ export async function watchAioSources(opts: {
         ].join('; '),
         20000,
       ),
+    evaluate,
     ...opts.deps,
   };
   const out: AioWatchResult = { status: 'no_results_page', probes: 0, reads: 0, loads: 0, seen: [], trace: [] };
@@ -253,13 +262,14 @@ export async function watchAioSources(opts: {
       try {
         if (!p) p = await deps.forward(name);
         const l = await listAll(p);
-        s.lists.push({
-          socket: name,
-          app: l.app,
-          browser: l.browser,
-          targets: l.targets.slice(0, 10).map((t) => ({ type: String(t.type ?? ''), url: String(t.url ?? '').slice(0, 160), title: String(t.title ?? '').slice(0, 60) })),
-        });
-        if (name !== here && !followed && l.targets.some((t) => t.type === 'page' && isResultsPage(String(t.url ?? ''), keyword))) follow ??= name;
+        const targets: PhoneSnapshot['lists'][number]['targets'] = [];
+        for (const t of l.targets.slice(0, 10)) {
+          // A page is also asked where it is: Chrome can keep listing a tab under an older address.
+          const real = t.type === 'page' && targets.filter((x) => x.real !== undefined).length < 3 ? await deps.evaluate(p, t.id, 'location.href', 1000) : null;
+          targets.push({ type: String(t.type ?? ''), url: String(t.url ?? '').slice(0, 160), title: String(t.title ?? '').slice(0, 60), ...(real !== null ? { real: real.slice(0, 160) } : {}) });
+        }
+        s.lists.push({ socket: name, app: l.app, browser: l.browser, targets });
+        if (name !== here && !followed && targets.some((t) => t.type === 'page' && isResultsPage(t.real ?? t.url, keyword))) follow ??= name;
       } catch (e) {
         s.lists.push({ socket: name, app: null, browser: null, targets: [], error: (String((e as Error).name || 'error') + ': ' + (e as Error).message).slice(0, 100) });
       } finally {
@@ -268,8 +278,11 @@ export async function watchAioSources(opts: {
     }
     snapshots.push(s);
     const front = /([\w.]+\/[\w.$]+)/.exec(s.front.join(' '))?.[1] ?? 'unknown';
+    // R / r / - as in the page lists; a page whose own address is not the one listed shows both ("r→R").
+    const kind = (u: string) => (isResultsPage(u, keyword) ? 'R' : isResultsPage(u) ? 'r' : '-');
     const kinds = (l: PhoneSnapshot['lists'][number]) =>
-      l.error ?? (l.targets.map((t) => (t.type === 'page' ? (isResultsPage(t.url, keyword) ? 'R' : isResultsPage(t.url) ? 'r' : '-') : t.type)).join(' ') || 'nothing');
+      l.error ??
+      (l.targets.map((t) => (t.type !== 'page' ? t.type : t.real !== undefined && t.real !== t.url ? kind(t.url) + '→' + (t.real ? kind(t.real) : '?') : kind(t.url))).join(' ') || 'nothing');
     step(`snapshot (${why}): front ${front} · sockets ${s.sockets.join(', ') || 'none listed'} · ` + s.lists.map((l) => `${l.socket}${l.app ? ' (' + l.app + ')' : ''}: ${kinds(l)}`).join(' | '));
   };
   const takeSnapshot = (why: PhoneSnapshot['why']) => {
@@ -370,9 +383,24 @@ export async function watchAioSources(opts: {
         (pages
           .map((t) => (isResultsPage(t.url, keyword) ? 'R ' : isResultsPage(t.url) ? `r "${queryOf(t.url)}" ` : '- ') + shortUrl(t.url))
           .join(' | ') || 'none');
-      const serp = pages.find((t) => isResultsPage(t.url, keyword));
+      let serp = pages.find((t) => isResultsPage(t.url, keyword));
+      let tabsLine = tabs;
+      // After the keyword, Chrome can keep listing a tab under the address it had before (the
+      // results page, preloaded while the keyword was typed, takes the tab over without the list
+      // catching up): each listed tab is asked where it really is, and looked at and read there.
+      if (!serp && files) {
+        for (const t of pages.slice(0, 3)) {
+          const real = await deps.evaluate(port, t.id, 'location.href', 1000);
+          if (real && isResultsPage(real, keyword)) {
+            serp = { ...t, url: real };
+            tabsLine = tabs + ' (its own address: R)';
+            out.note ??= 'read through a tab Chrome listed under its earlier address';
+            break;
+          }
+        }
+      }
       if (!serp) {
-        step(tabs);
+        step(tabsLine);
         // This search's results page just left the page list: where did it go?
         if (listed) {
           listed = false;
@@ -392,7 +420,7 @@ export async function watchAioSources(opts: {
       // few milliseconds), so the last read is never more than about half a second old when the
       // template moves on.
       out.probes++;
-      const probe = await evaluate(port, serp.id, AIO_PROBE_JS, 1500);
+      const probe = await deps.evaluate(port, serp.id, AIO_PROBE_JS, 1500);
       let p: { t?: number; b?: number; s?: number; c?: number; aio?: boolean } | null = null;
       try {
         p = probe ? JSON.parse(probe) : null;
@@ -400,7 +428,7 @@ export async function watchAioSources(opts: {
         p = null;
       }
       const loadedAt = Number(p?.t ?? 0);
-      step(tabs + ' · ' + (p ? `look ${p.b ?? 0} buttons/${p.s ?? 0} blocks/${p.c ?? 0} entries${p.aio ? ' overview' : ''}${loadedAt >= since ? '' : ' (older page)'}` : 'look: no answer'));
+      step(tabsLine + ' · ' + (p ? `look ${p.b ?? 0} buttons/${p.s ?? 0} blocks/${p.c ?? 0} entries${p.aio ? ' overview' : ''}${loadedAt >= since ? '' : ' (older page)'}` : 'look: no answer'));
       if (p && loadedAt >= since) {
         if (loadedAt !== lastLoad) {
           lastLoad = loadedAt;
@@ -410,7 +438,7 @@ export async function watchAioSources(opts: {
         // Read a load once it shows an AI Overview, and again whenever its sources change (more
         // buttons after "Show more", more hidden entries as the page fills in).
         if ((p.aio || Number(p.b ?? 0) > 0) && (loadedAt !== doc || shape !== docShape) && out.reads < 12) {
-          const raw = await evaluate(port, serp.id, AIO_SOURCES_JS, 8000);
+          const raw = await deps.evaluate(port, serp.id, AIO_SOURCES_JS, 8000);
           out.reads++;
           if (raw) {
             try {

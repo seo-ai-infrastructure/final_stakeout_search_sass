@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { watchAioSources, type WatchDeps } from '../apps/worker/src/aioWatch';
+import { AIO_PROBE_JS, AIO_SOURCES_JS } from '../packages/core/aioSources';
 
 // A stand-in for one DevTools endpoint: /json/list answers with whatever `targets` holds now.
 type Endpoint = { port: number; lists: number; firstListAt: number; targets: { id: string; type: string; url: string; title?: string }[]; server: Server };
@@ -128,4 +129,39 @@ test('aio watch: the results page found behind another DevTools socket is follow
   assert.ok(r.probes > 0, 'looked at the results page on the other socket');
   const copied = r.snapshots!.find((s) => s.why === 'copied')!;
   assert.ok(copied.lists.some((l) => l.socket === 'webview_devtools_remote_999' && l.app === 'com.google.android.googlequicksearchbox'));
+});
+
+test('aio watch: a tab Chrome still lists under the warm-up address is asked where it is, and read there', async () => {
+  // Chrome lists only the warm-up search, all run long; the tab itself is on the keyword's results page once it is typed.
+  const chrome = await endpoint('com.android.chrome');
+  const warm = page('stopwatch', 'tab1');
+  chrome.targets = [warm];
+  const p = phone(chrome);
+  const results = 'https://www.google.com/search?q=sell+my+house+fast&oq=sell+my+house+fast';
+  let typed = false;
+  let over = false;
+  const asked: string[] = [];
+  p.deps.evaluate = async (_port, id, expression) => {
+    if (expression === 'location.href') return (asked.push(id), typed ? results : warm.url);
+    if (expression === AIO_PROBE_JS) return JSON.stringify({ u: results, t: Date.now(), b: 6, s: 27, c: 103, aio: true });
+    if (expression === AIO_SOURCES_JS)
+      return JSON.stringify({ meta: { query: 'sell my house fast' }, clusters: [{ clusterIndex: 1, uuid: 'a', claimText: 'Cash buyers close fast.', visibleCitation: { label: 'x', url: null }, candidatePool: [] }] });
+    return null;
+  };
+  at(200, () => p.add('.rec'));
+  at(500, () => (typed = true));
+  at(2400, () => {
+    p.add('.done');
+    over = true;
+  });
+  const r = await watchAioSources({ phone: { imageId: 'x', adbAddr: null }, keyword: 'sell my house fast', run: RUN, done: () => over, until: Date.now() + 20000, deps: p.deps });
+  chrome.server.close();
+  assert.equal(r.status, 'captured');
+  assert.ok(r.reads >= 1 && r.probes >= 1);
+  assert.equal(r.note, 'read through a tab Chrome listed under its earlier address');
+  assert.ok(r.trace?.some((l) => l.includes('(its own address: R)')));
+  assert.ok(asked.includes('tab1'));
+  // The snapshot shows the tab's own address beside the listed one.
+  const typing = r.snapshots?.find((s) => s.why === 'typing');
+  assert.equal(typing?.lists[0].targets[0].real !== undefined, true);
 });
