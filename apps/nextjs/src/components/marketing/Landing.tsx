@@ -1,9 +1,9 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { LINES, type Line } from '@stakeout/core/gbpPlans';
-import { WELCOME, WHITE_LABEL, usd } from '@/lib/pricing';
+import { SCAN_NOW_5X5_POINTS, WELCOME, WHITE_LABEL, usd } from '@/lib/pricing';
 import { ACCENT, Arrow, Check, Faq, HREF, MONO, OfferBanner, Play, RecordingDialog, SiteFoot, SiteNav, TONE, type FaqItem } from './SiteKit';
-import { AuditCard, Calculator, Eyebrow, SeatCards } from './PriceBlocks';
+import { AuditCard, Eyebrow, ProfitCalculator, SeatCards } from './PriceBlocks';
 import './site.css';
 
 /**
@@ -192,8 +192,8 @@ function HomePricing() {
           Each seat covers one client: scheduled scans of their keywords on real Android phones, a screen recording at every grid point, and AI Overview tracking. Command and Dominator add the Google listing tools. No setup fees, cancel any time.
         </p>
         <AuditCard style={{ marginTop: 36 }} />
+        <ProfitCalculator style={{ marginTop: 28 }} />
         <SeatCards style={{ marginTop: 28 }} />
-        <Calculator style={{ marginTop: 28 }} />
         <p style={{ margin: '24px 0 0', fontSize: 15.5, lineHeight: 1.6 }}>
           <a href={HREF.pricing} style={{ color: ACCENT, fontWeight: 700 }}>See full pricing: prospect audits, top-ups, white-label and the seat comparison →</a>
         </p>
@@ -671,6 +671,16 @@ const COMMAND_CARDS: { tag: string; title: string; body: string; soon?: string }
   },
 ];
 
+/** What one Command seat includes, as a receipt. Facebook and LinkedIn posting opens to customers later. */
+const COMMAND_RECEIPT: [string, string][] = [
+  [`Real-Android 5×5 & AI Overview tracking (${(LINES.COMMAND.points - SCAN_NOW_5X5_POINTS).toLocaleString('en-US')} pts/mo + 1 Scan Now 5×5)`, 'INCLUDED'],
+  ['Rival category, service & AI-citation gap analysis', 'INCLUDED'],
+  ['Daily Google Business Profile watchdog & safe editor', 'INCLUDED'],
+  ['Google post calendar (Facebook & LinkedIn coming soon)', 'INCLUDED'],
+  ['GBP calls, Search Console, GA4 + AI assistant visits', 'INCLUDED'],
+  ['Credit overages, AI tracker add-ons & posting tool fees', '$0'],
+];
+
 /* section#command */
 function SCommand() {
   return (
@@ -692,6 +702,91 @@ function SCommand() {
               <p style={{ margin: '12px 0 0', fontSize: 15.5, lineHeight: 1.7, color: '#CBD5E1' }}>{c.body}</p>
             </article>
           ))}
+        </div>
+        <div style={{ marginTop: 24, border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 16, background: '#0B1017', padding: 'clamp(18px, 2.4vw, 28px)', fontFamily: MONO, fontSize: 13, lineHeight: 1.55, color: '#CBD5E1' }}>
+          <p style={{ margin: 0, paddingBottom: 12, borderBottom: '1px dashed rgba(255, 255, 255, 0.2)', fontWeight: 700, letterSpacing: '0.06em', color: '#F1F5F9' }}>
+            STAKEOUT COMMAND · ONE CLIENT SEAT ({from('COMMAND')}/MO → {tier('COMMAND', 3)} AT SCALE)
+          </p>
+          <ul style={{ listStyle: 'none', margin: 0, padding: '6px 0', borderBottom: '1px dashed rgba(255, 255, 255, 0.2)' }}>
+            {COMMAND_RECEIPT.map(([what, price]) => (
+              <li key={what} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, padding: '7px 0' }}>
+                <span>{what}</span>
+                <span style={{ flex: 'none', fontWeight: 700, color: price === '$0' ? '#F1F5F9' : '#34D399' }}>{price}</span>
+              </li>
+            ))}
+          </ul>
+          <p style={{ margin: 0, paddingTop: 12, textAlign: 'center', fontWeight: 700, letterSpacing: '0.04em', color: ACCENT }}>*** REPLACES 4 AGENCY TOOLS · BUILT TO RESELL AT $500+/MO ***</p>
+        </div>
+        <div style={{ marginTop: 24, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px 20px' }}>
+          <a className="so-btn" href={HREF.firstAudit} style={{ display: 'inline-flex', alignItems: 'center', gap: 10, minHeight: 50, boxSizing: 'border-box', background: ACCENT, color: '#0B1017', fontWeight: 700, fontSize: 16, lineHeight: 1.3, padding: '14px 24px', borderRadius: 12 }}>
+            Run Your First 5×5 Scan for {usd(WELCOME.cents)}
+            <Arrow />
+          </a>
+          <p style={{ margin: 0, flex: '1 1 320px', fontSize: 14, lineHeight: 1.55, color: '#94A3B8' }}>Your {usd(WELCOME.cents)} is credited toward your first seat. Connect Search Console and Analytics free anytime.</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Credits against one price per client. The other side's numbers are from Local Falcon's own price
+ * guide (1 credit a pin, 25 credits a Falcon AI report, monthly credits expire, review reports $19 a
+ * location; checked 21 Nov 2026) and the Honest Math section above.
+ */
+const CASINO: [string, string, string][] = [
+  ['Base API grid (5×5 to 9×9)', '25–81 credits', 'A server query with coordinates passed in. No video proof.'],
+  ['AI Overview surcharge', '+25 to +75 credits', 'An AI switch on by default, or a second scan for the AI Overview.'],
+  ['Daily tracking, one keyword', '750 credits/mo', 'A 5×5 every day: 25 credits × 30 days.'],
+  ['Review analysis', '$19 a location', 'Charged per location, on top of the credits.'],
+  ['End of the month', 'Wiped to 0', 'Unused credits on monthly plans expire with the billing period.'],
+];
+const COMMAND_FLAT: string[] = [
+  '20 full 5×5 real-Android audits a month (500 pooled points: 5 weekly 5×5 keywords or 10 every other week), plus 1 Scan Now 5×5',
+  '500 MP4 screen recordings with SHA-256 receipts, no surcharge',
+  'The AI Overview and the sites it cites, on every Chrome point, no add-on',
+  '3D U.S. Census buying-power map, included',
+  'Rival gaps, the safe GBP editor, review inbox and daily watchdog, included (Facebook & LinkedIn posting coming soon)',
+];
+
+/* section#credit-trap */
+function SCreditTrap() {
+  return (
+    <section id="credit-trap" style={{ background: '#0E141D', borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: 'clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)' }}>
+        <Eyebrow>CREDITS VS. ONE PRICE PER CLIENT</Eyebrow>
+        <h2 style={{ margin: '16px 0 0', fontWeight: 800, fontSize: 'clamp(32px, 3.6vw, 52px)', lineHeight: 1.12, letterSpacing: '-0.025em', maxWidth: 980 }}>The “1 Pin = 1 Credit” Trap vs. One Price per Client.</h2>
+        <p style={{ margin: '20px 0 0', fontSize: 18, lineHeight: 1.65, color: '#CBD5E1', maxWidth: 820 }}>Why cheap API grid plans double at checkout—and still leave you defending colored dots.</p>
+        <div style={{ marginTop: 44, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))', gap: 24, alignItems: 'stretch' }}>
+          <div style={{ border: '1px solid rgba(239, 68, 68, 0.35)', borderRadius: 20, background: '#0B1017', padding: 28, display: 'flex', flexDirection: 'column' }}>
+            <p style={{ margin: 0, fontFamily: MONO, fontSize: 12, lineHeight: 1.5, letterSpacing: '0.08em', color: '#F87171' }}>THE CREDIT CASINO · API RANK TRACKERS</p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '18px 0 0', display: 'grid', gap: 14 }}>
+              {CASINO.map(([what, cost, why]) => (
+                <li key={what} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.06)', paddingBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, fontFamily: MONO, fontSize: 13.5, lineHeight: 1.5 }}>
+                    <span style={{ color: '#F1F5F9' }}>{what}</span>
+                    <span style={{ flex: 'none', fontWeight: 700, color: '#EF4444' }}>{cost}</span>
+                  </div>
+                  <p style={{ margin: '4px 0 0', fontSize: 13.5, lineHeight: 1.55, color: '#94A3B8' }}>{why}</p>
+                </li>
+              ))}
+            </ul>
+            <p style={{ margin: 'auto 0 0', paddingTop: 20, fontFamily: MONO, fontSize: 13, lineHeight: 1.5, fontWeight: 700, color: '#F87171' }}>Unpredictable cost. Static dots prospects don’t believe.</p>
+          </div>
+          <div style={{ border: `2px solid ${ACCENT}`, borderRadius: 20, background: '#111927', padding: 27, display: 'flex', flexDirection: 'column', boxShadow: `0 0 44px ${TONE.accentGlow}` }}>
+            <p style={{ margin: 0, fontFamily: MONO, fontSize: 12, lineHeight: 1.5, letterSpacing: '0.08em', color: ACCENT }}>STAKEOUT COMMAND · ONE PRICE PER CLIENT</p>
+            <p style={{ margin: '12px 0 0', fontFamily: MONO, fontWeight: 700, fontSize: 'clamp(26px, 2.8vw, 34px)', lineHeight: 1.2, color: '#F1F5F9' }}>{from('COMMAND')} / CLIENT / MO</p>
+            <p style={{ margin: '4px 0 0', fontSize: 14, lineHeight: 1.5, color: '#94A3B8' }}>No credit math. Graduated down to {tier('COMMAND', 3)} at scale.</p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '18px 0 0', display: 'grid', gap: 12, fontSize: 15, lineHeight: 1.55, color: '#CBD5E1' }}>
+              {COMMAND_FLAT.map((t) => (
+                <li key={t} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <Check size={16} top={4} />
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+            <p style={{ margin: 'auto 0 0', paddingTop: 20, fontFamily: MONO, fontSize: 13, lineHeight: 1.5, fontWeight: 700, color: '#34D399' }}>Fixed cost per client. Resell verified proof at $350–$1,000+/mo.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -835,6 +930,7 @@ function Body({ v }: { v: V }) {
       <SBuyingPower v={v} />
       <SCommand />
       <SGoogleListings v={v} />
+      <SCreditTrap />
       <HomePricing />
       <Faq id="faq" items={HOME_FAQ} wide />
       <SStart v={v} />

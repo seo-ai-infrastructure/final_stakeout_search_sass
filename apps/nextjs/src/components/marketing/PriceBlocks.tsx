@@ -65,60 +65,123 @@ export function AuditCard({ style }: { style?: React.CSSProperties }) {
   );
 }
 
-/** What a roster costs a month on each seat, with the graduated brackets worked out. */
-export function Calculator({ style }: { style?: React.CSSProperties }) {
-  const [clients, setClients] = useState(10);
+/** The bracket a roster's newest seats fall in. */
+const BRACKET = (n: number) =>
+  n <= 9 ? 'Standard bracket' : n <= 24 ? 'Volume bracket unlocked · seats 10–24 discounted' : n <= 99 ? 'Scale bracket unlocked · seats 25–99 discounted' : 'Enterprise bracket unlocked · seats 100+ discounted';
+const PRESETS: [number, string][] = [[350, 'Proof add-on'], [500, 'Standard local + AI'], [1000, 'Market dominance']];
+const TIERS: Line[] = ['SCOUT', 'COMMAND', 'DOMINATOR'];
+const SUITE: Partial<Record<Line, boolean>> = { COMMAND: true, DOMINATOR: true };
+const dollarsOf = (cents: number) => money(cents / 100);
+
+/**
+ * What an agency keeps: retainers in, seats out, with the graduated brackets worked out exactly as
+ * Stripe bills them (lineCents), and what the seats include.
+ */
+export function ProfitCalculator({ style }: { style?: React.CSSProperties }) {
+  const [clients, setClients] = useState(15);
+  const [retainer, setRetainer] = useState(500);
+  const [line, setLine] = useState<Line>('COMMAND');
+  const revenue = clients * retainer;
+  const cost = lineCents(line, clients) / 100;
+  const profit = revenue - cost;
+  const margin = revenue ? (profit / revenue) * 100 : 0;
+  const boosts = clients * (SCAN_NOW_INCLUDED[line] ?? 0);
+  const pool = clients * scheduled5x5(line) * 25;
   const label = clients === 1 ? '1 client' : clients + ' clients';
-  const seats: { line: Line; featured?: boolean }[] = [{ line: 'SCOUT' }, { line: 'COMMAND', featured: true }, { line: 'DOMINATOR' }];
+  const slider = { display: 'block', width: '100%', height: 40, margin: '6px 0 0', accentColor: ACCENT, cursor: 'pointer' } as const;
+  const fieldHead = { display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: '4px 12px' } as const;
+  const pill = (on: boolean) => ({ minHeight: 40, padding: '8px 12px', borderRadius: 999, border: `1px solid ${on ? ACCENT : 'rgba(255, 255, 255, 0.16)'}`, background: on ? TONE.accentSoft : 'transparent', color: on ? '#F1F5F9' : '#CBD5E1', fontFamily: 'inherit', fontSize: 13, lineHeight: 1.3, fontWeight: 600 });
+  const row = { display: 'flex', justifyContent: 'space-between', gap: 14, padding: '10px 0', borderBottom: '1px dashed rgba(255, 255, 255, 0.12)' };
+  const fig = { fontFamily: MONO, flex: 'none', textAlign: 'right' as const };
   return (
-    <div style={{ border: LINE, borderRadius: 20, background: '#111823', padding: '26px 28px', ...style }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '8px 16px' }}>
-        <label htmlFor="client-count" style={{ fontWeight: 700, fontSize: 18, lineHeight: 1.3 }}>How many clients?</label>
-        <output htmlFor="client-count" style={{ fontFamily: MONO, fontWeight: 700, fontSize: 20, lineHeight: 1.3, color: ACCENT }}>{label}</output>
-      </div>
-      <input
-        id="client-count"
-        type="range"
-        min={1}
-        max={120}
-        step={1}
-        value={clients}
-        onChange={(e) => setClients(Math.min(120, Math.max(1, Math.round(Number(e.target.value)))))}
-        aria-valuetext={label}
-        style={{ display: 'block', width: '100%', height: 44, margin: '8px 0 0', accentColor: ACCENT, cursor: 'pointer' }}
-      />
-      <div aria-hidden="true" style={{ display: 'flex', justifyContent: 'space-between', fontFamily: MONO, fontSize: 11.5, lineHeight: 1.4, color: '#94A3B8' }}>
-        <span>1</span>
-        <span>120</span>
-      </div>
-      <div style={{ marginTop: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: 12 }}>
-        {seats.map(({ line, featured }) => {
-          const total = lineCents(line, clients) / 100;
-          return (
-            <div key={line} style={{ border: featured ? `2px solid ${ACCENT}` : LINE, borderRadius: 14, padding: featured ? '17px 19px' : '18px 20px', background: '#0B1017' }}>
-              <p style={{ margin: 0, fontFamily: MONO, fontSize: 12, lineHeight: 1.5, letterSpacing: '0.08em', color: featured ? ACCENT : '#94A3B8' }}>{LINES[line].name.toUpperCase()}</p>
-              <p style={{ margin: '6px 0 0', lineHeight: 1.2 }}>
-                <span style={{ fontWeight: 800, fontSize: 32, letterSpacing: '-0.02em' }}>{money(total)}</span>
-                <span style={{ fontSize: 14, color: '#94A3B8' }}> / mo</span>
-              </p>
-              <p style={{ margin: '6px 0 0', fontSize: 13.5, lineHeight: 1.5, color: '#94A3B8' }}>{money(total / clients)} per client</p>
+    <div style={{ border: LINE, borderRadius: 20, background: '#111827', padding: 'clamp(20px, 2.6vw, 30px)', ...style }}>
+      <p style={{ margin: 0, fontFamily: MONO, fontSize: 12, lineHeight: 1.5, letterSpacing: '0.1em', color: ACCENT }}>AGENCY PROFIT CALCULATOR</p>
+      <h3 style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 'clamp(22px, 2.2vw, 30px)', lineHeight: 1.2, letterSpacing: '-0.015em' }}>Turn {from('COMMAND')} seats into high-margin agency retainers.</h3>
+      <p style={{ margin: '8px 0 0', fontSize: 15, lineHeight: 1.6, color: '#94A3B8', maxWidth: 720 }}>Model your exact monthly wholesale cost and net retainer profit as your client roster scales.</p>
+      <div style={{ marginTop: 24, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 'clamp(20px, 3vw, 36px)', alignItems: 'start' }}>
+        <div style={{ display: 'grid', gap: 22 }}>
+          <div>
+            <div style={fieldHead}>
+              <label htmlFor="client-count" style={{ fontWeight: 700, fontSize: 16 }}>Active clients</label>
+              <output htmlFor="client-count" style={{ fontFamily: MONO, fontWeight: 700, fontSize: 18, color: ACCENT }}>{label}</output>
             </div>
-          );
-        })}
-      </div>
-      <div style={{ marginTop: 16, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '10px 24px' }}>
-        <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: '#CBD5E1' }}>
-          On Command, {label} get <strong style={{ color: '#F1F5F9' }}>{points(clients * scheduled5x5('COMMAND'))} scheduled 5×5 scans</strong> and{' '}
-          <strong style={{ color: '#F1F5F9' }}>{points(clients * (SCAN_NOW_INCLUDED.COMMAND ?? 0))} Scan Now 5×5{clients === 1 ? '' : 's'}</strong> a month.
-        </p>
-        {clients >= WHITE_LABEL.freeFrom ? (
-          <p style={{ margin: 0, display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13.5, lineHeight: 1.4, fontWeight: 700, color: '#34D399', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.45)', borderRadius: 999, padding: '6px 12px' }}>
-            <Check size={14} top={0} />
-            White-label included free
+            <input id="client-count" type="range" min={1} max={120} step={1} value={clients} onChange={(e) => setClients(Math.min(120, Math.max(1, Math.round(Number(e.target.value)))))} aria-valuetext={label} style={slider} />
+            <p style={{ margin: '4px 0 0', display: 'inline-block', fontSize: 12.5, lineHeight: 1.4, fontWeight: 600, color: clients > 9 ? '#34D399' : '#94A3B8', border: `1px solid ${clients > 9 ? 'rgba(16, 185, 129, 0.45)' : 'rgba(255, 255, 255, 0.14)'}`, background: clients > 9 ? 'rgba(16, 185, 129, 0.1)' : 'transparent', borderRadius: 999, padding: '4px 10px' }}>{BRACKET(clients)}</p>
+          </div>
+          <div>
+            <div style={fieldHead}>
+              <label htmlFor="retainer" style={{ fontWeight: 700, fontSize: 16 }}>Monthly retainer per client</label>
+              <output htmlFor="retainer" style={{ fontFamily: MONO, fontWeight: 700, fontSize: 18, color: ACCENT }}>{money(retainer)} / mo</output>
+            </div>
+            <input id="retainer" type="range" min={250} max={1500} step={50} value={retainer} onChange={(e) => setRetainer(Math.min(1500, Math.max(250, Math.round(Number(e.target.value) / 50) * 50)))} aria-valuetext={money(retainer) + ' a month'} style={slider} />
+            <div role="group" aria-label="Common retainers" style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {PRESETS.map(([v, name]) => (
+                <button key={v} type="button" aria-pressed={retainer === v} onClick={() => setRetainer(v)} style={pill(retainer === v)}>
+                  {money(v)}/mo · {name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p id="seat-pick" style={{ margin: 0, fontWeight: 700, fontSize: 16 }}>Seat</p>
+            <div role="group" aria-labelledby="seat-pick" style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {TIERS.map((t) => (
+                <button key={t} type="button" aria-pressed={line === t} onClick={() => setLine(t)} style={pill(line === t)}>
+                  {LINES[t].name} <span style={{ fontFamily: MONO, fontWeight: 500 }}>{from(t)}→{dollarsOf(LINES[t].tiers[LINES[t].tiers.length - 1].cents)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div aria-live="polite" style={{ border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 16, background: '#0B1017', padding: 'clamp(18px, 2.2vw, 24px)', fontSize: 14, lineHeight: 1.5, color: '#CBD5E1' }}>
+          <p style={{ margin: 0, fontFamily: MONO, fontSize: 12, letterSpacing: '0.1em', color: '#94A3B8' }}>NET MONTHLY PROFIT</p>
+          <p style={{ margin: '4px 0 0', fontFamily: MONO, fontWeight: 700, fontSize: 'clamp(30px, 3.4vw, 42px)', lineHeight: 1.15, color: '#10B981' }}>{money(profit)}<span style={{ fontSize: 16, color: '#94A3B8' }}> / mo</span></p>
+          <p style={{ margin: '10px 0 0', display: 'inline-block', fontFamily: MONO, fontSize: 12.5, color: '#34D399', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.45)', borderRadius: 999, padding: '4px 10px' }}>
+            {money(profit * 12)} / yr net · {margin.toFixed(1)}% agency margin
           </p>
-        ) : (
-          <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.5, color: '#94A3B8' }}>White-label: {usd(WHITE_LABEL.cents)} once, or free from {WHITE_LABEL.freeFrom} clients.</p>
-        )}
+          <div style={{ marginTop: 14 }}>
+            <div style={row}>
+              <span>Client retainers ({clients} × {money(retainer)})</span>
+              <span style={fig}>{money(revenue)} / mo</span>
+            </div>
+            <div style={row}>
+              <span>Stakeout {LINES[line].name} seats ({money(cost / clients)} a seat, blended)</span>
+              <span style={fig}>−{money(cost)} / mo</span>
+            </div>
+            <div style={{ ...row, borderBottom: 'none' }}>
+              <span>Overage fees and AI add-on charges</span>
+              <span style={fig}>$0</span>
+            </div>
+          </div>
+          <p style={{ margin: '14px 0 0', fontFamily: MONO, fontSize: 12, letterSpacing: '0.1em', color: '#94A3B8' }}>INCLUDED EACH MONTH</p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'grid', gap: 8 }}>
+            <li style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <Check size={16} top={3} />
+              <span>{points(pool)} pooled scan points ({points(pool / 25)} scheduled 5×5 audits on real Android phones)</span>
+            </li>
+            {boosts > 0 && (
+              <li style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <Check size={16} top={3} />
+                <span>{points(boosts)} Scan Now 5×5{boosts === 1 ? '' : 's'}, ahead of the queue</span>
+              </li>
+            )}
+            {SUITE[line] && (
+              <li style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <Check size={16} top={3} />
+                <span>{label === '1 client' ? '1 Google listing suite' : `${clients} Google listing suites`} with the daily watchdog and review inbox</span>
+              </li>
+            )}
+          </ul>
+          {clients >= WHITE_LABEL.freeFrom ? (
+            <p style={{ margin: '14px 0 0', fontSize: 13, lineHeight: 1.45, fontWeight: 700, color: '#34D399', background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.45)', borderRadius: 10, padding: '8px 12px' }}>
+              ★ Free white-label portal and domain unlocked: saves {usd(WHITE_LABEL.cents)}
+            </p>
+          ) : (
+            <p style={{ margin: '14px 0 0', fontSize: 13, lineHeight: 1.45, color: '#94A3B8' }}>
+              Add {WHITE_LABEL.freeFrom - clients} more client{WHITE_LABEL.freeFrom - clients === 1 ? '' : 's'} to unlock white-label free and volume seat pricing.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -212,13 +275,13 @@ export function CalculatorSection() {
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: '16px 40px' }}>
           <div style={{ flex: '1 1 520px', minWidth: 0 }}>
             <Eyebrow>YOUR MONTH</Eyebrow>
-            <h2 style={H2}>What your roster costs.</h2>
+            <h2 style={H2}>What your roster costs, and what you keep.</h2>
           </div>
           <p style={{ flex: '1 1 380px', margin: 0, fontSize: 15, lineHeight: 1.6, color: '#94A3B8', maxWidth: 520 }}>
             Graduated: your first 9 clients are at the first price, clients 10 to 24 at the next, then 25 to 99, then 100 and up. Each price applies only to the clients in its bracket.
           </p>
         </div>
-        <Calculator style={{ marginTop: 32 }} />
+        <ProfitCalculator style={{ marginTop: 32 }} />
       </div>
     </section>
   );

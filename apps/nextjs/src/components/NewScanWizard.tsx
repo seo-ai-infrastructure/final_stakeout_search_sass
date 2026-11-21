@@ -53,6 +53,8 @@ export function NewScanWizard() {
   );
   // Scan Now (first in line, 2 points a grid point) or scheduled (1 point) at a day and hour, once or repeating.
   const [speed, setSpeed] = useState<'now' | 'scheduled'>('now');
+  // Seat holders start on Scheduled (half the points); a first audit or a prospect audit starts on Scan Now.
+  const speedPicked = useRef(false);
   const [repeat, setRepeat] = useState<'once' | 'weekly' | 'biweekly'>('weekly');
   const [runDate, setRunDate] = useState(() => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
   const [runTime, setRunTime] = useState('09:00');
@@ -125,7 +127,7 @@ export function NewScanWizard() {
     setTrackAiOverviews(b.trackAiOverviews);
     setScheduleType(b.scheduleType);
     // A business saved as repeating is scheduled weekly by default.
-    if (b.scheduleType !== 'once') { setSpeed('scheduled'); setRepeat('weekly'); }
+    if (b.scheduleType !== 'once') { speedPicked.current = true; setSpeed('scheduled'); setRepeat('weekly'); }
     // Keywords that arrived with the page (from a Google profile's search terms) stay picked whichever business is chosen.
     setKeywordList([...new Set([...b.keywords, ...incoming.current])]);
     setPicked(incoming.current.length ? incoming.current : b.keywords.slice(0, 1));
@@ -280,6 +282,10 @@ export function NewScanWizard() {
       } catch {}
     }
     loadUser();
+    fetch('/api/billing/gbp', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (Number(d?.seats) > 0 && !speedPicked.current) setSpeed('scheduled'); })
+      .catch(() => {});
     fetch('/api/fleet/profiles')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => Array.isArray(d?.phones) && setPhones(d.phones))
@@ -1080,8 +1086,8 @@ export function NewScanWizard() {
               </p>
             </div>
             <div role="group" aria-label="When it runs" className="inline-flex shrink-0 overflow-hidden rounded-lg border border-slate-700 text-xs font-semibold">
-              <button type="button" aria-pressed={speed === 'now'} onClick={() => setSpeed('now')} className={'min-h-[40px] px-2.5 ' + (speed === 'now' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}>Scan Now · 2×</button>
-              <button type="button" aria-pressed={speed === 'scheduled'} onClick={() => setSpeed('scheduled')} className={'min-h-[40px] px-2.5 ' + (speed === 'scheduled' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}>Schedule · 1×</button>
+              <button type="button" aria-pressed={speed === 'scheduled'} onClick={() => { speedPicked.current = true; setSpeed('scheduled'); }} title="Runs at the day and hour you pick, results within 3 hours" className={'min-h-[40px] px-2.5 ' + (speed === 'scheduled' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}><span className="block leading-tight">Schedule · 1×</span><span className="block text-[10px] font-medium leading-tight opacity-80">save 50%</span></button>
+              <button type="button" aria-pressed={speed === 'now'} onClick={() => { speedPicked.current = true; setSpeed('now'); }} title="Jumps ahead of every scheduled scan" className={'min-h-[40px] px-2.5 ' + (speed === 'now' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}><span className="block leading-tight">Scan Now · 2×</span><span className="block text-[10px] font-medium leading-tight opacity-80">first in line</span></button>
             </div>
           </div>
           {speed === 'scheduled' && (
