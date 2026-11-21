@@ -399,7 +399,13 @@ export const AIO_SOURCES_JS = `(() => {
   });
 })()`;
 
-export type AioSourceEntry = {
+/** Before or after the overview was first seen to grow ("Show more"), for anything a read found. */
+export type FirstSeenPhase = 'initial' | 'post_expand';
+
+/** When the reads first and last found something, in ms into the watch, and in which phase (see mergeReads). */
+export type SeenStamp = { firstSeenMs?: number; lastSeenMs?: number; phase?: FirstSeenPhase };
+
+export type AioSourceEntry = SeenStamp & {
   containerPrefix?: string;
   candidateIndex?: string;
   componentJsuid?: string | null;
@@ -417,12 +423,23 @@ export type AioSourceEntry = {
   parseError?: string;
 };
 
-export type AioSentence = {
+export type AioSentence = SeenStamp & {
   clusterIndex: number;
   uuid: string;
   claimText: string;
   visibleCitation: { label: string; url: string | null; ved: string | null; hveid: string | null };
   candidatePool: AioSourceEntry[];
+};
+
+/** What the reads of one page added up to (see mergeReads). */
+export type AioReadStats = {
+  /** The first read's sentences and sources (distinct citations plus entries under no sentence). */
+  initialSentenceCount: number;
+  initialEntryCount: number;
+  /** A later read had more sentences, more sources or a longer overview than any before ("Show more"). */
+  expandedSeen: boolean;
+  postExpandAddedSentences: number;
+  postExpandAddedEntries: number;
 };
 
 export type AioDossier = {
@@ -444,6 +461,9 @@ export type AioDossier = {
     };
     readMs?: number;
     diagnostics?: string[];
+    /** Every read of the page that went into this one (see mergeReads): when (ms into the watch), and what it held. */
+    reads?: { atMs: number; sentences: number; rows: number }[];
+    stats?: AioReadStats;
   };
   clusters: AioSentence[];
   /** Every hidden source entry on the page, one row per address (see AIO_SOURCES_JS). */
@@ -455,7 +475,7 @@ export type AioDossier = {
   };
 };
 
-export type AioPoolRow = {
+export type AioPoolRow = SeenStamp & {
   order: number;
   url: string | null;
   domain: string | null;
@@ -473,6 +493,8 @@ export type AioPoolRow = {
   where: string;
   sections: string[];
   attrid: string | null;
+  /** In the overview under no sentence at first, then under one in a later read (after "Show more"). */
+  promotedAfterExpand?: boolean;
 };
 
 export type AioPoolBreakdown = {
@@ -489,13 +511,294 @@ export type AioPoolBreakdown = {
   sections: { section: string; entries: number; addresses: number }[];
 };
 
+/** An address as Google sometimes displays it ("https://site.com › path", "site.com / path"), made a link. */
+const displayToUrl = (v: string) => (/›|\s\/\s/.test(v) ? v.replace(/\s*›\s*/g, '/').replace(/\s+\/\s+/g, '/') : v);
+const isGoogleHost = (host: string) => /(^|\.)google\.[a-z]{2,3}(\.[a-z]{2})?$/i.test(host);
+const parse = (v: string | null | undefined): URL | null => {
+  if (!v) return null;
+  try {
+    return new URL(displayToUrl(v), 'https://www.google.com');
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * What a source entry points to. On a local overview each business card carries its own links: its
+ * Google listing, its photo, Directions (Google Maps), Call, and its website as set on the listing
+ * (usually tagged utm_source=gbp or utm_campaign=gmb). Everything else is a web page.
+ */
+export type AioLinkKind = 'listing' | 'card_photo' | 'card_directions' | 'card_call' | 'card_website' | 'web';
+
+export function linkKind(url: string | null | undefined, mid?: string | null): AioLinkKind {
+  const u = parse(url);
+  if (!u) return mid ? 'listing' : 'web';
+  if (u.protocol === 'tel:') return 'card_call';
+  const host = u.hostname.toLowerCase();
+  if (/(^|\.)(googleusercontent|ggpht|gstatic)\.com$/.test(host)) return 'card_photo';
+  if (host === 'maps.app.goo.gl' || (host === 'goo.gl' && u.pathname.startsWith('/maps'))) return 'card_directions';
+  if (isGoogleHost(host)) {
+    if (/^maps\./.test(host) || /^\/maps(\/|$)/.test(u.pathname) || ['daddr', 'ludocid', 'cid'].some((k) => u.searchParams.has(k)) || /!1s0x[0-9a-f]+:0x/i.test(u.href)) return 'card_directions';
+    return 'listing';
+  }
+  if (host === 'g.page') return 'listing';
+  // A page carrying a Google business ID, or a website link tagged as coming from a business's listing.
+  if (mid) return 'card_website';
+  const tags = [...u.searchParams.entries()].filter(([k]) => /^utm_/i.test(k)).map(([, v]) => v.toLowerCase()).join(' ');
+  if (/(^|[^a-z])(gbp|gmb|gmblisting|google[-_ ]?(my[-_ ]?business|business|local|maps|places)|local[-_ ]?(listing|seo))([^a-z]|$)/.test(tags)) return 'card_website';
+  return 'web';
+}
+
+/** Google's own: a listing, or one of a card's photo, Directions or Call (a card's website is the business's own page). */
+export const isGoogleKind = (k: AioLinkKind) => k === 'listing' || k === 'card_photo' || k === 'card_directions' || k === 'card_call';
+
+/** An address without its tracking: Google's wrapper unwrapped, utm_* and click ids dropped, no fragment. */
+export function cleanUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const real = realUrl(displayToUrl(url));
+  if (!real) return null;
+  try {
+    const u = new URL(real);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return real;
+    for (const k of [...u.searchParams.keys()]) if (/^(utm_.*|gclid|fbclid|msclkid|srsltid|ved|usg|ei|g_st|entry)$/i.test(k)) u.searchParams.delete(k);
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return real;
+  }
+}
+
+/** The utm_* tags on a link (lower-case keys), and other tracking worth keeping (cid, rwg_token, oc) under `extra`. Null with none. */
+export function utmParams(url: string | null | undefined): { [k: string]: string | Record<string, string> | undefined; extra?: Record<string, string> } | null {
+  const u = parse(url);
+  if (!u || (u.protocol !== 'http:' && u.protocol !== 'https:')) return null;
+  const out: { [k: string]: string | Record<string, string> | undefined; extra?: Record<string, string> } = {};
+  const extra: Record<string, string> = {};
+  for (const [k, v] of u.searchParams) {
+    if (/^utm_/i.test(k)) out[k.toLowerCase()] = v;
+    else if (/^(cid|rwg_token|oc)$/i.test(k)) extra[k.toLowerCase()] = v;
+  }
+  if (Object.keys(extra).length) out.extra = extra;
+  return Object.keys(out).length ? out : null;
+}
+
+/** Google Maps' ID for a place in a link: its feature id ("0x87b6…:0xc970…") or its listing number ("cid:…"). */
+export function mapsIdOf(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let s = url;
+  try {
+    s = decodeURIComponent(url);
+  } catch {
+    /* as given */
+  }
+  const fid = /!1s(0x[0-9a-f]+:0x[0-9a-f]+)/i.exec(s) ?? /[?&]ftid=(0x[0-9a-f]+:0x[0-9a-f]+)/i.exec(s);
+  if (fid) return fid[1].toLowerCase();
+  const cid = /[?&](?:ludocid|cid)=(\d{6,})/.exec(s);
+  return cid ? 'cid:' + cid[1] : null;
+}
+
+/** The street address and coordinates a Google Maps link holds (Directions' destination, !3d…!4d…, @lat,lng). Coordinates stay null when absent. */
+export function placeOf(url: string | null | undefined): { address: string | null; coords: { lat: number; lng: number } | null } | null {
+  const u = parse(url);
+  if (!u || !url) return null;
+  let coords: { lat: number; lng: number } | null = null;
+  const c = /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/.exec(url) ?? /@(-?\d+\.\d+),(-?\d+\.\d+)/.exec(url);
+  if (c) coords = { lat: Number(c[1]), lng: Number(c[2]) };
+  let address: string | null = null;
+  const dir = /^\/maps\/dir\/([^/]*)\/([^/]+)/.exec(u.pathname);
+  const dest = dir ? dir[2] : u.searchParams.get('daddr');
+  if (dest) {
+    let text = dest.replace(/\+/g, ' ');
+    try {
+      text = decodeURIComponent(text);
+    } catch {
+      /* as given */
+    }
+    text = text.trim();
+    const ll = /^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/.exec(text);
+    if (ll) coords ??= { lat: Number(ll[1]), lng: Number(ll[2]) };
+    else if (text) address = text.slice(0, 200);
+  }
+  if (coords && (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng) || Math.abs(coords.lat) > 90 || Math.abs(coords.lng) > 180 || (coords.lat === 0 && coords.lng === 0))) coords = null;
+  return address || coords ? { address, coords } : null;
+}
+
+/** The registrable domain of an address ("attorneys.superlawyers.com" → "superlawyers.com"; "x.co.uk" kept as "x.co.uk"). */
+export function registrableDomain(v: string | null | undefined): string | null {
+  const site = siteOf(v);
+  if (!site) return null;
+  const parts = site.split('.');
+  if (parts.length <= 2) return site;
+  const two = parts.slice(-2).join('.');
+  const keep = /^(co|com|org|net|gov|edu|ac|ltd|plc)\.[a-z]{2}$/.test(two) ? 3 : 2;
+  return parts.slice(-keep).join('.');
+}
+
+// The same thing across reads: a sentence by its words; a citation and a row by Google ID, Maps ID or clean address.
+const sentenceKey = (c: AioSentence) => c.claimText.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() || 'uuid:' + c.uuid;
+/** Each sentence's key in one read; the same words twice in a read stay two sentences ("…#2"). */
+const sentenceKeys = (d: AioDossier) => {
+  const n = new Map<string, number>();
+  return d.clusters.map((c) => {
+    const k = sentenceKey(c);
+    const i = (n.get(k) ?? 0) + 1;
+    n.set(k, i);
+    return i > 1 ? k + '#' + i : k;
+  });
+};
+const citeKey = (e: AioSourceEntry): string | null => {
+  const x = e.extracted;
+  if (!x) return null;
+  return x.mid || mapsIdOf(x.url) || cleanUrl(x.url) || (x.domain ? 'site:' + x.domain.toLowerCase() : null) || (x.title ? 'title:' + x.title.toLowerCase() : null);
+};
+const rowKey = (r: AioPoolRow) => linkKind(r.url, r.mid) + ':' + (r.mid || mapsIdOf(r.url) || cleanUrl(r.url) || (r.domain ? 'site:' + r.domain.toLowerCase() : 'order:' + r.order));
+const loose = (r: AioPoolRow) => r.inAio > 0 && r.sentences.length === 0;
+const entryCount = (d: AioDossier) => {
+  const keys = new Set<string>();
+  for (const c of d.clusters) for (const e of c.candidatePool) {
+    const k = citeKey(e);
+    if (k) keys.add(k);
+  }
+  return keys.size + (d.pool?.entries ?? []).filter(loose).length;
+};
+const textLength = (d: AioDossier) => d.clusters.reduce((n, c) => n + c.claimText.replace(/\s+/g, ' ').trim().length, 0);
+/** `a` with its empty fields filled from `b`. */
+function fill<T extends object>(a: T, b: T): T {
+  const out = { ...a } as Record<string, unknown>;
+  for (const [k, v] of Object.entries(b)) if (out[k] == null && v != null) out[k] = v;
+  return out as T;
+}
+
+/**
+ * Several reads of one results page made into one, never losing anything a read found:
+ * - Sentences are matched by their words and kept in the order of the most complete read (the most
+ *   sentences; the newer on a tie); a sentence only an earlier read had stays.
+ * - Each sentence's citations are united (Google ID, Maps ID or clean address), so citations that
+ *   appear late are added; an entry's empty fields are filled in by a later read.
+ * - The page's entries are united the same way (kind of link plus its ID or address); one that was
+ *   under no sentence and later sits under one is marked promotedAfterExpand.
+ * - Everything is stamped with when it was first and last seen (ms into the watch) and whether that
+ *   was before or after the overview was first seen to grow ("Show more"): initial or post_expand.
+ * A later, smaller read (a re-render, the page scrolling away, the tab closing) downgrades nothing.
+ */
+export function mergeReads(prev: AioDossier | undefined, next: AioDossier, atMs: number): AioDossier {
+  const read = { atMs, sentences: next.clusters.length, rows: next.pool?.entries.length ?? 0 };
+  if (!prev) {
+    const s = <T extends SeenStamp>(x: T): T => ({ ...x, firstSeenMs: atMs, lastSeenMs: atMs, phase: 'initial' as const });
+    return {
+      ...next,
+      meta: { ...next.meta, reads: [read], stats: { initialSentenceCount: next.clusters.length, initialEntryCount: entryCount(next), expandedSeen: false, postExpandAddedSentences: 0, postExpandAddedEntries: 0 } },
+      clusters: next.clusters.map((c) => ({ ...s(c), candidatePool: c.candidatePool.map(s) })),
+      ...(next.pool ? { pool: { ...next.pool, entries: next.pool.entries.map(s) } } : {}),
+    };
+  }
+  const stats: AioReadStats = { ...(prev.meta.stats ?? { initialSentenceCount: prev.clusters.length, initialEntryCount: entryCount(prev), expandedSeen: false, postExpandAddedSentences: 0, postExpandAddedEntries: 0 }) };
+  if (next.clusters.length > prev.clusters.length || entryCount(next) > entryCount(prev) || textLength(next) > textLength(prev) + 20) stats.expandedSeen = true;
+  const phase: FirstSeenPhase = stats.expandedSeen ? 'post_expand' : 'initial';
+  const fresh = <T extends SeenStamp>(x: T): T => ({ ...x, firstSeenMs: atMs, lastSeenMs: atMs, phase });
+  const again = <T extends SeenStamp>(x: T): T => ({ ...x, lastSeenMs: atMs });
+  // Already found: anything an earlier read had under a sentence or anywhere in the overview (an
+  // entry that moves under a new sentence was promoted, not newly found).
+  const knownCites = new Set(
+    [...prev.clusters.flatMap((c) => c.candidatePool.map(citeKey)), ...(prev.pool?.entries ?? []).map((r) => r.mid || mapsIdOf(r.url) || cleanUrl(r.url) || (r.domain ? 'site:' + r.domain.toLowerCase() : null))].filter(
+      (k): k is string => Boolean(k),
+    ),
+  );
+  const addedCite = (k: string | null) => {
+    if (stats.expandedSeen && k && !knownCites.has(k)) {
+      knownCites.add(k);
+      stats.postExpandAddedEntries++;
+    }
+  };
+
+  // Sentences, in the order of the most complete read.
+  const lead = next.clusters.length >= prev.clusters.length ? next : prev;
+  const prevKeys = sentenceKeys(prev);
+  const nextKeys = sentenceKeys(next);
+  const prevBy = new Map(prev.clusters.map((c, i) => [prevKeys[i], c]));
+  const nextBy = new Map(next.clusters.map((c, i) => [nextKeys[i], c]));
+  const keys = [...new Set([...(lead === next ? nextKeys : prevKeys), ...prevKeys, ...nextKeys])];
+  const clusters: AioSentence[] = keys.map((k, i) => {
+    const p = prevBy.get(k);
+    const n = nextBy.get(k);
+    if (!p) {
+      if (stats.expandedSeen) stats.postExpandAddedSentences++;
+      return { ...fresh(n!), clusterIndex: i + 1, candidatePool: n!.candidatePool.map((e) => (addedCite(citeKey(e)), fresh(e))) };
+    }
+    if (!n) return { ...p, clusterIndex: i + 1 };
+    const pool = [...p.candidatePool];
+    const at = new Map(pool.map((e, j) => [citeKey(e) ?? 'index:' + j, j]));
+    for (const e of n.candidatePool) {
+      const ck = citeKey(e);
+      const j = ck === null ? undefined : at.get(ck);
+      if (j === undefined) {
+        addedCite(ck);
+        pool.push(fresh(e));
+        continue;
+      }
+      const old = pool[j];
+      pool[j] = again({ ...old, extracted: old.extracted && e.extracted ? fill(old.extracted, e.extracted) : (old.extracted ?? e.extracted) });
+    }
+    return { ...again(p), clusterIndex: i + 1, visibleCitation: n.visibleCitation?.url ? n.visibleCitation : p.visibleCitation, candidatePool: pool };
+  });
+
+  // The page's entries: their sentence numbers moved to the merged order, then united.
+  const position = new Map(keys.map((k, i) => [k, i + 1]));
+  const numbering = (d: AioDossier, ks: string[]) => new Map(d.clusters.map((c, i) => [c.clusterIndex, position.get(ks[i]) ?? 0]));
+  const renumber = (r: AioPoolRow, m: Map<number, number>) => ({ ...r, sentences: [...new Set(r.sentences.map((x) => m.get(x) ?? 0).filter((x) => x > 0))].sort((a, b) => a - b) });
+  const prevNumbers = numbering(prev, prevKeys);
+  const nextNumbers = numbering(next, nextKeys);
+  const prevRows = (prev.pool?.entries ?? []).map((r) => renumber(r, prevNumbers));
+  const nextRows = (next.pool?.entries ?? []).map((r) => renumber(r, nextNumbers));
+  const prevRowBy = new Map(prevRows.map((r) => [rowKey(r), r]));
+  const nextRowBy = new Map(nextRows.map((r) => [rowKey(r), r]));
+  const rowsLead = nextRows.length >= prevRows.length;
+  const merged = new Map<string, AioPoolRow>();
+  for (const r of rowsLead ? [...nextRows, ...prevRows] : [...prevRows, ...nextRows]) {
+    const k = rowKey(r);
+    if (merged.has(k)) continue;
+    const p = prevRowBy.get(k);
+    const n = nextRowBy.get(k);
+    if (p && n) {
+      const promoted = p.promotedAfterExpand || (loose(p) && n.sentences.length > 0);
+      merged.set(
+        k,
+        again({
+          ...fill(p, n),
+          sentences: [...new Set([...p.sentences, ...n.sentences])].sort((a, b) => a - b),
+          inAio: Math.max(p.inAio, n.inAio),
+          count: Math.max(p.count, n.count),
+          sections: [...new Set([...p.sections, ...n.sections])],
+          ...(promoted ? { promotedAfterExpand: true } : {}),
+        }),
+      );
+    } else if (p) merged.set(k, p);
+    else {
+      merged.set(k, fresh(n!));
+      if (stats.expandedSeen && loose(n!)) stats.postExpandAddedEntries++;
+    }
+  }
+  const leadRows = rowsLead ? next : prev;
+  return {
+    ...lead,
+    meta: { ...lead.meta, reads: [...(prev.meta.reads ?? []), read], stats },
+    clusters,
+    pool: {
+      comments: leadRows.pool?.comments ?? 0,
+      parsed: leadRows.pool?.parsed ?? 0,
+      ...(leadRows.pool?.breakdown ? { breakdown: leadRows.pool.breakdown } : {}),
+      entries: [...merged.values()].map((r, i) => ({ ...r, order: i + 1 })),
+    },
+  };
+}
+
 /** For the point's summary: the breakdown plus a few addresses from each group worth a look. */
 export function poolDigest(d: AioDossier) {
   const rows = d.pool?.entries ?? [];
   const pick = (r: AioPoolRow) => ({ site: siteOf(r.url) ?? siteOf(r.domain), title: r.title, url: r.url?.slice(0, 200) ?? null, mid: r.mid, related: r.related, at: r.coords ? `${r.coords.lat},${r.coords.lng}` : null, where: r.where });
   return {
     breakdown: d.pool?.breakdown ?? null,
-    inOverviewUnderNoSentence: rows.filter((r) => r.inAio > 0 && r.sentences.length === 0).slice(0, 10).map(pick),
+    inOverviewUnderNoSentence: rows.filter(loose).slice(0, 10).map(pick),
     outsideOverview: rows.filter((r) => r.inAio === 0).slice(0, 10).map(pick),
     withEntityIds: rows.filter((r) => r.mid).length,
     withCoordinates: rows.filter((r) => r.coords).length,
@@ -526,8 +829,8 @@ export function sampleEntries(d: AioDossier, n = 6) {
 /** A site's name as compared here: lower case, without "www.". */
 export function siteOf(v: string | null | undefined): string | null {
   if (!v) return null;
-  // An address as Google displays it: "https://site.com › path".
-  if (v.includes('›')) v = v.replace(/\s*›\s*/g, '/');
+  // An address as Google displays it: "https://site.com › path" or "site.com / path".
+  v = displayToUrl(v);
   try {
     const host = v.includes('://') ? new URL(v).hostname : v.split('/')[0];
     const h = host.replace(/^www\./i, '').toLowerCase();
@@ -549,6 +852,9 @@ function realUrl(v: string | null | undefined): string | null {
   }
 }
 
+/** The address a link really goes to: Google's wrapper unwrapped, display forms ("site.com › path") made links. */
+export const realAddress = (v: string | null | undefined): string | null => (v ? realUrl(displayToUrl(v)) : null);
+
 export type AioSourcesSummary = {
   /** Sentences of the AI Overview with a source button. */
   sentences: number;
@@ -557,8 +863,10 @@ export type AioSourcesSummary = {
   /** Different addresses and different sites among them. */
   urls: number;
   sites: number;
-  /** The most-listed sites, most first (up to 8). */
+  /** The most-listed websites, most first (up to 8); Google's own listings are counted apart (`listings`). */
   topSites: { site: string; entries: number }[];
+  /** Source entries that point to a business's Google listing (or its card's links) rather than to a website. */
+  listings: number;
   /** Where the tracked business's site appears: as a sentence's visible citation, and in a sentence's source list (1-based sentence numbers). */
   target: { site: string; cited: number[]; listed: number[] } | null;
   markers: { buttons: number; suuid: number; comments: number } | null;
@@ -571,6 +879,7 @@ export function summarizeAioSources(d: AioDossier, targetDomain?: string | null)
   const cited: number[] = [];
   const listed: number[] = [];
   let entries = 0;
+  let listings = 0;
   for (const c of d.clusters) {
     const visible = siteOf(realUrl(c.visibleCitation.url));
     if (target && visible === target) cited.push(c.clusterIndex);
@@ -581,9 +890,14 @@ export function summarizeAioSources(d: AioDossier, targetDomain?: string | null)
       const url = realUrl(e.extracted.url);
       if (url) urls.add(url);
       const site = siteOf(url) ?? siteOf(e.extracted.domain);
+      if (target && site === target) here = true;
+      // A business's Google listing (a local overview's cards) is not a website it cites.
+      if (isGoogleKind(linkKind(url, e.extracted.mid)) && site !== target) {
+        listings++;
+        continue;
+      }
       if (!site) continue;
       perSite.set(site, (perSite.get(site) ?? 0) + 1);
-      if (target && site === target) here = true;
     }
     if (here) listed.push(c.clusterIndex);
   }
@@ -597,6 +911,7 @@ export function summarizeAioSources(d: AioDossier, targetDomain?: string | null)
     urls: urls.size,
     sites: perSite.size,
     topSites,
+    listings,
     target: target ? { site: target, cited, listed } : null,
     markers: d.meta.markers ?? null,
   };

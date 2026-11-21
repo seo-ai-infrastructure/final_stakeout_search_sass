@@ -1,4 +1,5 @@
-import { AIO_PROBE_JS, AIO_SOURCES_JS, isResultsPage, type AioDossier } from '@stakeout/core/aioSources';
+import { AIO_PROBE_JS, AIO_SOURCES_JS, isResultsPage, mergeReads, type AioDossier } from '@stakeout/core/aioSources';
+import type { WatcherFacts } from '@stakeout/core/aioCapture';
 import { shellQuote } from '@stakeout/core/runner';
 import { adbForward, adbForwardRemove, shell } from './deviceShell';
 
@@ -6,9 +7,11 @@ import { adbForward, adbForwardRemove, shell } from './deviceShell';
  * Reads the AI Overview's sources from the results page in the phone's Chrome while the search
  * template runs. Chrome's DevTools socket is forwarded over the phone's ADB link; the page list is
  * plain HTTP and attaches to nothing; a page is only evaluated (one short DevTools session per
- * look) once it is this search's results page, loaded after the watch began. Reading stops when the
- * results page has been read and the template moves on (the full list of businesses), or when the
- * template ends. Never throws: whatever happens, the point carries on as before.
+ * look) once it is this search's results page, loaded after the watch began. The watch goes on until
+ * the template ends (a look that misses while the page scrolls or expands changes nothing), reading
+ * again whenever the overview changes; the reads are merged (mergeReads: the fullest kept, every
+ * address any read found added, each marked with when it was first seen). Never throws: whatever
+ * happens, the point carries on as before.
  *
  * With the template's own marker files (`run`, templates that mark the keyword: v3.9+), nothing on
  * Chrome is looked at during the template's warm-up searches. One wait on the phone at a time holds
@@ -61,6 +64,8 @@ export type AioWatchResult = {
   trace?: string[];
   /** The phone as the keyword was typed, when the results page left Chrome's list, and when the overview was copied. */
   snapshots?: PhoneSnapshot[];
+  /** The watch in the capture schema's terms (v279): looks that found the overview and ones that missed, first read and last good look (ms into the watch), whether the page was read through a tab listed under its warm-up address, and why the watch stopped. */
+  telemetry?: WatcherFacts;
 };
 
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -205,6 +210,18 @@ export async function watchAioSources(opts: {
     repeats = 1;
     if (trace.length < 90) trace.push(at + ' ' + s.slice(0, 240));
   };
+  const msNow = () => Date.now() - t0;
+  const tele: WatcherFacts = {
+    capture_version: 'v279',
+    resolved_via_warmup_tab: false,
+    warmup_tab_listed_url: null,
+    reads_succeeded: 0,
+    reads_missed: 0,
+    first_read_ms: null,
+    last_valid_read_ms: null,
+    stop_reason: 'template_finished',
+  };
+  out.telemetry = tele;
   // The phone's own clock: only pages loaded after now are this point's (the same phone ran the
   // same keyword at another grid point a few minutes ago, and that tab may still be open).
   const phoneNow = await deps.phoneSeconds().catch(() => NaN);
@@ -222,6 +239,7 @@ export async function watchAioSources(opts: {
       hit = await deps.waitForFile([files.typing, files.done], Math.min(10000, Math.max(1000, until - Date.now()))).catch(() => null);
     }
     if (hit !== files.typing) {
+      if (hit !== files.done && Date.now() >= until) tele.stop_reason = 'hard_timeout';
       step('end: ' + (hit === files.done ? 'the template ended without marking the keyword' : Date.now() >= until ? 'out of time' : 'the template ended'));
       return { ...out, note: 'no keyword marker' };
     }
@@ -300,13 +318,16 @@ export async function watchAioSources(opts: {
     over = true;
   };
 
-  // The moment the template copies the overview, the phone is snapshotted (one wait at a time, as above).
+  // The moment the template copies the overview, the phone is snapshotted (one wait at a time, as
+  // above), and the overview is read again at the next look: it is fully expanded then.
+  let forceRead = false;
   const copyWatch = files
     ? (async () => {
         while (!done() && Date.now() < until) {
           const hit = await deps.waitForFile([files.copied, files.done], Math.min(10000, Math.max(1000, until - Date.now()))).catch(() => null);
           if (hit === files.copied) {
             step('the template copied the overview');
+            forceRead = true;
             takeSnapshot('copied');
             return;
           }
@@ -326,6 +347,62 @@ export async function watchAioSources(opts: {
   let listed = false;
   let gone = 0;
   let ended = 'the template ended';
+  let lastSerp: Target | null = null;
+  // One look at this search's results page, and a full read when its overview is new or has changed
+  // (more buttons after "Show more", more hidden entries as it fills in) or the template has just
+  // copied it. True when the look found the overview.
+  const lookAndRead = async (serp: Target, tabsLine: string, readMs = 8000): Promise<boolean> => {
+    out.probes++;
+    const probe = await deps.evaluate(port, serp.id, AIO_PROBE_JS, 1500);
+    let p: { t?: number; b?: number; s?: number; c?: number; aio?: boolean } | null = null;
+    try {
+      p = probe ? JSON.parse(probe) : null;
+    } catch {
+      p = null;
+    }
+    const loadedAt = Number(p?.t ?? 0);
+    step(tabsLine + ' · ' + (p ? `look ${p.b ?? 0} buttons/${p.s ?? 0} blocks/${p.c ?? 0} entries${p.aio ? ' overview' : ''}${loadedAt >= since ? '' : ' (older page)'}` : 'look: no answer'));
+    if (!p || loadedAt < since) return false;
+    if (loadedAt !== lastLoad) {
+      lastLoad = loadedAt;
+      out.loads++;
+    }
+    if (!(p.aio || Number(p.b ?? 0) > 0)) return false;
+    tele.reads_succeeded++;
+    tele.last_valid_read_ms = msNow();
+    const shape = `${p.b ?? 0}/${p.s ?? 0}/${p.c ?? 0}`;
+    if (!(loadedAt !== doc || shape !== docShape || forceRead) || out.reads >= 16) return true;
+    const atCopy = forceRead;
+    forceRead = false;
+    const raw = await deps.evaluate(port, serp.id, AIO_SOURCES_JS, readMs);
+    out.reads++;
+    if (!raw) {
+      step('read: no answer');
+      return true;
+    }
+    let read: AioDossier;
+    try {
+      read = JSON.parse(raw) as AioDossier;
+    } catch {
+      out.note = 'unreadable page answer';
+      step('read: unreadable');
+      return true;
+    }
+    // Only this search's page is merged, never a page the tab has moved on to.
+    if (read.meta?.url && !isResultsPage(read.meta.url, keyword)) {
+      step('read: another page (' + shortUrl(read.meta.url) + ')');
+      return true;
+    }
+    const before = out.dossier?.pool?.entries.length ?? 0;
+    // Nothing a read found is lost, and a smaller read downgrades nothing (see mergeReads).
+    out.dossier = mergeReads(out.dossier, read, msNow());
+    tele.first_read_ms ??= msNow();
+    doc = loadedAt;
+    docShape = shape;
+    const added = (out.dossier.pool?.entries.length ?? 0) - before;
+    step('read ' + read.clusters.length + ' sentences, ' + Math.round(raw.length / 1024) + ' KB' + (before && added > 0 ? ` (${added} new address${added === 1 ? '' : 'es'})` : '') + (atCopy ? ' (at the copy)' : ''));
+    return true;
+  };
   try {
     while (!done() && Date.now() < until) {
       // A snapshot found this search's results page behind another socket: look at it there.
@@ -395,6 +472,8 @@ export async function watchAioSources(opts: {
             serp = { ...t, url: real };
             tabsLine = tabs + ' (its own address: R)';
             out.note ??= 'read through a tab Chrome listed under its earlier address';
+            tele.resolved_via_warmup_tab = true;
+            tele.warmup_tab_listed_url ??= t.url.slice(0, 300);
             break;
           }
         }
@@ -407,55 +486,31 @@ export async function watchAioSources(opts: {
           gone++;
           if (gone <= 2) takeSnapshot('gone');
         }
-        // The results page was read and is gone (the template opened the full list): done.
-        if (out.dossier) {
-          ended = 'the results page was read and is gone';
-          break;
-        }
+        // Not found this time: a look can miss while the page scrolls, expands ("Show more") or
+        // re-renders, so the watch carries on until the template ends (a read is never lost: see mergeReads).
+        tele.reads_missed++;
         await pause(1000);
         continue;
       }
       listed = true;
-      // While this search's results page is open it is looked at every half second (a look takes a
-      // few milliseconds), so the last read is never more than about half a second old when the
-      // template moves on.
-      out.probes++;
-      const probe = await deps.evaluate(port, serp.id, AIO_PROBE_JS, 1500);
-      let p: { t?: number; b?: number; s?: number; c?: number; aio?: boolean } | null = null;
-      try {
-        p = probe ? JSON.parse(probe) : null;
-      } catch {
-        p = null;
-      }
-      const loadedAt = Number(p?.t ?? 0);
-      step(tabsLine + ' · ' + (p ? `look ${p.b ?? 0} buttons/${p.s ?? 0} blocks/${p.c ?? 0} entries${p.aio ? ' overview' : ''}${loadedAt >= since ? '' : ' (older page)'}` : 'look: no answer'));
-      if (p && loadedAt >= since) {
-        if (loadedAt !== lastLoad) {
-          lastLoad = loadedAt;
-          out.loads++;
-        }
-        const shape = `${p.b ?? 0}/${p.s ?? 0}/${p.c ?? 0}`;
-        // Read a load once it shows an AI Overview, and again whenever its sources change (more
-        // buttons after "Show more", more hidden entries as the page fills in).
-        if ((p.aio || Number(p.b ?? 0) > 0) && (loadedAt !== doc || shape !== docShape) && out.reads < 12) {
-          const raw = await deps.evaluate(port, serp.id, AIO_SOURCES_JS, 8000);
-          out.reads++;
-          if (raw) {
-            try {
-              out.dossier = JSON.parse(raw) as AioDossier;
-              doc = loadedAt;
-              docShape = shape;
-              step('read ' + out.dossier.clusters.length + ' sentences, ' + Math.round(raw.length / 1024) + ' KB');
-            } catch {
-              out.note = 'unreadable page answer';
-              step('read: unreadable');
-            }
-          } else step('read: no answer');
-        }
-      }
-      await pause(500);
+      lastSerp = serp;
+      if (!(await lookAndRead(serp, tabsLine))) tele.reads_missed++;
+      // Every half second until the page has been read; then every 1.5 s, which still catches the
+      // overview growing ("Show more") without looking more than the template needs.
+      await pause(out.dossier ? 1500 : 500);
     }
-    if (Date.now() >= until) ended = 'out of time';
+    if (Date.now() >= until) {
+      ended = 'out of time';
+      tele.stop_reason = 'hard_timeout';
+    }
+    // The template has ended: one last look while the results page may still be open, read whatever happens.
+    if (done() && lastSerp) {
+      const real = await deps.evaluate(port, lastSerp.id, 'location.href', 1000);
+      if (real && isResultsPage(real, keyword)) {
+        forceRead = true;
+        await lookAndRead(lastSerp, 'last look as the template ended', 4000);
+      }
+    }
     // Chrome is no longer looked at; the overview's copy (and its snapshot) can still come.
     if (copyWatch) await settle(copyWatch, 1000);
     await settle(Promise.all(running), 3000);
@@ -465,6 +520,7 @@ export async function watchAioSources(opts: {
     else if (out.loads > 0) out.status = 'no_sources';
     return out;
   } catch (e) {
+    if (!done()) tele.stop_reason = 'hard_timeout';
     step('end: ' + (e as Error).message.slice(0, 100));
     return { ...out, status: 'error', note: (e as Error).message.slice(0, 120) };
   } finally {

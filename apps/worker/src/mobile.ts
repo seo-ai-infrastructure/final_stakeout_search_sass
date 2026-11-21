@@ -1,9 +1,10 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/core/pinInsights';
-import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst, readAiCopy } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { poolDigest, sampleEntries, summarizeAioSources } from '@stakeout/core/aioSources';
+import { buildAioCapture, captureDigest, entityRoster } from '@stakeout/core/aioCapture';
 import { watchAioSources, type AioWatchResult } from './aioWatch';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -983,6 +984,7 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
     const key = prefix + '/aio-sources.json.gz';
     await put(key, gzipSync(JSON.stringify(found.dossier)), 'application/gzip');
     const summary = summarizeAioSources(found.dossier, targetDomain);
+    const pool = poolDigest(found.dossier);
     const m = found.dossier.meta;
     Object.assign(proof, {
       aioSources: {
@@ -990,7 +992,7 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
         key,
         ...summary,
         sample: sampleEntries(found.dossier),
-        pool: poolDigest(found.dossier),
+        pool,
         readMs: m.readMs,
         htmlLength: m.htmlLength,
         aioOnPage: m.aioOnPage,
@@ -1010,6 +1012,8 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
               return ` · page: ${b.entries} hidden entries, ${b.addresses} address(es); in the overview ${b.inOverview} (${b.underSentences} under sentences, ${b.inOverviewUnderNoSentence} under none), elsewhere ${b.outsideOverview}`;
             })()
           : '') +
+        ` · Google listings cited ${summary.listings}` +
+        (found.telemetry ? ` · ${found.telemetry.reads_succeeded} good look(s), ${found.telemetry.reads_missed} missed, stopped: ${found.telemetry.stop_reason}` : '') +
         (found.note ? ' · ' + found.note : '') +
         (snaps ? ' · snapshots ' + snaps.slice(0, 600) : ''),
     );
@@ -1134,6 +1138,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
   const rpaSecs = Math.max(120, Number(process.env.RPA_TIMEOUT_SECONDS ?? 420));
   const surface = app[scan.targetType] as RpaSurface;
   const tpl = rpaMode ? await rpaTemplate(surface).catch(() => null) : null;
+  // The AI Overview watch's result, kept for the capture built at the end of the point.
+  let watched: AioWatchResult | null = null;
   const tplVersion = tpl?.vars.find((v) => v.key === 'template_version')?.value;
   ev.template = tplVersion == null || tplVersion === '' ? null : String(tplVersion);
   // Template v3.42+: phones whose Chrome never shows the results' footer skip the warm-up's hunt for it.
@@ -1305,6 +1311,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     if (sourcesWatch) {
       const late: AioWatchResult = { status: 'error', probes: 0, reads: 0, loads: 0, seen: [], note: 'the watch did not stop in time' };
       const found = await Promise.race([sourcesWatch, sleep(15000).then(() => late)]);
+      watched = found;
       await keepAioSources(found, prefix, scan.targetDomain, proof, tag).catch((e) => console.warn('[aio-sources]', tag, 'not kept:', errMsg(e).slice(0, 140)));
     }
     if (rpaError) {
@@ -1587,6 +1594,29 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       // "Position zero": named in the answer's opening sentences, ahead of any list.
       if (b.aiCopy) Object.assign(proof, { aiLead: aiNamesFirst(b.aiCopy, scan.targetBusiness, scan.targetKgmid) });
     } else Object.assign(proof, { rankSource: 'maps_list' });
+    // The v279 capture of the AI Overview (capture schema): its sentences and their citations, the
+    // web pages it holds under no sentence, and each business card's links joined into one row per
+    // firm. Built now that the copied answer (business names by Google ID) and the rank are known:
+    // all of it to storage, the counts, telemetry and firms on the point.
+    const mapPackRank = aiList ? (aiRankOnly ? null : aiList.rank) : result.targetRank;
+    if (watched?.dossier && watched.telemetry) {
+      try {
+        const names = b.aiCopy ? new Map(readAiCopy(b.aiCopy).businesses.filter((x) => x.kgmid).map((x) => [x.kgmid, x.name] as const)) : undefined;
+        const capture = buildAioCapture(watched.dossier, { keyword: scan.keyword, targetDomain: scan.targetDomain, targetBusinessId: scan.targetKgmid, mapPackRank, names, telemetry: watched.telemetry, scanPointId: p.id });
+        await put(prefix + '/aio-capture.json.gz', gzipSync(JSON.stringify(capture)), 'application/gzip');
+        const kept = (proof as { aioSources?: Record<string, unknown> }).aioSources;
+        if (kept) kept.capture = { key: prefix + '/aio-capture.json.gz', ...captureDigest(capture) };
+        const t = capture.telemetry;
+        console.log(
+          `[aio-capture] ${tag}: ${capture.overview_mode} · ${capture.counts.sentences_count} sentence(s), ${capture.counts.cited_web_pages_count} web page(s) and ${capture.counts.cited_gbp_listings_count} listing(s) cited,` +
+            ` ${capture.counts.unreferenced_web_sources_count} other page(s), ${capture.counts.card_action_links_count} card link(s) in ${entityRoster(capture).length} card(s)` +
+            ` · target cited ${capture.target_cited_in_aio}, named ${capture.target_named_in_aio_cards}, map pack ${mapPackRank ?? '-'}` +
+            ` · ${t.stop_reason}, expanded ${t.expanded_seen} (+${t.post_expand_added_sentences} sentence(s), +${t.post_expand_added_entries} entr(ies)), first read ${t.first_read_ms ?? '-'} ms, last good look ${t.last_valid_read_ms ?? '-'} ms, ${t.reads_succeeded} good / ${t.reads_missed} missed${t.resolved_via_warmup_tab ? ', via the warm-up tab' : ''}`,
+        );
+      } catch (e) {
+        console.warn('[aio-capture]', tag, 'not built:', errMsg(e).slice(0, 160));
+      }
+    }
     const before = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true } }).catch(() => null);
     const attempts = (before?.proxyMeta as { attempts?: unknown } | null)?.attempts;
     if (Array.isArray(attempts) && attempts.length) Object.assign(proof, { attempts });
@@ -1595,7 +1625,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       assignedDeviceId: d.imageId,
       // A page with no map pack has no local rank: the place in the AI Overview's list is kept
       // apart (proxyCheck.aiPosition) and counts only as AI visibility.
-      rankFound: aiList ? (aiRankOnly ? null : aiList.rank) : result.targetRank,
+      rankFound: mapPackRank,
       matchedDumpIdx: result.matchedDumpIndex,
       topCompetitors: aiList ? aiList.list : result.orderedBusinesses,
       insights: pinInsights ?? undefined,
