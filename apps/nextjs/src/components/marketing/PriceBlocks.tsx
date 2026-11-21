@@ -1,7 +1,7 @@
 'use client';
 import { useState, type ReactNode } from 'react';
 import { LINES, SCAN_NOW_5X5, lineCents, type Line } from '@stakeout/core/gbpPlans';
-import { ADS_CAMPAIGN, ADS_SPEND_CENTS, PROSPECT_PACKS, TOPUP, WELCOME, WHITE_LABEL, usd } from '@/lib/pricing';
+import { PROSPECT_PACKS, TOPUP, WELCOME, WHITE_LABEL, usd } from '@/lib/pricing';
 import { ACCENT, Arrow, Check, HREF, MONO, No, TONE, Yes, type FaqItem } from './SiteKit';
 
 /**
@@ -389,48 +389,6 @@ export function ProspectsSection() {
               <p style={{ margin: '6px 0 0', fontSize: 14.5, lineHeight: 1.6, color: '#CBD5E1' }}>{body}</p>
             </div>
           ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-/** The local engagement campaign: Google ads that send nearby searchers to the listing, set up by hand. Sold to anyone. */
-export function CampaignSection() {
-  const points = [
-    'Aimed at people near the business who searched your keywords',
-    'Targeted to the area you choose, down to the streets around the business',
-    'Shown across Google’s display network and YouTube, with app placements left out',
-    'Calls, direction requests and website visits show in the listing’s own numbers',
-    'Scan the grid before and after to see what moved',
-  ];
-  return (
-    <section id="campaign" style={SECTION}>
-      <div style={WRAP}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))', gap: '28px 48px', alignItems: 'center' }}>
-          <div>
-            <Eyebrow>LOCAL ENGAGEMENT CAMPAIGN</Eyebrow>
-            <h2 style={H2}>Send nearby searchers straight to the listing.</h2>
-            <p style={LEAD}>
-              A hyper-local Google campaign for the people around the business who searched your keywords. The ads go straight to its Google listing, where they can call, get directions or open the website. We set it up and run it by hand. No seat needed.
-            </p>
-          </div>
-          <div style={{ border: `1px solid ${TONE.accentLine}`, borderRadius: 20, background: '#111927', padding: 28 }}>
-            <p style={{ margin: 0, lineHeight: 1.2 }}>
-              <span style={{ fontWeight: 800, fontSize: 48, letterSpacing: '-0.03em' }}>{usd(ADS_CAMPAIGN.cents)}</span> <span style={{ fontSize: 15, color: '#CBD5E1' }}>per campaign</span>
-            </p>
-            <p style={{ margin: '8px 0 0', fontSize: 15, lineHeight: 1.6, fontWeight: 700, color: '#34D399' }}>Includes {usd(ADS_SPEND_CENTS)} of Google ad spend</p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '18px 0 0', display: 'grid', gap: 10, fontSize: 14.5, lineHeight: 1.5, color: '#CBD5E1' }}>
-              {points.map((t) => (
-                <li key={t} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  <Check size={16} top={3} />
-                  <span>{t}</span>
-                </li>
-              ))}
-            </ul>
-            <a className="so-btn" href={HREF.buy(ADS_CAMPAIGN.key)} style={{ ...btnPrimary, marginTop: 22 }}>Start a campaign</a>
-            <p style={{ margin: '10px 0 0', fontSize: 13, lineHeight: 1.5, color: '#94A3B8' }}>Results vary by market; the listing’s numbers and a before-and-after scan show what changed.</p>
-          </div>
         </div>
       </div>
     </section>

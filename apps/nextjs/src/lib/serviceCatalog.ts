@@ -6,15 +6,21 @@ import { InputError } from '@stakeout/core/grid';
  */
 
 export type ServiceType = 'citation_sync' | 'traffic_boost';
-export type Service = { type: ServiceType; name: string; cents: number; monthly: boolean; resale: string; blurb: string };
+/** A service card shows either a short blurb or a list of what is included, each with a note. */
+export type Service = { type: ServiceType; name: string; cents: number; monthly: boolean; resale: string; blurb?: string; includes?: { title: string; note: string }[] };
 export const SERVICES: Record<ServiceType, Service> = {
   citation_sync: {
     type: 'citation_sync',
-    name: 'Local & AI Citation Sync',
+    name: 'Local & AI-Trusted Directory Build (100 Manual Citations)',
     cents: 19700,
     monthly: false,
     resale: '$397–$500',
-    blurb: '50+ verified local, GPS, voice and AI-crawled directories, duplicate suppression, an accelerated indexing pass, and an unbranded live-URL proof sheet in 7–10 business days.',
+    includes: [
+      { title: 'Pre-Build Citation Audit & Existing Listing Check', note: 'verifies existing listings first so no new duplicates are created' },
+      { title: '100 Manual High-Authority, Niche & Local Directory Submissions', note: 'rich media included: logo, photos, hours, categories & unique descriptions' },
+      { title: 'Indexing Pass Included', note: 'pushes new live profile URLs for faster search & AI discovery' },
+      { title: 'Unbranded White-Label Report + Full Account Logins', note: 'delivered in 7–10 business days—your client owns every listing forever, zero Yext-style lock-in' },
+    ],
   },
   traffic_boost: {
     type: 'traffic_boost',
@@ -73,6 +79,6 @@ export function intakeOf(type: ServiceType, raw: unknown): CitationIntake | Traf
 export function intakeLines(type: string, i: Record<string, unknown>): string[] {
   const s = (v: unknown) => (Array.isArray(v) ? v.join(', ') : String(v ?? '')).trim() || '(not given)';
   if (type === 'citation_sync')
-    return [`Business: ${s(i.business)}`, `Address: ${s(i.address)}`, `Phone: ${s(i.phone)}`, `Website: ${s(i.website)}`, `Category: ${s(i.category)}`, `Hours: ${s(i.hours)}`, `Logo: ${s(i.logo)}`, `Old NAP / duplicates to suppress: ${s(i.oldNap)}`];
+    return [`Business: ${s(i.business)}`, `Address: ${s(i.address)}`, `Phone: ${s(i.phone)}`, `Website: ${s(i.website)}`, `Category: ${s(i.category)}`, `Hours: ${s(i.hours)}`, `Logo: ${s(i.logo)}`, `Existing listings or old NAP variations to watch for during audit: ${s(i.oldNap)}`];
   return [`Business: ${s(i.business)}`, `ZIP codes: ${s(i.zips)}`, `Keywords: ${s(i.keywords)}`, `Destination: ${i.destination === 'landing' ? 'local landing page' : 'promoted Google listing'}, ${s(i.url)}`];
 }

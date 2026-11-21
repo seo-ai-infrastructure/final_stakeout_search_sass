@@ -1,7 +1,7 @@
 'use client';
 import { WELCOME, WHITE_LABEL, usd } from '@/lib/pricing';
 import { ACCENT, Arrow, Check, Faq, HREF, OfferBanner, SiteFoot, SiteNav, TONE } from './SiteKit';
-import { AuditCard, CalculatorSection, CampaignSection, CompareSection, Eyebrow, PRICING_FAQ, ProspectsSection, SeatsSection, SpeedsSection } from './PriceBlocks';
+import { AuditCard, CalculatorSection, CompareSection, Eyebrow, PRICING_FAQ, ProspectsSection, SeatsSection, SpeedsSection } from './PriceBlocks';
 import './site.css';
 
 /** The pricing page: seats per client, the $5 first audit, prospect audits and the extras. */
@@ -38,7 +38,6 @@ export default function PricingPage({ live }: { live: boolean }) {
         <SeatsSection />
         <SpeedsSection />
         <ProspectsSection />
-        <CampaignSection />
         <CompareSection />
         <Faq id="faq" items={PRICING_FAQ} />
         <section id="start">

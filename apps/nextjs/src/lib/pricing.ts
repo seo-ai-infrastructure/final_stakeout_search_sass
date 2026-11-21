@@ -49,24 +49,6 @@ export const promoLive = (now = Date.now()) => now < Date.parse(PROMO.ends);
 export const BONUS_POINTS = 5 * SCAN_NOW_5X5_POINTS;
 
 /**
- * A hyper-local Google ads campaign that sends people near a business, who searched its keywords,
- * to its Google listing. Set up by hand in our Google Ads manager account; half the price is ad
- * spend. The buyer names the business, the keywords and the area at checkout, and the admins get
- * them in the payment email.
- */
-export const ADS_CAMPAIGN: PriceItem = {
-  key: 'ads-campaign',
-  name: 'Local engagement campaign',
-  credits: 0,
-  cents: 29700,
-  blurb: 'A hyper-local Google ads campaign that sends people near the business who searched your keywords to its Google listing. Includes $150 of ad spend; we set it up and run it.',
-};
-/** The part of the campaign's price that is spent on Google ads. */
-export const ADS_SPEND_CENTS = 15000;
-/** What the buyer tells us about a campaign: whose listing, which searches, where. */
-export type CampaignBrief = { business: string; keywords: string; area: string };
-
-/**
  * Only an admin sees or can buy this: a real $1 purchase that proves the live payment settings
  * work (after first setup, or after changing any of them) without spending real money on a pack.
  */
@@ -98,7 +80,7 @@ export const TOPUPS: (PriceItem & { plan: string })[] = [
 /** The welcome pack as sold before the seats: 25 credits. */
 const WELCOME_25: PriceItem = { ...WELCOME, key: 'welcome', credits: 25 };
 
-export const ALL_ITEMS: PriceItem[] = [WELCOME, ...PROSPECT_PACKS, TOPUP, ADS_CAMPAIGN, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS];
+export const ALL_ITEMS: PriceItem[] = [WELCOME, ...PROSPECT_PACKS, TOPUP, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS];
 
 /**
  * What a recorded purchase was. Purchases made before items were recorded by key are told apart by
@@ -123,7 +105,7 @@ export function currentPlan(paid: { item?: string | null; credits: number; creat
 
 /**
  * What an account can buy once: the first audit until it has paid for anything, prospect audits
- * always, a top-up while it holds a seat, a local engagement campaign always, and the white-label setup while it has fewer than 10
+ * always, a top-up while it holds a seat, and the white-label setup while it has fewer than 10
  * client seats and has not bought it. An admin also gets the $1 payment test.
  */
 export function itemsFor(state: { admin?: boolean; /** Has never paid for anything. */ firstPurchase?: boolean; /** Client seats (Scout, Command and Dominator) now. */ seats?: number; /** The white-label setup is already paid for. */ whiteLabel?: boolean }): PriceItem[] {
@@ -132,14 +114,13 @@ export function itemsFor(state: { admin?: boolean; /** Has never paid for anythi
     ...(state.firstPurchase ? [WELCOME] : []),
     ...PROSPECT_PACKS,
     ...(seats > 0 ? [TOPUP] : []),
-    ADS_CAMPAIGN,
     ...(seats < WHITE_LABEL.freeFrom && !state.whiteLabel ? [WHITE_LABEL_ITEM] : []),
   ];
   return state.admin ? [...items, ADMIN_TEST] : items;
 }
 
 /** The email an admin gets when a payment is recorded: who paid, for what, and what to do next. */
-export function paymentNotice(p: { buyer: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; sandbox: boolean; item?: string | null; /** Paid for a second first audit: refunded, no points. */ refunded?: boolean; /** What a campaign is for. */ brief?: CampaignBrief | null }) {
+export function paymentNotice(p: { buyer: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; sandbox: boolean; item?: string | null; /** Paid for a second first audit: refunded, no points. */ refunded?: boolean }) {
   const item = itemOf(p);
   if (p.refunded) return { subject: `${p.sandbox ? '[Test] ' : ''}Refunded: second first audit, ${p.buyer}`, lines: [`${p.buyer} paid ${usd(p.cents)} for the first audit, but this account or this card has already had one. The payment was refunded and no points were added.`, `Stripe checkout ${p.orderId}, payment ${p.captureId}.`] };
   const name = item?.name ?? p.credits + ' points';
@@ -148,14 +129,6 @@ export function paymentNotice(p: { buyer: string; credits: number; cents: number
     `${p.buyer} paid ${usd(p.cents)} for ${name}${what}`,
     ...(item?.key === 'onboarding' ? ['This is an onboarding purchase: book their onboarding call and set up their businesses.'] : []),
     ...(item?.key === 'white-label' ? ['This is a white-label purchase: email them to set up their logo and domain.'] : []),
-    ...(item?.key === ADS_CAMPAIGN.key
-      ? [
-          `This is a local engagement campaign: set it up by hand in the Google Ads manager account, with ${usd(ADS_SPEND_CENTS)} of ad spend.`,
-          `Business: ${p.brief?.business || '(not given)'}`,
-          `Keywords: ${p.brief?.keywords || '(not given)'}`,
-          `Area: ${p.brief?.area || '(not given)'}`,
-        ]
-      : []),
     ...(p.sandbox ? ['This was a Stripe TEST payment: no real money moved.'] : []),
     `Stripe checkout ${p.orderId}, payment ${p.captureId}.`,
   ];

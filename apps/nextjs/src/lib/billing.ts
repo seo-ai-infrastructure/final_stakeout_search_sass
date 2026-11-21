@@ -1,7 +1,7 @@
 import { db } from '@stakeout/db';
 import { stripe, stripeTestMode } from './stripe';
 import { InputError } from '@stakeout/core/grid';
-import { ONBOARDING, WELCOME, WHITE_LABEL_ITEM, itemsFor, onboardingStatus, paymentNotice, type CampaignBrief, type Onboarding, type PriceItem } from './pricing';
+import { ONBOARDING, WELCOME, WHITE_LABEL_ITEM, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
 import { clientSeatCount } from './gbpBilling';
 
@@ -45,7 +45,7 @@ export async function paymentAlertRecipients(): Promise<string[]> {
   return to.length ? to : (await db.user.findMany({ where: { role: 'ADMIN' }, select: { email: true } })).map((u) => u.email);
 }
 
-async function alertPayment(p: { userId: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; item?: string | null; refunded?: boolean; brief?: CampaignBrief | null }) {
+async function alertPayment(p: { userId: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; item?: string | null; refunded?: boolean }) {
   try {
     if (!mailerConfigured()) return;
     const buyer = await db.user.findUnique({ where: { id: p.userId }, select: { email: true } });
@@ -131,9 +131,6 @@ export async function fulfill(sessionId: string) {
     return tx.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
   });
   // Only the first time this payment is recorded: the browser and Stripe's webhook both report it.
-  // A campaign's business, keywords and area were given at checkout and ride on the session.
-  const m = s.metadata ?? {};
-  const brief = m.campaign_business ? { business: m.campaign_business, keywords: m.campaign_keywords ?? '', area: m.campaign_area ?? '' } : null;
-  if (fresh) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: paidCents, balance: result.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item, brief });
+  if (fresh) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: paidCents, balance: result.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item });
   return { ...result, credits: purchase.credits, fresh, refunded: false as const };
 }

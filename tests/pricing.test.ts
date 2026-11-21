@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ADS_CAMPAIGN, ADS_SPEND_CENTS, ALL_ITEMS, BONUS_POINTS, PROMO, PROSPECT_PACKS, TOPUP, WELCOME, WHITE_LABEL, currentPlan, itemKeyOf, itemsFor, perCredit, promoLive, scans5x5, usd } from '../apps/nextjs/src/lib/pricing';
+import { ALL_ITEMS, BONUS_POINTS, PROMO, PROSPECT_PACKS, TOPUP, WELCOME, WHITE_LABEL, currentPlan, itemKeyOf, itemsFor, perCredit, promoLive, scans5x5, usd } from '../apps/nextjs/src/lib/pricing';
 import { LINES, lineCents } from '../packages/core/gbpPlans';
 
 test('pricing: the agreed one-time prices, and every item identifiable by its key', () => {
@@ -9,7 +9,6 @@ test('pricing: the agreed one-time prices, and every item identifiable by its ke
   for (const p of PROSPECT_PACKS) assert.equal(p.saves, p.audits * PROSPECT_PACKS[0].cents - p.cents, 'the saving the page shows: ' + p.key);
   assert.deepEqual([TOPUP.key, TOPUP.cents, TOPUP.credits], ['topup-100', 2500, 100]);
   assert.deepEqual([WHITE_LABEL.cents, WHITE_LABEL.freeFrom], [9700, 10]);
-  assert.deepEqual([ADS_CAMPAIGN.key, ADS_CAMPAIGN.cents, ADS_CAMPAIGN.credits, ADS_SPEND_CENTS], ['ads-campaign', 29700, 0, 15000], 'half of it is ad spend, no points');
   assert.equal(BONUS_POINTS, 250, 'five Scan Now 5×5 audits');
   assert.equal(new Set(ALL_ITEMS.map((i) => i.key)).size, ALL_ITEMS.length, 'checkout tells items apart by key');
   // A top-up costs more a point than any seat at its first price, so a bigger seat is always the better deal.
@@ -21,11 +20,11 @@ test('pricing: the agreed one-time prices, and every item identifiable by its ke
 
 test('pricing: the first audit on a first purchase only, a top-up only with a seat, white-label until 10 seats', () => {
   const keys = (s: Parameters<typeof itemsFor>[0]) => itemsFor(s).map((i) => i.key);
-  assert.deepEqual(keys({ firstPurchase: true }), ['welcome', 'prospect-1', 'prospect-5', 'prospect-12', 'ads-campaign', 'white-label']);
-  assert.deepEqual(keys({}), ['prospect-1', 'prospect-5', 'prospect-12', 'ads-campaign', 'white-label'], 'a campaign is sold to anyone');
-  assert.deepEqual(keys({ seats: 3 }), ['prospect-1', 'prospect-5', 'prospect-12', 'topup-100', 'ads-campaign', 'white-label']);
-  assert.deepEqual(keys({ seats: 10 }), ['prospect-1', 'prospect-5', 'prospect-12', 'topup-100', 'ads-campaign'], 'white-label is free from 10 seats');
-  assert.deepEqual(keys({ seats: 3, whiteLabel: true }), ['prospect-1', 'prospect-5', 'prospect-12', 'topup-100', 'ads-campaign']);
+  assert.deepEqual(keys({ firstPurchase: true }), ['welcome', 'prospect-1', 'prospect-5', 'prospect-12', 'white-label']);
+  assert.deepEqual(keys({}), ['prospect-1', 'prospect-5', 'prospect-12', 'white-label']);
+  assert.deepEqual(keys({ seats: 3 }), ['prospect-1', 'prospect-5', 'prospect-12', 'topup-100', 'white-label']);
+  assert.deepEqual(keys({ seats: 10 }), ['prospect-1', 'prospect-5', 'prospect-12', 'topup-100'], 'white-label is free from 10 seats');
+  assert.deepEqual(keys({ seats: 3, whiteLabel: true }), ['prospect-1', 'prospect-5', 'prospect-12', 'topup-100']);
   const everything = keys({ firstPurchase: true, seats: 50, admin: true });
   for (const old of ['onboarding', 'pack-25', 'pack-100', 'starter', 'growth-3', 'topup-agency']) assert.ok(!everything.includes(old), old + ' is no longer sold');
 });
@@ -74,11 +73,6 @@ test('the $1 payment test is for admins only; the payment alert says who paid an
   assert.equal(wl.subject, '[Test] Payment: White-label setup, $97, a@b.com');
   assert.ok(wl.lines.some((l) => /set up their logo and domain/.test(l)) && wl.lines.some((l) => /no real money moved/.test(l)));
   assert.match(paymentNotice({ ...base, credits: 50, cents: 500, sandbox: false, item: 'welcome', refunded: true }).subject, /^Refunded: second first audit/);
-  // A campaign's email says what to set up: whose listing, which searches, where.
-  const ads = paymentNotice({ ...base, credits: 0, cents: 29700, sandbox: false, item: 'ads-campaign', brief: { business: 'Stuart’s Plumbing · maps.app.goo.gl/x', keywords: 'emergency plumber near me', area: 'Lakeland, FL 33803, 5 miles' } });
-  assert.equal(ads.subject, 'Payment: Local engagement campaign, $297, a@b.com');
-  assert.ok(ads.lines.some((l) => /set it up by hand in the Google Ads manager account, with \$150 of ad spend/.test(l)));
-  assert.ok(ads.lines.includes('Business: Stuart’s Plumbing · maps.app.goo.gl/x') && ads.lines.includes('Keywords: emergency plumber near me') && ads.lines.includes('Area: Lakeland, FL 33803, 5 miles'));
   // Purchases from before the seats keep their names.
   assert.equal(paymentNotice({ ...base, credits: 1000, cents: 99700, sandbox: false }).subject, 'Payment: Onboarding, $997, a@b.com');
 });

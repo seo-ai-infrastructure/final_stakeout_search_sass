@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
  */
 
 type ServiceType = 'citation_sync' | 'traffic_boost';
-type Service = { type: ServiceType; name: string; cents: number; monthly: boolean; resale: string; blurb: string };
+type Service = { type: ServiceType; name: string; cents: number; monthly: boolean; resale: string; blurb?: string; includes?: { title: string; note: string }[] };
 type Client = { id: string; name: string; profile: string | null; location: string | null; placeId: string | null; source: 'listing' | 'scans' };
 type Listing = { name: string; address: string; phone: string; website: string; category: string; hours: string; logo: string | null; mapsUrl: string | null };
 type Scan = { id: string; keyword: string; gridSize: number; at: string; outerPins: number; weakOuterPinsCount: number; weakZipCodes: string[]; trackedKeywords: string[]; aioCitedDomains: string[] };
@@ -34,6 +34,14 @@ async function json<T>(r: Response): Promise<T> {
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((d as { error?: string }).error || 'Something went wrong.');
   return d as T;
+}
+
+function Tick() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="mt-[3px] shrink-0 text-emerald-300">
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
 }
 
 function Lock() {
@@ -145,7 +153,20 @@ export default function WhiteLabelServices() {
               {usd(s.cents)}
               <span className="text-sm font-medium text-slate-400">{s.monthly ? ' / month, ad spend included' : ' once'}</span>
             </p>
-            <p className="mt-3 text-sm leading-relaxed text-slate-300">{s.blurb}</p>
+            {s.includes?.length ? (
+              <ul className="mt-3 space-y-2.5 text-sm leading-relaxed">
+                {s.includes.map((x) => (
+                  <li key={x.title} className="flex gap-2.5">
+                    <Tick />
+                    <span>
+                      <span className="font-semibold text-slate-100">{x.title}</span> <span className="text-slate-400">({x.note})</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              s.blurb && <p className="mt-3 text-sm leading-relaxed text-slate-300">{s.blurb}</p>
+            )}
             <p className="mt-4 self-start rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">{MARGIN[s.type](s)}</p>
             <div className="mt-auto pt-5">
               <button
@@ -280,8 +301,8 @@ function OrderForm({ service, ctx, onClose }: { service: Service; ctx: Ctx; onCl
                 </div>
               </label>
               <label className="block text-sm">
-                <span className="font-semibold">Old NAP / duplicates to suppress</span> <span className="text-slate-400">(optional)</span>
-                <textarea rows={3} value={f.oldNap} onChange={set('oldNap')} placeholder="Old names, addresses or phone numbers, and any duplicate listings you know of" className={area} />
+                <span className="font-semibold">Existing listings or old NAP variations to watch for during audit</span> <span className="text-slate-400">(optional)</span>
+                <textarea rows={3} value={f.oldNap} onChange={set('oldNap')} placeholder="Directories the business is already on, and any old names, addresses or phone numbers it has used" className={area} />
               </label>
             </>
           ) : (

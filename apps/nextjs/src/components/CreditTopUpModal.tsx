@@ -2,12 +2,11 @@
 import { Fragment, useEffect, useState } from 'react';
 
 /** The price list in groups, each under its own heading. */
-const groupOf = (key?: string) => (!key ? '' : key === 'welcome' ? 'welcome' : key.startsWith('prospect') ? 'prospect' : key.startsWith('topup') ? 'topup' : key === 'ads-campaign' ? 'ads' : key === 'white-label' ? 'extra' : key === 'admin-test' ? 'test' : 'other');
+const groupOf = (key?: string) => (!key ? '' : key === 'welcome' ? 'welcome' : key.startsWith('prospect') ? 'prospect' : key.startsWith('topup') ? 'topup' : key === 'white-label' ? 'extra' : key === 'admin-test' ? 'test' : 'other');
 const GROUPS: Record<string, string> = {
   welcome: 'Your first audit · one time',
   prospect: 'Prospect audits · no subscription, valid 90 days',
   topup: 'More points · for seat holders, never expire',
-  ads: 'Local engagement campaign · set up by our team',
   extra: 'Extras',
   test: 'Admin',
   other: 'Other',
@@ -29,9 +28,7 @@ export function CreditTopUpModal(p: Props) {
     [pick, choose] = useState(''),
     [ready, setReady] = useState(true),
     [going, setGoing] = useState(false),
-    [error, setError] = useState(''),
-    // A campaign's business, keywords and area, for the team that sets it up.
-    [brief, setBrief] = useState({ business: '', keywords: '', area: '' });
+    [error, setError] = useState('');
   useEffect(() => {
     if (p.isOpen)
       fetch('/api/billing/checkout')
@@ -46,7 +43,6 @@ export function CreditTopUpModal(p: Props) {
         .catch(() => setError('Unable to load the price list.'));
   }, [p.isOpen, p.want]);
   if (!p.isOpen) return null;
-  const campaign = pick === 'ads-campaign';
   /** To Stripe's payment page for the chosen item; the buyer comes back to this page afterwards. */
   async function pay() {
     setError('');
@@ -55,7 +51,7 @@ export function CreditTopUpModal(p: Props) {
       const res = await fetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item: pick, returnTo: window.location.pathname, ...(campaign ? { brief } : {}) }),
+        body: JSON.stringify({ item: pick, returnTo: window.location.pathname }),
       });
       const d = await res.json();
       if (!res.ok || !d.url) throw new Error(d.error || 'Checkout could not start.');
@@ -67,7 +63,6 @@ export function CreditTopUpModal(p: Props) {
     }
   }
   const chosen = items.find((k) => k.key === pick);
-  const briefMissing = campaign && (brief.business.trim().length < 2 || brief.keywords.trim().length < 2 || brief.area.trim().length < 2);
   return (
     // The overlay scrolls: the price list is taller than a small screen.
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75">
@@ -113,37 +108,13 @@ export function CreditTopUpModal(p: Props) {
                 </Fragment>
               ))}
             </div>
-            {campaign && (
-              <div className="space-y-3 rounded-lg border border-slate-700 p-3">
-                <p className="text-sm text-slate-300">Tell us what to promote. We set the campaign up by hand and email you when it is live.</p>
-                {(
-                  [
-                    ['business', 'Business', 'Its name and Google Maps link, e.g. Stuart’s Plumbing · maps.app.goo.gl/…'],
-                    ['keywords', 'Keywords people search', 'e.g. emergency plumber near me, water heater repair'],
-                    ['area', 'Area to target', 'A city or ZIP code and how far around it, e.g. Lakeland, FL 33803, 5 miles'],
-                  ] as const
-                ).map(([k, label, hint]) => (
-                  <label key={k} className="block text-sm">
-                    <span className="font-semibold">{label}</span>
-                    <input
-                      value={brief[k]}
-                      onChange={(e) => setBrief({ ...brief, [k]: e.target.value })}
-                      maxLength={450}
-                      required
-                      placeholder={hint}
-                      className="mt-1 min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 placeholder:text-slate-500"
-                    />
-                  </label>
-                ))}
-              </div>
-            )}
             <button
               type="button"
               onClick={pay}
-              disabled={going || !chosen || Boolean(briefMissing)}
+              disabled={going || !chosen}
               className="min-h-[48px] w-full rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950 disabled:opacity-60"
             >
-              {going ? 'Working…' : !chosen ? 'Choose what to buy' : briefMissing ? 'Fill in the campaign details' : `Pay USD ${(chosen.cents / 100).toFixed(2)}`}
+              {going ? 'Working…' : !chosen ? 'Choose what to buy' : `Pay USD ${(chosen.cents / 100).toFixed(2)}`}
             </button>
             <p className="text-center text-xs text-slate-500">Card payment on Stripe’s secure page. You come straight back here.</p>
           </>
