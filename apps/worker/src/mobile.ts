@@ -3,7 +3,7 @@ import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/co
 import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
-import { summarizeAioSources } from '@stakeout/core/aioSources';
+import { sampleEntries, summarizeAioSources } from '@stakeout/core/aioSources';
 import { watchAioSources, type AioWatchResult } from './aioWatch';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -979,7 +979,10 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
     const key = prefix + '/aio-sources.json.gz';
     await put(key, gzipSync(JSON.stringify(found.dossier)), 'application/gzip');
     const summary = summarizeAioSources(found.dossier, targetDomain);
-    Object.assign(proof, { aioSources: { ...base, key, ...summary, readMs: found.dossier.meta.readMs, diagnostics: found.dossier.meta.diagnostics } });
+    const m = found.dossier.meta;
+    Object.assign(proof, {
+      aioSources: { ...base, key, ...summary, sample: sampleEntries(found.dossier), readMs: m.readMs, htmlLength: m.htmlLength, aioOnPage: m.aioOnPage, anatomy: m.anatomy, diagnostics: m.diagnostics },
+    });
     console.log(
       `[aio-sources] ${tag}: ${found.status} · ${summary.sentences} sentence(s), ${summary.entries} source entries, ${summary.urls} address(es), ${summary.sites} site(s)` +
         ` · markers ${JSON.stringify(summary.markers)} · target ${summary.target ? `cited in ${summary.target.cited.length}, listed in ${summary.target.listed.length}` : 'none'}` +

@@ -174,6 +174,59 @@ export const AIO_SOURCES_JS = `(() => {
   let query = null;
   try { query = new URL(location.href).searchParams.get('q'); } catch (e) {}
   const text = document.body ? (document.body.textContent || '').slice(0, 400000) : '';
+
+  // Where this page keeps things, for pages laid out unlike the desktop one: comment kinds, script
+  // blocks that carry Google's data, and the attributes used inside the AI Overview.
+  const anatomy = { comments: {}, scripts: { total: 0, tgqphd: 0, afInit: 0, wjd: 0, folsrch: 0, iclUuid: 0, suuid: 0 }, aio: null, attrs: {} };
+  try {
+    const it = document.createNodeIterator(document.documentElement, NodeFilter.SHOW_COMMENT);
+    let c, seen = 0;
+    while ((c = it.nextNode()) && seen < 20000) {
+      seen++;
+      const v = (c.nodeValue || '').trim();
+      const kind = v.indexOf('|||') > 0 && v.indexOf('|||') <= 16 ? v.slice(0, v.indexOf('|||')) : /^[\\w-]{1,16}/.test(v) ? 'word:' + v.match(/^[\\w-]{1,16}/)[0] : 'other';
+      anatomy.comments[kind] = (anatomy.comments[kind] || 0) + 1;
+    }
+    const top = Object.entries(anatomy.comments).sort((a, b) => b[1] - a[1]).slice(0, 12);
+    anatomy.comments = Object.fromEntries(top);
+  } catch (e) { diagnostics.push('anatomy_comments_failed'); }
+  try {
+    for (const s of Array.from(document.scripts)) {
+      const t = s.textContent || '';
+      anatomy.scripts.total++;
+      if (t.includes('TgQPHd')) anatomy.scripts.tgqphd++;
+      if (t.includes('AF_initDataCallback')) anatomy.scripts.afInit++;
+      if (t.includes('W_jd')) anatomy.scripts.wjd++;
+      if (t.includes('folsrch')) anatomy.scripts.folsrch++;
+      if (t.includes('icl-uuid') || t.includes('icl_uuid')) anatomy.scripts.iclUuid++;
+      if (t.includes('suuid')) anatomy.scripts.suuid++;
+    }
+  } catch (e) { diagnostics.push('anatomy_scripts_failed'); }
+  try {
+    // The "AI Overview" label (one pass over the text nodes), then up to the block that holds the overview.
+    let box = null;
+    const tw = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+    let tn;
+    while ((tn = tw.nextNode())) if ((tn.nodeValue || '').trim() === 'AI Overview') { box = tn.parentElement; break; }
+    let up = 0;
+    while (box && box.parentElement && box.parentElement !== document.body && (box.textContent || '').length < 600 && up++ < 10) box = box.parentElement;
+    if (box) {
+      const counts = {};
+      box.querySelectorAll('*').forEach((el) => { for (const a of Array.from(el.attributes)) if (a.name !== 'class' && a.name !== 'style') counts[a.name] = (counts[a.name] || 0) + 1; });
+      anatomy.attrs = Object.fromEntries(Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 40));
+      const links = Array.from(box.querySelectorAll('a[href]')).map((a) => a.getAttribute('href') || '').filter((h) => /^https?:/.test(h) || h.startsWith('/url'));
+      anatomy.aio = {
+        tag: box.tagName,
+        textLength: (box.textContent || '').length,
+        elements: box.querySelectorAll('*').length,
+        links: links.length,
+        sampleLinks: links.slice(0, 8).map((h) => h.slice(0, 160)),
+        buttons: box.querySelectorAll('button, [role=button]').length,
+        html: box.outerHTML.slice(0, 3000),
+      };
+    }
+  } catch (e) { diagnostics.push('anatomy_aio_failed'); }
+
   return JSON.stringify({
     meta: {
       query,
@@ -183,6 +236,8 @@ export const AIO_SOURCES_JS = `(() => {
       totalClaimClusters: clusters.length,
       markers: { buttons: buttons.length, suuid: suuidNodes.length, comments },
       aioOnPage: /AI Overview/i.test(text),
+      htmlLength: document.documentElement.outerHTML.length,
+      anatomy,
       readMs: Date.now() - started,
       diagnostics,
     },
@@ -225,11 +280,39 @@ export type AioDossier = {
     totalClaimClusters: number;
     markers?: { buttons: number; suuid: number; comments: number };
     aioOnPage?: boolean;
+    htmlLength?: number;
+    /** Where the page keeps things (see AIO_SOURCES_JS), for pages laid out unlike the desktop one. */
+    anatomy?: {
+      comments: Record<string, number>;
+      scripts: Record<string, number>;
+      aio: { tag: string; textLength: number; elements: number; links: number; sampleLinks: string[]; buttons: number; html: string } | null;
+      attrs: Record<string, number>;
+    };
     readMs?: number;
     diagnostics?: string[];
   };
   clusters: AioSentence[];
 };
+
+/** A few source entries as read, for a quick look on the point without opening the full read. */
+export function sampleEntries(d: AioDossier, n = 6) {
+  const out: { sentence: number; title: string | null; site: string | null; url: string | null; mid: string | null; related: string | null; at: string | null }[] = [];
+  for (const c of d.clusters) {
+    for (const e of c.candidatePool) {
+      if (!e.extracted || out.length >= n) continue;
+      out.push({
+        sentence: c.clusterIndex,
+        title: e.extracted.title?.slice(0, 120) ?? null,
+        site: siteOf(e.extracted.url) ?? siteOf(e.extracted.domain),
+        url: e.extracted.url?.slice(0, 200) ?? null,
+        mid: e.extracted.mid,
+        related: e.extracted.syntheticQuery?.slice(0, 120) ?? null,
+        at: e.extracted.coords ? `${e.extracted.coords.lat},${e.extracted.coords.lng}` : null,
+      });
+    }
+  }
+  return out;
+}
 
 /** A site's name as compared here: lower case, without "www.". */
 export function siteOf(v: string | null | undefined): string | null {
