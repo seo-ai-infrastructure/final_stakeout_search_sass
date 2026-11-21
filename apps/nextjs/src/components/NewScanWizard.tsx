@@ -53,6 +53,8 @@ export function NewScanWizard() {
   const [googleIdBusy, setGoogleIdBusy] = useState(false);
   // Set when the website or ID was filled in from the account's earlier scans of the business.
   const [identityNote, setIdentityNote] = useState('');
+  // The business the last such lookup was for (a late answer for another one is dropped).
+  const rememberedFor = useRef('');
   const [centerLat, setCenterLat] = useState<number>(28.039465);
   const [centerLng, setCenterLng] = useState<number>(-81.949804);
   const [gridSize, setGridSize] = useState<number>(5);
@@ -133,6 +135,8 @@ export function NewScanWizard() {
     setGoogleId(b.kgmid ?? '');
     setGoogleIdNote(null);
     setIdentityNote('');
+    // Saved before the business kept them: what its earlier scans used fills the gap.
+    void fillRemembered(b.name, b.centerLat, b.centerLng, { site: Boolean(b.domain), id: Boolean(b.kgmid) });
     setCenterLat(b.centerLat);
     setCenterLng(b.centerLng);
     setAddressQuery(b.centerLabel);
@@ -249,17 +253,23 @@ export function NewScanWizard() {
   // A business typed by name (not picked from the saved list): its website and Google ID from the
   // account's saved businesses and earlier scans (the place nearest this grid), into whichever of
   // the two fields is still empty.
-  async function rememberIdentity() {
-    const name = targetBusiness.trim();
-    if (!name || businessId || (website.trim() && googleId.trim())) return;
-    const q = new URLSearchParams({ name, lat: String(centerLat), lng: String(centerLng) });
+  function rememberIdentity() {
+    if (!businessId) void fillRemembered(targetBusiness.trim(), centerLat, centerLng, { site: Boolean(website.trim()), id: Boolean(googleId.trim()) });
+  }
+  async function fillRemembered(name: string, lat: number, lng: number, have: { site: boolean; id: boolean }) {
+    rememberedFor.current = name;
+    if (!name || (have.site && have.id)) return;
+    const q = new URLSearchParams({ name, lat: String(lat), lng: String(lng) });
     const r = (await fetch('/api/businesses/remembered?' + q)
       .then((res) => (res.ok ? res.json() : null))
       .catch(() => null)) as { domain?: string | null; kgmid?: string | null } | null;
-    if (!r || (!r.domain && !r.kgmid)) return;
-    if (r.domain) setWebsite((w) => (w.trim() ? w : r.domain!));
-    if (r.kgmid) setGoogleId((g) => (g.trim() ? g : r.kgmid!));
-    setIdentityNote('Filled in from your earlier scans of this business: check it is the right location.');
+    // Another business was picked or typed meanwhile: this answer is not for it.
+    if (rememberedFor.current !== name) return;
+    const site = !have.site && r?.domain ? r.domain : '';
+    const id = !have.id && r?.kgmid ? r.kgmid : '';
+    if (site) setWebsite((w) => (w.trim() ? w : site));
+    if (id) setGoogleId((g) => (g.trim() ? g : id));
+    if (site || id) setIdentityNote('Filled in from your earlier scans of this business: check it is the right location.');
   }
   // The Google ID field, checked when it is left: an ID is tidied, a pasted Google link is looked
   // up on the server (it follows the link to the ID), anything else is explained.
@@ -982,7 +992,7 @@ export function NewScanWizard() {
                 onChange={(e) => {
                   const b = saved.find((x) => x.id === e.target.value);
                   if (b) applyBusiness(b);
-                  else { setBusinessId(''); setTargetBusiness(''); setWebsite(''); setGoogleId(''); setGoogleIdNote(null); setIdentityNote(''); setKeywordList(incoming.current); setPicked(incoming.current); }
+                  else { rememberedFor.current = ''; setBusinessId(''); setTargetBusiness(''); setWebsite(''); setGoogleId(''); setGoogleIdNote(null); setIdentityNote(''); setKeywordList(incoming.current); setPicked(incoming.current); }
                 }}
                 className={field + ' font-semibold'}
               >
