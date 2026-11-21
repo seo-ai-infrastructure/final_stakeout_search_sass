@@ -70,11 +70,14 @@ export async function POST(req: Request) {
     const pins = placed ? placed.pins : skip.size ? buildGrid(s).filter((p) => !skip.has(p.rowIdx + '_' + p.colIdx)) : undefined;
     // The business's own website, when none was given: taken from what the account already has, so the report can tell when an AI answer cites it.
     if (!s.targetDomain) s.targetDomain = await knownSite(u.id, s.targetBusiness);
-    // Scan Now (first in line, 2 points a grid point) or scheduled (1 point, at the day and hour picked).
+    // Scan Now (first in line, 2 points a grid point) or scheduled (1 point): as soon as possible, or at the day and hour picked.
     const speed = asSpeed(body.speed);
     let cron: string | undefined;
     let runAt: Date | undefined;
-    if (speed === 'scheduled') {
+    if (speed === 'scheduled' && body.when === 'asap') {
+      // Queued now, once: it starts right away when the phones are free, otherwise behind Scan Now and the scans already in line.
+      s.scheduleType = 'once';
+    } else if (speed === 'scheduled') {
       const plan = schedulePlan({ repeat: body.repeat, date: body.scheduleDate, at: body.scheduleAt, timezone: body.scheduleTimezone });
       if ('problem' in plan) throw new InputError(plan.problem);
       runAt = plan.runAt;

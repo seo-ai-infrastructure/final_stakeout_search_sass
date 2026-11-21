@@ -1,7 +1,9 @@
 /**
  * The two ways a scan can run.
  *   Scan Now   jumps ahead of every scheduled scan and costs 2 points a grid point.
- *   Scheduled  runs at the day and hour the customer picks and costs 1 point a grid point.
+ *   Scheduled  costs 1 point a grid point and runs either as soon as possible (right away when the
+ *              phones are free, otherwise at the end of the line, behind Scan Now) or at the day and
+ *              hour the customer picks, at least SCHEDULE_LEAD_MS ahead.
  * A repeating scheduled scan runs on fixed days of the month, so every month has the same number of
  * runs: weekly is 4 runs (the d, d+7, d+14 and d+21 of the month), every other week is 2 (d and d+14).
  */
@@ -9,6 +11,11 @@ export type Speed = 'now' | 'scheduled';
 export type Repeat = 'once' | 'weekly' | 'biweekly';
 
 export const asSpeed = (v: unknown): Speed => (v === 'scheduled' ? 'scheduled' : 'now');
+
+/** How far ahead a picked time must be. Sooner than that, a scheduled scan runs as soon as possible. */
+export const SCHEDULE_LEAD_MS = 2 * 3600000;
+/** Slack on the server for the minutes spent filling in the form after the time was picked. */
+const LEAD_GRACE_MS = 10 * 60000;
 export const asRepeat = (v: unknown): Repeat => (v === 'weekly' || v === 'biweekly' ? v : 'once');
 
 /** Points a grid point costs at this speed, on top of its network's price. */
@@ -66,7 +73,7 @@ export function zonedMoment(date: string, at: string, tz: string): Date | { prob
 
 /**
  * A scheduled scan's plan: when it first runs and, when it repeats, the stored schedule for the
- * worker ("M H d1,d2,… * *;tz=…"). The first run is no more than 60 days ahead and not in the past.
+ * worker ("M H d1,d2,… * *;tz=…"). The first run is at least 2 hours and no more than 60 days ahead.
  */
 export function schedulePlan(input: { repeat: unknown; date: unknown; at: unknown; timezone: unknown }, now = new Date()): { runAt: Date; repeat: Repeat; cron: string | null } | { problem: string } {
   const repeat = asRepeat(input.repeat);
@@ -75,7 +82,7 @@ export function schedulePlan(input: { repeat: unknown; date: unknown; at: unknow
   const at = String(input.at ?? '').trim();
   const runAt = zonedMoment(date, at, tz);
   if (!(runAt instanceof Date)) return runAt;
-  if (runAt.getTime() < now.getTime() - 5 * 60000) return { problem: 'Pick a time that is still to come.' };
+  if (runAt.getTime() < now.getTime() + SCHEDULE_LEAD_MS - LEAD_GRACE_MS) return { problem: 'Pick a time at least 2 hours from now, or choose As soon as possible.' };
   if (runAt.getTime() > now.getTime() + 60 * 86400000) return { problem: 'Pick a first run within the next 60 days.' };
   const day = Number(date.slice(8, 10));
   if (repeat !== 'once' && day > 28) return { problem: 'A repeating scan starts on one of the 1st to the 28th of the month, so every month has its runs.' };

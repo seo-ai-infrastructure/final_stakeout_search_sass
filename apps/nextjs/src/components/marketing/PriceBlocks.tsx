@@ -331,7 +331,7 @@ export function SpeedsSection() {
               <h3 style={{ margin: 0, fontWeight: 800, fontSize: 24, lineHeight: 1.25 }}>Scheduled</h3>
               <p style={{ ...chip, color: '#34D399', border: '1px solid rgba(16, 185, 129, 0.45)' }}>DEFAULT · 1× POINTS</p>
             </div>
-            <Bullets items={['Pick the day and hour for each keyword, any hour you like', 'Results within 3 hours of the time you pick', 'Weekly means 4 runs a month; every other week means 2', 'We flag hours when the business is closed: Google ranks closed businesses lower']} />
+            <Bullets items={['Run it as soon as the phones are free, or pick a day and hour at least 2 hours ahead', 'Results within 3 hours of the time you pick', 'Weekly means 4 runs a month; every other week means 2', 'We flag hours when the business is closed: Google ranks closed businesses lower']} />
           </div>
           <div style={{ border: `1px solid ${TONE.accentLine}`, borderRadius: 20, padding: 28, background: '#111927' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px 14px' }}>
@@ -461,7 +461,7 @@ export const PRICING_FAQ: FaqItem[] = [
   ['What is a point?', 'One real Android phone run at one grid point: the phone’s GPS set there, the search recorded on video, and the page and AI Overview saved. A scheduled 3×3 scan is 9 points, a 5×5 is 25, a 7×7 is 49 and a 9×9 is 81. Scan Now uses twice as many, and so does a point on a mobile carrier. Points you choose to skip, over water or empty land, aren’t used.'],
   ['How does the graduated pricing work?', `Each bracket’s price applies only to the clients inside it. Twelve clients on Command cost 9 × ${usd(LINES.COMMAND.tiers[0].cents)} plus 3 × ${usd(LINES.COMMAND.tiers[1].cents)}: ${usd(lineCents('COMMAND', 12))} a month. Brackets count each seat type on its own.`],
   ['Can I choose when my scans run?', 'Yes. Pick the day and hour for each keyword, even 2 AM. If the business is closed at that hour we’ll tell you, because Google ranks closed businesses lower, so results can look worse than in the daytime. Keep each keyword at the same time every run and the weeks compare fairly.'],
-  ['What’s the difference between Scheduled and Scan Now?', 'Scheduled scans use 1× points and finish within 3 hours of the time you pick. Scan Now uses 2× points and jumps ahead of every scheduled scan: a 5×5 takes about 15 minutes.'],
+  ['What’s the difference between Scheduled and Scan Now?', 'Scheduled scans use 1× points: run one as soon as the phones are free, or pick a time at least 2 hours ahead and it finishes within 3 hours of that time. Scan Now uses 2× points and jumps ahead of every scheduled scan: a 5×5 takes about 15 minutes.'],
   ['What happens to points I don’t use?', 'Unused seat points roll over for one month. Top-up points never expire. Prospect audits are valid for 90 days from purchase.'],
   ['Can my clients be on different seats?', 'Yes. Put each client on the seat it needs and move it up or down whenever you like.'],
   ['Is there a setup or onboarding fee?', 'No. You pay for your seats and anything extra you choose to buy, nothing else.'],

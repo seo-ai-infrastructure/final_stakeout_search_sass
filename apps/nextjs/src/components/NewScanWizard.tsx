@@ -23,6 +23,7 @@ import { type IspMode, type IspOption } from '@/components/IspSelectorDropdown';
 import { NETWORK_LABELS, pinNetwork, placedLayout, type ScanNetwork } from '@stakeout/core/network';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 import { stateTimezone } from '@stakeout/core/fleetHealth';
+import { SCHEDULE_LEAD_MS, zonedMoment } from '@stakeout/core/speed';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';
 /** A size carried over from an older scan or a saved business that is no longer offered falls back to 5×5. */
@@ -58,6 +59,8 @@ export function NewScanWizard() {
   const [repeat, setRepeat] = useState<'once' | 'weekly' | 'biweekly'>('weekly');
   const [runDate, setRunDate] = useState(() => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
   const [runTime, setRunTime] = useState('09:00');
+  // A scheduled scan runs as soon as possible (right away when the phones are free, else at the end of the line) or at a day and hour picked 2+ hours ahead.
+  const [when, setWhen] = useState<'asap' | 'pick'>('asap');
   // Market & ISP State
   const [detectedZip, setDetectedZip] = useState('33801');
   const [detectedCity, setDetectedCity] = useState('Lakeland');
@@ -104,7 +107,7 @@ export function NewScanWizard() {
   const waterLayers = useRef<string[]>([]);
   // The phones a scan will run on, by model.
   const [phones, setPhones] = useState<{ brand: string; model: string }[]>([]);
-  const [launched, setLaunched] = useState<{ ids: string[]; summary: string; points: number; repeat: boolean; scheduled?: string } | null>(null);
+  const [launched, setLaunched] = useState<{ ids: string[]; summary: string; points: number; repeat: boolean; scheduled?: string; asap?: boolean } | null>(null);
   const incoming = useRef<string[]>([]);
   function addKeyword() {
     const v = keyword.trim();
@@ -127,7 +130,7 @@ export function NewScanWizard() {
     setTrackAiOverviews(b.trackAiOverviews);
     setScheduleType(b.scheduleType);
     // A business saved as repeating is scheduled weekly by default.
-    if (b.scheduleType !== 'once') { speedPicked.current = true; setSpeed('scheduled'); setRepeat('weekly'); }
+    if (b.scheduleType !== 'once') { speedPicked.current = true; setSpeed('scheduled'); setWhen('pick'); setRepeat('weekly'); }
     // Keywords that arrived with the page (from a Google profile's search terms) stay picked whichever business is chosen.
     setKeywordList([...new Set([...b.keywords, ...incoming.current])]);
     setPicked(incoming.current.length ? incoming.current : b.keywords.slice(0, 1));
@@ -233,7 +236,7 @@ export function NewScanWizard() {
     const body = {
       name: targetBusiness, centerLabel: addressQuery || [detectedCity, detectedState, detectedZip].filter(Boolean).join(' '),
       centerLat, centerLng, keywords, targetType, gridSize, spacingKm, ispMode: 'any', isps: [],
-      trackAiOverviews, scheduleType: speed === 'scheduled' && repeat !== 'once' ? 'weekly' : 'once',
+      trackAiOverviews, scheduleType: speed === 'scheduled' && when === 'pick' && repeat !== 'once' ? 'weekly' : 'once',
     };
     const res = await fetch(businessId ? '/api/businesses/' + businessId : '/api/businesses', {
       method: businessId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -773,7 +776,7 @@ export function NewScanWizard() {
           trackAiOverviews,
           scheduleType: 'once',
           speed,
-          ...(speed === 'scheduled' ? { repeat, scheduleDate: runDate, scheduleAt: runTime, scheduleTimezone: businessTz } : {}),
+          ...(speed === 'scheduled' ? (when === 'asap' ? { when: 'asap' } : { repeat, scheduleDate: runDate, scheduleAt: runTime, scheduleTimezone: businessTz }) : {}),
           skip: shape === 'wealth' ? [] : allSkipped,
           // Top income: the points are the areas' own middles, not grid points.
           ...(shape === 'wealth' ? { points: previewPoints.filter((p) => !p.isCenter && !p.skipped).map((p) => ({ lat: p.lat, lng: p.lng })) } : {}),
@@ -793,8 +796,9 @@ export function NewScanWizard() {
       setLaunched({
         ids: started,
         points: creditSummary.totalPins * runKeywords.length,
-        repeat: speed === 'scheduled' && repeat !== 'once',
-        scheduled: speed === 'scheduled' ? runWhen : undefined,
+        repeat: speed === 'scheduled' && when === 'pick' && repeat !== 'once',
+        scheduled: speed === 'scheduled' && when === 'pick' ? runWhen : undefined,
+        asap: speed === 'scheduled' && when === 'asap',
         summary: `${creditSummary.totalPins} grid points × ${runKeywords.length} keyword${runKeywords.length > 1 ? 's' : ''}${speed === 'now' ? ' × 2 (Scan Now)' : ''} · ${cost} points used`,
       });
     } catch (err: any) {
@@ -814,7 +818,19 @@ export function NewScanWizard() {
   const repeatDays = repeat === 'weekly' ? [0, 7, 14, 21].map((n) => ((runDay - 1) % 7) + 1 + n) : repeat === 'biweekly' ? [0, 14].map((n) => ((runDay - 1) % 14) + 1 + n) : [];
   const ord = (n: number) => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
   const repeatNote = repeat === 'once' ? '' : `Then on the ${repeatDays.slice(0, -1).map(ord).join(', ')} and ${ord(repeatDays[repeatDays.length - 1])} of each month.`;
-  const scheduleProblem = speed === 'scheduled' && repeat !== 'once' && runDay > 28 ? 'A repeating scan starts on the 1st to the 28th.' : '';
+  // A picked time has to be at least 2 hours away (the server allows a few minutes more for sending the form).
+  const picking = speed === 'scheduled' && when === 'pick';
+  const runMoment = picking ? zonedMoment(runDate, runTime, businessTz) : null;
+  const scheduleProblem = !picking || !runMoment
+    ? ''
+    : !(runMoment instanceof Date)
+      ? runMoment.problem
+      : runMoment.getTime() < Date.now() + SCHEDULE_LEAD_MS - 60000
+        ? 'Pick a time at least 2 hours from now, or choose As soon as possible.'
+        : repeat !== 'once' && runDay > 28
+          ? 'A repeating scan starts on the 1st to the 28th.'
+          : '';
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   const totalCost = creditSummary.totalCost * Math.max(1, runKeywords.length) * speedX;
   const creditsLeft = creditBalance - totalCost;
   const spacingMi = Number((spacingKm / 1.60934).toFixed(1));
@@ -1086,27 +1102,43 @@ export function NewScanWizard() {
               </p>
             </div>
             <div role="group" aria-label="When it runs" className="inline-flex shrink-0 overflow-hidden rounded-lg border border-slate-700 text-xs font-semibold">
-              <button type="button" aria-pressed={speed === 'scheduled'} onClick={() => { speedPicked.current = true; setSpeed('scheduled'); }} title="Runs at the day and hour you pick, results within 3 hours" className={'min-h-[40px] px-2.5 ' + (speed === 'scheduled' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}><span className="block leading-tight">Schedule · 1×</span><span className="block text-[10px] font-medium leading-tight opacity-80">save 50%</span></button>
+              <button type="button" aria-pressed={speed === 'scheduled'} onClick={() => { speedPicked.current = true; setSpeed('scheduled'); }} title="Runs as soon as the phones are free, or at a day and hour you pick" className={'min-h-[40px] px-2.5 ' + (speed === 'scheduled' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}><span className="block leading-tight">Schedule · 1×</span><span className="block text-[10px] font-medium leading-tight opacity-80">save 50%</span></button>
               <button type="button" aria-pressed={speed === 'now'} onClick={() => { speedPicked.current = true; setSpeed('now'); }} title="Jumps ahead of every scheduled scan" className={'min-h-[40px] px-2.5 ' + (speed === 'now' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}><span className="block leading-tight">Scan Now · 2×</span><span className="block text-[10px] font-medium leading-tight opacity-80">first in line</span></button>
             </div>
           </div>
           {speed === 'scheduled' && (
             <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="sr-only" htmlFor="run-date">First run date</label>
-                <input id="run-date" type="date" value={runDate} onChange={(e) => setRunDate(e.target.value)} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200" />
-                <label className="sr-only" htmlFor="run-time">Time</label>
-                <input id="run-time" type="time" step={900} value={runTime} onChange={(e) => setRunTime(e.target.value)} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200" />
-                <label className="sr-only" htmlFor="run-repeat">Repeat</label>
-                <select id="run-repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as 'once' | 'weekly' | 'biweekly')} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs font-semibold text-slate-200">
-                  <option value="once">Just once</option>
-                  <option value="weekly">Weekly (4 runs a month)</option>
-                  <option value="biweekly">Every other week (2 a month)</option>
-                </select>
+              <div role="group" aria-label="When the scheduled scan runs" className="grid grid-cols-2 overflow-hidden rounded-lg border border-slate-700 text-xs font-semibold">
+                <button type="button" aria-pressed={when === 'asap'} onClick={() => setWhen('asap')} className={'min-h-[40px] px-2.5 ' + (when === 'asap' ? 'bg-slate-800 text-emerald-300' : 'text-slate-400 hover:text-white')}>
+                  As soon as possible
+                </button>
+                <button type="button" aria-pressed={when === 'pick'} onClick={() => setWhen('pick')} className={'min-h-[40px] border-l border-slate-700 px-2.5 ' + (when === 'pick' ? 'bg-slate-800 text-emerald-300' : 'text-slate-400 hover:text-white')}>
+                  Pick a date &amp; time
+                </button>
               </div>
-              <p className="text-[11px] leading-snug text-slate-400">
-                {runWhen}. {repeatNote} Results within 3 hours. Google ranks a business lower while it is closed, so pick an hour when it is open.
-              </p>
+              {when === 'asap' ? (
+                <p className="text-[11px] leading-snug text-slate-400">
+                  Starts right away if the phones are free{eta ? ` and takes ${eta}` : ''}. If other scans are running, it joins the end of the line.
+                </p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="sr-only" htmlFor="run-date">First run date</label>
+                    <input id="run-date" type="date" min={today} value={runDate} onChange={(e) => setRunDate(e.target.value)} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200" />
+                    <label className="sr-only" htmlFor="run-time">Time</label>
+                    <input id="run-time" type="time" step={900} value={runTime} onChange={(e) => setRunTime(e.target.value)} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200" />
+                    <label className="sr-only" htmlFor="run-repeat">Repeat</label>
+                    <select id="run-repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as 'once' | 'weekly' | 'biweekly')} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs font-semibold text-slate-200">
+                      <option value="once">Just once</option>
+                      <option value="weekly">Weekly (4 runs a month)</option>
+                      <option value="biweekly">Every other week (2 a month)</option>
+                    </select>
+                  </div>
+                  <p className="text-[11px] leading-snug text-slate-400">
+                    {runWhen}. {repeatNote} Any time at least 2 hours from now, with results within 3 hours of it. Google ranks a business lower while it is closed, so pick an hour when it is open.
+                  </p>
+                </>
+              )}
               {scheduleProblem && <p className="text-[11px] font-semibold text-rose-300">{scheduleProblem}</p>}
             </div>
           )}
@@ -1118,6 +1150,8 @@ export function NewScanWizard() {
               blockedWhy
             ) : creditsLeft < 0 ? (
               'Get points to run'
+            ) : speed === 'scheduled' && when === 'asap' ? (
+              <>{runKeywords.length > 1 ? `Run ${runKeywords.length} scans as soon as possible` : 'Run as soon as possible'}<ArrowRight className="h-4 w-4" aria-hidden /></>
             ) : speed === 'scheduled' ? (
               <>{runKeywords.length > 1 ? `Schedule ${runKeywords.length} real-phone scans` : 'Schedule real-phone scan'}<ArrowRight className="h-4 w-4" aria-hidden /></>
             ) : (
@@ -1260,7 +1294,12 @@ export function NewScanWizard() {
               </div>
             )}
             <p className="text-[13px] text-slate-300">
-              {launched.scheduled ? `It runs ${launched.scheduled}, with results within 3 hours. ${launched.repeat ? 'It then repeats on its schedule. ' : ''}` : `First results in a few minutes${eta ? `; everything done in ${eta}` : ''}. `}Each point records its search, ads, AI Overview and a phone video.
+              {launched.scheduled
+                ? `It runs ${launched.scheduled}, with results within 3 hours. ${launched.repeat ? 'It then repeats on its schedule. ' : ''}`
+                : launched.asap
+                  ? 'It starts right away if the phones are free. If other scans are running, it waits at the end of the line. '
+                  : `First results in a few minutes${eta ? `; everything done in ${eta}` : ''}. `}
+              Each point records its search, ads, AI Overview and a phone video.
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => router.push(launched.ids.length > 1 ? '/scans' : `/scans/${launched.ids[0]}`)}

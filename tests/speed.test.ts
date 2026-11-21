@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { asSpeed, monthlyText, queuePriority, runDays, schedulePlan, speedFactor, zonedMoment } from '../packages/core/speed';
+import { SCHEDULE_LEAD_MS, asSpeed, monthlyText, queuePriority, runDays, schedulePlan, speedFactor, zonedMoment } from '../packages/core/speed';
 import { scheduleText } from '../packages/core/grid';
 import { pointPrice } from '../packages/core/network';
 
@@ -46,7 +46,13 @@ test('a schedule plan: first run, then the stored repeat', () => {
   const biweekly = schedulePlan({ repeat: 'biweekly', date: '2026-12-02', at: '08:00', timezone: 'America/New_York' }, now);
   assert.equal((biweekly as { cron: string }).cron, '0 8 2,16 * *;tz=America/New_York');
   assert.deepEqual(schedulePlan({ repeat: 'weekly', date: '2026-11-30', at: '08:00', timezone: 'America/New_York' }, now), { problem: 'A repeating scan starts on one of the 1st to the 28th of the month, so every month has its runs.' });
-  assert.deepEqual(schedulePlan({ repeat: 'once', date: '2026-11-20', at: '08:00', timezone: 'America/New_York' }, now), { problem: 'Pick a time that is still to come.' });
+  const tooSoon = { problem: 'Pick a time at least 2 hours from now, or choose As soon as possible.' };
+  assert.deepEqual(schedulePlan({ repeat: 'once', date: '2026-11-20', at: '08:00', timezone: 'America/New_York' }, now), tooSoon, 'in the past');
+  // now is 10:00 PM in Chicago on Nov 20: 11:30 PM is 90 minutes away, midnight is 2 hours.
+  assert.deepEqual(schedulePlan({ repeat: 'once', date: '2026-11-20', at: '23:30', timezone: 'America/Chicago' }, now), tooSoon, 'under 2 hours away');
+  assert.deepEqual(schedulePlan({ repeat: 'once', date: '2026-11-21', at: '00:00', timezone: 'America/Chicago' }, now), { runAt: new Date('2026-11-21T06:00:00Z'), repeat: 'once', cron: null }, '2 hours away');
+  assert.ok('runAt' in schedulePlan({ repeat: 'once', date: '2026-11-21', at: '00:00', timezone: 'America/Chicago' }, new Date(now.getTime() + 8 * 60000)), 'a few minutes spent sending the form are allowed');
+  assert.equal(SCHEDULE_LEAD_MS, 2 * 3600000);
   assert.deepEqual(schedulePlan({ repeat: 'once', date: '2027-03-01', at: '08:00', timezone: 'America/New_York' }, now), { problem: 'Pick a first run within the next 60 days.' });
 });
 
