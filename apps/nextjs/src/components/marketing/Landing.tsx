@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { LINES, type Line } from '@stakeout/core/gbpPlans';
 import { WELCOME, WHITE_LABEL, usd } from '@/lib/pricing';
-import { ACCENT, Arrow, Check, Faq, HREF, OfferBanner, Play, RecordingDialog, SiteFoot, SiteNav, TONE, type FaqItem } from './SiteKit';
+import { ACCENT, Arrow, Check, Faq, HREF, MONO, OfferBanner, Play, RecordingDialog, SiteFoot, SiteNav, TONE, type FaqItem } from './SiteKit';
 import { AuditCard, Calculator, Eyebrow, SeatCards } from './PriceBlocks';
 import './site.css';
 
@@ -645,6 +645,59 @@ function SBuyingPower({ v }: { v: V }) {
   );
 }
 
+/** What Command does after a scan, in four cards (two by two on a wide screen). */
+const COMMAND_CARDS: { tag: string; title: string; body: string; soon?: string }[] = [
+  {
+    tag: 'Rival Gaps & Safe Listing Edits',
+    title: 'See what the #1 listing has that your client is missing.',
+    body: 'Every scan already captures the businesses beating your client street by street. Command diffs their Google Business Profiles against yours—exposing missing categories, services, attributes, and the exact directories Google’s AI Overviews cited—then lets you update hours, services, photos, and descriptions right from Stakeout. (Connect your own AI agents too, with hard locks that never touch a client’s business name, phone, address, or website.)',
+  },
+  {
+    tag: 'Daily GBP Watchdog & Review Inbox',
+    title: 'Catch silent Google edits before the phone stops ringing.',
+    body: 'Google accepts competitor “Suggested Edits,” drops services, and rewrites business hours without asking. Command checks every client listing every day and flags unauthorized changes the morning they happen—while pulling new Google reviews into one central inbox so nothing sits unanswered.',
+  },
+  {
+    // Facebook and LinkedIn posting is open to admins only for now; say so until it opens.
+    tag: 'Google, Facebook & LinkedIn in One Calendar',
+    soon: 'Facebook & LinkedIn: coming soon',
+    title: 'Publish every client’s posts from one calendar.',
+    body: 'Publish updates, job photos, and offers to Google Business Profile from a single composer and calendar, so client profiles stay active across the exact local surfaces Google’s Map Pack and AI Overviews crawl. Facebook and LinkedIn are next—and with them, you drop another $29–$49/month posting tool from your agency bill.',
+  },
+  {
+    tag: 'Live Proof Links & Monthly Numbers',
+    title: 'Walk into monthly reviews with calls, leads, and video proof.',
+    body: 'Send a no-login share link with your 3D Buying-Power map and MP4 receipts—under your agency’s logo and domain with white-label. Each Command client’s GBP calls and direction requests, Search Console clicks, GA4 leads (including visits from AI assistants), and AI Overview share sit in the same account as its scans.',
+  },
+];
+
+/* section#command */
+function SCommand() {
+  return (
+    <section id="command" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+      <div style={{ maxWidth: 1240, margin: '0 auto', padding: 'clamp(64px, 8vw, 104px) clamp(16px, 2vw, 24px)' }}>
+        <Eyebrow>AFTER THE SCAN · STAKEOUT COMMAND</Eyebrow>
+        <h2 style={{ margin: '16px 0 0', fontWeight: 800, fontSize: 'clamp(32px, 3.6vw, 52px)', lineHeight: 1.12, letterSpacing: '-0.025em', maxWidth: 960 }}>A Scan Proves the Gap. Command Closes It Every Week.</h2>
+        <p style={{ margin: '20px 0 0', fontSize: 18, lineHeight: 1.65, color: '#CBD5E1', maxWidth: 820 }}>
+          Most rank trackers hand you a map of red pins and leave you to log into four other tools to do the work. Stakeout Command puts the proof, the fixes, the publishing, and the client report on one screen—for one price per client, without spending an extra scan point.
+        </p>
+        <div style={{ marginTop: 44, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 460px), 1fr))', gap: 20 }}>
+          {COMMAND_CARDS.map((c, i) => (
+            <article key={c.tag} style={{ border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 20, background: '#111823', padding: 'clamp(22px, 2.6vw, 30px)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '8px 12px' }}>
+                <p style={{ margin: 0, fontFamily: MONO, fontSize: 12, lineHeight: 1.5, letterSpacing: '0.1em', color: ACCENT }}>{String(i + 1).padStart(2, '0')} · {c.tag.toUpperCase()}</p>
+                {c.soon && <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.4, fontWeight: 600, color: '#FBBF24', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.5)', borderRadius: 999, padding: '4px 10px' }}>{c.soon}</p>}
+              </div>
+              <h3 style={{ margin: '12px 0 0', fontWeight: 800, fontSize: 'clamp(20px, 1.9vw, 24px)', lineHeight: 1.3, letterSpacing: '-0.01em' }}>{c.title}</h3>
+              <p style={{ margin: '12px 0 0', fontSize: 15.5, lineHeight: 1.7, color: '#CBD5E1' }}>{c.body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* section#google-listings */
 function SGoogleListings({ v }: { v: V }) {
   return (
@@ -780,6 +833,7 @@ function Body({ v }: { v: V }) {
       <SHowItWorks v={v} />
       <SReport v={v} />
       <SBuyingPower v={v} />
+      <SCommand />
       <SGoogleListings v={v} />
       <HomePricing />
       <Faq id="faq" items={HOME_FAQ} wide />
