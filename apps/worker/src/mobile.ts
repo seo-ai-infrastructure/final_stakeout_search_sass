@@ -974,7 +974,11 @@ async function readsAioSources(scan: GridScan, surface: string, d: LeasedDevice)
 
 /** Keeps what the watch read: the full read in R2 next to the video, a summary on the point. */
 async function keepAioSources(found: AioWatchResult, prefix: string, targetDomain: string | null, proof: object, tag: string) {
-  const base = { status: found.status, probes: found.probes, reads: found.reads, loads: found.loads };
+  const base = { status: found.status, probes: found.probes, reads: found.reads, loads: found.loads, ...(found.snapshots?.length ? { snapshots: found.snapshots } : {}) };
+  // Where the phone was at each snapshot: the app in front and what each DevTools socket listed.
+  const snaps = (found.snapshots ?? [])
+    .map((s) => `${s.why}@${s.at}s ${/([\w.]+\/[\w.$]+)/.exec(s.front.join(' '))?.[1] ?? '?'} [${s.lists.map((l) => `${l.socket}: ${l.error ?? l.targets.length + ' target(s)'}`).join('; ')}]`)
+    .join(' · ');
   if (found.dossier) {
     const key = prefix + '/aio-sources.json.gz';
     await put(key, gzipSync(JSON.stringify(found.dossier)), 'application/gzip');
@@ -992,6 +996,7 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
         aioOnPage: m.aioOnPage,
         anatomy: m.anatomy,
         diagnostics: m.diagnostics,
+        note: found.note,
         trace: found.trace,
       },
     });
@@ -1004,14 +1009,17 @@ async function keepAioSources(found: AioWatchResult, prefix: string, targetDomai
               const b = found.dossier.pool.breakdown;
               return ` · page: ${b.entries} hidden entries, ${b.addresses} address(es); in the overview ${b.inOverview} (${b.underSentences} under sentences, ${b.inOverviewUnderNoSentence} under none), elsewhere ${b.outsideOverview}`;
             })()
-          : ''),
+          : '') +
+        (found.note ? ' · ' + found.note : '') +
+        (snaps ? ' · snapshots ' + snaps.slice(0, 600) : ''),
     );
   } else {
     Object.assign(proof, { aioSources: { ...base, seen: found.seen, sockets: found.sockets, failures: found.failures, note: found.note, trace: found.trace } });
     console.log(
       `[aio-sources] ${tag}: ${found.status} · ${found.probes} look(s), ${found.failures ?? 0} unanswered · pages ${found.seen.join(' | ').slice(0, 300) || 'none'}` +
         (found.sockets ? ' · sockets ' + found.sockets : '') +
-        (found.note ? ' · ' + found.note : ''),
+        (found.note ? ' · ' + found.note : '') +
+        (snaps ? ' · snapshots ' + snaps.slice(0, 600) : ''),
     );
   }
 }
@@ -1246,8 +1254,10 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     let capped = false;
     // The AI Overview's sources, read from Chrome's results page while the template runs.
     let templateOver = false;
+    // Templates that mark the keyword (record_start, v3.9+) let the watch skip the warm-up searches.
+    const marksKeyword = Boolean(tpl?.vars.some((v) => v.key === 'record_start'));
     const sourcesWatch = (await readsAioSources(scan, surface, d))
-      ? watchAioSources({ phone: d, keyword: scan.keyword, done: () => templateOver, until: Date.now() + rpaSecs * 1000 }).catch(
+      ? watchAioSources({ phone: d, keyword: scan.keyword, run: marksKeyword ? tag : undefined, done: () => templateOver, until: Date.now() + rpaSecs * 1000 }).catch(
           (e): AioWatchResult => ({ status: 'error', probes: 0, reads: 0, loads: 0, seen: [], note: errMsg(e).slice(0, 120) }),
         )
       : null;
@@ -1294,7 +1304,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     }
     if (sourcesWatch) {
       const late: AioWatchResult = { status: 'error', probes: 0, reads: 0, loads: 0, seen: [], note: 'the watch did not stop in time' };
-      const found = await Promise.race([sourcesWatch, sleep(10000).then(() => late)]);
+      const found = await Promise.race([sourcesWatch, sleep(15000).then(() => late)]);
       await keepAioSources(found, prefix, scan.targetDomain, proof, tag).catch((e) => console.warn('[aio-sources]', tag, 'not kept:', errMsg(e).slice(0, 140)));
     }
     if (rpaError) {

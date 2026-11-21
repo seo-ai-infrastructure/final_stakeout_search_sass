@@ -1,0 +1,131 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { watchAioSources, type WatchDeps } from '../apps/worker/src/aioWatch';
+
+// A stand-in for one DevTools endpoint: /json/list answers with whatever `targets` holds now.
+type Endpoint = { port: number; lists: number; firstListAt: number; targets: { id: string; type: string; url: string; title?: string }[]; server: Server };
+async function endpoint(app: string): Promise<Endpoint> {
+  const e = { port: 0, lists: 0, firstListAt: 0, targets: [] as Endpoint['targets'], server: null as unknown as Server };
+  e.server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url === '/json/version') return res.end(JSON.stringify({ Browser: 'Chrome/142.0', 'Android-Package': app }));
+    e.lists++;
+    e.firstListAt ||= Date.now();
+    res.end(JSON.stringify(e.targets));
+  });
+  await new Promise<void>((r) => e.server.listen(0, '127.0.0.1', r));
+  e.port = (e.server.address() as AddressInfo).port;
+  return e;
+}
+
+const page = (q: string, id = 'p' + q.length) => ({ id, type: 'page', url: 'https://www.google.com/search?q=' + encodeURIComponent(q) + '&oq=x', title: q });
+const RUN = 'abc_1';
+const at = (ms: number, f: () => void) => setTimeout(f, ms);
+
+// The phone: files the template writes appear over time; a wait answers once one exists (or soon).
+function phone(chrome: Endpoint, others: Record<string, Endpoint> = {}) {
+  const files = new Set<string>();
+  const forwards: string[] = [];
+  const deps: Partial<WatchDeps> = {
+    phoneSeconds: async () => Date.now() / 1000 - 5,
+    diag: async () => '',
+    forward: async (remote) => {
+      forwards.push(remote);
+      if (remote === 'chrome_devtools_remote') return chrome.port;
+      if (others[remote]) return others[remote].port;
+      throw new Error('no such socket');
+    },
+    unforward: async () => {},
+    waitForFile: async (paths, ms) => {
+      const end = Date.now() + Math.min(ms, 150);
+      while (Date.now() < end) {
+        const hit = paths.find((p) => files.has(p));
+        if (hit) return hit;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return null;
+    },
+    front: async () =>
+      [
+        'mCurrentFocus=Window{1a2b u0 com.android.chrome/org.chromium.chrome.browser.ChromeTabbedActivity}',
+        'pids chrome=4321 google=',
+        'sockets ' + ['@chrome_devtools_remote', ...Object.keys(others).map((s) => '@' + s)].join(' '),
+      ].join('\n'),
+  };
+  return { files, forwards, deps, add: (name: string) => files.add(`/sdcard/stakeout/${RUN}${name}`) };
+}
+
+test('aio watch: Chrome is left alone until the keyword marker, then snapshotted as typed, gone and copied', async () => {
+  const chrome = await endpoint('com.android.chrome');
+  chrome.targets = [page('hourly weather forecast')];
+  const p = phone(chrome);
+  let over = false;
+  let markerAt = 0;
+  at(400, () => {
+    p.add('.rec');
+    markerAt = Date.now();
+  });
+  at(600, () => (chrome.targets = [page('car accident lawyer tulsa')]));
+  at(2300, () => (chrome.targets = [page('hourly weather forecast')]));
+  at(2900, () => p.add('_aio_copy.txt'));
+  at(3600, () => {
+    p.add('.done');
+    over = true;
+  });
+  const r = await watchAioSources({ phone: { imageId: 'x', adbAddr: null }, keyword: 'car accident lawyer tulsa', run: RUN, done: () => over, until: Date.now() + 20000, deps: p.deps });
+  chrome.server.close();
+  // Nothing was asked of Chrome during the warm-up searches.
+  assert.ok(markerAt > 0 && chrome.firstListAt >= markerAt, 'no page list before the keyword marker');
+  assert.equal(p.forwards[0], 'chrome_devtools_remote');
+  assert.ok(r.trace?.some((l) => l.includes('keyword marker')));
+  // The results page was looked at while Chrome listed it (the stand-in has no DevTools page: no answer).
+  assert.ok(r.probes > 0);
+  // Three moments, each with the app in front, the sockets, and everything listed.
+  assert.deepEqual(r.snapshots?.map((s) => s.why), ['typing', 'gone', 'copied']);
+  const gone = r.snapshots!.find((s) => s.why === 'gone')!;
+  assert.match(gone.front[0], /ChromeTabbedActivity/);
+  assert.deepEqual(gone.sockets, ['chrome_devtools_remote']);
+  assert.equal(gone.lists[0].app, 'com.android.chrome');
+  assert.equal(gone.lists[0].targets[0].title, 'hourly weather forecast');
+  assert.ok(r.trace?.some((l) => l.includes('snapshot (copied)')));
+});
+
+test('aio watch: a template that ends without marking the keyword is never looked at in Chrome', async () => {
+  const chrome = await endpoint('com.android.chrome');
+  const p = phone(chrome);
+  let over = false;
+  at(300, () => {
+    p.add('.done');
+    over = true;
+  });
+  const r = await watchAioSources({ phone: { imageId: 'x', adbAddr: null }, keyword: 'emergency plumber tulsa', run: RUN, done: () => over, until: Date.now() + 10000, deps: p.deps });
+  chrome.server.close();
+  assert.equal(chrome.lists, 0);
+  assert.equal(p.forwards.length, 0);
+  assert.equal(r.status, 'no_results_page');
+  assert.equal(r.note, 'no keyword marker');
+});
+
+test('aio watch: the results page found behind another DevTools socket is followed there', async () => {
+  const chrome = await endpoint('com.android.chrome');
+  const webview = await endpoint('com.google.android.googlequicksearchbox');
+  chrome.targets = [page('events near me')];
+  const p = phone(chrome, { webview_devtools_remote_999: webview });
+  let over = false;
+  at(200, () => p.add('.rec'));
+  at(300, () => (webview.targets = [page('car accident lawyer tulsa', 'w1')]));
+  at(900, () => p.add('_aio_copy.txt'));
+  at(2600, () => {
+    p.add('.done');
+    over = true;
+  });
+  const r = await watchAioSources({ phone: { imageId: 'x', adbAddr: null }, keyword: 'car accident lawyer tulsa', run: RUN, done: () => over, until: Date.now() + 20000, deps: p.deps });
+  chrome.server.close();
+  webview.server.close();
+  assert.equal(r.note, 'followed the results page to webview_devtools_remote_999');
+  assert.ok(r.probes > 0, 'looked at the results page on the other socket');
+  const copied = r.snapshots!.find((s) => s.why === 'copied')!;
+  assert.ok(copied.lists.some((l) => l.socket === 'webview_devtools_remote_999' && l.app === 'com.google.android.googlequicksearchbox'));
+});
