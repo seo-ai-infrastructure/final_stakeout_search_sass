@@ -25,6 +25,7 @@ import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 import { stateTimezone } from '@stakeout/core/fleetHealth';
 import { SCHEDULE_LEAD_MS, zonedMoment } from '@stakeout/core/speed';
 import { GOOGLE_ID_HELP, googleIdOf, googleShortLink } from '@stakeout/core/businessIds';
+import { siteDomain } from '@stakeout/core/businessSite';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';
 /** A size carried over from an older scan or a saved business that is no longer offered falls back to 5×5. */
@@ -50,6 +51,8 @@ export function NewScanWizard() {
   const [googleId, setGoogleId] = useState('');
   const [googleIdNote, setGoogleIdNote] = useState<{ ok: boolean; text: string } | null>(null);
   const [googleIdBusy, setGoogleIdBusy] = useState(false);
+  // Set when the website or ID was filled in from the account's earlier scans of the business.
+  const [identityNote, setIdentityNote] = useState('');
   const [centerLat, setCenterLat] = useState<number>(28.039465);
   const [centerLng, setCenterLng] = useState<number>(-81.949804);
   const [gridSize, setGridSize] = useState<number>(5);
@@ -93,7 +96,7 @@ export function NewScanWizard() {
     id: string; name: string; centerLabel: string; centerLat: number; centerLng: number; keywords: string[];
     targetType: TargetType; gridSize: number; spacingKm: number; ispMode: IspMode; isps: string[];
     trackAiOverviews: boolean; scheduleType: 'once' | 'daily' | 'weekly';
-    kgmid?: string | null;
+    kgmid?: string | null; domain?: string | null;
   };
   const [saved, setSaved] = useState<SavedBusiness[]>([]);
   const [businessId, setBusinessId] = useState('');
@@ -126,8 +129,10 @@ export function NewScanWizard() {
   function applyBusiness(b: SavedBusiness) {
     setBusinessId(b.id);
     setTargetBusiness(b.name);
+    setWebsite(b.domain ?? '');
     setGoogleId(b.kgmid ?? '');
     setGoogleIdNote(null);
+    setIdentityNote('');
     setCenterLat(b.centerLat);
     setCenterLng(b.centerLng);
     setAddressQuery(b.centerLabel);
@@ -214,6 +219,7 @@ export function NewScanWizard() {
         const match = list.find((x) => x.name === sc.targetBusiness);
         if (match) setBusinessId(match.id);
         setGoogleId(sc.targetKgmid ?? match?.kgmid ?? '');
+        setWebsite(sc.targetDomain ?? match?.domain ?? '');
         setKeywordList([...new Set([...(match?.keywords ?? []), sc.keyword])]);
         setPicked([sc.keyword]);
       }
@@ -240,8 +246,23 @@ export function NewScanWizard() {
     return () => { live = false; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // The Google listing field, checked when it is left: an ID is tidied, a Share link is looked up
-  // on the server (it follows the link to Google's ID), anything else is explained.
+  // A business typed by name (not picked from the saved list): its website and Google ID from the
+  // account's saved businesses and earlier scans (the place nearest this grid), into whichever of
+  // the two fields is still empty.
+  async function rememberIdentity() {
+    const name = targetBusiness.trim();
+    if (!name || businessId || (website.trim() && googleId.trim())) return;
+    const q = new URLSearchParams({ name, lat: String(centerLat), lng: String(centerLng) });
+    const r = (await fetch('/api/businesses/remembered?' + q)
+      .then((res) => (res.ok ? res.json() : null))
+      .catch(() => null)) as { domain?: string | null; kgmid?: string | null } | null;
+    if (!r || (!r.domain && !r.kgmid)) return;
+    if (r.domain) setWebsite((w) => (w.trim() ? w : r.domain!));
+    if (r.kgmid) setGoogleId((g) => (g.trim() ? g : r.kgmid!));
+    setIdentityNote('Filled in from your earlier scans of this business: check it is the right location.');
+  }
+  // The Google ID field, checked when it is left: an ID is tidied, a pasted Google link is looked
+  // up on the server (it follows the link to the ID), anything else is explained.
   async function checkGoogleId() {
     const typed = googleId.trim();
     setGoogleIdNote(null);
@@ -266,7 +287,7 @@ export function NewScanWizard() {
       name: targetBusiness, centerLabel: addressQuery || [detectedCity, detectedState, detectedZip].filter(Boolean).join(' '),
       centerLat, centerLng, keywords, targetType, gridSize, spacingKm, ispMode: 'any', isps: [],
       trackAiOverviews, scheduleType: speed === 'scheduled' && when === 'pick' && repeat !== 'once' ? 'weekly' : 'once',
-      kgmid: googleId.trim(),
+      kgmid: googleId.trim(), domain: website.trim(),
     };
     const res = await fetch(businessId ? '/api/businesses/' + businessId : '/api/businesses', {
       method: businessId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -828,6 +849,20 @@ export function NewScanWizard() {
       }
       const cost = creditSummary.totalCost * runKeywords.length * speedX;
       setCreditBalance((b) => b - cost);
+      // The saved business keeps the website and Google ID it was just scanned with, so they are
+      // filled in next time without pressing save (its keywords and centre are left as they were).
+      const sb = businessId ? saved.find((x) => x.id === businessId) : undefined;
+      const site = siteDomain(website) ?? '', gid = googleIdOf(googleId);
+      if (sb && ((site && site !== (sb.domain ?? '')) || (gid && gid !== (sb.kgmid ?? '')))) {
+        fetch('/api/businesses/' + sb.id + '/identity', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domain: site || sb.domain || '', kgmid: gid || sb.kgmid || '' }),
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .then((d: { business?: SavedBusiness } | null) => d?.business && setSaved((list) => list.map((x) => (x.id === sb.id ? d.business! : x))))
+          .catch(() => {});
+      }
       setLaunched({
         ids: started,
         points: creditSummary.totalPins * runKeywords.length,
@@ -947,7 +982,7 @@ export function NewScanWizard() {
                 onChange={(e) => {
                   const b = saved.find((x) => x.id === e.target.value);
                   if (b) applyBusiness(b);
-                  else { setBusinessId(''); setTargetBusiness(''); setGoogleId(''); setGoogleIdNote(null); setKeywordList(incoming.current); setPicked(incoming.current); }
+                  else { setBusinessId(''); setTargetBusiness(''); setWebsite(''); setGoogleId(''); setGoogleIdNote(null); setIdentityNote(''); setKeywordList(incoming.current); setPicked(incoming.current); }
                 }}
                 className={field + ' font-semibold'}
               >
@@ -962,6 +997,7 @@ export function NewScanWizard() {
                 placeholder="Business name exactly as on Google"
                 value={targetBusiness}
                 onChange={(e) => setTargetBusiness(e.target.value)}
+                onBlur={rememberIdentity}
                 className={field}
               />
               <input
@@ -971,22 +1007,24 @@ export function NewScanWizard() {
                 aria-label="The business’s website (optional)"
                 placeholder="Website, e.g. stuartsplumbing.com (optional)"
                 value={website}
-                onChange={(e) => setWebsite(e.target.value)}
+                onChange={(e) => {
+                  setWebsite(e.target.value);
+                  setIdentityNote('');
+                }}
                 className={field}
               />
-              <p className="-mt-1 text-xs text-slate-500">Lets the report tell when Google’s AI answer cites the business’s own site. Left empty, it is taken from your earlier scans of this business or its listing, when one is known.</p>
               <input
                 type="text"
-                inputMode="url"
                 autoCapitalize="none"
                 spellCheck={false}
-                aria-label="The business’s Google listing: its Share link or Google ID (optional)"
+                aria-label="The business’s Google business ID (optional)"
                 aria-invalid={googleIdNote?.ok === false}
-                placeholder="Google listing: Share link or ID, e.g. /g/11c5wk8bxd (optional)"
+                placeholder="Google business ID, e.g. /g/11c5wk8bxd (optional)"
                 value={googleId}
                 onChange={(e) => {
                   setGoogleId(e.target.value);
                   setGoogleIdNote(null);
+                  setIdentityNote('');
                 }}
                 onBlur={checkGoogleId}
                 className={field + (googleIdNote?.ok === false ? ' border-rose-500' : '')}
@@ -996,7 +1034,7 @@ export function NewScanWizard() {
                   ? 'Looking up the link…'
                   : googleIdNote
                     ? googleIdNote.text
-                    : 'Google’s AI answers link each business to its Google listing, not its website. With the listing, the report finds the business in an answer even when the name is written differently, and tells apart offices with the same name. On Google Maps: open the business, tap Share, paste the link here.'}
+                    : identityNote || 'Saved with the business. The ID finds it in Google’s AI answers by its listing, whatever the name; the website shows when an answer cites its site.'}
               </p>
               {shownKeywords.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">

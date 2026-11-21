@@ -1,6 +1,7 @@
 /** Validation for saved businesses (a client with its keywords and scan defaults). */
 import { InputError } from './grid';
 import { GOOGLE_ID_HELP, googleIdOf } from './businessIds';
+import { siteDomain } from './businessSite';
 
 const TARGET_TYPES = ['mobile_chrome', 'mobile_maps', 'mobile_google', 'desktop_aimode'] as const;
 type BusinessInput = {
@@ -18,7 +19,20 @@ type BusinessInput = {
   scheduleType: string;
   /** Google's ID for the business (/g/…), when given: its scans match Google's AI answers by it. */
   kgmid: string | null;
+  /** The business's own website (a bare domain), when given: its scans tell when an AI answer cites it. */
+  domain: string | null;
 };
+
+/** A saved business's website and Google ID, checked the same way as on a scan. Empty stays empty (null). */
+export function parseIdentity(r: Record<string, unknown>): { domain: string | null; kgmid: string | null } {
+  const typedSite = text(r.domain, 300);
+  const domain = siteDomain(typedSite);
+  if (typedSite && !domain) throw new InputError('Enter the website as a domain, such as stuartsplumbing.com.');
+  const typedId = text(r.kgmid, 4000);
+  const kgmid = googleIdOf(typedId) || null;
+  if (typedId && !kgmid) throw new InputError(GOOGLE_ID_HELP);
+  return { domain, kgmid };
+}
 
 const text = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
 
@@ -40,11 +54,8 @@ export function parseBusiness(raw: unknown): BusinessInput {
   const gridSize = Number(r.gridSize);
   const ispMode = ['any', 'single', 'mix'].includes(String(r.ispMode)) ? String(r.ispMode) : 'any';
   const isps = ispMode === 'any' ? [] : (Array.isArray(r.isps) ? r.isps : []).map((x) => text(x, 80)).filter(Boolean).slice(0, 10);
-  const typedId = text(r.kgmid, 4000);
-  const kgmid = googleIdOf(typedId) || null;
-  if (typedId && !kgmid) throw new InputError(GOOGLE_ID_HELP);
   return {
-    kgmid,
+    ...parseIdentity(r),
     name,
     centerLabel: text(r.centerLabel, 200),
     centerLat,

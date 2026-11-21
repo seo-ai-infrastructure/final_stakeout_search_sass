@@ -69,5 +69,4 @@ export const isGoogleHost = (host: string) =>
   /^(?:[a-z0-9-]+\.)*google\.[a-z]{2,3}(?:\.[a-z]{2})?$/i.test(host) || /^(?:maps\.app\.)?goo\.gl$/i.test(host) || /^(?:g\.co|share\.google|g\.page)$/i.test(host);
 
 /** What to tell someone whose paste holds no ID. */
-export const GOOGLE_ID_HELP =
-  'That doesn’t hold Google’s ID for the business. Paste the link from the Share button on the business in Google Maps or Google Search, or the ID itself (it looks like /g/11c5wk8bxd).';
+export const GOOGLE_ID_HELP = 'Enter the Google business ID, like /g/11c5wk8bxd (a Google link holding it works too).';

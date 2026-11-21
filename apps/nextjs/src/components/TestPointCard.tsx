@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
-type Business = { id: string; name: string; centerLabel: string; centerLat: number; centerLng: number; keywords: string[]; targetType: string; kgmid?: string | null };
+type Business = { id: string; name: string; centerLabel: string; centerLat: number; centerLng: number; keywords: string[]; targetType: string; kgmid?: string | null; domain?: string | null };
 
 /** Admin: run one free point (optionally on one phone) to test a template in minutes. */
 export function TestPointCard() {
@@ -31,7 +31,7 @@ export function TestPointCard() {
     const res = await fetch('/api/admin/test-point', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword: keyword.trim(), targetBusiness: biz.name, targetKgmid: biz.kgmid ?? undefined, centerLat: biz.centerLat, centerLng: biz.centerLng, targetType: surface, network, imageId: phone || undefined }),
+      body: JSON.stringify({ keyword: keyword.trim(), targetBusiness: biz.name, targetKgmid: biz.kgmid ?? undefined, targetDomain: biz.domain ?? undefined, centerLat: biz.centerLat, centerLng: biz.centerLng, targetType: surface, network, imageId: phone || undefined }),
     });
     const d = await res.json().catch(() => ({}));
     setState(res.ok ? { busy: false, scanId: d.scanId } : { busy: false, error: d.error ?? 'Could not start the test point.' });

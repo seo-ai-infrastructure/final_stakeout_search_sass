@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { googleIdOf, googleIdsIn, googleShortLink, isGoogleHost } from '../packages/core/businessIds';
 import { parseSpec } from '../packages/core/grid';
-import { parseBusiness } from '../packages/core/businesses';
+import { parseBusiness, parseIdentity } from '../packages/core/businesses';
 import { aiNameFor, aiNamesFirst, isAiTarget, rankWithoutFinder } from '../packages/core/serpEvidence';
 import { buildPinInsights } from '../packages/core/pinInsights';
 
@@ -43,14 +43,19 @@ test('a scan keeps the Google ID tidied, refuses a paste without one, and leaves
   assert.equal(parseSpec({ ...base, targetKgmid: 'https://www.google.com/search?kgmid=%2Fg%2F11c5wk8bxd' }).targetKgmid, '/g/11c5wk8bxd');
   assert.equal(parseSpec({ ...base }).targetKgmid, null);
   assert.equal(parseSpec({ ...base, targetKgmid: '  ' }).targetKgmid, null);
-  assert.throws(() => parseSpec({ ...base, targetKgmid: 'https://www.bibylaw.com/' }), /Google’s ID/);
+  assert.throws(() => parseSpec({ ...base, targetKgmid: 'https://www.bibylaw.com/' }), /Google business ID/);
 });
 
-test('a saved business keeps its Google ID', () => {
+test('a saved business keeps its Google ID and website', () => {
   const b = { name: 'Edwards and Patterson', centerLat: 36.05, centerLng: -95.95, keywords: ['car accident lawyer tulsa'] };
-  assert.equal(parseBusiness({ ...b, kgmid: '/g/11c5wk8bxd' }).kgmid, '/g/11c5wk8bxd');
-  assert.equal(parseBusiness({ ...b, kgmid: '' }).kgmid, null);
-  assert.throws(() => parseBusiness({ ...b, kgmid: 'Edwards' }), /Google’s ID/);
+  const kept = parseBusiness({ ...b, kgmid: '/g/11c5wk8bxd', domain: 'https://www.EdwardsPatterson.com/contact' });
+  assert.equal(kept.kgmid, '/g/11c5wk8bxd');
+  assert.equal(kept.domain, 'edwardspatterson.com');
+  assert.deepEqual([parseBusiness({ ...b, kgmid: '', domain: '' }).kgmid, parseBusiness(b).domain], [null, null]);
+  assert.throws(() => parseBusiness({ ...b, kgmid: 'Edwards' }), /Google business ID/);
+  assert.throws(() => parseBusiness({ ...b, domain: 'not a site' }), /domain/);
+  // Only the two, for keeping them up to date as scans are launched.
+  assert.deepEqual(parseIdentity({ domain: 'edwardspatterson.com', kgmid: 'g/11C5WK8BXD' }), { domain: 'edwardspatterson.com', kgmid: '/g/11c5wk8bxd' });
 });
 
 // The copied AI answer, as Google's Copy button gives it (shortened).

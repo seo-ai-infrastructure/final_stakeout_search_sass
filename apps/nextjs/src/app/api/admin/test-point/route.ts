@@ -24,8 +24,9 @@ export async function POST(req: Request) {
       targetType: b.targetType ?? 'mobile_chrome',
       keyword: b.keyword,
       targetBusiness: b.targetBusiness,
-      // Google's ID for the business, from an ID or a pasted Share link (followed here).
+      // The saved business's Google ID (or a pasted Google link, followed here) and website.
       targetKgmid: await googleIdField(b.targetKgmid),
+      targetDomain: b.targetDomain,
       centerLat: b.centerLat,
       centerLng: b.centerLng,
       gridSize: 3,
