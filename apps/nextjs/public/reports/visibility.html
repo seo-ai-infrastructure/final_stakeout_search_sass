@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local &amp; AI Visibility Report · Stakeout Search</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+[hidden]{display:none !important}
+:root{
+  --ink:#16222d;--dim:#55677a;--faint:#8494a4;--line:#dce3ea;--bg:#f3f5f8;--card:#fff;
+  --top:#0b1117;--hero:#15212b;--accent:#ff6a28;--mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  --green:#1f7a5c;--green2:#58b893;--amber:#c98a1e;--red:#b6402f;--purple:#6d55a8;--purple2:#a993e0;--blue:#2f6fae;
+  --map:#111b23;--map2:#18252f;--mapline:#2c3a45;--maptext:#e9eef2;--mapdim:#9fb0bd;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+h1,h2,h3,p{margin:0}
+a{color:inherit}
+button,select{font:inherit;color:inherit}
+button,select,summary{cursor:pointer}
+:focus-visible{outline:3px solid #f0955a;outline-offset:2px}
+.wrap{max-width:1320px;margin:0 auto;padding:0 clamp(16px,3.5vw,48px)}
+.mono,.eyebrow,.label{font-family:var(--mono);font-weight:600;font-size:10px;letter-spacing:.09em;text-transform:uppercase}
+
+/* top bar */
+.topbar{position:sticky;top:0;z-index:20;background:var(--top);color:#fff;border-bottom:1px solid #1e2a35}
+.topbar .wrap{display:flex;align-items:center;gap:24px;min-height:56px}
+.brand{display:flex;align-items:center;gap:9px;text-decoration:none}
+.brand-mark{width:22px;height:22px;border-radius:6px;background:var(--accent);display:grid;place-items:center}
+.brand-mark::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--top)}
+.brand b{font-weight:800;letter-spacing:-.04em;font-size:16px}
+.brand small{display:block;font:700 7.5px/1 var(--mono);letter-spacing:.42em;color:#ff8a4f;margin-top:2px}
+.topbar nav{display:flex;gap:18px;flex-wrap:wrap}
+.topbar nav a{color:#b7c4cf;text-decoration:none;font-size:12.5px}
+.topbar nav a:hover{color:#fff}
+.print{margin-left:auto;background:transparent;border:1px solid #44515d;color:#e6ecf1;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:600;white-space:nowrap}
+.print:hover{background:#1a2631}
+
+/* hero */
+.hero{background:var(--hero);color:#f5f7f9;border-top:1px solid #2b3742}
+.hero .wrap{padding-top:28px;padding-bottom:26px;display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap}
+.hero .eyebrow{color:#ffab78;display:block;margin-bottom:8px}
+.hero h1{font-size:clamp(26px,4vw,46px);line-height:1.06;letter-spacing:-.045em;font-weight:760;max-width:22ch}
+.hero .sub{margin-top:10px;color:#c3cfd9;font-size:14px;display:flex;flex-wrap:wrap;gap:6px 14px}
+.hero .sub span+span::before{content:"·";margin-right:14px;color:#6f8090}
+.hero .snap{text-align:right;color:#b9c6d1;font-size:12px}
+.hero .snap b{display:block;color:#fff;font-size:13px;font-weight:650}
+
+main{display:grid;gap:22px;padding:22px 0 40px}
+main>*{min-width:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px}
+.pad{padding:18px 20px}
+.sec-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.sec-head h2{font-size:21px;letter-spacing:-.03em;line-height:1.2}
+.sec-head p,.quiet{color:var(--dim);font-size:12.5px;margin-top:3px}
+
+/* reading note */
+.note{display:flex;gap:12px;align-items:flex-start;background:#fff8f1;border:1px solid #f4d8c2;border-radius:10px;padding:11px 14px;font-size:12.5px;color:#5b4636}
+.note b{color:#3e2b1d}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:600;background:#eef1f5;color:#2c3a47;border:1px solid #dfe5eb;white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+
+/* KPIs */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kpi{padding:15px 17px;border-top:3px solid var(--purple);display:flex;flex-direction:column;gap:2px}
+.kpi:nth-child(2){border-top-color:var(--green)}
+.kpi:nth-child(3){border-top-color:var(--blue)}
+.kpi:nth-child(4){border-top-color:var(--amber)}
+.kpi .label{color:#52626f}
+.kpi strong{font-size:31px;line-height:1.15;letter-spacing:-.05em;font-weight:760;display:flex;align-items:baseline;gap:8px;margin-top:4px}
+.kpi strong span{font-size:14px;letter-spacing:-.01em;color:var(--dim);font-weight:650}
+.kpi .kw{font-size:12px;color:var(--ink);font-weight:600;margin-top:2px}
+.kpi p{font-size:12px;color:var(--dim)}
+.kpi small{margin-top:auto;padding-top:9px;color:#607182;font-size:11px}
+
+/* coverage */
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.seg{display:inline-flex;background:#e5ebf0;border-radius:9px;padding:3px;gap:3px}
+.seg button{border:0;background:transparent;border-radius:7px;padding:6px 11px;font-size:12px;font-weight:600;color:#3f5061}
+.seg button[aria-pressed=true]{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(10,20,30,.1)}
+select{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;font-size:12px;max-width:100%}
+.two{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:14px}
+.mapbox{background:var(--map);color:var(--maptext);border-radius:12px;border:1px solid #2d3b47;overflow:hidden;display:flex;flex-direction:column}
+.mapbox-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:15px 18px;border-bottom:1px solid var(--mapline)}
+.mapbox-head h3{font-size:15px;letter-spacing:-.02em}
+.mapbox-head p{font-size:12px;color:var(--mapdim);margin-top:3px}
+.pills{display:inline-flex;border:1px solid #3e4c58;border-radius:8px;padding:2px;gap:2px;flex:none}
+.pills button{border:0;background:transparent;color:#a9b8c5;border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:600}
+.pills button[aria-pressed=true]{background:#33424e;color:#fff}
+.focus{padding:10px 18px;background:#17323b;color:#d3f4fb;border-left:4px solid #6fd3e6;font-size:12.5px}
+.focus b{color:#9cecf8}
+.face{flex:1;min-height:330px;display:grid;place-items:center;padding:26px 8%;background-color:var(--map2);background-image:linear-gradient(#26333d 1px,transparent 1px),linear-gradient(90deg,#26333d 1px,transparent 1px);background-size:34px 34px}
+.grid{display:grid;gap:8px;width:100%;max-width:440px}
+.cell{aspect-ratio:1;display:grid;place-items:center}
+.pin{width:min(46px,100%);aspect-ratio:1;border-radius:50%;border:2px solid transparent;display:grid;place-items:center;font:700 12px/1 Inter,system-ui,sans-serif;color:#fff;background:#4b5965;transition:transform .12s}
+.pin:hover{transform:scale(1.08)}
+.pin[aria-pressed=true]{outline:3px solid #ffb27d;outline-offset:3px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;padding:11px 18px;border-top:1px solid var(--mapline);font-size:11.5px;color:var(--mapdim)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.receipt h3{font-size:16px;letter-spacing:-.02em}
+.receipt .where{color:var(--dim);font-size:12.5px;margin-top:2px}
+.rows{display:grid;gap:0;margin-top:12px;border-top:1px solid var(--line)}
+.row{display:grid;grid-template-columns:118px minmax(0,1fr);gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.row dt{color:var(--dim);font-size:12px}
+.row dd{margin:0}
+.flags{display:grid;gap:5px}
+.flag{display:flex;gap:8px;align-items:flex-start;font-size:13px}
+.tick{width:16px;height:16px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:10px;font-weight:800;margin-top:1px}
+.tick.on{background:var(--purple);color:#fff}
+.tick.off{background:#e8edf2;color:#8292a1}
+.tick.maybe{background:#f1c56a;color:#3a2a07}
+.flag .det{color:var(--dim)}
+.list{margin:0;padding-left:18px}
+.list li{margin:1px 0}
+.you{font-weight:700;color:var(--purple)}
+.own{display:inline-block;margin-left:6px;font:700 9.5px/1.6 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--green);border-radius:4px;padding:0 5px}
+.btnlink{display:inline-flex;margin-top:12px;font-size:12.5px;font-weight:650;color:var(--blue);text-decoration:none}
+.btnlink:hover{text-decoration:underline}
+
+/* bars */
+.bars{display:grid;gap:7px;margin-top:4px}
+.bar{display:grid;grid-template-columns:minmax(0,1fr) 46px;gap:10px;align-items:center;font-size:12.5px}
+.bar .name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .track{grid-column:1 / -1;height:7px;border-radius:4px;background:#edf1f5;overflow:hidden;margin-top:-3px}
+.bar .fill{height:100%;border-radius:4px;background:#8aa0b3}
+.bar.me .fill{background:var(--purple)}
+.bar.mine .fill{background:var(--green)}
+.bar .n{text-align:right;font-variant-numeric:tabular-nums;color:var(--dim)}
+
+/* actions */
+.actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.action{padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+.action .label{color:var(--accent)}
+.action h3{font-size:15.5px;letter-spacing:-.02em;line-height:1.3}
+.action p{font-size:13px;color:#33434f}
+.action .ev{margin-top:auto;padding-top:9px;border-top:1px dashed var(--line);font:600 11px/1.5 var(--mono);color:#5d6e7d}
+
+/* tables */
+.tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.tbl th{text-align:left;font:600 10px/1.4 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:#5a6a78;padding:8px 10px;border-bottom:1px solid var(--line);background:#f8fafb;white-space:nowrap}
+.tbl td{padding:8px 10px;border-bottom:1px solid #edf1f4;vertical-align:top}
+.tbl tr:last-child td{border-bottom:0}
+.scroll{overflow-x:auto}
+.tag{display:inline-block;font:700 9.5px/1.6 var(--mono);letter-spacing:.06em;text-transform:uppercase;border-radius:4px;padding:0 6px;background:#eef1f5;color:#4b5a68;white-space:nowrap}
+.tag.latest{background:#e7f4ee;color:var(--green)}
+.tag.unparsed{background:#fdf0d8;color:#7a5410}
+.tag.legacy{background:#eceff3;color:#5b6876}
+.num{font-variant-numeric:tabular-nums}
+details.scan{border-top:1px solid var(--line)}
+details.scan>summary{padding:12px 20px;font-weight:650;font-size:13px;list-style:none;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+details.scan>summary::-webkit-details-marker{display:none}
+details.scan>summary::before{content:"▸";color:var(--faint)}
+details.scan[open]>summary::before{content:"▾"}
+
+/* google */
+.gdata{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.empty{padding:18px 20px;border-style:dashed;background:#fbfcfd}
+.empty h3{font-size:15px;letter-spacing:-.02em}
+.empty p{font-size:13px;color:var(--dim);margin-top:6px}
+.empty ul{margin:10px 0 0;padding-left:18px;font-size:12.5px;color:#3c4b58}
+
+footer{padding:22px 0 40px;color:var(--dim);font-size:12px}
+footer .wrap{display:grid;gap:6px}
+
+@media (max-width:1040px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.two{grid-template-columns:1fr}.actions{grid-template-columns:1fr}}
+@media (max-width:620px){.hero .sub{display:grid;gap:2px}.hero .sub span+span::before{content:none}.kpis{grid-template-columns:1fr}.gdata{grid-template-columns:1fr}.topbar nav{display:none}.hero .snap{text-align:left}.row{grid-template-columns:96px minmax(0,1fr)}.face{padding:18px 4%}}
+@media print{
+  .topbar,.print,.controls,.pills,.btnlink,#csv{display:none!important}
+  body{background:#fff}
+  .card,.mapbox{break-inside:avoid}
+  details.scan{display:block}
+  details.scan>summary::before{content:""}
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="Stakeout Search"><span class="brand-mark" aria-hidden="true"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></a>
+    <nav aria-label="Report sections">
+      <a href="#coverage">Coverage</a><a href="#actions">Priority actions</a><a href="#history">Scan history</a><a href="#google">Google data</a><a href="#receipts">Point receipts</a>
+    </nav>
+    <button class="print" type="button" onclick="window.print()">Print report</button>
+  </div>
+</header>
+
+<section class="hero" id="top">
+  <div class="wrap">
+    <div>
+      <span class="eyebrow">Local &amp; AI visibility report</span>
+      <h1 id="biz"></h1>
+      <p class="sub" id="bizsub"></p>
+    </div>
+    <div class="snap" id="snap"></div>
+  </div>
+</section>
+
+<div class="wrap">
+<main>
+  <div class="note" id="status" role="status" hidden></div>
+  <div class="note" role="note" data-needs-data>
+    <div>
+      <b>How to read this report.</b> Every number comes from a search run on a real phone at that spot. In Google's AI answer the business is counted only for one of four reasons:
+      <div class="chips" aria-label="The four reasons">
+        <span class="chip"><span class="dot" style="background:var(--purple)"></span>Featured (a card, or recommended by name)</span>
+        <span class="chip"><span class="dot" style="background:var(--purple2)"></span>Named in the answer</span>
+        <span class="chip"><span class="dot" style="background:var(--blue)"></span>Google listing cited as a source</span>
+        <span class="chip"><span class="dot" style="background:var(--green)"></span>Website cited</span>
+      </div>
+      <div style="margin-top:6px">An answer that couldn't be read is marked <b>Unparsed</b> and left out of the percentages. Points searched before the four labels existed show the <b>earlier reading</b>.</div>
+    </div>
+  </div>
+
+  <section class="kpis" id="kpis" aria-label="Key numbers" data-needs-data></section>
+
+  <section id="coverage" data-needs-data>
+    <div class="sec-head">
+      <div><h2>Search visibility by point</h2><p>Choose a keyword and a scan, then any point to see what the phone saw there.</p></div>
+      <div class="controls">
+        <div class="seg" id="kwtabs" role="group" aria-label="Keyword"></div>
+        <select id="scanpick" aria-label="Scan"></select>
+      </div>
+    </div>
+    <div class="two">
+      <div class="mapbox">
+        <div class="mapbox-head">
+          <div><h3 id="maptitle"></h3><p id="mapsub"></p></div>
+          <div class="pills" role="group" aria-label="Show">
+            <button type="button" data-mode="rank">Map pack</button>
+            <button type="button" data-mode="ai">AI answer</button>
+          </div>
+        </div>
+        <p class="focus" id="focus"></p>
+        <div class="face"><div class="grid" id="grid" role="group" aria-label="Grid points"></div></div>
+        <div class="legend" id="legend"></div>
+      </div>
+      <div class="card pad receipt" id="receipt" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <section class="two" data-needs-data>
+    <div class="card pad">
+      <div class="sec-head" style="margin-bottom:6px"><div><h2 style="font-size:17px">Competing firms</h2><p id="compsub"></p></div></div>
+      <div class="bars" id="comps"></div>
+    </div>
+    <div class="card pad">
+      <div class="sec-head" style="margin-bottom:6px"><div><h2 style="font-size:17px">Sources in the AI answers</h2><p id="srcsub"></p></div></div>
+      <div class="bars" id="sources"></div>
+    </div>
+  </section>
+
+  <section id="actions" data-needs-data>
+    <div class="sec-head"><div><h2>Priority actions</h2><p>Worked out from the scans below; each one lists the points behind it.</p></div></div>
+    <div class="actions" id="actionlist"></div>
+  </section>
+
+  <section id="history" class="card" data-needs-data>
+    <div class="pad" style="padding-bottom:6px"><div class="sec-head" style="margin:0"><div><h2>Scan history</h2><p>Eastern time. "In the AI answer" counts each point once, over the answers that could be read.</p></div></div></div>
+    <div class="scroll"><table class="tbl" id="histtbl"></table></div>
+  </section>
+
+  <section id="google" data-needs-data>
+    <div class="sec-head"><div><h2>Google data</h2><p>Only what is connected to Stakeout. Nothing here is estimated.</p></div></div>
+    <div class="gdata">
+      <div class="card empty">
+        <span class="label" style="color:var(--dim)" id="gprofile">Google Business Profile</span>
+        <h3 style="margin-top:6px">Customer activity on the listing</h3>
+        <div id="gprofilebody"></div>
+      </div>
+      <div class="card empty">
+        <span class="label" style="color:var(--dim)" id="gsearch">Search Console &amp; Analytics</span>
+        <h3 style="margin-top:6px">How people found the website</h3>
+        <div id="gsearchbody"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="receipts" class="card" data-needs-data>
+    <div class="pad" style="padding-bottom:10px">
+      <div class="sec-head" style="margin:0">
+        <div><h2>Point-by-point receipts</h2><p id="rcptsub"></p></div>
+        <button type="button" class="print" id="csv" style="margin:0;color:var(--ink);border-color:var(--line)">Download CSV</button>
+      </div>
+    </div>
+    <div id="rcpts"></div>
+  </section>
+</main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <b style="color:var(--ink)">Stakeout Search · every number comes with a real-device receipt.</b>
+    <span>Map pack positions and AI answers are what Google showed a real phone at each point, at the time listed. Area names come from each point's address; where that isn't a real place name, the ZIP code is shown instead.</span>
+  </div>
+</footer>
+
+<script type="module">
+/* ---- Helpers ---- */
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const BAD_AREA = new Set(['abmps']);
+const area = (p) => (p.area && !BAD_AREA.has(p.area.toLowerCase()) ? p.area : p.zip ? 'ZIP ' + p.zip : 'this point');
+const short = (name) => String(name).split(',')[0];
+const pct = (n, d) => (d ? Math.round((1000 * n) / d) / 10 : 0);
+const label = (p) => `R${p.r + 1}·C${p.c + 1}`;
+const ET = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+const DAY = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', year: 'numeric' });
+const timeET = (iso) => {
+  const parts = Object.fromEntries(ET.formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
+  return `${parts.month} ${parts.day} · ${parts.hour}:${parts.minute} ${parts.dayPeriod} ET`;
+};
+const dayET = (iso) => DAY.format(new Date(iso));
+
+/* ---- Data: exactly what Stakeout stores for this business's scans ---- */
+const scanId = new URLSearchParams(location.search).get('scan');
+const status = (html) => {
+  const el = $('#status');
+  el.hidden = false;
+  el.innerHTML = html;
+};
+let DATA = null;
+if (!scanId) status('<b>No scan chosen.</b> Open this report from a scan in Stakeout.');
+else {
+  try {
+    const r = await fetch('/api/scans/' + encodeURIComponent(scanId) + '/visibility', { credentials: 'same-origin', cache: 'no-store' });
+    if (r.status === 401) status('<b>Sign in to Stakeout</b> to see this report. <a href="/login?next=' + encodeURIComponent(location.pathname + location.search) + '">Sign in</a>');
+    else if (!r.ok) status('<b>This report isn’t available.</b> It is open to admins while it is in beta.');
+    else DATA = await r.json();
+  } catch {
+    status('<b>The report couldn’t load.</b> Check the connection and reload the page.');
+  }
+}
+if (DATA && !DATA.scans.length) {
+  status('<b>No finished points yet</b> for this scan.');
+  DATA = null;
+}
+if (!DATA) {
+  document.querySelectorAll('[data-needs-data]').forEach((el) => (el.hidden = true));
+  throw new Error('no report data');
+}
+
+const me = (name) => String(name).trim().toLowerCase() === String(DATA.business).trim().toLowerCase();
+const isOwnSite = (d) => Boolean(DATA.website) && (d === DATA.website || d.endsWith('.' + DATA.website));
+
+function readPin(x) {
+  const p = { ...x, first: x.first || [], sources: x.sources || [] };
+  if (p.state === 'parsed') {
+    p.appeared = Boolean(p.featured || p.named || p.listing || p.website === 'confirmed');
+    // The screen's own card list against the answer read: they should agree on whether the firm is a card.
+    const onScreen = !p.pack ? p.first.findIndex(me) : -1;
+    if (onScreen >= 0 && !(p.featured && p.featured.card === onScreen + 1)) p.conflict = onScreen + 1;
+  }
+  return p;
+}
+const SCANS = DATA.scans.map((s) => ({ ...s, pins: s.pins.map(readPin) }));
+SCANS.forEach((s) => {
+  s.ai = s.pins.filter((p) => p.aiShown).length;
+  s.packPoints = s.pins.filter((p) => p.pack).length;
+  s.isAiScan = s.ai > 0 && s.ai >= s.pins.length / 2;
+});
+const latest = (list) => [...list].sort((a, b) => String(b.at).localeCompare(String(a.at)))[0];
+const KEYWORDS = [...new Set([...SCANS].sort((a, b) => String(b.at).localeCompare(String(a.at))).map((s) => s.kw))];
+
+function aiTotals(s) {
+  const read = s.pins.filter((p) => p.state === 'parsed');
+  const n = (f) => read.filter(f).length;
+  const cards = read.filter((p) => p.featured && p.featured.card).map((p) => p.featured.card);
+  const best = cards.length ? Math.min(...cards) : null;
+  return {
+    shown: s.ai,
+    read: read.length,
+    unparsed: s.pins.filter((p) => p.state === 'unparsed').length,
+    legacy: s.pins.filter((p) => p.state === 'legacy').length,
+    legacyNamed: s.pins.filter((p) => p.state === 'legacy' && p.old).length,
+    appeared: n((p) => p.appeared),
+    featured: n((p) => p.featured),
+    named: n((p) => p.named && !p.featured),
+    listing: n((p) => p.listing),
+    website: n((p) => p.website === 'confirmed'),
+    possible: n((p) => p.website === 'possible'),
+    best,
+    bestAt: read.filter((p) => p.featured && p.featured.card === best).map(area),
+  };
+}
+function packTotals(s) {
+  const shown = s.pins.filter((p) => p.pack);
+  const ranked = shown.filter((p) => p.rank !== null);
+  return {
+    points: shown.length,
+    top3: ranked.filter((p) => p.rank <= 3).length,
+    ones: ranked.filter((p) => p.rank === 1).length,
+    ranked: ranked.length,
+    notFound: shown.filter((p) => p.rank === null && !p.oneBox).length,
+    oneBoxOther: shown.filter((p) => p.oneBox === 'other').length,
+    arp: ranked.length ? ranked.reduce((a, p) => a + p.rank, 0) / ranked.length : null,
+  };
+}
+
+/* ---- Header & KPIs ---- */
+function header() {
+  document.title = DATA.business + ' · Local & AI Visibility Report';
+  $('#biz').textContent = DATA.business;
+  const bits = [DATA.market ? `${DATA.market} market` : '', DATA.website || '', `${SCANS.length} scan${SCANS.length > 1 ? 's' : ''} · ${SCANS.reduce((a, s) => a + s.pins.length, 0)} points`].filter(Boolean);
+  $('#bizsub').innerHTML = bits.map((b) => `<span>${esc(b)}</span>`).join('');
+  const times = SCANS.map((s) => s.at).sort();
+  const first = dayET(times[0]), last = dayET(times[times.length - 1]);
+  $('#snap').innerHTML = `<b>Real-device scans</b>${esc(first === last ? first : first + ' – ' + last)}<br>Report built ${esc(dayET(DATA.built))}`;
+}
+function kpis() {
+  const main = SCANS.find((s) => s.id === DATA.scan) || SCANS[0];
+  const aiScans = SCANS.filter((s) => s.pins.some((p) => p.state === 'parsed'));
+  const aiScan = aiScans.find((s) => s.kw === main.kw) || latest(aiScans);
+  // The map pack: a scan where most points showed one (this keyword's first), else the one with the most.
+  const packScans = SCANS.filter((s) => s.packPoints > 0);
+  const solid = packScans.filter((s) => s.packPoints >= s.pins.length / 2);
+  const packScan = solid.find((s) => s.kw === main.kw) || latest(solid) || [...packScans].sort((a, b) => b.packPoints - a.packPoints)[0];
+  const sh = main.share;
+  const cards = [];
+  // 1. Share of local search, as the app counts it for this scan.
+  if (sh && sh.share !== null) {
+    const how = sh.packPoints === 0
+      ? `No map pack on this search; ${sh.rule === 'page_one' ? 'upfront in' : 'in the top 3 of'} the AI answer at ${sh.aiOnly} point${sh.aiOnly === 1 ? '' : 's'}`
+      : sh.rule === 'page_one'
+      ? `Top 3 of the map pack at ${sh.packTop3} point${sh.packTop3 === 1 ? '' : 's'}${sh.aiOnly ? `, upfront in the AI answer alone at ${sh.aiOnly}` : ''}`
+      : `Top 3 of the map pack at ${sh.packTop3}${sh.aiOnly ? `, top 3 of the AI answer at ${sh.aiOnly} more` : ''}`;
+    cards.push(`<article class="card kpi"><span class="label">Share of local search</span><strong>${sh.wins} / ${sh.points}<span>${pct(sh.wins, sh.points)}%</span></strong><span class="kw">${esc(main.kw)}</span><p>${how}.</p><small>${esc(timeET(main.at))}${sh.left ? ` · ${sh.left} point${sh.left === 1 ? '' : 's'} left out (web results only, or an answer that couldn’t be read)` : ''}</small></article>`);
+  }
+  // 2. The AI answer, read by the four labels.
+  if (aiScan) {
+    const t = aiTotals(aiScan);
+    cards.push(`<article class="card kpi"><span class="label">In the AI answer</span><strong>${t.appeared} / ${t.read}<span>${pct(t.appeared, t.read)}%</span></strong><span class="kw">${esc(aiScan.kw)}</span><p>Featured at ${t.featured}${t.best ? ` (best: card #${t.best} in ${esc(t.bestAt[0])})` : ''} · named only at ${t.named} · website cited at ${t.website}</p><small>${esc(timeET(aiScan.at))} · ${t.unparsed ? `${t.unparsed} answer${t.unparsed > 1 ? 's' : ''} couldn’t be read and ${t.unparsed > 1 ? 'are' : 'is'} left out` : 'every answer was read'}</small></article>`);
+  } else {
+    const shown = SCANS.reduce((a, s) => a + s.ai, 0);
+    cards.push(`<article class="card kpi"><span class="label">In the AI answer</span><strong>—</strong><p>${shown ? `Google showed an AI answer at ${shown} point${shown > 1 ? 's' : ''}, searched before the four labels: see each point's earlier reading below.` : 'Google showed no AI answer in these scans.'}</p></article>`);
+  }
+  // 3. The map pack.
+  if (packScan) {
+    const k = packTotals(packScan);
+    cards.push(`<article class="card kpi"><span class="label">Map pack top 3</span><strong>${k.top3} / ${k.points}<span>${pct(k.top3, k.points)}%</span></strong><span class="kw">${esc(packScan.kw)}</span><p>${k.arp !== null ? `Average rank #${k.arp.toFixed(1)} where found · ` : ''}#1 at ${k.ones} point${k.ones === 1 ? '' : 's'} · not found at ${k.notFound}${k.oneBoxOther ? ` · another firm's single panel at ${k.oneBoxOther}` : ''}</p><small>${esc(timeET(packScan.at))} · counted over the ${k.points} points that showed a map pack</small></article>`);
+  } else {
+    cards.push(`<article class="card kpi"><span class="label">Map pack top 3</span><strong>—</strong><p>Google showed no map pack in these scans: the AI answer is the local result here.</p></article>`);
+  }
+  // 4. The firm's own website as an AI source, over every answer read.
+  const allAi = SCANS.map(aiTotals).filter((t) => t.read);
+  const read = allAi.reduce((a, x) => a + x.read, 0), site = allAi.reduce((a, x) => a + x.website, 0), possible = allAi.reduce((a, x) => a + x.possible, 0);
+  if (read) {
+    cards.push(`<article class="card kpi"><span class="label">Website cited by AI</span><strong>${site} / ${read}<span>${pct(site, read)}%</span></strong><span class="kw">${esc(DATA.website || 'website not saved')}</span><p>Answers that cite a page of the firm's own website, over every AI answer read across ${allAi.length} scan${allAi.length > 1 ? 's' : ''}</p><small>${possible ? `${possible} more possible (a cited site fits the name but isn’t confirmed${DATA.website ? '' : ': save the website on the scan to confirm it'})` : DATA.website ? 'The website is saved, so every citation of it is confirmed' : 'Save the website on the scan to count its citations'}</small></article>`);
+  } else {
+    const packless = main.pins.filter((p) => !p.pack && p.aiShown).length;
+    cards.push(`<article class="card kpi"><span class="label">AI answer instead of a map pack</span><strong>${packless} / ${main.pins.length}<span>${pct(packless, main.pins.length)}%</span></strong><span class="kw">${esc(main.kw)}</span><p>Points where Google showed only an AI answer: there, the AI answer is the local result</p></article>`);
+  }
+  $('#kpis').innerHTML = cards.join('');
+}
+
+/* ---- Coverage ---- */
+const state = { kw: KEYWORDS[0], scan: null, mode: 'ai', pin: null };
+function scansFor(kw) {
+  return SCANS.filter((s) => s.kw === kw).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+function pick(kw, scan) {
+  state.kw = kw;
+  state.scan = scan || scansFor(kw)[0];
+  state.mode = state.scan.isAiScan ? 'ai' : 'rank';
+  const p = state.scan.pins, mid = Math.floor(state.scan.size / 2);
+  state.pin = p.find((x) => x.r === mid && x.c === mid) || p[0];
+  render();
+}
+function pinStyle(p) {
+  if (state.mode === 'rank') {
+    if (!p.pack) return { bg: '#3c4853', bd: '#5d6b77', txt: '–', tip: 'No map pack here' };
+    if (p.oneBox === 'won') return { bg: 'var(--green)', bd: '#fde047', txt: '1-Box', tip: 'Its own single-business panel (no map pack)', small: true };
+    if (p.oneBox === 'other') return { bg: '#3a3f4b', bd: '#fde047', txt: '1-Box', tip: "Another firm's single-business panel (no map pack)", small: true };
+    if (p.rank === null) return { bg: 'var(--red)', bd: '#e07a68', txt: 'NF', tip: 'Not found in the map pack' };
+    if (p.rank === 1) return { bg: 'var(--green)', bd: '#59c79c', txt: '1', tip: 'Map pack #1' };
+    if (p.rank <= 3) return { bg: '#3a8f6f', bd: '#7fd3b1', txt: String(p.rank), tip: 'Map pack #' + p.rank };
+    if (p.rank <= 10) return { bg: 'var(--amber)', bd: '#ecc06e', txt: String(p.rank), tip: 'Map pack #' + p.rank };
+    return { bg: 'var(--red)', bd: '#e07a68', txt: String(p.rank), tip: 'Map pack #' + p.rank };
+  }
+  if (p.state === 'none') return { bg: '#3c4853', bd: '#5d6b77', txt: '–', tip: 'No AI answer here' };
+  if (p.state === 'unparsed') return { bg: '#2d3943', bd: '#f1c56a', txt: '?', tip: 'AI answer shown, but it couldn’t be read', dash: true };
+  if (p.state === 'legacy') return { bg: p.old ? '#5f5285' : '#3a4650', bd: '#8d96a0', txt: p.old ? '✓' : '×', tip: p.old ? 'Earlier reading: named' : 'Earlier reading: not named', dash: true };
+  if (p.conflict && !p.featured) return { bg: '#4a3d73', bd: '#f1c56a', txt: '!', tip: `Needs a second look: the screen shows card #${p.conflict}, the answer read doesn't`, dash: true };
+  if (p.featured) return { bg: 'var(--purple)', bd: '#c6b5f2', txt: p.featured.card ? '#' + p.featured.card : '★', tip: p.featured.card ? `Featured: card #${p.featured.card}${p.featured.of ? ' of ' + p.featured.of : ''}${p.featured.afterMore ? ', after “Show more”' : ''}` : 'Featured: recommended by name' };
+  if (p.named) return { bg: '#4a3d73', bd: 'var(--purple2)', txt: 'N', tip: 'Named in the answer' };
+  if (p.listing) return { bg: '#244e78', bd: '#7fb1e3', txt: 'L', tip: 'Google listing cited as a source' };
+  if (p.website === 'confirmed') return { bg: '#1f5f4a', bd: '#6fd0ac', txt: 'W', tip: 'Website cited' };
+  return { bg: '#1a242c', bd: '#4c5a66', txt: '×', tip: 'Not in the AI answer' };
+}
+function legend() {
+  const sw = (bg, bd, t, dash) => `<span><i class="dot" style="width:12px;height:12px;background:${bg};border:2px ${dash ? 'dashed' : 'solid'} ${bd}"></i>${t}</span>`;
+  const solo = state.scan.pins.some((p) => p.oneBox);
+  $('#legend').innerHTML =
+    state.mode === 'rank'
+      ? [sw('var(--green)', '#59c79c', '#1'), sw('#3a8f6f', '#7fd3b1', '#2–3'), sw('var(--amber)', '#ecc06e', '#4–10'), sw('var(--red)', '#e07a68', 'Not found'), solo ? sw('#3a3f4b', '#fde047', '1-Box: one firm’s panel') : '', sw('#3c4853', '#5d6b77', 'No map pack')].join('')
+      : [sw('var(--purple)', '#c6b5f2', 'Featured (card #)'), sw('#4a3d73', 'var(--purple2)', 'Named'), sw('#244e78', '#7fb1e3', 'Listing cited'), sw('#1f5f4a', '#6fd0ac', 'Website cited'), sw('#1a242c', '#4c5a66', 'Not in it'), sw('#2d3943', '#f1c56a', 'Unparsed', true), sw('#5f5285', '#8d96a0', 'Earlier reading', true), sw('#3c4853', '#5d6b77', 'No AI answer')].join('');
+}
+function focusLine() {
+  const s = state.scan, biz = esc(short(DATA.business));
+  if (state.mode === 'ai') {
+    const t = aiTotals(s);
+    if (!t.shown) return `<b>No AI answer at any of the ${s.pins.length} points</b> in this scan.`;
+    if (!t.read && t.legacy) return `<b>AI answer at ${t.shown} of ${s.pins.length} points.</b> These were searched before the four labels: the earlier reading named ${biz} at ${t.legacyNamed}.`;
+    return `<b>Google showed an AI answer at ${t.shown} of ${s.pins.length} points</b> and a map pack at ${s.packPoints}. ${biz} appeared in ${t.appeared} of the ${t.read} answers that could be read${t.featured ? `, featured at ${t.featured}${t.best ? ` (best: card #${t.best}, ${esc(t.bestAt.join(', '))})` : ''}` : ''}.${t.unparsed ? ` ${t.unparsed} couldn’t be read and ${t.unparsed > 1 ? 'are' : 'is'} left out.` : ''}${t.legacy ? ` ${t.legacy} show${t.legacy > 1 ? '' : 's'} only the earlier reading.` : ''}`;
+  }
+  const k = packTotals(s);
+  if (!k.points) return `<b>No map pack at any of the ${s.pins.length} points</b> in this scan: see the AI answer.`;
+  return `<b>Top 3 in the map pack at ${k.top3} of ${k.points} points</b> that showed one (#1 at ${k.ones})${k.arp !== null ? `; average rank #${k.arp.toFixed(1)} where found` : ''}, not found at ${k.notFound}.${k.oneBoxOther ? ` Another firm held Google's single-business panel at ${k.oneBoxOther}.` : ''}${s.ai ? ` An AI answer appeared at ${s.ai} point${s.ai > 1 ? 's' : ''}.` : ''}`;
+}
+function grid() {
+  const s = state.scan, n = s.size, at = new Map(s.pins.map((p) => [p.r + ',' + p.c, p]));
+  const g = $('#grid');
+  g.style.gridTemplateColumns = `repeat(${n}, minmax(0,1fr))`;
+  g.style.maxWidth = (n <= 3 ? 300 : n <= 5 ? 380 : 440) + 'px';
+  let html = '';
+  for (let r = 0; r < n; r++)
+    for (let c = 0; c < n; c++) {
+      const p = at.get(r + ',' + c);
+      if (!p) {
+        html += '<div class="cell" aria-hidden="true"></div>';
+        continue;
+      }
+      const st = pinStyle(p), on = state.pin === p;
+      html += `<div class="cell"><button type="button" class="pin" aria-pressed="${on}" data-k="${r},${c}" title="${esc(label(p) + ' · ' + area(p) + ' · ' + st.tip)}" aria-label="${esc(label(p) + ', ' + area(p) + ': ' + st.tip)}" style="background:${st.bg};border:2px ${st.dash ? 'dashed' : 'solid'} ${st.bd}${st.small ? ';font-size:9.5px' : ''}">${esc(st.txt)}</button></div>`;
+    }
+  g.innerHTML = html;
+  g.querySelectorAll('.pin').forEach((b) =>
+    b.addEventListener('click', () => {
+      state.pin = at.get(b.dataset.k);
+      grid();
+      receipt();
+    }),
+  );
+}
+function flagRow(on, labelText, det, maybe) {
+  return `<div class="flag"><span class="tick ${maybe ? 'maybe' : on ? 'on' : 'off'}" aria-hidden="true">${maybe ? '?' : on ? '✓' : '–'}</span><span>${labelText}${det ? ` <span class="det">· ${det}</span>` : ''}<span class="sr-only" style="position:absolute;left:-9999px">${maybe ? ' (to confirm)' : on ? ' (yes)' : ' (no)'}</span></span></div>`;
+}
+function packText(p) {
+  if (!p.pack) return 'No map pack on this page';
+  if (p.oneBox === 'won') return '<b>Its own single-business panel</b> (Google showed one firm, no map pack)';
+  if (p.oneBox === 'other') return "Another firm's single-business panel (no map pack)";
+  return p.rank === null ? '<b>Not found</b> in the map pack' : `<b>#${p.rank}</b>`;
+}
+function receipt() {
+  const p = state.pin, s = state.scan;
+  let ai;
+  if (p.state === 'none') ai = '<span class="quiet" style="margin:0">No AI answer at this point.</span>';
+  else if (p.state === 'unparsed') ai = '<b>Unparsed.</b> Google showed an AI answer here, but it couldn’t be read (the copied answer didn’t match the page), so whether it features or names the firm is unknown. Not counted either way.';
+  else if (p.state === 'legacy') ai = `<b>Earlier reading:</b> ${p.old ? 'named the firm' : 'did not name the firm'}. This point was searched before the four labels and can’t be read again.`;
+  else
+    ai =
+      (p.conflict ? `<p style="margin:0 0 8px;padding:7px 9px;border-radius:7px;background:#fdf3dc;color:#5c4210;font-size:12.5px"><b>Needs a second look.</b> The phone's screen shows the firm as card #${p.conflict}, but the answer read here doesn't. Until they agree, this point is counted as the answer reads it.</p>` : '') +
+      `<div class="flags">${flagRow(Boolean(p.featured), 'Featured', p.featured ? (p.featured.card ? `card #${p.featured.card}${p.featured.of ? ' of ' + p.featured.of : ''}${p.featured.afterMore ? ', after “Show more”' : ''}` : 'recommended by name') : '')}${flagRow(p.named || false, 'Named in the answer')}${flagRow(Boolean(p.listing), 'Google listing cited as a source', p.listing ? (p.listing.links ? `${p.listing.links} link${p.listing.links > 1 ? 's' : ''}` : `among its sources (#${p.listing.inSources})`) : '')}${p.website === 'possible' ? flagRow(false, 'Possible website citation', 'confirm the site is the firm’s', true) : flagRow(p.website === 'confirmed', 'Website cited', p.website === 'confirmed' ? esc(DATA.website || '') : '')}</div>`;
+  const firstLabel = p.pack ? 'Map pack, top 3' : p.aiShown ? 'AI answer, first 3 cards' : 'First 3 results';
+  const first = p.first.length ? `<ol class="list">${p.first.map((n) => `<li class="${me(n) ? 'you' : ''}">${esc(n)}${me(n) ? ' (you)' : ''}</li>`).join('')}</ol>` : '<span class="quiet" style="margin:0">Not kept for this point.</span>';
+  const read = p.state === 'parsed' || p.state === 'legacy';
+  const src = read && p.sources.length ? p.sources.map((d) => `${esc(d)}${isOwnSite(d) ? '<span class="own">yours</span>' : ''}`).join(', ') : '<span class="quiet" style="margin:0">' + (p.state === 'unparsed' ? 'Not counted (answer unparsed).' : p.state === 'none' ? '—' : 'None listed.') + '</span>';
+  $('#receipt').innerHTML = `
+    <span class="label" style="color:var(--dim)">Point receipt · ${esc(timeET(s.at))}</span>
+    <h3 style="margin-top:6px">${esc(label(p))} · ${esc(area(p))}</h3>
+    <p class="where">${esc(s.kw)} · searched on a real phone at this spot</p>
+    <dl class="rows">
+      <div class="row"><dt>Map pack</dt><dd>${packText(p)}</dd></div>
+      <div class="row"><dt>AI answer</dt><dd>${ai}</dd></div>
+      <div class="row"><dt>${firstLabel}</dt><dd>${first}</dd></div>
+      <div class="row"><dt>Sources in the answer</dt><dd>${src}</dd></div>
+    </dl>
+    <a class="btnlink" href="${esc(DATA.app + s.id)}" target="_blank" rel="noopener">Open the recording and full evidence in Stakeout ↗</a>`;
+}
+function competitors() {
+  const s = state.scan, count = new Map();
+  s.pins.forEach((p) => p.first.forEach((n) => count.set(n, (count.get(n) || 0) + 1)));
+  const rows = [...count].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const mine = [...count].find(([n]) => me(n));
+  if (!rows.some(([n]) => me(n)) && mine) rows.push(mine);
+  const max = Math.max(1, ...rows.map((r) => r[1]));
+  $('#compsub').textContent = (s.isAiScan ? 'Firms among the first three AI answer cards' : 'Firms in the first three local results') + `, out of ${s.pins.length} points in this scan.`;
+  $('#comps').innerHTML = rows.map(([n, c]) => `<div class="bar ${me(n) ? 'me' : ''}"><span class="name" title="${esc(n)}">${esc(short(n))}${me(n) ? ' (you)' : ''}</span><span class="n">${c}</span><div class="track"><div class="fill" style="width:${(100 * c) / max}%"></div></div></div>`).join('') || '<p class="quiet">Not kept for this scan.</p>';
+}
+function sources() {
+  const s = state.scan, read = s.pins.filter((p) => p.state === 'parsed'), count = new Map();
+  read.forEach((p) => new Set(p.sources).forEach((d) => count.set(d, (count.get(d) || 0) + 1)));
+  const rows = [...count].sort((a, b) => b[1] - a[1]).slice(0, 9);
+  $('#srcsub').textContent = read.length ? `Websites the answers cite, over the ${read.length} answers read in this scan.` : 'This scan has no AI answers read with the four labels.';
+  $('#sources').innerHTML =
+    rows.map(([d, c]) => `<div class="bar ${isOwnSite(d) ? 'mine' : ''}"><span class="name">${esc(d)}${isOwnSite(d) ? '<span class="own">yours</span>' : ''}</span><span class="n">${c} / ${read.length}</span><div class="track"><div class="fill" style="width:${(100 * c) / read.length}%"></div></div></div>`).join('') ||
+    `<p class="quiet">${s.ai ? (read.length ? 'The answers read cite no websites.' : `AI answers appeared at ${s.ai} point${s.ai > 1 ? 's' : ''}, before their sources were kept.`) : 'No AI answers in this scan.'}</p>`;
+}
+function render() {
+  const s = state.scan, list = scansFor(state.kw);
+  $('#kwtabs').innerHTML = KEYWORDS.map((k) => {
+    const x = scansFor(k)[0];
+    return `<button type="button" aria-pressed="${k === state.kw}" data-kw="${esc(k)}">${esc(k)} (${x.size}×${x.size})</button>`;
+  }).join('');
+  $('#kwtabs').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => pick(b.dataset.kw)));
+  $('#scanpick').innerHTML = list.map((x, i) => `<option value="${esc(x.id)}" ${x === s ? 'selected' : ''}>${esc(timeET(x.at))} · ${x.pins.length} points${i === 0 ? ' · latest' : ' · earlier run'}</option>`).join('');
+  $('#maptitle').textContent = s.kw;
+  $('#mapsub').textContent = `${timeET(s.at)} · ${s.size}×${s.size} grid, ${s.pins.length} points${s.km ? `, ${Number(s.km).toFixed(1)} km apart` : ''} · rows run north to south`;
+  document.querySelectorAll('.pills button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
+  $('#focus').innerHTML = focusLine();
+  legend();
+  grid();
+  receipt();
+  competitors();
+  sources();
+}
+$('#scanpick').addEventListener('change', (e) => {
+  const s = SCANS.find((x) => x.id === e.target.value);
+  state.scan = s;
+  state.pin = s.pins.find((p) => p.r === state.pin.r && p.c === state.pin.c) || s.pins[0];
+  render();
+});
+document.querySelectorAll('.pills button').forEach((b) =>
+  b.addEventListener('click', () => {
+    state.mode = b.dataset.mode;
+    render();
+  }),
+);
+
+/* ---- Priority actions: worked out from the points, nothing typed by hand ---- */
+function actions() {
+  const out = [];
+  const aiRuns = SCANS.filter((s) => s.pins.some((p) => p.state === 'parsed'));
+  // 1. Where the AI answer leaves the firm out, run after run (same spot, same keyword).
+  const byKw = new Map();
+  aiRuns.forEach((s) => byKw.set(s.kw, [...(byKw.get(s.kw) || []), s]));
+  const [kw, runs] = [...byKw].sort((a, b) => b[1].length - a[1].length)[0] || [null, []];
+  if (kw) {
+    const spots = new Map();
+    runs.forEach((s) =>
+      s.pins.forEach((p) => {
+        const k = p.r + ',' + p.c, x = spots.get(k) || { p, read: 0, appeared: 0, others: new Map() };
+        if (p.state === 'parsed') {
+          x.read++;
+          if (p.appeared) x.appeared++;
+          else p.first.forEach((n) => !me(n) && x.others.set(n, (x.others.get(n) || 0) + 1));
+        }
+        spots.set(k, x);
+      }),
+    );
+    const need = runs.length >= 2 ? 2 : 1;
+    const weak = [...spots.values()].filter((x) => x.read >= need && x.appeared / x.read <= 0.34).sort((a, b) => a.appeared / a.read - b.appeared / b.read);
+    if (weak.length) {
+      const names = [...new Set(weak.map((x) => area(x.p)))];
+      const rivals = new Map();
+      weak.forEach((x) => x.others.forEach((v, n) => rivals.set(n, (rivals.get(n) || 0) + v)));
+      const top = [...rivals].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([n]) => short(n));
+      out.push({
+        tag: 'AI answer gap',
+        title: `Win the AI answer in ${names.slice(0, 3).join(' & ')}`,
+        body: `${runs.length > 1 ? `Across ${runs.length} runs of “${kw}”, Google's AI answer left the firm out at ${weak.length} point${weak.length > 1 ? 's' : ''} almost every time it could be read.` : `In “${kw}”, Google's AI answer left the firm out at ${weak.length} point${weak.length > 1 ? 's' : ''}.`}${top.length ? ` The firms it put first there instead: ${top.join(' and ')}.` : ''}`,
+        ev: weak.map((x) => `${label(x.p)} ${area(x.p)}: in ${x.appeared}/${x.read}`).join(' · '),
+      });
+    }
+  }
+  // 2. Where the map pack falls away.
+  const pack = latest(SCANS.filter((s) => s.packPoints > 0));
+  if (pack) {
+    const shown = pack.pins.filter((p) => p.pack);
+    const strong = shown.filter((p) => p.rank !== null && p.rank <= 3), low = shown.filter((p) => p.rank === null || p.rank >= 6);
+    if (low.length) {
+      const tally = new Map();
+      shown.forEach((p) => {
+        const t = tally.get(area(p)) || { s: 0, w: 0 };
+        if (strong.includes(p)) t.s++;
+        if (low.includes(p)) t.w++;
+        tally.set(area(p), t);
+      });
+      const lowAreas = [...tally].filter(([, t]) => t.w > t.s).sort((a, b) => b[1].w - a[1].w).map(([a]) => a);
+      const strongAreas = [...tally].filter(([, t]) => t.s > t.w).sort((a, b) => b[1].s - a[1].s).map(([a]) => a);
+      // Where on the grid: the last row (south), the first column (west), and so on, when most weak points sit there.
+      const n = pack.size;
+      const edges = [['the southern row', (p) => p.r === n - 1], ['the western edge', (p) => p.c === 0], ['the northern row', (p) => p.r === 0], ['the eastern edge', (p) => p.c === n - 1]];
+      const where = n >= 3 ? edges.map(([name, f]) => [name, low.filter(f).length]).filter(([, k]) => k >= 2).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([name, k]) => `${name} (${k})`) : [];
+      out.push({
+        tag: 'Map pack edge',
+        title: `Hold the map pack into ${lowAreas.slice(0, 2).join(' & ') || 'the edge of the grid'}`,
+        body: `For “${pack.kw}” the firm is top 3 at ${strong.length} of ${shown.length} points with a map pack${strongAreas.length ? `, strongest in ${strongAreas.slice(0, 3).join(', ')}` : ''}. It falls to #6 or lower, or out of the pack, at ${low.length} point${low.length > 1 ? 's' : ''}${where.length ? ': ' + where.join(' and ') : ''}.`,
+        ev: low.map((p) => `${label(p)} ${p.oneBox === 'other' ? '1-Box' : p.rank === null ? 'NF' : '#' + p.rank}`).join(' · '),
+      });
+    }
+  }
+  // 3. The sites Google's AI reads most.
+  const count = new Map();
+  let read = 0;
+  aiRuns.forEach((s) =>
+    s.pins
+      .filter((p) => p.state === 'parsed')
+      .forEach((p) => {
+        read++;
+        new Set(p.sources).forEach((d) => count.set(d, (count.get(d) || 0) + 1));
+      }),
+  );
+  const dirs = [...count].filter(([d]) => !isOwnSite(d)).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const own = [...count].filter(([d]) => isOwnSite(d)).reduce((a, [, c]) => a + c, 0);
+  if (read && dirs.length)
+    out.push({
+      tag: 'Where the AI reads',
+      title: `Strengthen the profiles the AI cites: ${dirs.slice(0, 2).map(([d]) => d.replace(/^(m|www)\./, '')).join(' & ')}`,
+      body: `Over ${read} AI answers read, the most cited sites were ${dirs.map(([d, c]) => `${d} (${c})`).join(', ')}. ${DATA.website ? `The firm's own site was cited in ${own}.` : 'Save the firm’s website on its scans to count its own citations.'} A complete, current profile on the sites the answer leans on is the most direct way into it.`,
+      ev: DATA.website ? `${own}/${read} answers cite ${DATA.website}` : `${read} answers read`,
+    });
+  $('#actionlist').innerHTML = out.length
+    ? out.map((a, i) => `<article class="card action"><span class="label">${i + 1} · ${esc(a.tag)}</span><h3>${esc(a.title)}</h3><p>${esc(a.body)}</p><div class="ev">${esc(a.ev)}</div></article>`).join('')
+    : '<p class="quiet">No action stands out from these scans yet: more runs of the same keyword show where the gaps repeat.</p>';
+}
+
+/* ---- Scan history ---- */
+function history() {
+  const rows = [...SCANS]
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)))
+    .map((s) => {
+      const t = aiTotals(s), k = packTotals(s), sh = s.share;
+      const inAi = t.read ? `${t.appeared} / ${t.read}${t.featured ? ` <span class="quiet" style="display:inline">· featured ${t.featured}</span>` : ''}` : t.legacy ? `<span class="tag legacy">earlier reading</span> named at ${t.legacyNamed}` : '—';
+      return `<tr><td class="num" style="white-space:nowrap">${esc(timeET(s.at))}</td><td>${esc(s.kw)}</td><td class="num">${s.pins.length}</td><td class="num">${sh && sh.share !== null ? `${pct(sh.wins, sh.points)}%` : '—'}</td><td class="num">${k.points ? `${k.top3} / ${k.points}` : '<span class="quiet" style="display:inline">no map pack</span>'}</td><td class="num">${s.ai} / ${s.pins.length}</td><td class="num">${inAi}</td><td class="num">${t.read ? t.website : '—'}</td><td class="num">${t.unparsed ? `<span class="tag unparsed">${t.unparsed} unparsed</span>` : '—'}</td></tr>`;
+    });
+  $('#histtbl').innerHTML = `<thead><tr><th>Scan</th><th>Keyword</th><th>Points</th><th>Share of local search</th><th>Map pack top 3</th><th>AI answer shown</th><th>In the AI answer</th><th>Website cited</th><th>Couldn’t read</th></tr></thead><tbody>${rows.join('')}</tbody>`;
+}
+
+/* ---- Google data: what is connected, never estimated ---- */
+function google() {
+  const g = DATA.google || {};
+  $('#gprofile').textContent = 'Google Business Profile · ' + (g.profile ? 'connected' : 'not connected');
+  $('#gprofilebody').innerHTML = g.profile
+    ? '<p>This listing is connected. Its activity (views from Search and Maps, calls, website clicks, direction requests and search terms) is in <a href="/profiles">Connected Accounts</a>; it isn’t copied into this report yet.</p>'
+    : '<p>This listing isn’t connected in Connected Accounts, so its activity isn’t in this report. Once it is, Connected Accounts shows, for the last 28 days against the 28 before:</p><ul><li>Profile views, and whether they came from Search or Maps</li><li>Calls, website clicks and direction requests</li><li>The search terms people used to find it, by month</li></ul><p style="font-size:12px">Google reports listing activity about three days late; the last days are marked as pending, never as zeros.</p>';
+  $('#gsearch').textContent = 'Search Console & Analytics · ' + (g.searchConsole ? 'connected' : 'not connected');
+  $('#gsearchbody').innerHTML = g.searchConsole
+    ? '<p>Google is connected for this account (read-only). Queries, clicks and sessions for the website’s pages are in Connected Accounts; they aren’t copied into this report yet.</p>'
+    : '<p>Nobody has signed in with Google for this website yet. With read-only access, Connected Accounts shows:</p><ul><li>Queries for the office’s landing page: impressions, clicks, position</li><li>Sessions and organic sessions on that page</li><li>Whether the pages the AI answers cite are the ones that get the clicks</li></ul>';
+}
+
+/* ---- Point receipts + CSV ---- */
+function aiText(p) {
+  if (p.state === 'none') return 'No AI answer';
+  if (p.state === 'unparsed') return 'Unparsed';
+  if (p.state === 'legacy') return p.old ? 'Named (earlier reading)' : 'Not named (earlier reading)';
+  const f = [];
+  if (p.featured) f.push(p.featured.card ? `Featured · card #${p.featured.card}${p.featured.of ? ' of ' + p.featured.of : ''}${p.featured.afterMore ? ' (after Show more)' : ''}` : 'Featured · recommended');
+  if (p.named && !p.featured) f.push('Named');
+  if (p.listing) f.push('Listing cited');
+  if (p.website === 'confirmed') f.push('Website cited');
+  if (p.website === 'possible') f.push('Possible website citation');
+  return f.join(' · ') || 'Not in the answer';
+}
+const packCell = (p) => (!p.pack ? 'no map pack' : p.oneBox === 'won' ? 'Own 1-Box' : p.oneBox === 'other' ? "Another firm's 1-Box" : p.rank === null ? 'Not found' : '#' + p.rank);
+function receiptsTable() {
+  const order = [...SCANS].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  $('#rcptsub').textContent = `${order.length} scan${order.length > 1 ? 's' : ''}, ${order.reduce((a, s) => a + s.pins.length, 0)} points. Each row is one search on a real phone; open a scan for its recordings.`;
+  $('#rcpts').innerHTML = order
+    .map(
+      (s, i) =>
+        `<details class="scan" ${i === 0 ? 'open' : ''}><summary>${esc(s.kw)} <span class="tag ${i === 0 ? 'latest' : ''}">${esc(timeET(s.at))}</span><span class="quiet" style="margin:0;font-weight:500">${s.pins.length} points</span></summary><div class="scroll"><table class="tbl"><thead><tr><th>Point</th><th>Area</th><th>Map pack</th><th>AI answer</th><th>Firm in the AI answer</th></tr></thead><tbody>${s.pins
+          .map(
+            (p) =>
+              `<tr><td class="num">${label(p)}</td><td>${esc(area(p))}</td><td class="num">${p.pack ? esc(packCell(p)) : '<span class="quiet" style="display:inline">no map pack</span>'}</td><td>${p.aiShown ? 'Shown' : '—'}</td><td>${p.conflict ? `<span class="tag unparsed" title="The screen shows card #${p.conflict}; the answer read doesn't">check</span> ` : ''}${p.state === 'unparsed' ? '<span class="tag unparsed">Unparsed</span>' : p.state === 'legacy' ? `<span class="tag legacy">earlier reading</span> ${p.old ? 'named' : 'not named'}` : esc(aiText(p))}</td></tr>`,
+          )
+          .join('')}</tbody></table></div></details>`,
+    )
+    .join('');
+  $('#csv').addEventListener('click', () => {
+    const rows = [['scan_time_et', 'keyword', 'point', 'area', 'zip', 'map_pack', 'ai_answer', 'firm_in_ai_answer']];
+    order.forEach((s) => s.pins.forEach((p) => rows.push([timeET(s.at), s.kw, label(p), area(p), p.zip ?? '', packCell(p), p.aiShown ? 'shown' : 'none', aiText(p)])));
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = 'point-receipts.csv';
+    a.click();
+  });
+}
+
+header();
+kpis();
+const opened = SCANS.find((s) => s.id === DATA.scan) || SCANS[0];
+pick(opened.kw, opened);
+actions();
+history();
+google();
+receiptsTable();
+
+</script>
+</body>
+</html>

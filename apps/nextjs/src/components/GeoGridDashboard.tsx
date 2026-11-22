@@ -747,6 +747,12 @@ export function GeoGridDashboard({
             </Link>
             <button onClick={() => changeShare('share')}>Share report</button>
             <button onClick={() => changeShare('revoke')}>Revoke link</button>
+            {/* The new visibility report, admins only while in beta (the evidence-bundle links are sent to admins alone). */}
+            {scan.pins.some((p) => Boolean(p.dumpsTarUrl)) && (
+              <a href={'/reports/visibility.html?scan=' + encodeURIComponent(scan.id)} target="_blank" rel="noopener" className="rounded-lg border border-orange-400/60 px-3 py-2 text-sm font-semibold text-orange-200 hover:bg-orange-400/10">
+                Visibility report (beta)
+              </a>
+            )}
           </div>
         )}
       </header>
