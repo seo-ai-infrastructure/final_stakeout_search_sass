@@ -1,4 +1,4 @@
-import { pinAi, withoutFlags } from '@stakeout/core/aiFlags';
+import { pinAi, presenceOf, withoutFlags } from '@stakeout/core/aiFlags';
 import { getSettings } from '@stakeout/core/settings';
 import { siteFromScans } from '@/lib/businessSite';
 import { db, Prisma } from '@stakeout/db';
@@ -102,7 +102,10 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
   const s = aiFlags ? found : { ...found, pins: found.pins.map((p) => withoutFlags(p)) };
   await fillCensus(s.pins);
   // A scan made before websites were saved borrows the one from the account's other scans of the same business.
-  const borrowed = s.targetDomain ? null : await db.gridScan.findUnique({ where: { id: s.id }, select: { userId: true } }).then((o) => (o ? siteFromScans(o.userId, s.targetBusiness) : null)).catch(() => null);
+  // (Not where the AI Overview is read by the four flags: there a cited site counts as the business's
+  // own only once its website is confirmed for the scan; until then it is a possible website citation.)
+  const flagged = aiFlags && s.pins.some((p) => presenceOf(p));
+  const borrowed = s.targetDomain || flagged ? null : await db.gridScan.findUnique({ where: { id: s.id }, select: { userId: true } }).then((o) => (o ? siteFromScans(o.userId, s.targetBusiness) : null)).catch(() => null);
   // A point whose page had no map pack has no local rank (see core/localRank): its stored rank,
   // if any, is its place in the AI Overview. The scan's rank numbers are worked out again here
   // without those points, so reports saved before this rule read the same way as new ones.
