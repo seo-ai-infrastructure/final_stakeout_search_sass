@@ -100,3 +100,17 @@
   .lp header img { width: 25px !important; height: 25px !important; }
   .lp header a[aria-label="Stakeout Search home"] > span { font-size: 15px !important; }
 }
+@media (min-width: 761px) {
+  .lp h1 { font-size: clamp(44px, 4.3vw, 63px); }
+}
+@media (max-width: 540px) {
+  .lp header a[aria-label="Stakeout Search home"] { gap: 7px !important; flex: none; }
+  .lp header a[aria-label="Stakeout Search home"] > span { font-size: clamp(12px, 3.5vw, 16px) !important; letter-spacing: .055em !important; }
+  .lp header img { width: 27px !important; height: 27px !important; }
+  .lp h1 { font-size: clamp(36px, 9.8vw, 52px); }
+  .lp-actions { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 8px; }
+  .lp-actions a { padding: 12px 11px; gap: 6px; font-size: 14px; }
+}
+@media (max-width: 359px) {
+  .lp-actions { grid-template-columns: 1fr; justify-content: stretch; }
+}

@@ -35,7 +35,7 @@ export default function Landing({ live }: { live: boolean }) {
               <p className="lp-lead">Track the local pack and AI Overviews on real Android phones. When a client asks “What shows up on my side of town?” open their pin and play the search.</p>
               <div className="lp-actions">
                 <AuditLink />
-                <a className="lp-secondary" href={report}>Explore a real report <ArrowUpRight size={16} aria-hidden="true" /></a>
+                <a className="lp-secondary" href={report}>View sample report <ArrowUpRight size={16} aria-hidden="true" /></a>
               </div>
               <p className="lp-terms">One keyword. 25 locations. A second scan in 7 days.<br />Your {auditPrice} goes toward your first month if you choose a plan.</p>
             </div>
