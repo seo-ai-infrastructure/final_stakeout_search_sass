@@ -1620,7 +1620,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
           copy: b.aiCopy ?? null,
           copyCheck: shots.flatMap((x) => uiLabels(x).map((l) => l.label)),
           overviewOnScreen: result.hasAiOverview,
-          shownBeforeExpansion: cardsBeforeExpansion(b.aiInitial),
+          shownBeforeExpansion: cardsBeforeExpansion(b.aiInitial ?? b.serp),
           telemetry: (watched?.dossier && watched.telemetry) || NOT_WATCHED,
           scanPointId: p.id,
         });

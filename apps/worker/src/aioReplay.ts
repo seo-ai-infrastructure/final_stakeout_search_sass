@@ -48,7 +48,8 @@ export async function replayAioCaptures(limit = 40) {
           return null;
         };
         copy = read('aio_copy.txt');
-        initial = read('aio_initial.xml');
+        // The first screen: its own snapshot, else the results page (the same moment, on older runs).
+        initial = read('aio_initial.xml') ?? read('serp.xml');
         for (const [path, data] of files) if (/(^|\/)(aio_.*|serp)\.xml$/.test(path)) shots.push(data.toString('utf8'));
       }
       const was = (kept.capture as Record<string, unknown> | undefined) ?? undefined;

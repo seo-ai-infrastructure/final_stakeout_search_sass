@@ -309,7 +309,7 @@ export interface AioCaptureResult {
 }
 
 /** The capture rules' version, written on every capture (a point is replayed when its capture is older). */
-export const AIO_CAPTURE_VERSION = 'v285';
+export const AIO_CAPTURE_VERSION = 'v286';
 
 /** What the watcher itself knows; the read counts come from the merged reads. */
 export type WatcherFacts = Omit<AioWatcherTelemetry, 'expanded_seen' | 'post_expand_added_sentences' | 'post_expand_added_entries' | 'copy_used'>;

@@ -33,6 +33,10 @@ type Cand = {
   userId: string;
   createdAt: Date;
   role: string;
+  /** Where the point's rank came from, and the businesses it read there (the AI Overview's own list, in screen order, on a page with no pack). */
+  rankFrom: string | null;
+  list: string[] | null;
+  insights: unknown;
 };
 
 /** The flags of a presence in a few characters, for the summary ("featured card #6 of 10 · named · listing · website (possible)"). */
@@ -67,6 +71,7 @@ export async function aioBackfill() {
     SELECT p.id, p."scanId", p."dumpsTarUrl", p."targetCitedInAi" AS old, p."rankFound",
       (p."proxyMeta" ? 'aiLead') AS copied, p."proxyMeta"->'aioSources'->>'key' AS "readKey",
       p."proxyMeta"->'aioSources'->'capture'->'telemetry' AS tele, p."aiOverviewText" AS "aiText",
+      p."proxyMeta"->>'rankFrom' AS "rankFrom", p."topCompetitors" AS list, p.insights,
       s.keyword, s."targetBusiness" AS target, s."targetKgmid" AS kgmid, s."targetDomain" AS domain, s."userId", s."createdAt", u.role
     FROM "GridPin" p JOIN "GridScan" s ON s.id = p."scanId" JOIN "User" u ON u.id = s."userId"
     WHERE p.status = 'COMPLETED' AND p."hasAiOverview" = true
@@ -92,7 +97,8 @@ export async function aioBackfill() {
     withSaved: { identity: string | null; appeared: boolean | null; flags: string } | null;
   };
   const rows: Out[] = [];
-  let read = 0;
+  let read = 0,
+    written = 0;
   for (const c of cands) {
     const base = { pin: c.id, scan: c.scanId, keyword: c.keyword, business: c.target, owner: c.role === 'ADMIN' ? 'admin' : 'customer', at: c.createdAt.toISOString().slice(0, 16), old: c.old };
     if (!c.dumpsTarUrl || (!c.copied && !c.readKey)) {
@@ -124,12 +130,24 @@ export async function aioBackfill() {
         copy,
         copyCheck: shots.flatMap((x) => uiLabels(x).map((l) => l.label)),
         overviewOnScreen: true,
-        shownBeforeExpansion: cardsBeforeExpansion(file('aio_initial.xml')),
+        // The first screen's cards: its own snapshot, else the results page (the same moment, on runs
+        // saved before that snapshot was kept), else the AI Overview's list as the run read it.
+        shownBeforeExpansion:
+          cardsBeforeExpansion(file('aio_initial.xml') ?? file('serp.xml')) ??
+          (c.rankFrom === 'ai_overview_list' && Array.isArray(c.list) && c.list.length ? c.list.map(String) : null),
         telemetry: c.readKey && c.tele ? ({ ...NOT_WATCHED, ...c.tele, capture_version: AIO_CAPTURE_VERSION } as WatcherFacts) : NOT_WATCHED,
         scanPointId: c.id,
       };
       const capture = buildAioCapture(dossier, opts);
       const p = aiPresence(capture);
+      // An admin's own point gets the four flags written, as the replay does for points with a page
+      // read (customers' points wait for the backfill to be applied).
+      const ins = (c.insights as { ai?: Record<string, unknown> } | null) ?? null;
+      if (c.role === 'ADMIN' && ins?.ai)
+        await db.gridPin
+          .update({ where: { id: c.id }, data: { insights: { ...ins, ai: { ...ins.ai, presence: p } } as object } })
+          .then(() => written++)
+          .catch((e) => console.warn('[aio-backfill]', c.id, 'not written:', (e as Error).message.slice(0, 120)));
       const appeared = p.status === 'parsed' ? presenceVisible(p) : null;
       const change: Out['change'] = appeared === null ? 'unknown' : c.old ? (appeared ? 'kept' : 'lost') : appeared ? 'gained' : 'still not';
       const why: string[] = [];
@@ -210,6 +228,6 @@ export async function aioBackfill() {
   const value = JSON.stringify({ summary, points: rows.filter((r) => r.state !== 'legacy').slice(0, 400) });
   await db.$executeRaw`INSERT INTO "Kept" (scope, key, value, "updatedAt") VALUES ('aio-backfill', ${runKey}, ${value}, now()) ON CONFLICT (scope, key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = now()`;
   console.log(
-    `[aio-backfill] dry run ${AIO_CAPTURE_VERSION}: ${summary.points} point(s) with an AI Overview · re-read ${summary.reread}, unparsed ${summary.unparsed}, legacy ${summary.legacy} · earlier positives ${summary.earlierPositives}: kept ${summary.kept}, lost ${summary.lost} (+${summary.lostToUnparsed} now unparsed), gained ${summary.gained} · nothing on the points changed`,
+    `[aio-backfill] dry run ${AIO_CAPTURE_VERSION}: ${summary.points} point(s) with an AI Overview · re-read ${summary.reread}, unparsed ${summary.unparsed}, legacy ${summary.legacy} · earlier positives ${summary.earlierPositives}: kept ${summary.kept}, lost ${summary.lost} (+${summary.lostToUnparsed} now unparsed), gained ${summary.gained} · customers' points unchanged; ${written} admin point(s) given the reading`,
   );
 }
