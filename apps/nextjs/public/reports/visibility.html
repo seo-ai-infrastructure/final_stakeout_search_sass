@@ -733,17 +733,62 @@ function history() {
   $('#histtbl').innerHTML = `<thead><tr><th>Scan</th><th>Keyword</th><th>Points</th><th>Share of local search</th><th>Map pack top 3</th><th>AI answer shown</th><th>In the AI answer</th><th>Website cited</th><th>Couldn’t read</th></tr></thead><tbody>${rows.join('')}</tbody>`;
 }
 
-/* ---- Google data: what is connected, never estimated ---- */
+/* ---- Google data: Google's own numbers where connected, never estimated ---- */
+const fmt = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('en-US'));
+const delta = (now, was) => {
+  if (now === null || now === undefined || !was) return '';
+  const d = Math.round(((now - was) / was) * 100);
+  return ` <span class="quiet" style="display:inline;margin:0">${d > 0 ? '+' : ''}${d}% vs ${fmt(was)}</span>`;
+};
+const span = (r) => (r ? `${dayET(r.from + 'T12:00:00Z').replace(/, \d{4}$/, '')} – ${dayET(r.to + 'T12:00:00Z')}` : '');
+const row = (label, now, was, note) => `<div class="row"><dt>${label}</dt><dd><b>${fmt(now)}</b>${delta(now, was)}${note ? ` <span class="quiet" style="display:inline;margin:0">· ${note}</span>` : ''}</dd></div>`;
+const LABEL = { views: 'Views on Search and Maps', calls: 'Calls', websiteClicks: 'Website clicks', directions: 'Direction requests', conversations: 'Messages', bookings: 'Bookings', mobileSearch: 'Search, on a phone', mobileMaps: 'Maps, on a phone', desktopSearch: 'Search, on a computer', desktopMaps: 'Maps, on a computer' };
+function listingBody(L) {
+  let html = `<p class="quiet" style="margin:4px 0 8px">${esc([L.title, L.address].filter(Boolean).join(' · '))}${L.periods ? `<br>Last 28 days, ${esc(span(L.periods.recent))}, against the 28 before. Google counts a listing about three days late.` : ''}</p>`;
+  const d = L.daily;
+  if (d.kind === 'daily') {
+    const order = ['views', 'calls', 'websiteClicks', 'directions', 'conversations', 'bookings'].filter((k) => d.known.includes(k));
+    const where = ['mobileSearch', 'mobileMaps', 'desktopSearch', 'desktopMaps'].filter((k) => d.known.includes(k));
+    html += `<dl class="rows">${order.map((k) => row(LABEL[k], d.totals[k], d.before[k], k === 'views' && where.length ? where.map((w) => LABEL[w].toLowerCase() + ' ' + fmt(d.totals[w])).join(', ') : '')).join('')}</dl>`;
+    if (d.daysWithData < d.length) html += `<p style="font-size:12px" class="quiet">Google has ${d.daysWithData} of the ${d.length} days so far; the rest are pending, not zero.</p>`;
+  } else if (d.kind === 'snapshot') {
+    html += `<dl class="rows">${d.known.map((k) => row(LABEL[k] || k, d.totals[k], null)).join('')}</dl><p style="font-size:12px" class="quiet">Google's latest 30-day totals (${esc(dayET(d.recordedAt))}): no day-by-day figures yet.</p>`;
+  } else html += `<p class="quiet">${esc(d.kind === 'problem' ? 'Google’s numbers couldn’t be read: ' + d.problem : 'Google has no activity figures for this listing yet.')}</p>`;
+  const k = L.keywords;
+  if (k.rows.length)
+    html += `<h4 style="margin:12px 0 6px;font-size:13px">Searches that showed the listing</h4><p class="quiet" style="margin:0 0 6px;font-size:12px">${esc(k.months.join(', '))} · Google gives only “fewer than 15” for small searches.</p><ol class="list">${k.rows.map((r) => `<li>${esc(r.keyword)} <span class="quiet" style="display:inline;margin:0">· ${esc(r.exact ? fmt(r.total) : r.latest)}</span></li>`).join('')}</ol>`;
+  else if (k.problem) html += `<p class="quiet" style="font-size:12px">Searches couldn’t be read: ${esc(k.problem)}</p>`;
+  return html;
+}
+function searchBody(S) {
+  let html = '';
+  const g = S.gsc;
+  if (g && g.recent) {
+    html += `<p class="quiet" style="margin:4px 0 8px">Search Console · ${g.scope === 'page' ? 'the page the listing links to' : 'the whole site'}${S.periods ? `, ${esc(span(S.periods.recent))} against the 28 days before` : ''}<br><span style="word-break:break-all">${esc(S.page || '')}</span></p>`;
+    html += `<dl class="rows">${row('Clicks from Google', g.recent.clicks, g.before.clicks)}${row('Times shown', g.recent.impressions, g.before.impressions)}${row('Average position', g.recent.position !== null ? Math.round(g.recent.position * 10) / 10 : null, null, g.before.position !== null ? 'was ' + Math.round(g.before.position * 10) / 10 : '')}</dl>`;
+    if (g.queries.length) html += `<h4 style="margin:12px 0 6px;font-size:13px">Top searches</h4><ol class="list">${g.queries.map((q) => `<li>${esc(q.query)} <span class="quiet" style="display:inline;margin:0">· ${fmt(q.clicks)} clicks, ${fmt(q.impressions)} shown${q.position !== null ? ', position ' + Math.round(q.position * 10) / 10 : ''}</span></li>`).join('')}</ol>`;
+  } else if (g) html += `<p class="quiet">Search Console: ${esc(g.problem || 'no figures')}</p>`;
+  const a = S.ga;
+  if (a && a.recent) {
+    html += `<h4 style="margin:14px 0 6px;font-size:13px">Analytics · ${esc(a.name)}</h4><dl class="rows">${row('Visits to the site', a.recent.sessions, a.before.sessions)}${row('Key events', a.recent.keyEvents, a.before.keyEvents)}${a.listing ? row('Visits from the listing’s link', a.listing.recent.sessions, a.listing.before.sessions, 'tagged utm_campaign=' + esc(a.campaign || 'gbp_listing')) : ''}</dl>`;
+  } else if (a) html += `<p class="quiet" style="font-size:12px">Analytics: ${esc(a.problem || 'no figures')}</p>`;
+  return html || '<p class="quiet">No figures came back.</p>';
+}
 function google() {
   const g = DATA.google || {};
-  $('#gprofile').textContent = 'Google Business Profile · ' + (g.profile ? 'connected' : 'not connected');
-  $('#gprofilebody').innerHTML = g.profile
-    ? '<p>This listing is connected. Its activity (views from Search and Maps, calls, website clicks, direction requests and search terms) is in <a href="/profiles">Connected Accounts</a>; it isn’t copied into this report yet.</p>'
-    : '<p>This listing isn’t connected in Connected Accounts, so its activity isn’t in this report. Once it is, Connected Accounts shows, for the last 28 days against the 28 before:</p><ul><li>Profile views, and whether they came from Search or Maps</li><li>Calls, website clicks and direction requests</li><li>The search terms people used to find it, by month</li></ul><p style="font-size:12px">Google reports listing activity about three days late; the last days are marked as pending, never as zeros.</p>';
+  const N = g.numbers || null;
+  $('#gprofile').textContent = 'Google Business Profile · ' + (N && N.listing ? 'connected' : g.profile ? 'connected' : 'not connected');
+  $('#gprofilebody').innerHTML = N && N.listing
+    ? listingBody(N.listing)
+    : g.profile
+      ? '<p>This listing is connected. Its activity (views from Search and Maps, calls, website clicks, direction requests and search terms) is in Connected Accounts' + (DATA.brand ? '' : ' (<a href="/profiles">open</a>)') + '.</p>'
+      : '<p>This listing isn’t connected, so its activity isn’t in this report. Once it is, this section shows, for the last 28 days against the 28 before:</p><ul><li>Profile views, and whether they came from Search or Maps</li><li>Calls, website clicks and direction requests</li><li>The search terms people used to find it, by month</li></ul><p style="font-size:12px">Google reports listing activity about three days late; the last days are marked as pending, never as zeros.</p>';
   $('#gsearch').textContent = 'Search Console & Analytics · ' + (g.searchConsole ? 'connected' : 'not connected');
-  $('#gsearchbody').innerHTML = g.searchConsole
-    ? '<p>Google is connected for this account (read-only). Queries, clicks and sessions for the website’s pages are in Connected Accounts; they aren’t copied into this report yet.</p>'
-    : '<p>Nobody has signed in with Google for this website yet. With read-only access, Connected Accounts shows:</p><ul><li>Queries for the office’s landing page: impressions, clicks, position</li><li>Sessions and organic sessions on that page</li><li>Whether the pages the AI answers cite are the ones that get the clicks</li></ul>';
+  $('#gsearchbody').innerHTML = N && N.search
+    ? searchBody(N.search)
+    : g.searchConsole
+      ? '<p>Google is connected for this account (read-only). Queries, clicks and visits for the website are in Connected Accounts.</p>'
+      : '<p>Nobody has signed in with Google for this website yet. With read-only access, this section shows:</p><ul><li>Searches for the office’s landing page: times shown, clicks, position</li><li>Visits to the site, and those that came from the listing</li><li>Whether the pages the AI answers cite are the ones that get the clicks</li></ul>';
 }
 
 /* ---- Point receipts + CSV ---- */
