@@ -11,9 +11,7 @@ import { declutterBasemap, quietBasemap, fillColor, legend, CENSUS_VINTAGE } fro
 import {
   Smartphone,
   Monitor,
-  Sparkles,
   AlertCircle,
-  ArrowRight,
   Loader2,
   MapPin,
   Search,
@@ -26,6 +24,13 @@ import { stateTimezone } from '@stakeout/core/fleetHealth';
 import { SCHEDULE_LEAD_MS, zonedMoment } from '@stakeout/core/speed';
 import { GOOGLE_ID_HELP, googleIdOf, googleShortLink } from '@stakeout/core/businessIds';
 import { siteDomain } from '@stakeout/core/businessSite';
+import { scanKeywords } from '@/lib/scanKeywords';
+import styles from './NewScanWizard.module.css';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/jetbrains-mono/400.css';
+import { Crosshair, Layers, RotateCcw, Save, Clock3, Info, ChevronDown, Check, Minus, Plus, SlidersHorizontal } from 'lucide-react';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';
 /** A size carried over from an older scan or a saved business that is no longer offered falls back to 5×5. */
@@ -105,6 +110,9 @@ export function NewScanWizard() {
   const [keywordList, setKeywordList] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
   const [saveMsg, setSaveMsg] = useState('');
+  const [moreOptions, setMoreOptions] = useState(false);
+  const [identityOpen, setIdentityOpen] = useState(false);
+  const [businessEditing, setBusinessEditing] = useState(true);
   // Points left out on the map ("row_col"): not created, not charged.
   const [skipped, setSkipped] = useState<string[]>([]);
   // The grid's shape: the full square, a wide or tall rectangle inside it, or a rough circle.
@@ -122,13 +130,13 @@ export function NewScanWizard() {
   const [launched, setLaunched] = useState<{ ids: string[]; summary: string; points: number; repeat: boolean; scheduled?: string; asap?: boolean } | null>(null);
   const incoming = useRef<string[]>([]);
   function addKeyword() {
-    const v = keyword.trim();
-    if (!v) return;
-    setKeywordList((l) => (l.includes(v) ? l : [...l, v]));
-    setPicked((l) => (l.includes(v) ? l : [...l, v]));
+    if (!keyword.trim()) return;
+    setKeywordList((list) => scanKeywords(list, keyword));
+    setPicked((list) => scanKeywords(list, keyword));
     setKeyword('');
   }
   function applyBusiness(b: SavedBusiness) {
+    setBusinessEditing(false);
     setBusinessId(b.id);
     setTargetBusiness(b.name);
     setWebsite(b.domain ?? '');
@@ -292,7 +300,7 @@ export function NewScanWizard() {
   }
   async function saveBusiness() {
     setSaveMsg('');
-    const keywords = [...new Set([...keywordList, ...picked, keyword].map((k) => k.trim()).filter(Boolean))];
+    const keywords = scanKeywords([...keywordList, ...picked], keyword);
     const body = {
       name: targetBusiness, centerLabel: addressQuery || [detectedCity, detectedState, detectedZip].filter(Boolean).join(' '),
       centerLat, centerLng, keywords, targetType, gridSize, spacingKm, ispMode: 'any', isps: [],
@@ -453,7 +461,8 @@ export function NewScanWizard() {
         zoom: 11.5,
         attributionControl: { compact: true },
       });
-    } catch {
+    } catch (error) {
+      console.error('Unable to initialize the scan map', error);
       setMapState('error');
       return;
     }
@@ -467,7 +476,7 @@ export function NewScanWizard() {
         try {
           if (l.type === 'fill' && src === 'water') {
             waterLayers.current.push(l.id);
-            map.setPaintProperty(l.id, 'fill-color', '#060c1a');
+            map.setPaintProperty(l.id, 'fill-color', '#0d2238');
             map.setPaintProperty(l.id, 'fill-outline-color', '#3b82a6');
           } else if (l.type === 'symbol' && src === 'water_name') map.setPaintProperty(l.id, 'text-color', '#7dd3fc');
         } catch {
@@ -489,12 +498,12 @@ export function NewScanWizard() {
       }
       // The grid's outline and the lines between its points.
       map.addSource('grid-frame', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-      map.addLayer({ id: 'grid-lines', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'line'], paint: { 'line-color': '#34d399', 'line-opacity': 0.4, 'line-width': 1, 'line-dasharray': [2, 3] } });
+      map.addLayer({ id: 'grid-lines', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'line'], paint: { 'line-color': '#ff5a1f', 'line-opacity': 0.25, 'line-width': 1, 'line-dasharray': [2, 4] } });
       map.addLayer({ id: 'grid-ring', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'ring'], paint: { 'line-color': '#e2e8f0', 'line-opacity': 0.35, 'line-width': 1.2, 'line-dasharray': [4, 4] } });
-      map.addLayer({ id: 'grid-fill', type: 'fill', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'box'], paint: { 'fill-color': '#34d399', 'fill-opacity': 0.04 } });
-      map.addLayer({ id: 'grid-box', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'box'], paint: { 'line-color': '#34d399', 'line-opacity': 0.6, 'line-width': 1.5, 'line-dasharray': [3, 3] } });
+      map.addLayer({ id: 'grid-fill', type: 'fill', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'box'], paint: { 'fill-color': '#ff5a1f', 'fill-opacity': 0.025 } });
+      map.addLayer({ id: 'grid-box', type: 'line', source: 'grid-frame', filter: ['==', ['get', 'kind'], 'box'], paint: { 'line-color': '#ff5a1f', 'line-opacity': 0.75, 'line-width': 1.3 } });
     });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.on('click', (e) => {
       setCenterLat(Number(e.lngLat.lat.toFixed(6)));
       setCenterLng(Number(e.lngLat.lng.toFixed(6)));
@@ -525,25 +534,20 @@ export function NewScanWizard() {
     previewMarkersRef.current.forEach((m) => m.remove());
     previewMarkersRef.current = [];
     const bounds = new maplibregl.LngLatBounds();
-    const dot = gridSize <= 3 ? 30 : gridSize <= 5 ? 26 : gridSize <= 7 ? 22 : 18;
+    const dot = gridSize <= 5 ? 18 : gridSize <= 7 ? 15 : 12;
     const add = (el: HTMLElement, lng: number, lat: number, draggable = false, offset: [number, number] = [0, 0]) => {
       const marker = new maplibregl.Marker({ element: el, draggable, anchor: 'center', offset }).setLngLat([lng, lat]).addTo(map);
       previewMarkersRef.current.push(marker);
       return marker;
-    };
-    const tag = (text: string) => {
-      const el = document.createElement('div');
-      el.className = 'pointer-events-none whitespace-nowrap rounded-md border border-slate-700 bg-slate-900/95 px-2 py-0.5 text-xs font-semibold text-emerald-300';
-      el.textContent = text;
-      return el;
     };
     const inShape = previewPoints.filter((pt) => !pt.out);
     inShape.forEach((pt) => {
       bounds.extend([pt.lng, pt.lat]);
       if (pt.isCenter) {
         const el = document.createElement('div');
-        el.className = 'flex h-9 w-9 cursor-grab items-center justify-center rounded-full border-2 border-emerald-400 bg-white text-slate-900 shadow-[0_0_0_5px_rgba(52,211,153,0.35)]';
-        el.setAttribute('aria-label', 'The business: drag to move the whole grid');
+        el.className = styles.centerPin;
+        el.setAttribute('aria-label', 'Grid center: drag to move the scan territory');
+        el.title = 'Drag to move the scan territory';
         el.innerHTML =
           '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l1.5-5h13L20 10"/><path d="M4 10a2.7 2.7 0 0 0 5.3 0a2.7 2.7 0 0 0 5.4 0a2.7 2.7 0 0 0 5.3 0"/><path d="M5.5 12.5V20h13v-7.5"/><path d="M10 20v-4.5h4V20"/></svg>';
         const marker = add(el, pt.lng, pt.lat, true);
@@ -559,16 +563,12 @@ export function NewScanWizard() {
       el.style.width = el.style.height = dot + 'px';
       const info = pointInfo[pt.key];
       const rich = showWealth && !pt.skipped && (info?.inc ?? 0) >= 100000;
-      // A numbered ring, like the report's points; a point in a $100k+ area gets a blue halo while buying power is shown.
-      el.className =
-        'flex items-center justify-center rounded-full border-2 font-bold leading-none ' +
-        (pt.skipped
-          ? 'border-dashed border-slate-500 bg-slate-950/70 text-slate-500'
-          : 'border-emerald-400 bg-slate-950 text-emerald-100 ' + (rich ? 'shadow-[0_0_0_4px_rgba(125,211,252,0.55)]' : 'shadow-[0_0_0_3px_rgba(52,211,153,0.18)]'));
+      // Setup dots are capture locations, not rank scores. Keep them quiet and unnumbered.
+      el.className = styles.gridPin + (pt.skipped ? ' ' + styles.skippedPin : '') + (rich ? ' ' + styles.incomePin : '');
       el.style.fontSize = (dot >= 26 ? 11 : dot >= 22 ? 10 : 8) + 'px';
-      el.textContent = pt.skipped ? '' : String(pt.n);
+      el.textContent = pt.skipped ? '−' : '';
       el.setAttribute('aria-pressed', String(!pt.skipped));
-      el.setAttribute('aria-label', pt.skipped ? 'Skipped point: click to include it' : 'Grid point: click to skip it');
+      el.setAttribute('aria-label', `Point ${pt.n}: ${pt.skipped ? 'excluded, click to include' : 'active, click to exclude'}${info?.water ? ', on water' : ''}`);
       el.title =
         (pt.skipped ? 'Skipped (not charged). Click to include.' : 'Click to skip this point') +
         (info?.water ? ' · on water' : '') +
@@ -592,15 +592,9 @@ export function NewScanWizard() {
         features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [[[box.W, box.N], [box.E, box.N], [box.E, box.S], [box.W, box.S], [box.W, box.N]]] } }],
       });
     } else {
-    // Labels: the step between two neighbouring points, and the size of the shape.
-    const mi = Number((spacingKm / 1.60934).toFixed(1));
     const lats = inShape.map((p) => p.lat), lngs = inShape.map((p) => p.lng);
     const top = Math.max(...lats), bottom = Math.min(...lats), west = Math.min(...lngs), east = Math.max(...lngs);
     const stepLat = Math.abs(previewPoints[0].lat - previewPoints[gridSize].lat), stepLng = Math.abs(previewPoints[1].lng - previewPoints[0].lng);
-    const topRow = inShape.filter((p) => p.lat === top).sort((x, y) => x.lng - y.lng);
-    const wide = Number(((east - west) / stepLng * mi).toFixed(1)), tall = Number(((top - bottom) / stepLat * mi).toFixed(1));
-    if (topRow.length > 1) add(tag(mi + ' mi'), (topRow[0].lng + topRow[1].lng) / 2, top, false, [0, -dot - 8]);
-    add(tag(wide === tall ? wide + ' mi across' : wide + ' × ' + tall + ' mi'), (west + east) / 2, bottom, false, [0, dot + 14]);
     // Outline (a box, or a ring for a round grid) and the lines between points.
     const src = map.getSource('grid-frame') as maplibregl.GeoJSONSource | undefined;
     if (src) {
@@ -617,20 +611,9 @@ export function NewScanWizard() {
         for (const lat of [...new Set(lats)]) lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[west, lat], [east, lat]] } });
         for (const lng of [...new Set(lngs)]) lines.push({ type: 'Feature' as const, properties: { kind: 'line' }, geometry: { type: 'LineString' as const, coordinates: [[lng, top], [lng, bottom]] } });
       }
-      // A scale ring through the outermost points east and west of the business.
-      const reach = [];
-      if ((shape === 'square' || shape === 'custom') && east > west) {
-        const rx = (east - west) / 2, ry = rx * (stepLat / stepLng);
-        reach.push({
-          type: 'Feature' as const,
-          properties: { kind: 'ring' },
-          geometry: { type: 'LineString' as const, coordinates: Array.from({ length: 65 }, (_, i) => [centerLng + Math.cos((i / 64) * 2 * Math.PI) * rx, centerLat + Math.sin((i / 64) * 2 * Math.PI) * ry]) },
-        });
-        add(tag(Number((wide / 2).toFixed(1)) + ' mi from the business'), centerLng + rx * 0.7071, centerLat + ry * 0.7071, false, [0, -12]);
-      }
       src.setData({
         type: 'FeatureCollection',
-        features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [ring] } }, ...lines, ...reach],
+        features: [{ type: 'Feature', properties: { kind: 'box' }, geometry: { type: 'Polygon', coordinates: [ring] } }, ...lines],
       });
     }
     }
@@ -638,7 +621,8 @@ export function NewScanWizard() {
     const fitKey = [centerLat, centerLng, gridSize, spacingKm, shape, rows, cols].join('|');
     if ((inShape.length > 1 || shape === 'wealth') && fitKey !== lastFit.current) {
       lastFit.current = fitKey;
-      map.fitBounds(bounds, { padding: { top: 110, bottom: 130, left: 70, right: 70 }, maxZoom: 14, duration: 400 });
+      const narrow = map.getContainer().clientWidth < 760;
+      map.fitBounds(bounds, { padding: { top: narrow ? 145 : 110, bottom: narrow ? 145 : 160, left: narrow ? 44 : 420, right: narrow ? 44 : 105 }, maxZoom: 14, duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 400 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewPoints, mapState, pointInfo, showWealth]);
@@ -886,8 +870,7 @@ export function NewScanWizard() {
       setIsSubmitting(false);
     }
   }
-  const askMapsSoon = targetType === 'mobile_maps';
-  const runKeywords = picked.length ? picked : [keyword.trim()].filter(Boolean);
+  const runKeywords = scanKeywords(picked, keyword);
   const shownKeywords = [...new Set([...keywordList, ...picked])];
   const points = creditSummary.totalPins;
   // Scan Now costs 2 points a grid point; a scheduled scan 1.
@@ -914,7 +897,6 @@ export function NewScanWizard() {
   const totalCost = creditSummary.totalCost * Math.max(1, runKeywords.length) * speedX;
   const creditsLeft = creditBalance - totalCost;
   const spacingMi = Number((spacingKm / 1.60934).toFixed(1));
-  const spanMi = Number(((gridSize - 1) * spacingMi).toFixed(1));
   const shapeRows = shape === 'custom' ? rows : gridSize, shapeCols = shape === 'custom' ? cols : gridSize;
   const spanW = Number(((shapeCols - 1) * spacingMi).toFixed(1)), spanH = Number(((shapeRows - 1) * spacingMi).toFixed(1));
   // Points on water that are still in the scan, and how many points sit in $100k+ areas.
@@ -940,445 +922,174 @@ export function NewScanWizard() {
     { id: 'mobile_chrome', title: 'Chrome', sub: 'Web + AI Overviews', note: 'The local pack on a Google search, plus the AI Overview and the sites it cites.', Icon: Globe },
     { id: 'mobile_google', title: 'Google app', sub: 'Search in the app', note: 'The Google app search.', Icon: Smartphone },
     ...(process.env.NEXT_PUBLIC_DESKTOP_ENABLED === 'true' ? [{ id: 'desktop_aimode', title: 'Desktop AI', sub: 'AI Mode', note: 'Desktop search in AI Mode.', Icon: Monitor }] : []),
-  ].map((x) => ({ ...x, live: enabledSurfaces.includes(x.id) || x.id === 'desktop_aimode' }));
-  const pill = (on: boolean) =>
-    'min-h-[44px] rounded-lg border px-2 text-[13px] font-semibold transition ' +
-    (on ? 'border-emerald-400 bg-emerald-400/15 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500');
-  const label = 'text-[11px] font-bold uppercase tracking-[0.1em] text-slate-400';
-  const field = 'min-h-[44px] w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-white placeholder-slate-500';
+  ].map((x) => ({ ...x, live: enabledSurfaces.includes(x.id) || x.id === 'desktop_aimode' })).sort((a, b) => Number(b.live) - Number(a.live));
   // The map opens on a default spot. Until the pin has been moved off it (a search result picked,
   // the map clicked, the pin dragged, a saved business or a past scan loaded), no scan can start:
   // a scan around the wrong town is worthless and still costs points.
   const placed = centerLat !== 28.039465 || centerLng !== -81.949804;
-  const steps: { done: boolean; title: string; how: string }[] = [
-    { done: Boolean(targetBusiness.trim()), title: 'Type the business name', how: 'Exactly as it shows on Google.' },
-    { done: placed, title: 'Put the pin on the business', how: 'Search its address in the box on the map and pick it, or drag the pin there. The grid is drawn around the pin.' },
-    { done: runKeywords.length > 0, title: 'Add a keyword', how: 'What a customer would search, like “ac repair”.' },
-  ];
-  const nextStep = steps.findIndex((x) => !x.done);
   const blockedWhy = !targetBusiness.trim() ? 'Step 1: add the business name' : !placed ? 'Step 2: put the pin on the business' : !runKeywords.length ? 'Step 3: add a keyword' : '';
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] w-full flex-col bg-slate-950 text-slate-100 lg:h-[calc(100vh-4rem)] lg:flex-row lg:overflow-hidden">
-      {/* LEFT RAIL: the settings scroll if they must; the order bar never leaves the screen. */}
-      <form onSubmit={handleLaunchScan} className="flex w-full flex-col border-r border-slate-800 bg-slate-900/95 lg:w-[410px] lg:shrink-0">
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 [scrollbar-color:#2a3854_transparent] [scrollbar-width:thin]">
-          {errorMsg && (
-            <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-950/40 p-3 text-xs">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-          {/* How to run a scan, in order. Loud until every step is done, then quiet. */}
-          <section aria-label="How to run a scan" className={'rounded-xl border-2 p-3 ' + (nextStep === -1 ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-rose-500 bg-rose-500/10')}>
-            <p className={'text-sm font-extrabold ' + (nextStep === -1 ? 'text-emerald-300' : 'text-rose-200')}>{nextStep === -1 ? 'Ready. Check the grid on the map, then launch.' : 'How to run a scan'}</p>
-            {nextStep !== -1 && (
-              <ol className="mt-2 space-y-1.5">
-                {[...steps, { done: false, title: 'Press Launch', how: 'One point per grid point; Scan Now uses 2.' }].map((x, i) => (
-                  <li key={x.title} className={'flex gap-2 text-[13px] ' + (x.done ? 'text-slate-500' : i === nextStep ? 'text-white' : 'text-slate-300')}>
-                    <span className={'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ' + (x.done ? 'bg-emerald-500/20 text-emerald-300' : i === nextStep ? 'bg-rose-500 text-white' : 'bg-slate-700 text-slate-200')}>{x.done ? '✓' : i + 1}</span>
-                    <span><span className={'font-semibold ' + (x.done ? 'line-through' : '')}>{x.title}</span>{!x.done && i === nextStep && <span className="block text-xs text-rose-100/90">{x.how}</span>}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </section>
-          {/* Business and keywords: one card */}
-          <section className="space-y-2">
-            <label htmlFor="ns-business" className={label}>Business &amp; keywords</label>
-            <div className="space-y-2.5 rounded-xl border border-slate-800 bg-slate-950 p-3">
-              <select
-                id="ns-business"
-                value={businessId}
-                onChange={(e) => {
-                  const b = saved.find((x) => x.id === e.target.value);
-                  if (b) applyBusiness(b);
-                  else { rememberedFor.current = ''; setBusinessId(''); setTargetBusiness(''); setWebsite(''); setGoogleId(''); setGoogleIdNote(null); setIdentityNote(''); setKeywordList(incoming.current); setPicked(incoming.current); }
-                }}
-                className={field + ' font-semibold'}
-              >
-                <option value="">New business…</option>
-                {saved.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}{b.centerLabel ? ' · ' + b.centerLabel : ''}</option>
-                ))}
-              </select>
-              <input
-                type="text"
-                aria-label="Business name exactly as it appears on Google"
-                placeholder="Business name exactly as on Google"
-                value={targetBusiness}
-                onChange={(e) => setTargetBusiness(e.target.value)}
-                onBlur={rememberIdentity}
-                className={field}
-              />
-              <input
-                type="text"
-                inputMode="url"
-                autoCapitalize="none"
-                aria-label="The business’s website (optional)"
-                placeholder="Website, e.g. stuartsplumbing.com (optional)"
-                value={website}
-                onChange={(e) => {
-                  setWebsite(e.target.value);
-                  setIdentityNote('');
-                }}
-                className={field}
-              />
-              <input
-                type="text"
-                autoCapitalize="none"
-                spellCheck={false}
-                aria-label="The business’s Google business ID (optional)"
-                aria-invalid={googleIdNote?.ok === false}
-                placeholder="Google business ID, e.g. /g/11c5wk8bxd (optional)"
-                value={googleId}
-                onChange={(e) => {
-                  setGoogleId(e.target.value);
-                  setGoogleIdNote(null);
-                  setIdentityNote('');
-                }}
-                onBlur={checkGoogleId}
-                className={field + (googleIdNote?.ok === false ? ' border-rose-500' : '')}
-              />
-              <p className={`-mt-1 text-xs ${googleIdBusy ? 'text-slate-400' : googleIdNote ? (googleIdNote.ok ? 'text-emerald-300' : 'text-rose-300') : 'text-slate-500'}`}>
-                {googleIdBusy
-                  ? 'Looking up the link…'
-                  : googleIdNote
-                    ? googleIdNote.text
-                    : identityNote || 'Saved with the business. The ID finds it in Google’s AI answers by its listing, whatever the name; the website shows when an answer cites its site.'}
-              </p>
-              {shownKeywords.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {shownKeywords.map((k) => (
-                    <button key={k} type="button" onClick={() => togglePick(k)} aria-pressed={picked.includes(k)}
-                      className={`min-h-[36px] rounded-full border px-3 text-[13px] ${picked.includes(k) ? 'border-emerald-400 bg-emerald-400/15 text-emerald-200' : 'border-slate-700 text-slate-300 hover:border-slate-500'}`}>
-                      {k}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  aria-label="Add a keyword"
-                  placeholder="Type a keyword and press Enter"
-                  value={keyword}
-                  onChange={(e) => setKeyword(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeyword(); } }}
-                  className={field + ' min-w-0 flex-1'}
-                />
-                <button type="button" onClick={addKeyword} className="min-h-[44px] rounded-lg border border-slate-700 px-3.5 text-[13px] font-semibold text-slate-200 hover:border-emerald-400">Add</button>
-              </div>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
-                <span>{runKeywords.length === 0 ? 'Tick or type at least one keyword.' : runKeywords.length === 1 ? '1 keyword: one scan.' : `${runKeywords.length} keywords: one scan each.`}</span>
-                <button type="button" onClick={saveBusiness} disabled={!targetBusiness.trim()} className="font-semibold text-emerald-300 underline disabled:opacity-50">
-                  {businessId ? 'Update saved business' : 'Save business'}
-                </button>
-                {businessId && <button type="button" onClick={deleteBusiness} className="underline hover:text-red-300">Delete</button>}
-                {saveMsg && <span role="status" className="text-emerald-300">{saveMsg}</span>}
-              </div>
-            </div>
-          </section>
-          {/* App surface: one row */}
-          <section className="space-y-2">
-            <span className={label}>App surface</span>
-            <div className={`grid gap-2 ${surfaces.length > 3 ? 'grid-cols-4' : 'grid-cols-3'}`}>
-              {surfaces.map(({ id, title, sub, live, Icon }) => (
-                <button key={id} type="button" disabled={!live} aria-pressed={targetType === id} onClick={() => live && setTargetType(id as TargetType)}
-                  className={`relative flex min-h-[78px] flex-col items-start gap-1 rounded-xl border p-2.5 text-left transition disabled:cursor-not-allowed ${targetType === id ? 'border-emerald-400 bg-emerald-400/15' : 'border-slate-700 hover:border-slate-500'}`}>
-                  <Icon className={`h-4 w-4 ${live ? 'text-slate-200' : 'text-slate-500'}`} aria-hidden />
-                  <span className={`text-sm font-bold ${live ? 'text-white' : 'text-slate-400'}`}>{title}</span>
-                  <span className="text-[11px] leading-tight text-slate-400">{sub}</span>
-                  {targetType === id && <span aria-hidden className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-emerald-400" />}
-                  {!live && <span className="absolute right-2 top-2 rounded bg-indigo-500/25 px-1.5 py-0.5 text-[10px] font-bold text-indigo-200">Soon</span>}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-slate-400">{surfaces.find((x) => x.id === targetType)?.note}</p>
-            <p className="flex items-center gap-1.5 text-xs text-purple-300">
-              <Sparkles className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              {askMapsSoon ? 'A phone video for every point is included.' : 'AI Overviews, cited sites and phone videos included, no extra points.'}
-            </p>
-          </section>
-          {/* Grid and network */}
-          <section className="space-y-2">
-            <div className="flex items-baseline justify-between">
-              <span className={label}>Grid &amp; network</span>
-              <span className="text-xs font-semibold text-emerald-300">{spanW} × {spanH} mi area · {points} points</span>
-            </div>
-            <div className="grid grid-cols-4 gap-2">
-              {OFFERED_GRID_SIZES.map((n) => (
-                <button key={n} type="button" aria-pressed={gridSize === n} onClick={() => setGridSize(n)}
-                  className={`flex flex-col items-center gap-1 rounded-lg border py-2 ${gridSize === n ? 'border-emerald-400 bg-emerald-400/15' : 'border-slate-700 hover:border-slate-500'}`}>
-                  <span aria-hidden className="h-7 w-7" style={{ backgroundImage: `radial-gradient(circle, ${gridSize === n ? '#34d399' : '#7c8ba5'} ${n > 6 ? 1 : 1.5}px, transparent ${n > 6 ? 1.4 : 2}px)`, backgroundSize: `${28 / n}px ${28 / n}px` }} />
-                  <span className="text-sm font-bold text-white">{n}×{n}</span>
-                  <span className="text-[11px] text-slate-400">{network === 'mix' ? `${n * n}–${n * n * (mobileData?.creditsPerPoint ?? 2)}` : n * n * creditSummary.costPerPin} pts</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="whitespace-nowrap text-xs text-slate-300">Points apart</span>
-              <div className="grid flex-1 grid-cols-5 gap-1.5">
-                {SPACING_OPTIONS.map((sp) => (
-                  <button key={sp.km} type="button" aria-pressed={spacingKm === sp.km} onClick={() => setSpacingKm(sp.km)} className={pill(spacingKm === sp.km)}>
-                    {sp.short}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="whitespace-nowrap text-xs text-slate-300">Shape</span>
-              <div className="grid flex-1 grid-cols-3 gap-1.5" role="radiogroup" aria-label="Grid shape">
-                {([['square', 'Square'], ['custom', 'Rectangle'], ['round', 'Round'], ['wealth', 'Top income areas']] as const).map(([id, text]) => (
-                  <button key={id} type="button" role="radio" aria-checked={shape === id} onClick={() => setShape(id)} className={pill(shape === id)}>
-                    {text}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {shape === 'wealth' && (
-              <p className="text-xs text-slate-300">
-                {areas.length
-                  ? `One point in the middle of each of the ${areas.length} highest-income census areas inside this ${spanMi + spacingMi} mi box, plus the business. Not a grid.${areas.length < 24 ? ' Make the box bigger (size or spacing) to reach 25.' : ''}`
-                  : 'Reading incomes from the map… If nothing appears, make the box bigger with the size or spacing buttons.'}
-              </p>
-            )}
-            {shape === 'custom' && (
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-300">
-                {([['Rows', rows, setRows], ['Columns', cols, setCols]] as const).map(([name, val, set]) => (
-                  <span key={name} className="flex items-center gap-1.5">
-                    {name}
-                    <button type="button" aria-label={`Fewer ${name.toLowerCase()}`} disabled={val <= 1} onClick={() => set(oddStep(val, -1))} className="h-10 w-9 rounded-lg border border-slate-700 text-base text-white disabled:opacity-40">−</button>
-                    <span className="w-4 text-center text-sm font-bold text-white">{val}</span>
-                    <button type="button" aria-label={`More ${name.toLowerCase()}`} disabled={val >= gridSize} onClick={() => set(oddStep(val, 1))} className="h-10 w-9 rounded-lg border border-slate-700 text-base text-white disabled:opacity-40">+</button>
-                  </span>
-                ))}
-                <span className="text-slate-400">inside the {gridSize}×{gridSize}</span>
-              </div>
-            )}
-            {spanMi > 20 && <p className="text-xs text-amber-300">That is a very wide area for a local search. Most scans stay under 20 miles across.</p>}
-            {skipped.length > 0 && (
-              <p className="text-xs text-amber-200">
-                {skipped.length} point{skipped.length === 1 ? '' : 's'} skipped on the map, not charged.{' '}
-                <button type="button" onClick={() => setSkipped([])} className="font-semibold underline">Restore</button>
-              </p>
-            )}
-            {mobileData && (
-              <fieldset className="space-y-2">
-                <legend className="text-xs font-semibold text-slate-300">Network</legend>
-                <div className="grid gap-1.5" role="radiogroup" aria-label="Network">
-                  {(['residential', 'mobile', 'mix'] as const).map((id) => {
-                    const price = id === 'residential' ? '1 point a grid point' : id === 'mobile' ? `${mobileData.creditsPerPoint} points a grid point` : `1–${mobileData.creditsPerPoint} points a grid point`;
-                    const off = id !== 'residential' && !mobileData.ready;
-                    return (
-                      <button key={id} type="button" role="radio" aria-checked={network === id} disabled={off} onClick={() => setNetwork(id)}
-                        className={`flex min-h-[44px] items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm disabled:opacity-40 ${network === id ? 'border-emerald-400 bg-emerald-400/15 text-white' : 'border-slate-700 text-slate-200 hover:border-slate-500'}`}>
-                        <span className="font-semibold">{NETWORK_LABELS[id]}</span>
-                        <span className="shrink-0 text-xs text-slate-400">{price}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {!mobileData.ready && <p className="text-xs text-amber-300">The mobile network is not set up yet: add the VoidMob login to the worker.</p>}
-              </fieldset>
-            )}
-            <details className="text-xs text-slate-400">
-              <summary className="cursor-pointer py-1">Centre coordinates ({detectedCity}, {detectedState})</summary>
-              <span className="mt-1 flex gap-2">
-                <input aria-label="Center latitude" type="number" step="any" min="-85" max="85" className={field} value={centerLat} onChange={(e) => setCenterLat(Number(e.target.value))} />
-                <input aria-label="Center longitude" type="number" step="any" min="-180" max="180" className={field} value={centerLng} onChange={(e) => setCenterLng(Number(e.target.value))} />
-              </span>
-            </details>
-          </section>
-        </div>
-        {/* ORDER BAR: always on screen, and kept short so the settings above stay usable */}
-        <div className="shrink-0 space-y-2 border-t border-slate-700 bg-slate-950/90 px-4 pb-3 pt-2.5 backdrop-blur">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="leading-tight">
-                <span className="text-xl font-extrabold text-white">{totalCost}</span> <span className="text-[13px] text-slate-300">points</span>
-                {creditsLeft >= 0 ? (
-                  <span className="text-xs text-slate-400"> · {creditsLeft.toLocaleString()} left</span>
-                ) : (
-                  <button type="button" onClick={() => setIsTopUpOpen(true)} className="ml-1 text-xs font-semibold text-rose-300 underline">{(-creditsLeft).toLocaleString()} short: get points</button>
-                )}
-              </p>
-              <p className="truncate text-xs text-slate-400">
-                {points} grid points × {Math.max(1, runKeywords.length)} keyword{runKeywords.length > 1 ? 's' : ''}{speed === 'now' ? ' × 2' : ''}
-                {speed === 'now' && eta ? ` · ${eta}` : ''}
-              </p>
-            </div>
-            <div role="group" aria-label="When it runs" className="inline-flex shrink-0 overflow-hidden rounded-lg border border-slate-700 text-xs font-semibold">
-              <button type="button" aria-pressed={speed === 'scheduled'} onClick={() => { speedPicked.current = true; setSpeed('scheduled'); }} title="Runs as soon as the phones are free, or at a day and hour you pick" className={'min-h-[40px] px-2.5 ' + (speed === 'scheduled' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}><span className="block leading-tight">Schedule · 1×</span><span className="block text-[10px] font-medium leading-tight opacity-80">save 50%</span></button>
-              <button type="button" aria-pressed={speed === 'now'} onClick={() => { speedPicked.current = true; setSpeed('now'); }} title="Jumps ahead of every scheduled scan" className={'min-h-[40px] px-2.5 ' + (speed === 'now' ? 'bg-emerald-400 text-slate-950' : 'text-slate-300 hover:text-white')}><span className="block leading-tight">Scan Now · 2×</span><span className="block text-[10px] font-medium leading-tight opacity-80">first in line</span></button>
-            </div>
-          </div>
-          {speed === 'scheduled' && (
-            <div className="space-y-1.5">
-              <div role="group" aria-label="When the scheduled scan runs" className="grid grid-cols-2 overflow-hidden rounded-lg border border-slate-700 text-xs font-semibold">
-                <button type="button" aria-pressed={when === 'asap'} onClick={() => setWhen('asap')} className={'min-h-[40px] px-2.5 ' + (when === 'asap' ? 'bg-slate-800 text-emerald-300' : 'text-slate-400 hover:text-white')}>
-                  As soon as possible
-                </button>
-                <button type="button" aria-pressed={when === 'pick'} onClick={() => setWhen('pick')} className={'min-h-[40px] border-l border-slate-700 px-2.5 ' + (when === 'pick' ? 'bg-slate-800 text-emerald-300' : 'text-slate-400 hover:text-white')}>
-                  Pick a date &amp; time
-                </button>
-              </div>
-              {when === 'asap' ? (
-                <p className="text-[11px] leading-snug text-slate-400">
-                  Starts right away if the phones are free{eta ? ` and takes ${eta}` : ''}. If other scans are running, it joins the end of the line.
-                </p>
-              ) : (
-                <>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label className="sr-only" htmlFor="run-date">First run date</label>
-                    <input id="run-date" type="date" min={today} value={runDate} onChange={(e) => setRunDate(e.target.value)} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200" />
-                    <label className="sr-only" htmlFor="run-time">Time</label>
-                    <input id="run-time" type="time" step={900} value={runTime} onChange={(e) => setRunTime(e.target.value)} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs text-slate-200" />
-                    <label className="sr-only" htmlFor="run-repeat">Repeat</label>
-                    <select id="run-repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as 'once' | 'weekly' | 'biweekly')} className="min-h-[40px] rounded-lg border border-slate-700 bg-slate-950 px-2 text-xs font-semibold text-slate-200">
-                      <option value="once">Just once</option>
-                      <option value="weekly">Weekly (4 runs a month)</option>
-                      <option value="biweekly">Every other week (2 a month)</option>
-                    </select>
-                  </div>
-                  <p className="text-[11px] leading-snug text-slate-400">
-                    {runWhen}. {repeatNote} Any time at least 2 hours from now, with results within 3 hours of it. Google ranks a business lower while it is closed, so pick an hour when it is open.
-                  </p>
-                </>
-              )}
-              {scheduleProblem && <p className="text-[11px] font-semibold text-rose-300">{scheduleProblem}</p>}
-            </div>
-          )}
-          <button type="submit" disabled={isSubmitting || Boolean(blockedWhy) || Boolean(scheduleProblem)}
-            className="flex min-h-[46px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-300">
-            {isSubmitting ? (
-              <><Loader2 className="h-4 w-4 animate-spin" aria-hidden />Starting…</>
-            ) : blockedWhy ? (
-              blockedWhy
-            ) : creditsLeft < 0 ? (
-              'Get points to run'
-            ) : speed === 'scheduled' && when === 'asap' ? (
-              <>{runKeywords.length > 1 ? `Run ${runKeywords.length} scans as soon as possible` : 'Run as soon as possible'}<ArrowRight className="h-4 w-4" aria-hidden /></>
-            ) : speed === 'scheduled' ? (
-              <>{runKeywords.length > 1 ? `Schedule ${runKeywords.length} real-phone scans` : 'Schedule real-phone scan'}<ArrowRight className="h-4 w-4" aria-hidden /></>
-            ) : (
-              <>{runKeywords.length > 1 ? `Scan Now: ${runKeywords.length} real-phone scans` : 'Scan Now on real phones'}<ArrowRight className="h-4 w-4" aria-hidden /></>
-            )}
-          </button>
-        </div>
-      </form>
-      {/* RIGHT PANEL: the map */}
-      <div className="relative min-h-[28rem] flex-1 bg-slate-950">
-        <div className="pointer-events-none absolute left-5 right-5 top-5 z-20 flex flex-wrap items-start gap-2">
-          <div className="pointer-events-auto w-full max-w-sm">
-          {!placed && <p className="mb-1.5 inline-block rounded-lg bg-rose-500 px-2.5 py-1 text-xs font-bold text-white shadow-lg">Step 2: search the business or address to select the center of your grid</p>}
-          <form
-            onSubmit={handleGeocodeSearch}
-            className={'flex items-center overflow-hidden rounded-xl border bg-slate-900/95 shadow-2xl ' + (placed ? 'border-slate-700' : 'border-2 border-rose-500 ring-4 ring-rose-500/30')}
-          >
-            <MapPin className="ml-3.5 h-4 w-4 shrink-0 text-emerald-400" />
-            <input
-              type="text"
-              role="combobox"
-              aria-expanded={places.length > 0}
-              aria-controls="place-suggestions"
-              aria-label="Search a saved business, address, city or ZIP"
-              placeholder="Search a saved business, address, city or ZIP…"
-              value={addressQuery}
-              onChange={(e) => {
-                typedRef.current = true;
-                setAddressQuery(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'ArrowDown' && places.length) { e.preventDefault(); setPlaceIdx((i) => (i + 1) % places.length); }
-                if (e.key === 'ArrowUp' && places.length) { e.preventDefault(); setPlaceIdx((i) => (i - 1 + places.length) % places.length); }
-                if (e.key === 'Escape') setPlaces([]);
-              }}
-              className="w-full bg-transparent px-3 py-3 text-sm text-white placeholder-slate-400 focus:outline-none"
-            />
-            <button
-              type="submit"
-              disabled={isGeocoding}
-              aria-label="Search"
-              className="border-l border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs font-semibold text-emerald-400"
-            >
-              {isGeocoding ? '...' : <Search className="h-4 w-4" />}
-            </button>
-          </form>
-          {places.length > 0 && (
-            <ul id="place-suggestions" role="listbox" className="mt-2 overflow-hidden rounded-xl border border-slate-700 bg-slate-900/95 shadow-2xl backdrop-blur">
-              {places.map((p, i) => (
-                <li key={p.label + p.sub + i} role="option" aria-selected={i === placeIdx}>
-                  <button
-                    type="button"
-                    onMouseEnter={() => setPlaceIdx(i)}
-                    onClick={() => choosePlace(p)}
-                    className={`flex w-full flex-col items-start px-3.5 py-2.5 text-left ${i === placeIdx ? 'bg-slate-800' : ''}`}
-                  >
-                    <span className="text-sm font-semibold text-white">{p.label}</span>
-                    {p.sub && <span className={`text-xs ${p.businessId ? 'text-emerald-300' : 'text-slate-400'}`}>{p.sub}</span>}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {searchNote && !places.length && (
-            <p role="status" className="mt-2 rounded-xl border border-slate-700 bg-slate-900/95 px-3.5 py-2.5 text-xs leading-relaxed text-slate-300 shadow-2xl">
-              {searchNote}
-            </p>
-          )}
-          </div>
-          {CENSUS_VINTAGE && (
-            <button type="button" aria-pressed={showWealth} onClick={() => setShowWealth((v) => !v)}
-              className={`pointer-events-auto min-h-[46px] rounded-xl border px-3.5 text-[13px] font-semibold shadow-2xl ${showWealth ? 'border-sky-300 bg-sky-950 text-sky-200' : 'border-slate-700 bg-slate-900/95 text-slate-100'}`}>
-              Show buying power
-            </button>
-          )}
-          {CENSUS_VINTAGE && showWealth && (
-            <span className="pointer-events-auto flex min-h-[46px] flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-slate-700 bg-slate-900/95 px-3 py-1.5 text-xs text-slate-300 shadow-2xl">
-              <span className="font-semibold text-slate-200">Median income</span>
-              {legend('income').map((b) => (
-                <span key={b.label} className="flex items-center gap-1 whitespace-nowrap">
-                  <span aria-hidden className="h-3 w-3 rounded-sm border border-sky-300/30" style={{ backgroundColor: b.color }} />
-                  {b.label}
-                </span>
-              ))}
-            </span>
-          )}
-          {onWater.length > 0 && (
-            <button type="button" onClick={() => setSkipped((list) => [...new Set([...list, ...onWater])])}
-              className="pointer-events-auto min-h-[46px] rounded-xl border border-amber-500/60 bg-amber-950/80 px-3.5 text-[13px] font-semibold text-amber-100 shadow-2xl">
-              Skip {onWater.length} point{onWater.length === 1 ? '' : 's'} on water · save {onWater.length * Math.max(1, runKeywords.length)} point{onWater.length * Math.max(1, runKeywords.length) === 1 ? '' : 's'}
-            </button>
-          )}
-        </div>
-        {/* MapLibre's stylesheet makes every map container position: relative, which would cancel
-            "absolute inset-0" and collapse the map to zero height: the wrapper fills the panel instead. */}
-        <div className="absolute inset-0">
-          <div ref={mapContainerRef} className="h-full w-full" />
-        </div>
+    <div className={styles.workspace}>
+      <section className={styles.mapPane} aria-label="Scan territory map">
+        <div className={styles.mapFill}><div ref={mapContainerRef} className={styles.mapCanvas} /></div>
         {mapState !== 'ready' && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-            <p className="rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 text-sm text-slate-300">
-              {mapState === 'error'
-                ? 'The map couldn’t load. You can still search a place above or open “Centre coordinates” on the left.'
-                : 'Loading map…'}
-            </p>
+          <div className={styles.mapLoading} role="status">
+            {mapState === 'error' ? 'Map unavailable. Search a place or enter center coordinates in More options.' : 'Loading map…'}
           </div>
         )}
-        <div className="pointer-events-none absolute bottom-5 left-5 z-20 max-w-sm rounded-xl border border-slate-800 bg-slate-900/90 px-4 py-3 shadow-2xl backdrop-blur">
-          <p className="text-sm font-bold text-white">
-            {shape === 'round' ? `Round grid, ${points} points` : shape === 'wealth' ? `Top income areas, ${points} points` : `${shapeRows}×${shapeCols} grid`}{shape === 'wealth' ? '' : ` · points ${spacingMi} mi apart`}
-          </p>
-          <p className="mt-0.5 text-xs text-slate-300">
-            Centre {centerLat.toFixed(5)}, {centerLng.toFixed(5)}
-            {detectedCity ? ' · ' + detectedCity + ', ' + detectedState + ' ' + detectedZip : ''}
-          </p>
-          {showWealth && richStat && (
-            <p className="mt-1.5 text-[13px] font-semibold text-sky-300">{richStat.rich} of {richStat.known} points sit in $100k+ income areas</p>
-          )}
-          <p className="mt-1 text-xs text-slate-400">Click a point to skip it (water, empty land). Drag the storefront, or click the map, to move the grid.</p>
+
+        <div className={styles.mapControls}>
+        <div className={styles.mapToolbar} aria-label="Grid controls">
+          <div className={styles.shapeGroup} role="radiogroup" aria-label="Grid shape">
+            {([['square', 'Square'], ['round', 'Round'], ['custom', 'Rectangle']] as const).map(([id, text]) => (
+              <button key={id} type="button" role="radio" aria-checked={shape === id} onClick={() => setShape(id)}>{text}</button>
+            ))}
+            {shape === 'wealth' && <button type="button" role="radio" aria-checked="true">Income areas</button>}
+          </div>
+          <span className={styles.toolDivider} />
+          <label className={styles.compactField}><span className={styles.srOnly}>Grid size</span>
+            <select aria-label="Grid size" value={gridSize} onChange={(e) => setGridSize(Number(e.target.value))}>
+              {OFFERED_GRID_SIZES.map((n) => <option key={n} value={n}>{n} × {n}</option>)}
+            </select>
+          </label>
+          <span className={styles.toolDivider} />
+          <label className={styles.compactField}><span>Spacing</span>
+            <select aria-label="Distance between pins" value={spacingKm} onChange={(e) => setSpacingKm(Number(e.target.value))}>
+              {SPACING_OPTIONS.map((sp) => <option key={sp.km} value={sp.km}>{sp.short}</option>)}
+            </select>
+          </label>
+          <span className={styles.toolDivider} />
+          <button type="button" className={styles.waterAction} disabled={!onWater.length} onClick={() => setSkipped((list) => [...new Set([...list, ...onWater])])}
+            title={onWater.length ? `Exclude ${onWater.length} point${onWater.length === 1 ? '' : 's'} currently on water. They will not be charged.` : 'No active points on water in the loaded map tiles.'}>
+            <span className={styles.tinyDot} />Water{onWater.length ? ` · ${onWater.length}` : ''}
+          </button>
+          <button type="button" className={styles.quietTool} onClick={() => setSkipped([])} disabled={!skipped.length} title="Restore excluded pins"><RotateCcw size={14} />Reset pins</button>
         </div>
-      </div>
+        {shape === 'custom' && (
+          <div className={styles.rectangleControls}>
+            {([['Rows', rows, setRows], ['Columns', cols, setCols]] as const).map(([name, value, set]) => (
+              <div key={name}><span>{name}</span><button type="button" aria-label={`Fewer ${name.toLowerCase()}`} disabled={value <= 1} onClick={() => set(oddStep(value, -1))}><Minus size={13} /></button><strong>{value}</strong><button type="button" aria-label={`More ${name.toLowerCase()}`} disabled={value >= gridSize} onClick={() => set(oddStep(value, 1))}><Plus size={13} /></button></div>
+            ))}
+          </div>
+        )}
+        </div>
+
+        <details className={styles.layers}>
+          <summary><Layers size={16} />Layers<ChevronDown size={13} /></summary>
+          <div className={styles.layersBody}>
+            {CENSUS_VINTAGE ? <>
+              <label><input type="checkbox" checked={showWealth} onChange={(e) => setShowWealth(e.target.checked)} />Household income</label>
+              <p>Median household income from census areas.</p>
+              <button type="button" onClick={() => { setShape(shape === 'wealth' ? 'square' : 'wealth'); setShowWealth(true); }} aria-pressed={shape === 'wealth'}>{shape === 'wealth' ? 'Use a standard grid' : 'Place pins in top income areas'}</button>
+            </> : <p>Demographic layers are not available in this market.</p>}
+          </div>
+        </details>
+
+        <div className={styles.mapNotes}>
+          {showWealth && CENSUS_VINTAGE && <div className={styles.incomeLegend}>
+            <span>Median household income</span>
+            <div>{legend('income').map((band) => <span key={band.label}><i style={{ backgroundColor: band.color }} />{band.label}</span>)}</div>
+            {richStat && <small>{richStat.rich} of {richStat.known} known points in $100k+ areas</small>}
+          </div>}
+          <div className={styles.telemetry} aria-live="polite">
+            <span className={styles.tinyDot} /><strong>{points}</strong> active
+            {skipped.length > 0 && <><span className={styles.telemetryDivider} /><span>{skipped.filter((key) => !outOfShape.includes(key)).length} excluded</span></>}
+            <span className={styles.telemetryDivider} /><span>{spanW} × {spanH} mi</span>
+          </div>
+        </div>
+      </section>
+
+      <form onSubmit={handleLaunchScan} className={styles.dock} aria-label="New scan setup">
+        <header className={styles.dockHeader}>
+          <div className={styles.dockTitle}><span className={styles.brandMark}><Crosshair size={16} /></span><h1>New scan</h1></div>
+          <select id="ns-business" aria-label="Load a saved business setup" value={businessId} onChange={(e) => {
+            const business = saved.find((item) => item.id === e.target.value);
+            if (business) applyBusiness(business);
+            else { rememberedFor.current = ''; setBusinessEditing(true); setBusinessId(''); setTargetBusiness(''); setWebsite(''); setGoogleId(''); setGoogleIdNote(null); setIdentityNote(''); setKeywordList(incoming.current); setPicked(incoming.current); }
+          }}><option value="">Load setup</option>{saved.map((business) => <option key={business.id} value={business.id}>{business.name}</option>)}</select>
+        </header>
+
+        <div className={styles.dockBody}>
+          {errorMsg && <div role="alert" className={styles.error}><AlertCircle size={16} /><span>{errorMsg}</span></div>}
+
+          <section className={styles.section}>
+            {businessEditing || !targetBusiness.trim() ? <>
+            <label htmlFor="ns-name" className={styles.sectionLabel}>Business</label>
+            <input id="ns-name" className={styles.field} type="text" placeholder="Business name as it appears on Google" value={targetBusiness} onChange={(e) => setTargetBusiness(e.target.value)} onBlur={rememberIdentity} autoComplete="organization" />
+            <div className={styles.placeSearch}>
+              <MapPin size={15} />
+              <input type="text" role="combobox" aria-expanded={places.length > 0} aria-controls="place-suggestions" aria-label="Search business, address, city or ZIP" placeholder="Search an address, city or ZIP" value={addressQuery} onChange={(e) => { typedRef.current = true; setAddressQuery(e.target.value); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { void handleGeocodeSearch(e); } if (e.key === 'ArrowDown' && places.length) { e.preventDefault(); setPlaceIdx((i) => (i + 1) % places.length); } if (e.key === 'ArrowUp' && places.length) { e.preventDefault(); setPlaceIdx((i) => (i - 1 + places.length) % places.length); } if (e.key === 'Escape') setPlaces([]); }} />
+              <button type="button" onClick={handleGeocodeSearch} disabled={isGeocoding} aria-label="Search location">{isGeocoding ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}</button>
+            </div>
+            {places.length > 0 && <ul id="place-suggestions" role="listbox" className={styles.places}>
+              {places.map((place, i) => <li key={place.label + place.sub + i} role="option" aria-selected={i === placeIdx}><button type="button" onMouseEnter={() => setPlaceIdx(i)} onClick={() => choosePlace(place)}><strong>{place.label}</strong>{place.sub && <span>{place.sub}</span>}</button></li>)}
+            </ul>}
+            {searchNote && !places.length && <p role="status" className={styles.hint}>{searchNote}</p>}
+            {!placed && <p className={styles.hint}>Choose a location to place your grid.</p>}
+            <details className={styles.identity} open={identityOpen} onToggle={(e) => setIdentityOpen(e.currentTarget.open)}>
+              <summary>Website &amp; Google listing <span>Optional</span><ChevronDown size={13} /></summary>
+              <div>
+                <label htmlFor="ns-website">Website</label><input id="ns-website" type="text" inputMode="url" autoCapitalize="none" className={styles.field} placeholder="example.com" value={website} onChange={(e) => { setWebsite(e.target.value); setIdentityNote(''); }} />
+                <label htmlFor="ns-google-id">Google business ID or Share link</label><input id="ns-google-id" type="text" autoCapitalize="none" spellCheck={false} className={styles.field} placeholder="Google Maps Share link or /g/…" value={googleId} aria-invalid={googleIdNote?.ok === false} onChange={(e) => { setGoogleId(e.target.value); setGoogleIdNote(null); setIdentityNote(''); }} onBlur={checkGoogleId} />
+                <p className={googleIdNote?.ok === false ? styles.errorText : styles.hint}>{googleIdBusy ? 'Looking up the link…' : googleIdNote?.text || identityNote || 'Links AI business citations to the correct listing and website.'}</p>
+              </div>
+            </details>
+            {targetBusiness.trim() && placed && <button type="button" className={styles.finishBusiness} onClick={() => setBusinessEditing(false)}>Done editing</button>}
+            </> : <button type="button" className={styles.businessCard} onClick={() => setBusinessEditing(true)} aria-label={`Change business: ${targetBusiness}`}>
+              <span className={styles.tinyDot} /><span><strong>{targetBusiness}</strong><small>{addressQuery || [detectedCity, detectedState].filter(Boolean).join(', ')}</small></span><span>Change</span>
+            </button>}
+          </section>
+
+          <section className={styles.section}>
+            <div className={styles.sectionHeading}><label htmlFor="ns-keywords" className={styles.sectionLabel}>Keywords</label><span className={styles.mono}>{runKeywords.length}</span></div>
+            <div className={styles.keywordBox}>
+              {shownKeywords.length > 0 && <div className={styles.keywordChips}>{shownKeywords.map((word) => <button key={word} type="button" aria-pressed={picked.includes(word)} title={`${picked.includes(word) ? 'Exclude' : 'Include'} this keyword`} onClick={() => togglePick(word)}>{word}{picked.includes(word) && <Check size={12} />}</button>)}</div>}
+              <textarea id="ns-keywords" placeholder="Paste keywords, one per line…" rows={1} value={keyword} onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addKeyword(); } }} />
+            </div>
+            <div className={styles.keywordHelper}><span title="Commas, semicolons and new lines split keywords. Duplicate entries count once.">Comma or new line · duplicates removed</span><button type="button" onClick={addKeyword} disabled={!keyword.trim()} title="Add the pasted keywords to the list (Ctrl+Enter)">Apply</button></div>
+            {runKeywords.length > 10 && <p className={styles.hint}>Large batch: {runKeywords.length} scans · {totalCost.toLocaleString()} points.</p>}
+          </section>
+
+          <section className={styles.section}>
+            <span className={styles.sectionLabel}>Capture surface</span>
+            <div className={styles.surfaces} role="radiogroup" aria-label="Capture surface">{surfaces.map(({ id, title, sub, live }) => <button key={id} type="button" role="radio" aria-checked={targetType === id} disabled={!live} onClick={() => live && setTargetType(id as TargetType)}>
+              <span className={styles.radioIndicator}>{targetType === id && <span />}</span><span className={styles.surfaceText}><strong>{id === 'mobile_chrome' ? 'Mobile Search' : title}</strong><small>{id === 'mobile_chrome' ? 'Local Pack + AI Overviews' : sub}</small></span><span className={styles.surfaceBadge}>{live ? (id.startsWith('desktop_') ? '2×' : '1×') : 'Soon'}</span>
+            </button>)}</div>
+            <p className={styles.captureNote}><Smartphone size={13} />{targetType.startsWith('desktop_') ? 'Desktop' : 'Real Android'}<span>·</span>{detectedCity || 'Grid'} GPS<Info size={12}><title>AI Overviews and phone videos are included in supported mobile captures.</title></Info></p>
+          </section>
+
+          <section className={styles.moreOptions}>
+            <button type="button" aria-expanded={moreOptions} aria-controls="ns-more-options" onClick={() => setMoreOptions((value) => !value)} className={styles.moreToggle}><span><SlidersHorizontal size={14} />More options</span><span>{speed === 'now' ? 'Priority' : when === 'asap' ? 'Standard' : repeat === 'once' ? 'Scheduled' : repeat === 'weekly' ? 'Weekly' : 'Biweekly'}<ChevronDown size={14} /></span></button>
+            {moreOptions && <div id="ns-more-options" className={styles.moreBody}>
+              <fieldset><legend>Schedule</legend>
+                <div className={styles.segmented} role="group" aria-label="Run priority"><button type="button" aria-pressed={speed === 'scheduled'} onClick={() => { speedPicked.current = true; setSpeed('scheduled'); }}>Scheduled · 1×</button><button type="button" aria-pressed={speed === 'now'} onClick={() => { speedPicked.current = true; setSpeed('now'); }}>Scan Now · 2×</button></div>
+                {speed === 'scheduled' ? <>
+                  <div className={styles.segmented} role="group" aria-label="When the scheduled scan runs"><button type="button" aria-pressed={when === 'asap'} onClick={() => setWhen('asap')}>When available</button><button type="button" aria-pressed={when === 'pick'} onClick={() => setWhen('pick')}>Choose a time</button></div>
+                  {when === 'pick' ? <>
+                    <div className={styles.dateFields}><label>First run<input id="run-date" type="date" min={today} value={runDate} onChange={(e) => setRunDate(e.target.value)} /></label><label>Time<input id="run-time" type="time" step={900} value={runTime} onChange={(e) => setRunTime(e.target.value)} /></label></div>
+                    <label className={styles.stackLabel}>Repeat<select id="run-repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as 'once' | 'weekly' | 'biweekly')}><option value="once">Just once</option><option value="weekly">Weekly · 4 runs per month</option><option value="biweekly">Every other week · 2 per month</option></select></label>
+                    <p className={styles.hint}>{runWhen}. {repeatNote} Choose at least 2 hours ahead; results within 3 hours of that time.</p>
+                  </> : <p className={styles.hint}>Starts when phones are available, behind priority scans.</p>}
+                </> : <p className={styles.hint}>First in line. Uses twice the points of a scheduled scan.</p>}
+                {scheduleProblem && <p className={styles.errorText}>{scheduleProblem}</p>}
+              </fieldset>
+              {mobileData && <fieldset><legend>Network</legend><div className={styles.networkOptions} role="radiogroup" aria-label="Network">{(['residential', 'mobile', 'mix'] as const).map((id) => <button key={id} type="button" role="radio" aria-checked={network === id} disabled={id !== 'residential' && !mobileData.ready} onClick={() => setNetwork(id)}><span>{NETWORK_LABELS[id]}</span><small>{id === 'residential' ? '1' : id === 'mobile' ? mobileData.creditsPerPoint : `1–${mobileData.creditsPerPoint}`} / pin</small></button>)}</div>{!mobileData.ready && <p className={styles.hint}>Mobile network currently unavailable.</p>}</fieldset>}
+              <fieldset><legend>Grid center</legend><div className={styles.dateFields}><label>Latitude<input aria-label="Center latitude" type="number" step="any" min="-85" max="85" value={centerLat} onChange={(e) => setCenterLat(Number(e.target.value))} /></label><label>Longitude<input aria-label="Center longitude" type="number" step="any" min="-180" max="180" value={centerLng} onChange={(e) => setCenterLng(Number(e.target.value))} /></label></div><p className={styles.hint}>You can also drag the orange center marker on the map.</p></fieldset>
+              {businessId && <button type="button" className={styles.deleteBusiness} onClick={deleteBusiness}>Delete saved setup</button>}
+            </div>}
+          </section>
+          <p className={styles.tagline}>Every data point comes with a receipt.</p>
+        </div>
+
+        <footer className={styles.dockFooter}>
+          <div className={styles.estimateHeading}><span className={styles.mono}>{points} pins × {runKeywords.length} {runKeywords.length === 1 ? 'keyword' : 'keywords'}{speedX > 1 ? ' × 2' : ''}</span><strong title={`${creditSummary.totalCost.toLocaleString()} base points per keyword${speedX > 1 ? ', doubled for Scan Now' : ''}. AI Overview tracking is included.`}>{(runKeywords.length ? totalCost : 0).toLocaleString()} <span>points</span></strong></div>
+          <div className={styles.estimateMeta}><button type="button" className={styles.priorityLink} onClick={() => setMoreOptions(true)} title="Change timing and priority in More options">{speed === 'now' ? 'Scan Now · 2×' : 'Scheduled · 1×'}</button>{creditsLeft >= 0 ? <span title="Balance after this scan">{(runKeywords.length ? creditsLeft : creditBalance).toLocaleString()} left</span> : <button type="button" onClick={() => setIsTopUpOpen(true)}>{(-creditsLeft).toLocaleString()} short · Top up</button>}{eta && runKeywords.length > 0 && <span title="Estimate based on available phone models; queue time varies."><Clock3 size={12} />{eta}</span>}</div>
+          {blockedWhy && <p className={styles.launchHint} role="status">{blockedWhy.replace(/^Step \d: /, '')}</p>}
+          <div className={styles.launchActions}><button type="button" className={styles.saveButton} onClick={saveBusiness} disabled={!targetBusiness.trim()} title={businessId ? 'Update this saved business setup' : 'Save this business and its scan settings'}><Save size={15} />Save</button><button type="submit" className={styles.launchButton} disabled={isSubmitting || Boolean(blockedWhy) || Boolean(scheduleProblem)}>{isSubmitting ? <><Loader2 size={15} className="animate-spin" />Starting…</> : creditsLeft < 0 ? 'Get points to run' : speed === 'scheduled' && when === 'pick' ? 'Schedule scan' : 'Launch scan'}</button></div>
+          {saveMsg && <p role="status" className={styles.hint}>{saveMsg}</p>}
+        </footer>
+      </form>
       {launched && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4">
           <div role="dialog" aria-modal="true" aria-label="Scan queued" className="w-full max-w-lg space-y-3.5 rounded-2xl border border-slate-700 bg-slate-900 p-6">
@@ -1409,7 +1120,7 @@ export function NewScanWizard() {
             </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={() => router.push(launched.ids.length > 1 ? '/scans' : `/scans/${launched.ids[0]}`)}
-                className="min-h-[48px] flex-1 rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950">{launched.scheduled ? 'See your scans' : 'Watch it run'}</button>
+                className={styles.successAction}>{launched.scheduled ? 'See your scans' : 'Watch it run'}</button>
               <button type="button" onClick={() => { setLaunched(null); setIsSubmitting(false); submissionKey.current = null; setSkipped([]); }}
                 className="min-h-[48px] flex-1 rounded-xl border border-slate-700 px-4 text-sm font-semibold text-slate-100">Set up another scan</button>
             </div>
