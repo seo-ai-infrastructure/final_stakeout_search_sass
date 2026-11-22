@@ -93,7 +93,7 @@ const dollars = (micros: unknown) => (num(micros) === null ? null : Math.round(N
  * Monthly searches and top-of-page bids for up to 50 searches, in one place and language, asked for
  * `customerId` (default GOOGLE_ADS_CUSTOMER_ID) through `login` (default GOOGLE_ADS_LOGIN_CUSTOMER_ID).
  */
-export async function keywordPrices(keywords: string[], placeId: string, language: keyof typeof LANGUAGES = 'en', customerId?: string, login?: string): Promise<KeywordPrice[]> {
+export async function keywordPrices(keywords: string[], placeId: string, language: keyof typeof LANGUAGES = 'en', customerId?: string, login?: string, raw?: (v: unknown) => void): Promise<KeywordPrice[]> {
   type M = { avgMonthlySearches?: string; competition?: string; competitionIndex?: string; lowTopOfPageBidMicros?: string; highTopOfPageBidMicros?: string; averageCpcMicros?: string; monthlySearchVolumes?: { year?: string; month?: string; monthlySearches?: string }[] };
   type H = { results?: { text?: string; closeVariants?: string[]; keywordMetrics?: M }[] };
   const customer = digits(customerId ?? process.env.GOOGLE_ADS_CUSTOMER_ID);
@@ -104,6 +104,7 @@ export async function keywordPrices(keywords: string[], placeId: string, languag
     keywordPlanNetwork: 'GOOGLE_SEARCH',
     historicalMetricsOptions: { includeAverageCpc: true },
   }, login === undefined ? {} : { login });
+  raw?.(v);
   return (v.results ?? []).map((x) => {
     const m = x.keywordMetrics ?? {};
     return {

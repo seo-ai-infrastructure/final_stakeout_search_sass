@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     const u = await getAuthenticatedUser();
     if (u.role !== 'ADMIN') throw new InputError('Admins only.', 403);
     if (!adsConfigured()) throw new InputError('Google Ads is not set up: GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN and GOOGLE_ADS_CUSTOMER_ID on Vercel.', 503);
-    const b = (await req.json().catch(() => ({}))) as { action?: unknown; keywords?: unknown; location?: unknown; placeId?: unknown; language?: unknown; customerId?: unknown; loginCustomerId?: unknown };
+    const b = (await req.json().catch(() => ({}))) as { action?: unknown; keywords?: unknown; location?: unknown; placeId?: unknown; language?: unknown; customerId?: unknown; loginCustomerId?: unknown; raw?: unknown };
     if (b.action === 'accounts') return NextResponse.json({ version: ADS_API, accounts: await reachableAccounts() });
     // Another of the reachable accounts, to try before changing GOOGLE_ADS_CUSTOMER_ID on Vercel.
     const customerId = typeof b.customerId === 'string' && /^[\d-]+$/.test(b.customerId) ? b.customerId : undefined;
@@ -37,6 +37,12 @@ export async function POST(req: Request) {
     if (!place) throw new InputError('Give a "location" Google knows (e.g. "Huntington, New York") or a numeric "placeId".', 400);
 
     const key = 'stakeout:ads:kw:' + createHash('sha256').update(JSON.stringify([ADS_API, place.id, language, [...keywords].sort(), customerId ?? '', login ?? ''])).digest('hex').slice(0, 32);
+    // raw: Google's own answer, uncached, for checking what it sends.
+    if (b.raw === true) {
+      let answer: unknown = null;
+      await keywordPrices(keywords, place.id, language, customerId, login, (v) => (answer = v));
+      return NextResponse.json({ version: ADS_API, place, raw: answer });
+    }
     const kept = await redis().get(key).catch(() => null);
     if (kept) return NextResponse.json({ ...JSON.parse(kept), cached: true });
     const results = await keywordPrices(keywords, place.id, language, customerId, login);
