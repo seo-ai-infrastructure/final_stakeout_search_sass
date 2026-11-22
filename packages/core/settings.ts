@@ -22,6 +22,12 @@ type Settings = {
   mobileCreditsPerPoint: number;
   /** Whether customers, not only admins, can choose mobile data (MOBILE_FOR_CUSTOMERS). */
   mobileForCustomers: boolean;
+  /**
+   * Whether customers' pages read the AI Overview by the four flags (featured, named, listing cited,
+   * website cited) instead of the earlier single reading (AI_FLAGS_FOR_CUSTOMERS). Admins always see
+   * the flags. Off until the backfill's dry run has been reviewed.
+   */
+  aiFlagsForCustomers: boolean;
 };
 
 const KEY = 'stakeout:settings';
@@ -37,6 +43,7 @@ export const defaultSettings = (env: Record<string, string | undefined> = proces
   idleOffMinutes: num(env.POWER_IDLE_OFF_MINUTES, 10),
   mobileCreditsPerPoint: num(env.MOBILE_CREDITS_PER_POINT, 2),
   mobileForCustomers: env.MOBILE_FOR_CUSTOMERS === 'true',
+  aiFlagsForCustomers: env.AI_FLAGS_FOR_CUSTOMERS === 'true',
 });
 
 /** Checks values an admin typed; throws a message they can read. Only the given keys are returned. */
@@ -79,6 +86,10 @@ export function cleanSettings(input: Record<string, unknown>): Partial<Settings>
   if ('mobileForCustomers' in input) {
     if (typeof input.mobileForCustomers !== 'boolean') throw new Error('Mobile data for customers must be on or off.');
     out.mobileForCustomers = input.mobileForCustomers;
+  }
+  if ('aiFlagsForCustomers' in input) {
+    if (typeof input.aiFlagsForCustomers !== 'boolean') throw new Error('The AI Overview flags for customers must be on or off.');
+    out.aiFlagsForCustomers = input.aiFlagsForCustomers;
   }
   return out;
 }

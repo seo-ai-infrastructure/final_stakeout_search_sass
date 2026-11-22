@@ -11,7 +11,7 @@ type Account = { id: string; email: string; role: string; credits: number; confi
 type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
   at: string;
-  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number; mobileCreditsPerPoint?: number; mobileForCustomers?: boolean };
+  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number; mobileCreditsPerPoint?: number; mobileForCustomers?: boolean; aiFlagsForCustomers?: boolean };
   system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[]; mobileData?: boolean; mobileProvider?: string | null; mobileLogin?: string | null; mobileTraffic?: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null } | null; mobileTrafficLow?: boolean; trafficHours?: { hour: string; residentialBytes: number | null; mobileBytes: number | null; points: number; bytesPerPoint: number | null }[] } | null;
   capacity: {
     completed24h: number; completedLastHour: number; started24h: number; timedPoints: number; medianSeconds: number | null; perPhoneHour: number | null;
@@ -77,7 +77,7 @@ export function AdminOps() {
   const [credit, setCredit] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
-  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string; mobileCredits: string; mobileCustomers: boolean } | null>(null);
+  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string; mobileCredits: string; mobileCustomers: boolean; aiFlags: boolean } | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch('/api/admin/ops', { cache: 'no-store' }).catch(() => null);
@@ -89,7 +89,7 @@ export function AdminOps() {
     if (d.settings && d.capacity) {
       setOps(d);
       // The form is filled once, so a refresh never overwrites what is being typed.
-      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 2), mobileCustomers: Boolean(d.settings.mobileForCustomers) });
+      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 2), mobileCustomers: Boolean(d.settings.mobileForCustomers), aiFlags: Boolean(d.settings.aiFlagsForCustomers) });
     }
   }, []);
   usePolling(load, 15000);
@@ -589,12 +589,16 @@ export function AdminOps() {
               <input type="checkbox" className="h-4 w-4" checked={form.mobileCustomers} onChange={(e) => setForm({ ...form, mobileCustomers: e.target.checked })} />
               Customers can choose Mobile Network and the Mix (otherwise admins only)
             </label>
+            <label className="flex items-center gap-2 text-sm text-slate-200 sm:col-span-2">
+              <input type="checkbox" className="h-4 w-4" checked={form.aiFlags} onChange={(e) => setForm({ ...form, aiFlags: e.target.checked })} />
+              Customers see the AI Overview by its four flags: featured, named, listing cited, website cited (admins always do)
+            </label>
           </div>
           <button
             type="button"
             disabled={busy !== ''}
             className={btn + ' mt-4 bg-emerald-500 text-slate-950 hover:bg-emerald-400'}
-            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups, powerSave: form.powerSave, idleOffMinutes: Number(form.idleOff), mobileCreditsPerPoint: Number(form.mobileCredits), mobileForCustomers: form.mobileCustomers } }, () => 'Settings saved.')}
+            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups, powerSave: form.powerSave, idleOffMinutes: Number(form.idleOff), mobileCreditsPerPoint: Number(form.mobileCredits), mobileForCustomers: form.mobileCustomers, aiFlagsForCustomers: form.aiFlags } }, () => 'Settings saved.')}
           >
             {busy === 'settings' ? 'Saving…' : 'Save settings'}
           </button>

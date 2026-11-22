@@ -1,3 +1,5 @@
+import { withoutFlags } from '@stakeout/core/aiFlags';
+import { getSettings } from '@stakeout/core/settings';
 import { wakeWorker } from '@stakeout/core/wake';
 import { brandForUser } from '@stakeout/core/brands';
 import { randomBytes } from 'node:crypto';
@@ -20,9 +22,11 @@ type C = { params: Promise<{ scanId: string }> };
  */
 async function bridgeFor(id: string, me: { id: string; role: string; email?: string }) {
   if (me.role === 'ADMIN' || !gbpOpen(me)) return null;
-  const scan = await db.gridScan.findFirst({ where: { id, userId: me.id }, select: { status: true, totalPins: true, trackAiOverviews: true, targetBusiness: true, pins: { select: { status: true, rankFound: true, hasAiOverview: true, targetCitedInAi: true } } } });
+  const scan = await db.gridScan.findFirst({ where: { id, userId: me.id }, select: { status: true, totalPins: true, trackAiOverviews: true, targetBusiness: true, pins: { select: { status: true, rankFound: true, hasAiOverview: true, targetCitedInAi: true, insights: true } } } });
   if (!scan) return null;
-  const found = scanBridge(scan, scan.pins);
+  // The AI Overview by its four flags only once they are on for customers (else the earlier reading).
+  const flags = await getSettings().then((x) => x.aiFlagsForCustomers).catch(() => false);
+  const found = scanBridge(scan, flags ? scan.pins : scan.pins.map((p) => withoutFlags(p)));
   if (!found) return null;
   const name = scan.targetBusiness.trim().toLowerCase();
   const paid = await paidLocations(me.id);

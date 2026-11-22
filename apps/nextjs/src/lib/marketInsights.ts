@@ -1,4 +1,5 @@
 import type { PinInsights } from '@stakeout/core/pinInsights';
+import { pinAi, readByFlags } from '@stakeout/core/aiFlags';
 import { isGoogleSource } from '@stakeout/core/googleSource';
 import { pointShares, type BuyingPowerPin } from './buyingPower';
 
@@ -116,9 +117,16 @@ export function aiSources(pins: InsightPin[], target: string) {
   return {
     points: seen.length,
     shown: shown.length,
-    // Named in the saved list, or by the worker's reading of the answer: an answer captured
-    // collapsed has no list, yet can plainly name the business.
-    youNamed: shown.filter((p) => p.targetCitedInAi === true || p.insights!.ai.named.some((n) => norm(n) === norm(target))).length,
+    // In the answer by the four flags (featured, named, its listing or own website cited) where it was
+    // read with them; on earlier points, named in the saved list or by the worker's single reading (an
+    // answer captured collapsed has no list, yet can plainly name the business). An answer that
+    // could not be read is not counted either way.
+    youNamed: shown.filter((p) => {
+      const a = pinAi(p);
+      if (readByFlags(a)) return a.visible === true;
+      return p.targetCitedInAi === true || p.insights!.ai.named.some((n) => norm(n) === norm(target));
+    }).length,
+    unread: shown.filter((p) => pinAi(p).state === 'unparsed').length,
     sources: [...counts]
       .map(([domain, points]) => ({ domain, points, label: domain }))
       .sort((a, b) => b.points - a.points || a.domain.localeCompare(b.domain)),

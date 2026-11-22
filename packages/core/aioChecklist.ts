@@ -5,6 +5,7 @@
  * fetched and nothing is saved here.
  */
 import { knownSite, siteOf } from './citeSites';
+import { pinAi, type AiPresenceData } from './aiFlags';
 
 /* ───────────── Addresses ───────────── */
 
@@ -78,7 +79,7 @@ export type AioPin = {
   hasAiOverview?: boolean | null;
   targetCitedInAi?: boolean | null;
   aiCitations?: unknown;
-  insights?: { ai?: { shown?: boolean; sources?: string[]; named?: string[]; cites?: { n: number; url: string }[] } } | null;
+  insights?: { ai?: { shown?: boolean; sources?: string[]; named?: string[]; cites?: { n: number; url: string }[]; presence?: AiPresenceData } } | null;
 };
 export type PageCheck = { present: boolean | null; competitors: number };
 export type CitedPage = {
@@ -102,7 +103,8 @@ export type CitedPage = {
 };
 /** A website with every page of it that was cited. `top`: its most valuable known page, or null when only the website is known. */
 export type CitedSite = Omit<CitedPage, 'url' | 'pageKnown'> & { pages: CitedPage[]; top: string | null };
-export type PinState = 'you' | 'others' | 'none' | 'pending';
+/** unread: Google showed an AI answer here but it could not be read (whether it names the business is unknown). */
+export type PinState = 'you' | 'others' | 'none' | 'pending' | 'unread';
 
 const round = (n: number) => Math.round(n * 10) / 10;
 const norm = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|ltd)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -111,6 +113,8 @@ const shown = (p: AioPin) => p.status === 'COMPLETED' && Boolean(p.hasAiOverview
 /** The pages one point's AI answer cited, in order, each once: the pages when known, else the websites. */
 export function citesOf(p: AioPin): { url: string; n: number | null; pageKnown: boolean }[] {
   const out: { url: string; n: number | null; pageKnown: boolean }[] = [];
+  // An answer that could not be read: its copied text (if any) was not this page's, so nothing it lists counts.
+  if (pinAi(p).state === 'unparsed') return out;
   const add = (raw: unknown, n: number | null, pageKnown: boolean) => {
     const url = canonicalUrl(raw);
     if (url && !/(^|\.)google\.[a-z.]+$|(^|\.)(g\.page|goo\.gl|g\.co)$/.test(siteOf(url) ?? '') && !out.some((x) => x.url === url)) out.push({ url, n, pageKnown });
@@ -141,19 +145,37 @@ export function aioRollup(pins: AioPin[], business: string, own: string | null |
   const w = (id: string) => (weights.size ? weights.get(id) ?? 0 : 1);
   const totalW = withAi.reduce((n, p) => n + w(p.id), 0);
   const power = (ids: string[]) => (totalW > 0 ? (100 * ids.reduce((n, id) => n + w(id), 0)) / totalW : 0);
-  const named = (p: AioPin) => Boolean(p.targetCitedInAi) || (p.insights?.ai?.named ?? []).some((n) => norm(n) === norm(business) || (norm(business).length > 5 && (norm(n).includes(norm(business)) || norm(business).includes(norm(n)) && norm(n).length > 5)));
+  // Read with the four flags: featured or named in the answer's words. Earlier points: the single
+  // reading, or its name among the businesses the answer listed.
+  const named = (p: AioPin) => {
+    const a = pinAi(p);
+    if (a.state === 'parsed') return Boolean(a.featured) || a.named;
+    if (a.state === 'unparsed') return false;
+    return Boolean(p.targetCitedInAi) || (p.insights?.ai?.named ?? []).some((n) => norm(n) === norm(business) || (norm(business).length > 5 && (norm(n).includes(norm(business)) || norm(business).includes(norm(n)) && norm(n).length > 5)));
+  };
+  // Its own website cited: the flag "Website cited" (verified: its saved website, or the one its own
+  // card opens) when read with the flags; earlier points, its saved website among the cited pages.
+  const ownCitedAt = (p: AioPin, cites: { url: string }[]) => {
+    const a = pinAi(p);
+    if (a.state === 'parsed') return a.websiteCited === 'verified';
+    if (a.state === 'unparsed') return false;
+    return cites.some((c) => kindOf(c.url, own) === 'own');
+  };
+  const readable = withAi.filter((p) => pinAi(p).state !== 'unparsed');
 
   const by = new Map<string, { url: string; pageKnown: boolean; pins: string[]; slots: number[] }>();
   const state: Record<string, PinState> = {};
-  const ownPins: string[] = [], namedPins: string[] = [];
+  const ownPins: string[] = [], namedPins: string[] = [], possiblePins: string[] = [];
   for (const p of pins) {
     if (p.status !== 'COMPLETED') { state[p.id] = 'pending'; continue; }
     if (!shown(p)) { state[p.id] = 'none'; continue; }
+    if (pinAi(p).state === 'unparsed') { state[p.id] = 'unread'; continue; }
     const cites = citesOf(p);
-    const ownCited = cites.some((c) => kindOf(c.url, own) === 'own');
+    const ownCited = ownCitedAt(p, cites);
     const isNamed = named(p);
     if (ownCited) ownPins.push(p.id);
     if (isNamed) namedPins.push(p.id);
+    if (pinAi(p).websiteCited === 'unverified') possiblePins.push(p.id);
     state[p.id] = isNamed || ownCited ? 'you' : 'others';
     for (const c of cites) {
       const row = by.get(c.url) ?? { url: c.url, pageKnown: c.pageKnown, pins: [], slots: [] };
@@ -208,14 +230,20 @@ export function aioRollup(pins: AioPin[], business: string, own: string | null |
   const top = gaps.slice(0, 6);
   const covered = [...new Set(top.flatMap((p) => p.pins))];
   const pct = (n: number) => (withAi.length ? round((100 * n) / withAi.length) : 0);
+  // The business's own shares are of the answers that could be read.
+  const readPct = (n: number) => (readable.length ? round((100 * n) / readable.length) : 0);
   const rivalPins = [...new Set(sites.filter((x) => x.kind === 'business').flatMap((x) => x.pins))];
   return {
     points: completed.length,
     answers: withAi.length,
     triggerRate: completed.length ? round((100 * withAi.length) / completed.length) : 0,
     /** Share of AI voice: the answers that named the business, plainly and weighted by buying power. */
-    named: { pins: namedPins.length, share: pct(namedPins.length), powerShare: round(power(namedPins)) },
-    ownSite: { pins: ownPins.length, share: pct(ownPins.length) },
+    named: { pins: namedPins.length, share: readPct(namedPins.length), powerShare: round(power(namedPins)), ids: namedPins },
+    /** "Website cited": its own website (verified) cited. `possible`: a cited site that only fits its name, to confirm. */
+    ownSite: { pins: ownPins.length, share: readPct(ownPins.length), ids: ownPins, possible: possiblePins },
+    /** Answers that could be read (the base of the two shares above), and those that could not. */
+    readable: readable.length,
+    unread: withAi.length - readable.length,
     rival: rival ? { site: rival.site, pins: rival.pins.length, share: pct(rival.pins.length) } : null,
     /** Every other business's website taken together: the points that cited any of them. */
     rivals: { pins: rivalPins, pinShare: pct(rivalPins.length), powerShare: round(power(rivalPins)) },

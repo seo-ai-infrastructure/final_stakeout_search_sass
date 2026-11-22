@@ -4,10 +4,10 @@ import { cleanSettings, creditsPerPoint, defaultSettings, mergeSettings, ispAllo
 
 test('settings: defaults come from the environment, stored values win, bad stored values are ignored', () => {
   const base = defaultSettings({});
-  assert.deepEqual(base, { searchGapSeconds: 120, ispExclude: ['Tillman Fiberco'], signupsOpen: false, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 2, mobileForCustomers: false });
+  assert.deepEqual(base, { searchGapSeconds: 120, ispExclude: ['Tillman Fiberco'], signupsOpen: false, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 2, mobileForCustomers: false, aiFlagsForCustomers: false });
   assert.equal(defaultSettings({ SEARCH_GAP_SECONDS: '45', SIGNUPS_OPEN: 'true' }).searchGapSeconds, 45);
   const merged = mergeSettings({ searchGapSeconds: '45', signupsOpen: 'true', ispExclude: '["A","B"]', costPerPointUsd: '"oops"', unknown: '1' }, base);
-  assert.deepEqual(merged, { searchGapSeconds: 45, ispExclude: ['A', 'B'], signupsOpen: true, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 2, mobileForCustomers: false });
+  assert.deepEqual(merged, { searchGapSeconds: 45, ispExclude: ['A', 'B'], signupsOpen: true, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 2, mobileForCustomers: false, aiFlagsForCustomers: false });
 });
 
 test('settings: what an admin types is checked', () => {

@@ -1,10 +1,12 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/core/pinInsights';
-import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst, cardsBeforeExpansion } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst, cardsBeforeExpansion, uiLabels } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { poolDigest, sampleEntries, summarizeAioSources } from '@stakeout/core/aioSources';
-import { buildAioCapture, captureDigest, entityRoster } from '@stakeout/core/aioCapture';
+import { aiPresence, buildAioCapture, captureDigest, entityRoster, noPageRead, NOT_WATCHED } from '@stakeout/core/aioCapture';
+import { presenceVisible, type AiPresenceData } from '@stakeout/core/aiFlags';
+import { getSettings } from '@stakeout/core/settings';
 import { watchAioSources, type AioWatchResult } from './aioWatch';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -1598,39 +1600,55 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     // business by where it was matched (featured, with its placement: a card or a sentence
     // recommending it by Google's link on its name; its listing cited as a source; its website cited,
     // verified or not; named in the words), the sources row, the ads and the pages it holds under no
-    // sentence, each match with its receipt. Built now that Google's copied answer (the referee for
-    // sentences, citations and linked names), the first screen (cards shown before "Show more") and
-    // the rank are known: all of it to storage, the status, flags, counts and businesses on the point.
+    // sentence, each match with its receipt. Built on every point that tracks AI Overviews: from the
+    // page read where there is one (admin scans), else from Google's copied answer alone, used only
+    // when this run's own snapshots show it. The tracked business's four flags go on the point
+    // (insights.ai.presence) for every customer page; the whole capture to storage, its digest to
+    // the admin record. An overview on screen that neither could read is "unparsed", never zeros.
     const mapPackRank = aiList ? (aiRankOnly ? null : aiList.rank) : result.targetRank;
-    if (watched?.dossier && watched.telemetry) {
+    let presence: AiPresenceData | null = null;
+    const tracksAi = scan.trackAiOverviews && (surface === 'chrome' || surface === 'google');
+    if (tracksAi && (watched?.dossier || b.aiCopy || result.hasAiOverview)) {
       try {
-        const capture = buildAioCapture(watched.dossier, {
+        const shots = [b.aiInitial, ...b.ai, b.serp].filter((x): x is string => Boolean(x));
+        const capture = buildAioCapture(watched?.dossier ?? noPageRead(scan.keyword), {
           keyword: scan.keyword,
           targetDomain: scan.targetDomain,
           targetBusinessId: scan.targetKgmid,
           targetName: scan.targetBusiness,
           mapPackRank,
           copy: b.aiCopy ?? null,
+          copyCheck: shots.flatMap((x) => uiLabels(x).map((l) => l.label)),
           overviewOnScreen: result.hasAiOverview,
           shownBeforeExpansion: cardsBeforeExpansion(b.aiInitial),
-          telemetry: watched.telemetry,
+          telemetry: (watched?.dossier && watched.telemetry) || NOT_WATCHED,
           scanPointId: p.id,
         });
         await put(prefix + '/aio-capture.json.gz', gzipSync(JSON.stringify(capture)), 'application/gzip');
+        const digest = { key: prefix + '/aio-capture.json.gz', ...captureDigest(capture) };
         const kept = (proof as { aioSources?: Record<string, unknown> }).aioSources;
-        if (kept) kept.capture = { key: prefix + '/aio-capture.json.gz', ...captureDigest(capture) };
+        if (kept) kept.capture = digest;
+        else Object.assign(proof, { aioSources: { status: 'not_watched', capture: digest } });
+        presence = aiPresence(capture);
         const t = capture.telemetry;
         const n = capture.counts;
         console.log(
-          `[aio-capture] ${tag}: ${capture.capture_status}, ${capture.overview_mode}${t.copy_used ? ' (copy used)' : ' (no copy)'} · ${n.sentences_count} sentence(s), ${n.cited_web_pages_count} web page(s) on ${n.websites_cited_count} site(s) and ${n.cited_gbp_listings_count} listing(s) cited` +
+          `[aio-capture] ${tag}: ${capture.capture_status}, ${capture.overview_mode}${t.copy_used ? ' (copy used)' : ' (no copy)'}${watched?.dossier ? '' : ', no page read'} · ${n.sentences_count} sentence(s), ${n.cited_web_pages_count} web page(s) on ${n.websites_cited_count} site(s) and ${n.cited_gbp_listings_count} listing(s) cited` +
             ` · ${n.featured_businesses_count} featured (${n.card_businesses_count} card(s)), ${n.named_businesses_count} in the answer, ${n.sources_only_businesses_count} more only in the sources row (${n.sources_row_listings_count} listing(s)), ${n.ads_count} ad(s), ${n.unreferenced_web_sources_count} other page(s)` +
             ` · target (${capture.target_identity ?? 'not found'}): featured ${capture.target_featured_in_aio}${capture.target_featured_placement ? ' (' + (capture.target_featured_placement.kind === 'card' ? 'card #' + capture.target_featured_placement.card_position + (capture.target_featured_placement.after_expansion ? ' after expansion' : '') : 'inline recommendation') + ')' : ''}, named ${capture.target_named_in_prose}, listing cited as a source ${capture.target_listing_cited_as_source}, website cited ${capture.target_website_cited}, map pack ${mapPackRank ?? '-'}${capture.target_suggested_id ? ', the answer links ' + capture.target_suggested_id + ' under its name' : ''}` +
-            ` · ${t.stop_reason}, expanded ${t.expanded_seen} (+${t.post_expand_added_sentences} sentence(s), +${t.post_expand_added_entries} entr(ies)), first read ${t.first_read_ms ?? '-'} ms, last good look ${t.last_valid_read_ms ?? '-'} ms, ${t.reads_succeeded} good / ${t.reads_missed} missed${t.resolved_via_warmup_tab ? ', via the warm-up tab' : ''}`,
+            (watched?.dossier ? ` · ${t.stop_reason}, expanded ${t.expanded_seen} (+${t.post_expand_added_sentences} sentence(s), +${t.post_expand_added_entries} entr(ies)), first read ${t.first_read_ms ?? '-'} ms, last good look ${t.last_valid_read_ms ?? '-'} ms, ${t.reads_succeeded} good / ${t.reads_missed} missed${t.resolved_via_warmup_tab ? ', via the warm-up tab' : ''}` : ''),
         );
       } catch (e) {
         console.warn('[aio-capture]', tag, 'not built:', errMsg(e).slice(0, 160));
       }
     }
+    // The four flags go on the point (customer pages show them once an admin turns them on). Once
+    // on, the point's "in the AI Overview" and the websites it cited (ads never among them) come from
+    // them too when the overview was read; an unread one is not counted as in it (its presence says
+    // "unparsed", and rates leave it out). Until then both keep the earlier reading.
+    if (presence && pinInsights) pinInsights.ai.presence = presence;
+    const flagsLive = await getSettings().then((x) => x.aiFlagsForCustomers).catch(() => false);
+    const aiRead = flagsLive && presence && presence.status !== 'no_overview' ? presence : null;
     const before = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true } }).catch(() => null);
     const attempts = (before?.proxyMeta as { attempts?: unknown } | null)?.attempts;
     if (Array.isArray(attempts) && attempts.length) Object.assign(proof, { attempts });
@@ -1643,10 +1661,10 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       matchedDumpIdx: result.matchedDumpIndex,
       topCompetitors: aiList ? aiList.list : result.orderedBusinesses,
       insights: pinInsights ?? undefined,
-      aiCitations: result.aiCitations.filter((c) => !isGoogleSource(c)),
+      aiCitations: (aiRead?.status === 'parsed' ? aiRead.citedSites : result.aiCitations).filter((c) => !isGoogleSource(c)),
       hasAiOverview: result.hasAiOverview,
       aiOverviewText: result.aiOverviewText,
-      targetCitedInAi: result.targetCitedInAi,
+      targetCitedInAi: aiRead ? aiRead.status === 'parsed' && presenceVisible(aiRead) : result.targetCitedInAi,
       proxyMeta: proof,
       videoUrl,
       dumpsTarUrl: tarKey,

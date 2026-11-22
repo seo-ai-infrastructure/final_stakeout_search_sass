@@ -1,5 +1,6 @@
 // apps/nextjs/src/components/GeoGridCompareView.tsx
 'use client';
+import { pinAi } from '@stakeout/core/aiFlags';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import * as maplibregl from 'maplibre-gl';
@@ -187,10 +188,13 @@ export function GeoGridCompareView({
         pinA?.status === 'COMPLETED' && pinB?.status === 'COMPLETED'
           ? rankA - rankB
           : 0;
-      const citedA = Boolean(pinA?.targetCitedInAi);
-      const citedB = Boolean(pinB?.targetCitedInAi);
+      // In the AI Overview (featured, named, its listing or own website cited); unknown where an overview could not be read.
+      const aiA = pinA ? pinAi(pinA).visible : false;
+      const aiB = pinB ? pinAi(pinB).visible : false;
+      const citedA = aiA === true;
+      const citedB = aiB === true;
       let aiStatus: PairedPinDelta['aiStatus'] = 'NONE';
-      if (pinA?.status !== 'COMPLETED' || pinB?.status !== 'COMPLETED')
+      if (pinA?.status !== 'COMPLETED' || pinB?.status !== 'COMPLETED' || aiA === null || aiB === null)
         aiStatus = 'NONE';
       else if (!citedA && citedB) aiStatus = 'GAINED';
       else if (citedA && !citedB) aiStatus = 'LOST';
@@ -367,7 +371,7 @@ export function GeoGridCompareView({
       }`;
       elA.style.color = styleA.text;
       elA.style.fontSize = '11px';
-      elA.style.boxShadow = pair.pinA?.targetCitedInAi
+      elA.style.boxShadow = pair.pinA && pinAi(pair.pinA).visible === true
         ? '0 0 0 3px #a855f7'
         : '0 4px 10px rgba(0,0,0,0.45)';
       elA.innerText = styleA.label;
@@ -393,7 +397,7 @@ export function GeoGridCompareView({
       }`;
       elB.style.color = styleB.text;
       elB.style.fontSize = '11px';
-      elB.style.boxShadow = pair.pinB?.targetCitedInAi
+      elB.style.boxShadow = pair.pinB && pinAi(pair.pinB).visible === true
         ? '0 0 0 3px #a855f7, 0 0 12px rgba(168,85,247,0.7)'
         : '0 4px 10px rgba(0,0,0,0.45)';
       elB.innerText = styleB.label;
@@ -782,14 +786,16 @@ export function GeoGridCompareView({
                       {col.pin?.hasAiOverview && (
                         <span
                           className={`rounded px-2 py-0.5 text-[10px] font-bold ${
-                            col.pin.targetCitedInAi
+                            pinAi(col.pin).visible === true
                               ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
                               : 'bg-slate-800 text-slate-400'
                           }`}
                         >
-                          {col.pin.targetCitedInAi
-                            ? '★ AI Cited'
-                            : 'AI Not Cited'}
+                          {pinAi(col.pin).state === 'unparsed'
+                            ? 'AI Overview unread'
+                            : pinAi(col.pin).visible === true
+                              ? '★ In AI Overview'
+                              : 'Not in AI Overview'}
                         </span>
                       )}
                     </div>

@@ -95,7 +95,17 @@ export function ReportVerdict({
                 <span className="font-semibold text-violet-300">AI Overview</span>
               </dt>
               <dd className="text-right text-slate-200">
-                {sh.ai.points ? (
+                {sh.ai.flags ? (
+                  // Read by the four flags: each point counted once where the business appeared, then each flag on its own.
+                  <>
+                    appeared at <span className="font-bold text-white">{sh.ai.flags.appeared} of {sh.ai.flags.read}</span>
+                    {' · '}featured {sh.ai.flags.featured}
+                    {sh.ai.flags.featured ? ` (${[sh.ai.flags.featuredCard ? sh.ai.flags.featuredCard + ' as a card' : '', sh.ai.flags.featuredInline ? sh.ai.flags.featuredInline + ' inline' : ''].filter(Boolean).join(', ')})` : ''}
+                    {' · '}named in the answer {sh.ai.flags.named} · listing cited {sh.ai.flags.listing} · website cited {sh.ai.flags.website}
+                    {sh.ai.flags.possibleWebsite ? <span className="text-amber-200"> · possible website citation {sh.ai.flags.possibleWebsite}</span> : null}
+                    {sh.ai.unread ? <span className="text-slate-400"> · unparsed {sh.ai.unread}</span> : null}
+                  </>
+                ) : sh.ai.points ? (
                   <>
                     named at <span className="font-bold text-white">{sh.ai.named} of {sh.ai.points}</span> · top 3 at {sh.ai.top3} · position zero at {sh.ai.zero}
                   </>

@@ -2,8 +2,8 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
 import { r2, bucket, put } from '@stakeout/core/r2';
-import { cardsBeforeExpansion, untarGz } from '@stakeout/core/serpEvidence';
-import { AIO_CAPTURE_VERSION, buildAioCapture, captureDigest, type WatcherFacts } from '@stakeout/core/aioCapture';
+import { cardsBeforeExpansion, uiLabels, untarGz } from '@stakeout/core/serpEvidence';
+import { AIO_CAPTURE_VERSION, aiPresence, buildAioCapture, captureDigest, type WatcherFacts } from '@stakeout/core/aioCapture';
 import type { AioDossier } from '@stakeout/core/aioSources';
 
 const keyOf = (v: string) => (v.startsWith('https://') ? decodeURIComponent(new URL(v).pathname.slice(1)) : v);
@@ -20,9 +20,9 @@ async function fetchR2(key: string): Promise<Uint8Array> {
  * is replayed once per capture version.
  */
 export async function replayAioCaptures(limit = 40) {
-  const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string | null; hasAiOverview: boolean; rankFound: number | null; keyword: string; target: string; kgmid: string | null; domain: string | null }[]>`
-    SELECT p.id, p."scanId", p."dumpsTarUrl", p."hasAiOverview", p."rankFound", s.keyword, s."targetBusiness" AS target, s."targetKgmid" AS kgmid, s."targetDomain" AS domain
-    FROM "GridPin" p JOIN "GridScan" s ON s.id = p."scanId"
+  const pins = await db.$queryRaw<{ id: string; scanId: string; dumpsTarUrl: string | null; hasAiOverview: boolean; rankFound: number | null; keyword: string; target: string; kgmid: string | null; domain: string | null; role: string }[]>`
+    SELECT p.id, p."scanId", p."dumpsTarUrl", p."hasAiOverview", p."rankFound", s.keyword, s."targetBusiness" AS target, s."targetKgmid" AS kgmid, s."targetDomain" AS domain, u.role
+    FROM "GridPin" p JOIN "GridScan" s ON s.id = p."scanId" JOIN "User" u ON u.id = s."userId"
     WHERE p.status = 'COMPLETED' AND p."proxyMeta"->'aioSources'->>'key' IS NOT NULL
       AND COALESCE(p."proxyMeta"->'aioSources'->'capture'->>'capture_version', '') <> ${AIO_CAPTURE_VERSION}
       AND COALESCE(p."proxyMeta"->'aioSources'->'capture'->>'replay_failed', '') <> ${AIO_CAPTURE_VERSION}
@@ -31,7 +31,7 @@ export async function replayAioCaptures(limit = 40) {
   if (!pins.length) return;
   let done = 0;
   for (const p of pins) {
-    const row = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true } });
+    const row = await db.gridPin.findUnique({ where: { id: p.id }, select: { proxyMeta: true, insights: true } });
     const meta = (row?.proxyMeta as Record<string, unknown> | null) ?? {};
     const kept = (meta.aioSources as Record<string, unknown> | undefined) ?? {};
     try {
@@ -40,6 +40,7 @@ export async function replayAioCaptures(limit = 40) {
       const dossier = JSON.parse(gunzipSync(await fetchR2(readKey)).toString('utf8')) as AioDossier;
       let copy: string | null = null,
         initial: string | null = null;
+      const shots: string[] = [];
       if (p.dumpsTarUrl) {
         const files = untarGz(await fetchR2(keyOf(p.dumpsTarUrl)));
         const read = (name: string) => {
@@ -48,6 +49,7 @@ export async function replayAioCaptures(limit = 40) {
         };
         copy = read('aio_copy.txt');
         initial = read('aio_initial.xml');
+        for (const [path, data] of files) if (/(^|\/)(aio_.*|serp)\.xml$/.test(path)) shots.push(data.toString('utf8'));
       }
       const was = (kept.capture as Record<string, unknown> | undefined) ?? undefined;
       const tele = (was?.telemetry as Partial<WatcherFacts> | undefined) ?? {};
@@ -72,11 +74,16 @@ export async function replayAioCaptures(limit = 40) {
         shownBeforeExpansion: cardsBeforeExpansion(initial),
         telemetry,
         scanPointId: p.id,
+        copyCheck: shots.flatMap((x) => uiLabels(x).map((l) => l.label)),
       });
       const captureKey = typeof was?.key === 'string' && was.key.startsWith('scans/' + p.scanId + '/') ? was.key : readKey.replace(/aio-sources\.json\.gz$/, 'aio-capture.json.gz');
       await put(captureKey, gzipSync(JSON.stringify(capture)), 'application/gzip');
       kept.capture = { key: captureKey, ...captureDigest(capture), replayed_at: new Date().toISOString(), replayed_from: was?.capture_version ?? null };
-      await db.gridPin.update({ where: { id: p.id }, data: { proxyMeta: { ...meta, aioSources: kept } as object } });
+      // An admin's own point also gets the four flags, so its pages can be checked (customers' points
+      // wait for the backfill, after its dry run).
+      const ins = (row?.insights as { ai?: Record<string, unknown> } | null) ?? null;
+      const insights = p.role === 'ADMIN' && ins?.ai ? { ...ins, ai: { ...ins.ai, presence: aiPresence(capture) } } : undefined;
+      await db.gridPin.update({ where: { id: p.id }, data: { proxyMeta: { ...meta, aioSources: kept } as object, ...(insights ? { insights: insights as object } : {}) } });
       done++;
       const t = capture;
       console.log(

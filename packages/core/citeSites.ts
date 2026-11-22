@@ -1,3 +1,4 @@
+import { pinAi } from './aiFlags';
 /**
  * "Get listed here": the websites Google's AI Overview cited across a scan's points, turned into
  * a checklist. A site where a business can add or claim its own page (a directory, a review site,
@@ -100,10 +101,15 @@ export type GetListed = {
  * The checklist for one scan. Each point's AI answer counts a site once, however many of its
  * pages were cited. `website` is the business's own site, so its citations are counted apart.
  */
-export function getListed(pins: { hasAiOverview?: boolean | null; aiCitations?: unknown }[], website?: string | null): GetListed {
+export function getListed(pins: { hasAiOverview?: boolean | null; aiCitations?: unknown; targetCitedInAi?: boolean | null; insights?: unknown }[], website?: string | null): GetListed {
   const own = siteOf(website ?? '');
+  const isOwn = (site: string) => Boolean(own) && (site === own || site.endsWith('.' + own) || (own as string).endsWith('.' + site));
   const count = new Map<string, number>();
   let answers = 0;
+  // The business's own website cited: by the flag "Website cited" (verified) where the answer was read
+  // with the four flags, never where it could not be read, and on earlier points by its saved website.
+  let ownCited = 0;
+  let ownKnown = Boolean(own);
   for (const p of pins) {
     if (!p.hasAiOverview || !Array.isArray(p.aiCitations)) continue;
     const sites = new Set<string>();
@@ -115,15 +121,22 @@ export function getListed(pins: { hasAiOverview?: boolean | null; aiCitations?: 
     if (!sites.size) continue;
     answers++;
     for (const s of sites) count.set(s, (count.get(s) ?? 0) + 1);
+    const a = pinAi(p);
+    if (a.state === 'parsed') {
+      if (a.websiteCited === 'verified') {
+        ownCited++;
+        ownKnown = true;
+      }
+    } else if (a.state !== 'unparsed' && [...sites].some(isOwn)) ownCited++;
   }
   const rows: CitedSite[] = [...count].map(([site, n]) => {
     const known = knownSite(site);
-    return { site, name: known?.name ?? site, answers: n, share: answers ? Math.round((n / answers) * 100) : 0, known, own: Boolean(own) && (site === own || site.endsWith('.' + own) || (own as string).endsWith('.' + site)) };
+    return { site, name: known?.name ?? site, answers: n, share: answers ? Math.round((n / answers) * 100) : 0, known, own: isOwn(site) };
   }).sort((a, b) => b.answers - a.answers || a.site.localeCompare(b.site));
   return {
     answers,
     act: rows.filter((r) => r.known && !r.own),
     others: rows.filter((r) => !r.known && !r.own),
-    ownAnswers: own ? rows.filter((r) => r.own).reduce((n, r) => Math.max(n, r.answers), 0) : null,
+    ownAnswers: ownKnown ? ownCited : null,
   };
 }

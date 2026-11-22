@@ -11,22 +11,24 @@ const box = 'rounded-2xl border border-slate-800 bg-slate-900/70 p-5';
 const TIER: Record<Tier, string> = { CRITICAL: 'border-rose-500/50 bg-rose-500/10 text-rose-300', HIGH: 'border-amber-500/50 bg-amber-500/10 text-amber-300', MEDIUM: 'border-slate-600 bg-slate-800 text-slate-300' };
 const TIER_TEXT: Record<Tier, string> = { CRITICAL: 'Critical', HIGH: 'High', MEDIUM: 'Medium' };
 const PIN: Record<PinState, { cls: string; text: string }> = {
-  you: { cls: 'border-emerald-400 bg-emerald-500/25', text: 'AI answer names or cites the business' },
+  you: { cls: 'border-emerald-400 bg-emerald-500/25', text: 'AI answer features, names or cites the business' },
   others: { cls: 'border-amber-400 bg-amber-500/20', text: 'AI answer, business missing' },
   none: { cls: 'border-slate-600 bg-slate-800/60', text: 'No AI answer' },
   pending: { cls: 'border-dashed border-slate-700 bg-transparent', text: 'Not finished' },
+  unread: { cls: 'border-dashed border-violet-400/60 bg-violet-500/10', text: 'AI answer that could not be read' },
 };
 const SERVICE: Record<string, string> = { CITATION: 'Have us build this listing', VIDEO: 'Have us publish it', PROFILE: 'Have us update the Google listing' };
 const keyOf = (t: { target: string; playbook: string }) => t.playbook + '|' + t.target;
 const pct = (n: number) => Math.round(n) + '%';
 const short = (url: string) => url.replace(/^https:\/\//, '').replace(/\/$/, '');
 
-function Kpi({ label, value, note }: { label: string; value: string; note: string }) {
+function Kpi({ label, value, note, onShow }: { label: string; value: string; note: string; onShow?: () => void }) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
       <p className="text-xs text-slate-400">{label}</p>
       <p className="mt-1 text-2xl font-bold tabular-nums text-white">{value}</p>
       <p className="mt-1 text-xs text-slate-400">{note}</p>
+      {onShow && <button type="button" onClick={onShow} className="mt-1.5 text-xs font-semibold text-sky-400 hover:underline">Show these points</button>}
     </div>
   );
 }
@@ -115,8 +117,20 @@ export default function AiCitationsTab({ scan, shared, identifier, onOpenPin }: 
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi label="AI answer shown" value={`${r.answers} of ${r.points}`} note={`Google put an AI answer on the results at ${pct(r.triggerRate)} of the points.`} />
-        <Kpi label="Named in the AI answer" value={pct(r.named.share)} note={r.weighted ? `${scan.targetBusiness} was named at ${r.named.pins} of ${r.answers}. By buying power: ${pct(r.named.powerShare)}.` : `${scan.targetBusiness} was named at ${r.named.pins} of ${r.answers} answers.`} />
-        <Kpi label="Your website cited" value={scan.targetDomain ? pct(r.ownSite.share) : '–'} note={!scan.targetDomain ? 'The website was not given when this scan was made, so its citations cannot be told apart.' : r.rival ? `${r.ownSite.pins} of ${r.answers} answers. The most cited rival site, ${r.rival.site}: ${pct(r.rival.share)}.` : `${r.ownSite.pins} of ${r.answers} answers.`} />
+        <Kpi label="Featured or named in the AI answer" value={pct(r.named.share)} onShow={r.named.ids.length ? () => setFocus(r.named.ids) : undefined} note={(r.weighted ? `${scan.targetBusiness} was featured or named at ${r.named.pins} of ${r.readable}. By buying power: ${pct(r.named.powerShare)}.` : `${scan.targetBusiness} was featured or named at ${r.named.pins} of ${r.readable} answers.`) + (r.unread ? ` ${r.unread} answer${r.unread === 1 ? '' : 's'} could not be read and ${r.unread === 1 ? 'is' : 'are'} left out.` : '')} />
+        <Kpi
+          label="Your website cited"
+          value={scan.targetDomain || r.ownSite.pins ? pct(r.ownSite.share) : '–'}
+          onShow={r.ownSite.ids.length || r.ownSite.possible.length ? () => setFocus([...r.ownSite.ids, ...r.ownSite.possible]) : undefined}
+          note={
+            (!scan.targetDomain && !r.ownSite.pins
+              ? 'The website was not given when this scan was made, so only a site Google’s own card links to can count as yours, and none was cited.'
+              : r.rival
+                ? `${r.ownSite.pins} of ${r.readable} answers. The most cited rival site, ${r.rival.site}: ${pct(r.rival.share)}.`
+                : `${r.ownSite.pins} of ${r.readable} answers.`) +
+            (r.ownSite.possible.length ? ` Possible website citation at ${r.ownSite.possible.length} more: a cited site that fits the name, counted once the website is confirmed as yours.` : '')
+          }
+        />
         <Kpi label="Sources to win" value={String(groups.todo.length)} note={r.uncaptured.pages ? `The top ${r.uncaptured.pages} feed ${pct(r.uncaptured.pinShare)} of the AI answers${r.weighted ? ` (${pct(r.uncaptured.powerShare)} of the buying power)` : ''}.` : 'Nothing left to win here.'} />
       </div>
 
@@ -133,9 +147,9 @@ export default function AiCitationsTab({ scan, shared, identifier, onOpenPin }: 
             }))}
           </div>
           <ul className="mt-3 space-y-1 text-xs text-slate-400">
-            {(['you', 'others', 'none'] as PinState[]).map((s) => <li key={s} className="flex items-center gap-2"><span className={'h-3 w-3 rounded border-2 ' + PIN[s].cls} />{PIN[s].text}</li>)}
+            {(['you', 'others', 'none', ...(r.unread ? ['unread'] : [])] as PinState[]).map((s) => <li key={s} className="flex items-center gap-2"><span className={'h-3 w-3 rounded border-2 ' + PIN[s].cls} />{PIN[s].text}</li>)}
           </ul>
-          <p className="mt-2 text-[11px] text-slate-500">{lit ? <>Showing the {lit.size} point{lit.size === 1 ? '' : 's'} that cited the chosen source. <button type="button" onClick={() => setFocus(null)} className="text-sky-400 hover:underline">Show all</button></> : 'Click a point to open its recording and screenshots.'}</p>
+          <p className="mt-2 text-[11px] text-slate-500">{lit ? <>Showing the {lit.size} point{lit.size === 1 ? '' : 's'} behind your choice: click one for its evidence. <button type="button" onClick={() => setFocus(null)} className="text-sky-400 hover:underline">Show all</button></> : 'Click a point to open its recording and screenshots.'}</p>
         </div>
 
         <div className={box}>

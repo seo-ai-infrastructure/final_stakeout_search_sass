@@ -14,7 +14,7 @@ test('a scan with no map pack anywhere: the headline counts the AI Overview, and
   assert.equal(s.wins, 2); // AI #3 and AI #1
   assert.equal(Math.round(s.share!), 22);
   assert.deepEqual(s.local, { points: 0, top3: 0, first: 0, solv: null });
-  assert.deepEqual(s.ai, { points: 9, named: 6, top3: 2, zero: 1, winsWithoutPack: 2 });
+  assert.deepEqual(s.ai, { points: 9, unread: 0, named: 6, top3: 2, zero: 1, winsWithoutPack: 2, flags: null });
   const r = reportSummary({ pins, targetBusiness: ME, centerLat: 40.8, centerLng: -73.4 });
   assert.equal(r.completed, 9);
   assert.equal(r.localPoints, 0);

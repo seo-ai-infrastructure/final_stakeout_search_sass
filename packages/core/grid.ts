@@ -265,18 +265,22 @@ export function metrics(
     targetCitedInAi: boolean;
     /** The point's page had no map pack: it has no local rank, and is left out of the rank numbers. */
     noLocal?: boolean;
+    /** Its AI Overview could not be read (unparsed): whether it named the business is unknown, so the citation rate leaves it out. */
+    aiUnknown?: boolean;
   }[],
 ) {
   // Rank numbers are about the points that had local results; AI numbers are about every point.
   const pins = all.filter((p) => !p.noLocal);
   const aiPct = (n: number) => +((100 * n) / all.length).toFixed(2);
+  const known = all.filter((p) => !p.aiUnknown);
+  const citedPct = known.length ? +((100 * known.filter((p) => p.targetCitedInAi).length) / known.length).toFixed(2) : null;
   if (all.length && !pins.length)
     return {
       arp: null,
       atrp: null,
       solv: null,
       aioTriggerRate: aiPct(all.filter((p) => p.hasAiOverview).length),
-      aioCitationRate: aiPct(all.filter((p) => p.targetCitedInAi).length),
+      aioCitationRate: citedPct,
     };
   if (!pins.length)
     return {
@@ -296,6 +300,6 @@ export function metrics(
     atrp: +((sum + 21 * (pins.length - ranks.length)) / pins.length).toFixed(2),
     solv: pct(ranks.filter((r) => r <= 3).length),
     aioTriggerRate: aiPct(all.filter((p) => p.hasAiOverview).length),
-    aioCitationRate: aiPct(all.filter((p) => p.targetCitedInAi).length),
+    aioCitationRate: citedPct,
   };
 }

@@ -1,4 +1,5 @@
 'use client';
+import { pinAi } from '@stakeout/core/aiFlags';
 import { rankColor, rankTextColor, RANK_SCALE, NA_COLOR } from '../lib/gridColumns';
 import { useEffect, useMemo, useState } from 'react';
 import type { GridScanData } from './GeoGridDashboard';
@@ -188,7 +189,7 @@ export function EvidencePanel({
                     backgroundColor: p.status === 'COMPLETED' && !rank && p.proxyMeta?.noLocal ? NA_COLOR : rankColor(p.status, rank),
                     color: rankTextColor(p.status === 'COMPLETED' && !rank && p.proxyMeta?.noLocal ? NA_COLOR : rankColor(p.status, rank)),
                     // The same ring as on the map: the business is named in this point's AI Overview.
-                    boxShadow: p.status === 'COMPLETED' && p.targetCitedInAi ? '0 0 0 3px #c084fc' : undefined,
+                    boxShadow: p.status === 'COMPLETED' && pinAi(p).visible === true ? '0 0 0 3px #c084fc' : undefined,
                   }}
                 >
                   {p.status !== 'COMPLETED' ? (p.status === 'FAILED' ? '×' : '…') : rank ? '#' + rank : p.proxyMeta?.noLocal ? 'N/A' : '20+'}

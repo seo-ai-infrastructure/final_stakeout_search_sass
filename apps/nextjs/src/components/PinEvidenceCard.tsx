@@ -5,6 +5,8 @@ import { rankColor } from '@/lib/gridColumns';
 import { aiPosition } from '@/lib/marketInsights';
 import { tidyAiText } from '@/lib/aiText';
 import { AiView, usePinEvidence } from './EvidencePanel';
+import { pinAi } from '@stakeout/core/aiFlags';
+import AiPresenceFlags, { aiSummary } from './AiPresenceFlags';
 
 const key = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
 const btn = 'rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-40';
@@ -72,7 +74,9 @@ export function PinEvidenceCard({
 
   const ins = pin?.insights?.v === 1 ? pin.insights : null;
   const ads = ins?.adsAboveYou ?? null;
-  const place = pin && ins ? aiPosition(ins.ai.named, scan.targetBusiness) : null;
+  // The tracked business in this point's AI Overview: four flags when it was read; else the earlier reading.
+  const ai = pin ? pinAi(pin) : null;
+  const place = pin && ins && ai?.state === 'legacy' ? aiPosition(ins.ai.named, scan.targetBusiness) : null;
   const isYou = (n: string) => key(n) === key(scan.targetBusiness);
   // What a searcher passes before the business's own listing, top of the page first.
   const stack: { tone: string; label: string; text: string }[] = [];
@@ -84,7 +88,7 @@ export function PinEvidenceCard({
       stack.push({
         tone: 'border-violet-500/40 bg-violet-950/30 text-violet-300',
         label: 'AI Overview',
-        text: place ? `You are #${place.pos} of ${place.of} businesses it names` : pin.targetCitedInAi ? 'It names you' : 'It does not name you',
+        text: ai ? aiSummary(ai, place) : '',
       });
     const green = 'border-emerald-500/40 bg-emerald-950/30 text-emerald-300';
     // The last block is whatever Google showed as its local answer here, named for what it was.
@@ -310,6 +314,11 @@ export function PinEvidenceCard({
                 <p className="mt-2 text-xs leading-relaxed text-slate-400">
                   {stackNote}
                 </p>
+                {ai && pin.status === 'COMPLETED' && pin.hasAiOverview && (
+                  <div className="mt-3">
+                    <AiPresenceFlags a={ai} business={scan.targetBusiness} />
+                  </div>
+                )}
               </>
             ) : (
               <p className="mt-2 text-sm text-slate-400">Shown once this point has finished.</p>

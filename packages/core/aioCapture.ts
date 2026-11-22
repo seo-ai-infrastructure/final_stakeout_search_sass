@@ -56,9 +56,11 @@ import {
   type FirstSeenPhase,
 } from './aioSources';
 import { knownSite } from './citeSites';
+import type { AiEvidence, AiPresenceData } from './aiFlags';
 
 export type AioOverviewMode = 'web_synthesis' | 'local_entity_cards' | 'hybrid' | 'empty';
-export type AioWatcherStopReason = 'template_finished' | 'hard_timeout';
+/** not_watched: no page read was made (customer points read Google's copied answer alone). */
+export type AioWatcherStopReason = 'template_finished' | 'hard_timeout' | 'not_watched';
 export type AioCitationTargetType = 'gbp_listing' | 'external_web';
 export type AioCardActionType = 'photo' | 'directions' | 'website' | 'call' | 'listing';
 
@@ -149,7 +151,7 @@ export interface AioCardActionLink extends Seen {
 export type AioMatchRole = 'card' | 'inline_link' | 'inline_mention' | 'prose_name' | 'listing_citation' | 'website_citation' | 'website_citation_unverified' | 'sources_row' | 'ad';
 
 /** Where Google featured a business: its card (and whether it was on screen before "Show more"), or a sentence recommending it by a linked name. */
-export type AioPlacement = { kind: 'card'; card_position: number; after_expansion: boolean | null } | { kind: 'inline'; sentence_index: number };
+export type AioPlacement = { kind: 'card'; card_position: number; /** How many business cards the overview held. */ card_count: number; after_expansion: boolean | null } | { kind: 'inline'; sentence_index: number };
 
 /** The receipt of one match: what was matched, where, and by what (an ID, an address, words). */
 export interface AioReceipt {
@@ -305,7 +307,7 @@ export interface AioCaptureResult {
 }
 
 /** The capture rules' version, written on every capture (a point is replayed when its capture is older). */
-export const AIO_CAPTURE_VERSION = 'v283';
+export const AIO_CAPTURE_VERSION = 'v284';
 
 /** What the watcher itself knows; the read counts come from the merged reads. */
 export type WatcherFacts = Omit<AioWatcherTelemetry, 'expanded_seen' | 'post_expand_added_sentences' | 'post_expand_added_entries' | 'copy_used'>;
@@ -478,6 +480,11 @@ export function buildAioCapture(
     mapPackRank?: number | null;
     /** Google's copied answer (the copy button's text), when the template copied it. */
     copy?: string | null;
+    /**
+     * The words of this run's own AI Overview snapshots (their labels). Without a page read, the copy
+     * is used only when it is this page's answer: a card's name or the start of a sentence is there.
+     */
+    copyCheck?: string[] | null;
     /** Whether the phone's screen showed an AI Overview: one that could not be read is "unparsed", not zeros. */
     overviewOnScreen?: boolean | null;
     /** The business cards on the phone's screen before "Show more" (their names): a card not among them was featured only after expansion. */
@@ -505,10 +512,21 @@ export function buildAioCapture(
   const copyToCluster = copied ? copied.sentences.map((s) => match(s.text)) : [];
   const matched = copyToCluster.filter((x) => x !== null).length;
   const pageIds = new Set(rows.map((r) => r.mid).filter(Boolean));
+  // No page read: the copy against the run's own snapshots (a stale clipboard holds another answer).
+  const hay = opts.copyCheck?.length ? letters(opts.copyCheck.join(' ')) : '';
+  const onScreen = Boolean(
+    copied &&
+      hay &&
+      (copied.cards.some((c) => letters(c.name).length >= 6 && hay.includes(letters(c.name))) ||
+        copied.sentences.some((x) => {
+          const k = letters(x.text).slice(0, 40);
+          return k.length >= 24 && hay.includes(k);
+        })),
+  );
   const copyUsed = Boolean(
     copied &&
       copied.sentences.length > 0 &&
-      (clusters.length > 0 ? matched >= Math.ceil(copied.sentences.length / 2) : copied.cards.some((c) => pageIds.has(c.id))),
+      (clusters.length > 0 ? matched >= Math.ceil(copied.sentences.length / 2) : copied.cards.some((c) => pageIds.has(c.id)) || onScreen),
   );
 
   // ---- Names by Google ID: the copy's cards and named businesses, then the page's listing titles.
@@ -791,6 +809,13 @@ export function buildAioCapture(
         receipt(r, { role: 'card', card_position: c.pos, text: c.name });
       }
     }
+  // A card whose Website button was not read (no page read): the site its own description cites,
+  // when it fits its name, is its probable website (unverified).
+  for (const [si, key] of sentCard) {
+    const r = recs.get(key);
+    if (!r || r.domain || r.probable || !r.name) continue;
+    r.probable = webCites.filter((c) => c.sentence_index === si).map((c) => c.registrable_domain).find((dd) => dd && nameFitsDomain(r.name!, dd)) ?? null;
+  }
   // Names Google links in the text: recommended where the sentence recommends; only mentioned where
   // it points elsewhere for more. A site the same sentence cites under the name is its probable website.
   for (const s of sents)
@@ -850,7 +875,10 @@ export function buildAioCapture(
     const dd = c.registrable_domain;
     if (!dd) continue;
     const verified = byDomain(dd);
-    const unverified = verified.length ? [] : byProbable(dd);
+    let unverified = verified.length ? [] : byProbable(dd);
+    // A card's own description citing the site that fits it: that card's, not every listing the site fits.
+    const own = sentCard.get(c.sentence_index);
+    if (own && unverified.some((r) => r.key === own)) unverified = unverified.filter((r) => r.key === own);
     for (const r of verified) {
       r.website.add(c.sentence_index);
       receipt(r, { role: 'website_citation', sentence_index: c.sentence_index, url: c.raw_url });
@@ -895,8 +923,18 @@ export function buildAioCapture(
     return { position: i + 1, raw_url: row.url, registrable_domain: dd, business_key: owners.length === 1 ? owners[0].key : null, ...seen(row) };
   });
 
+  // No page read: the ads' rows are unknown, but the Sponsored block names its advertisers. A line
+  // that is exactly a business's name marks it advertised (its card, if any, is kept).
+  if (!rows.length && adLines.length)
+    for (const r of recs.values()) {
+      if (!r.name || r.ad || !adLines.some((l) => flatWords(l) === flatWords(r.name!))) continue;
+      r.ad = true;
+      receipt(r, { role: 'ad', text: r.name });
+      ads.push({ position: ads.length + 1, raw_url: null, registrable_domain: r.domain ?? r.probable, business_key: r.key, ...seen(null) });
+    }
+  const cardTotal = [...recs.values()].filter((r) => r.card !== null).length;
   const placementOf = (r: Rec): AioPlacement | null =>
-    r.card !== null ? { kind: 'card', card_position: r.card, after_expansion: r.afterExpansion } : r.recommended.size ? { kind: 'inline', sentence_index: Math.min(...r.recommended) } : null;
+    r.card !== null ? { kind: 'card', card_position: r.card, card_count: cardTotal, after_expansion: r.afterExpansion } : r.recommended.size ? { kind: 'inline', sentence_index: Math.min(...r.recommended) } : null;
   const businesses: AioBusiness[] = [...recs.values()].map((r) => ({
     business_key: r.key,
     business_id: r.id,
@@ -1041,6 +1079,22 @@ export function buildAioCapture(
   };
 }
 
+/** A page read that read nothing: a capture built from Google's copied answer alone (customer points have no page read). */
+export function noPageRead(query: string | null): AioDossier {
+  return { meta: { query, timestamp: new Date().toISOString(), url: '', totalClaimClusters: 0 }, clusters: [], pool: { comments: 0, parsed: 0, entries: [] } };
+}
+/** The watch facts of a capture with no page read. */
+export const NOT_WATCHED: WatcherFacts = {
+  capture_version: AIO_CAPTURE_VERSION,
+  resolved_via_warmup_tab: false,
+  warmup_tab_listed_url: null,
+  reads_succeeded: 0,
+  reads_missed: 0,
+  first_read_ms: null,
+  last_valid_read_ms: null,
+  stop_reason: 'not_watched',
+};
+
 /** One row per business card, its links joined (as v_aio_local_entity_roster), with what else the answer did with the business. */
 export function entityRoster(c: AioCaptureResult) {
   const byCard = new Map<number, AioCardActionLink[]>();
@@ -1080,8 +1134,14 @@ export function entityRoster(c: AioCaptureResult) {
  * (verified or not), how surely it is the business, and the websites the answer cites (ads never
  * among them). An unread overview is "unparsed": its flags are unknown, not false.
  */
-export function aiPresence(c: AioCaptureResult) {
+export function aiPresence(c: AioCaptureResult): AiPresenceData {
   const listingLinks = c.target_receipts.filter((r) => r.role === 'listing_citation');
+  const parsed = c.capture_status === 'parsed';
+  const inSources = c.target_receipts.find((r) => r.role === 'sources_row');
+  const words = (i: number | null) => {
+    const t = i === null ? null : (c.sentences.find((s) => s.sentence_index === i)?.sentence_text ?? null);
+    return t && t.length > 320 ? t.slice(0, 317) + '…' : t;
+  };
   return {
     v: Number(/\d+/.exec(c.telemetry.capture_version)?.[0] ?? 0),
     status: c.capture_status,
@@ -1089,13 +1149,35 @@ export function aiPresence(c: AioCaptureResult) {
     featured: c.target_featured_placement,
     named: c.target_named_in_prose,
     listingCitedAsSource: c.target_listing_cited_as_source === null ? null : c.target_listing_cited_as_source ? { links: listingLinks.length, sentences: new Set(listingLinks.map((r) => r.sentence_index)).size } : false,
+    listingInSources: parsed ? (inSources ? Number(inSources.text) || null : null) : null,
     websiteCited: c.target_website_cited,
     advertised: c.target_advertised,
     suggestedId: c.target_suggested_id,
     citedSites: [...new Set(c.sentence_citations.filter((s) => s.target_type === 'external_web' && s.registrable_domain).map((s) => s.registrable_domain as string))],
+    // What each flag stands on, so a customer can check it: the sentence (in Google's words), the card, the address.
+    evidence: parsed
+      ? c.target_receipts.slice(0, 24).map((r) => ({
+          flag: EVIDENCE_FLAG[r.role],
+          sentence: r.sentence_index,
+          card: r.card_position,
+          text: r.sentence_index !== null ? words(r.sentence_index) : r.role === 'sources_row' ? null : r.text,
+          url: r.url,
+        }))
+      : [],
   };
 }
-export type AiPresence = ReturnType<typeof aiPresence>;
+const EVIDENCE_FLAG: Record<AioMatchRole, AiEvidence['flag']> = {
+  card: 'featured',
+  inline_link: 'featured',
+  inline_mention: 'named',
+  prose_name: 'named',
+  listing_citation: 'listing',
+  sources_row: 'listing_source',
+  website_citation: 'website',
+  website_citation_unverified: 'website_possible',
+  ad: 'ad',
+};
+export type AiPresence = AiPresenceData;
 
 /** What the point keeps on itself (the full capture goes to storage): status, the tracked business's flags and receipts, counts, the businesses by role, the ads. */
 export function captureDigest(c: AioCaptureResult) {

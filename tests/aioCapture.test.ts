@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { googleIdOfLink, isSourceViewer, mergeReads, type AioDossier, type AioPoolRow, type AioSourceEntry } from '../packages/core/aioSources';
-import { aiPresence, buildAioCapture, captureDigest, entityRoster, readCopiedAnswer, type WatcherFacts } from '../packages/core/aioCapture';
+import { aiPresence, buildAioCapture, captureDigest, entityRoster, noPageRead, NOT_WATCHED, readCopiedAnswer, type WatcherFacts } from '../packages/core/aioCapture';
 
 const cite = (url: string | null, extra: Partial<NonNullable<AioSourceEntry['extracted']>> = {}): AioSourceEntry => ({
   extracted: { title: null, snippet: null, url, domain: null, mid: null, coords: null, syntheticQuery: null, ...extra },
@@ -159,10 +159,10 @@ test('local overview: featured by card (placement kept), listings cited as sourc
     return [b.featured_placement, b.named_in_sentences, b.listing_cited_in_sentences, b.listing_cited_links, b.website_cited_in_sentences, b.website_cited_unverified_in_sentences];
   };
   // Jeff Martin: featured once (its card); its listing cited as a source by eleven links under four sentences.
-  assert.deepEqual(roles(JM), [{ kind: 'card', card_position: 1, after_expansion: false }, [], [1, 2, 3, 4], 5, [], []]);
-  assert.deepEqual(roles(GO), [{ kind: 'card', card_position: 2, after_expansion: false }, [], [2], 1, [], []]);
+  assert.deepEqual(roles(JM), [{ kind: 'card', card_position: 1, card_count: 4, after_expansion: false }, [], [1, 2, 3, 4], 5, [], []]);
+  assert.deepEqual(roles(GO), [{ kind: 'card', card_position: 2, card_count: 4, after_expansion: false }, [], [2], 1, [], []]);
   // Biby's card: its website (its card's Website button) cited in its own description and again in the closing line.
-  assert.deepEqual(roles(BB), [{ kind: 'card', card_position: 4, after_expansion: true }, [], [], 0, [4, 5], []]);
+  assert.deepEqual(roles(BB), [{ kind: 'card', card_position: 4, card_count: 4, after_expansion: true }, [], [], 0, [4, 5], []]);
   // Biby's other listing: linked in a line that points elsewhere ("browse … through"): named, not
   // featured, and no website (sharing a sentence with bibylaw.com does not make it its own).
   assert.deepEqual(roles(BB2), [null, [5], [], 0, [], []]);
@@ -195,7 +195,7 @@ test('local overview: featured by card (placement kept), listings cited as sourc
   // The tracked business by its card's ID: featured at card #4, after "Show more"; its website cited twice.
   assert.deepEqual(
     [c.target_identity, c.target_featured_in_aio, c.target_featured_placement, c.target_listing_cited_as_source, c.target_website_cited, c.target_named_in_prose, c.target_in_sources_row, c.target_advertised],
-    ['listing', true, { kind: 'card', card_position: 4, after_expansion: true }, false, 'verified', false, true, false],
+    ['listing', true, { kind: 'card', card_position: 4, card_count: 4, after_expansion: true }, false, 'verified', false, true, false],
   );
   assert.deepEqual(c.target_receipts.map((r) => [r.role, r.sentence_index ?? r.card_position]), [['card', 4], ['website_citation', 4], ['website_citation', 5], ['sources_row', null]]);
   const g = captureDigest(c);
@@ -214,7 +214,7 @@ test('local overview: the tracked business found by its website, by its card; an
   );
   // bibylaw.com is the website Biby's card opens: that card, not the other listing that only shares a line with it.
   const byBiby = buildAioCapture(d, { keyword: 'car accident lawyer tulsa', targetDomain: 'bibylaw.com', copy: localCopy, telemetry: facts });
-  assert.deepEqual([byBiby.target_identity, byBiby.target_featured_placement, byBiby.target_website_cited], ['website', { kind: 'card', card_position: 4, after_expansion: null }, 'verified']);
+  assert.deepEqual([byBiby.target_identity, byBiby.target_featured_placement, byBiby.target_website_cited], ['website', { kind: 'card', card_position: 4, card_count: 4, after_expansion: null }, 'verified']);
   const bySecond = buildAioCapture(d, { keyword: 'car accident lawyer tulsa', targetBusinessId: BB2, copy: localCopy, telemetry: facts });
   assert.deepEqual(
     [bySecond.target_featured_in_aio, bySecond.target_named_in_prose, bySecond.target_named_in_aio_text, bySecond.target_website_cited, bySecond.target_listing_cited_as_source],
@@ -314,6 +314,13 @@ test('written answer: a linked name in a recommending sentence is featured inlin
     advertised: false,
     suggestedId: null,
     citedSites: ['zillow.com', 'topdollarhomeoffer.com', 'youtube.com', 'opendoor.com', 'oklahomacashbuy.com', 'sellhousetulsa.com', 'offerpad.com'],
+    listingInSources: null,
+    // Each flag with what it stands on: the sentence in Google's words, and the address.
+    evidence: [
+      { flag: 'featured', sentence: 2, card: null, url: null, text: 'Local Cash Buyers: Buy homes as-is with no repairs. Local Tulsa options include Top Dollar Home Offer, Oklahoma Cash Buy, and Sell House Tulsa.' },
+      { flag: 'website_possible', sentence: 1, card: null, url: 'https://topdollarhomeoffer.com/', text: 'To sell a house fast in Tulsa, you can choose between a direct cash sale, an iBuyer offer, or a quick listing.' },
+      { flag: 'website_possible', sentence: 2, card: null, url: 'https://topdollarhomeoffer.com/', text: 'Local Cash Buyers: Buy homes as-is with no repairs. Local Tulsa options include Top Dollar Home Offer, Oklahoma Cash Buy, and Sell House Tulsa.' },
+    ],
   });
   assert.equal(c.counts.cited_web_pages_count, 9);
   assert.deepEqual([c.counts.featured_businesses_count, c.counts.named_businesses_count, c.counts.websites_cited_count], [3, 5, 7]);
@@ -349,6 +356,37 @@ test('without the copy: the page read alone, each source once; names read from t
   // No Google link can be read without the copy: named by its site's name in the words, its website cited.
   assert.deepEqual([c.target_identity, c.target_featured_in_aio, c.target_named_in_prose, c.target_website_cited], ['website', false, true, 'verified']);
   assert.equal(c.counts.featured_businesses_count, 0);
+});
+
+test("no page read (every customer point): Google's copy alone, used once this run's own snapshots show it", () => {
+  // The first screen's words: the overview's cards, as the phone's snapshot labels them.
+  const screen = ['AI Overview', 'Law Offices of Jeff Martin Rated 4.7 out of 5, 890 reviews.', 'Gorospe Law Group Rated 5.0 out of 5, 183 reviews.'];
+  const before = ['Law Offices of Jeff Martin', 'Gorospe Law Group', 'Graves McLain Injury Lawyers', 'Biby Law Firm Injury and Accident Lawyers'];
+  const opts = { keyword: 'car accident lawyer tulsa', targetBusinessId: BB, copy: localCopy, copyCheck: screen, overviewOnScreen: true, shownBeforeExpansion: before, telemetry: NOT_WATCHED };
+  const c = buildAioCapture(noPageRead('car accident lawyer tulsa'), opts);
+  assert.deepEqual([c.capture_status, c.telemetry.copy_used, c.telemetry.stop_reason, c.overview_mode], ['parsed', true, 'not_watched', 'local_entity_cards']);
+  // Its card in the copy's order; no card buttons were read, so the site its description cites (and
+  // that fits its name) is its website only unverified.
+  assert.deepEqual(
+    [c.target_identity, c.target_featured_placement, c.target_listing_cited_as_source, c.target_website_cited, c.target_named_in_prose, c.target_advertised],
+    ['listing', { kind: 'card', card_position: 4, card_count: 4, after_expansion: false }, false, 'unverified', false, false],
+  );
+  const biz = (k: string) => c.businesses.find((b) => b.business_key === k)!;
+  // Its own description's citation is its alone; the closing line's goes to both Biby listings, unverified.
+  assert.deepEqual([biz(BB).website_cited_unverified_in_sentences, biz(BB2).website_cited_unverified_in_sentences], [[4, 5], [5]]);
+  assert.deepEqual([biz(JM).listing_cited_links, biz(JM).featured_placement], [5, { kind: 'card', card_position: 1, card_count: 4, after_expansion: false }]);
+  // The Sponsored block names Gorospe: advertised, and its card kept.
+  assert.deepEqual([biz(GO).advertised, biz(GO).featured], [true, true]);
+  // Its website saved: verified.
+  assert.equal(buildAioCapture(noPageRead('q'), { ...opts, targetDomain: 'bibylaw.com' }).target_website_cited, 'verified');
+  // A copy the snapshots do not show (a stale clipboard), or no copy at all: the overview was not read.
+  const stale = buildAioCapture(noPageRead('q'), { ...opts, copyCheck: ['AI Overview', 'Cash buyers can close in about a week.'] });
+  assert.deepEqual([stale.capture_status, stale.telemetry.copy_used, stale.target_featured_in_aio], ['unparsed', false, null]);
+  assert.equal(buildAioCapture(noPageRead('q'), { ...opts, copy: null }).capture_status, 'unparsed');
+  assert.equal(aiPresence(stale).status, 'unparsed');
+  // A written answer: its opening sentence on the first screen is enough.
+  const text = buildAioCapture(noPageRead('q'), { keyword: 'sell my house fast', targetBusinessId: TD, targetName: 'Top Dollar Home Offer', copy: textCopy, copyCheck: ['AI Overview', 'To sell a house fast in Tulsa, you can choose between a direct cash sale'], overviewOnScreen: true, telemetry: NOT_WATCHED });
+  assert.deepEqual(aiPresence(text), { ...aiPresence(text), status: 'parsed', identity: 'listing', featured: { kind: 'inline', sentence_index: 2 }, named: true, listingCitedAsSource: false, websiteCited: 'unverified', advertised: false });
 });
 
 test('found by its exact name on a website the answer names it by: that website is cited, but whose it is stays unverified', () => {

@@ -1,4 +1,5 @@
 'use client';
+import { pinAi, readByFlags } from '@stakeout/core/aiFlags';
 import { useEffect, useRef, useState } from 'react';
 import { EvidencePanel } from './EvidencePanel';
 import Link from 'next/link';
@@ -471,16 +472,25 @@ export function GeoGridDashboard({
     return () => cancelAnimationFrame(raf);
   }, [view3d, style3d, mapReady, censusMetric, scan?.id]);
   // One point's combined reading (AI Overview + local results), for whichever business is shown.
+  // The tracked business's place in a point's AI Overview: its card's place when the overview was
+  // read with the four flags (featured inline or only named: no number), else its place in the list
+  // the earlier reading kept. Another business shown instead: the list it is named in.
+  const aiPlaceOf = (p: GridPinData, name: string) => {
+    const ins = p.insights?.v === 1 ? p.insights : null;
+    const a = projected ? null : pinAi(p);
+    if (a && readByFlags(a)) return a.featured?.kind === 'card' ? { pos: a.featured.card_position } : null;
+    return ins ? aiPosition(ins.ai.named, name) : null;
+  };
   const readCombined = (p: GridPinData) => {
     const name = projected?.businessName ?? scan?.targetBusiness ?? '';
-    const ins = p.insights?.v === 1 ? p.insights : null;
-    const place = ins ? aiPosition(ins.ai.named, name) : null;
+    const place = aiPlaceOf(p, name);
+    const a = projected ? null : pinAi(p);
     return combinedReading({
       rank: (projected ? (projected.pinRanks as Record<string, number | null | undefined>)[p.id] : p.rankFound) ?? null,
       rankFrom: p.proxyMeta?.finderShown === false ? (p.proxyMeta.rankFrom ?? 'ai_overview_list') : null,
       hasAiOverview: p.hasAiOverview,
-      cited: projected ? Boolean(projected.aiCitedPinIds[p.id]) || Boolean(place) : p.targetCitedInAi,
-      aiPos: place?.pos ?? p.proxyMeta?.aiPosition ?? null,
+      cited: projected ? Boolean(projected.aiCitedPinIds[p.id]) || Boolean(place) : a!.visible === true,
+      aiPos: place?.pos ?? (a && readByFlags(a) ? null : (p.proxyMeta?.aiPosition ?? null)),
     });
   };
   useEffect(() => {
@@ -488,7 +498,8 @@ export function GeoGridDashboard({
     const m = map.current;
     const markers = scan.pins.map((p) => {
       const rank = projected ? projected.pinRanks[p.id] : p.rankFound,
-        cited = projected ? projected.aiCitedPinIds[p.id] : p.targetCitedInAi;
+        ai = projected ? null : pinAi(p),
+        cited = projected ? projected.aiCitedPinIds[p.id] : ai!.visible === true;
       const el = document.createElement('button');
       el.type = 'button';
       el.className = 'rounded-full border-2 border-white text-xs font-bold';
@@ -506,10 +517,11 @@ export function GeoGridDashboard({
       if (p.status === 'COMPLETED' && mapMode === 'ai') {
         // The business's place in this point's AI Overview: its place in the AI's list, "yes" when it
         // is named without an order, "no" when an answer appeared without it, a dash when none did.
-        const place = !projected && ins ? aiPosition(ins.ai.named, scan.targetBusiness) : null;
+        const place = !projected ? aiPlaceOf(p, scan.targetBusiness) : null;
         // A pinker violet than the ring's, to stand clear of the blue neighborhood shading.
         fill = p.hasAiOverview ? (cited ? '#a855f7' : '#4c1d95') : '#0f172a';
-        text = !p.hasAiOverview ? '–' : place ? '#' + place.pos : cited ? 'yes' : 'no';
+        // "?": an AI Overview was shown but could not be read (unknown, not "no").
+        text = !p.hasAiOverview ? '–' : ai?.state === 'unparsed' ? '?' : place ? '#' + place.pos : cited ? 'yes' : 'no';
         if (!p.hasAiOverview) quiet = true;
         else if (cited) standout = true;
       } else if (p.status === 'COMPLETED' && mapMode === 'combined') {

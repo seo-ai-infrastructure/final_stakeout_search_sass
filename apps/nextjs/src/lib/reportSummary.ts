@@ -1,4 +1,5 @@
 import { buyingPower } from './buyingPower';
+import { aiFlagTotals, pinAi } from '@stakeout/core/aiFlags';
 import { aiBusinesses, aiPosition, aiSources, aiVersusPack, groundOwners, packOrder, paidPressure, siteKind, winningRadius, type InsightPin } from './marketInsights';
 
 /** What a finding is about. */
@@ -51,9 +52,24 @@ export function searchShare(pins: InsightPin[], target: string) {
   const noPack = (p: InsightPin) => Boolean(p.proxyMeta?.noLocal);
   const local = done.filter((p) => !noPack(p));
   const localTop3 = local.filter((p) => p.rankFound != null && p.rankFound <= 3).length;
-  const place = (p: InsightPin) => p.proxyMeta?.aiPosition ?? (p.insights?.v === 1 ? (aiPosition(p.insights.ai.named, target)?.pos ?? null) : null);
-  const answered = done.filter((p) => p.hasAiOverview ?? (p.insights?.v === 1 && p.insights.ai.shown));
-  const zero = (p: InsightPin) => Boolean(p.proxyMeta?.aiLead);
+  // Its place in the AI Overview: its card's place where the answer was read with the four flags,
+  // else the place the earlier reading kept. An answer that could not be read is left out.
+  const place = (p: InsightPin) => {
+    const a = pinAi(p);
+    if (a.state === 'parsed') return a.featured?.kind === 'card' ? a.featured.card_position : null;
+    return p.proxyMeta?.aiPosition ?? (p.insights?.v === 1 ? (aiPosition(p.insights.ai.named, target)?.pos ?? null) : null);
+  };
+  const shownAi = done.filter((p) => p.hasAiOverview ?? (p.insights?.v === 1 && p.insights.ai.shown));
+  const answered = shownAi.filter((p) => pinAi(p).state !== 'unparsed');
+  // Position zero: named in the opening line (featured inline in the first sentence, on points read with the flags).
+  const zero = (p: InsightPin) => {
+    const a = pinAi(p);
+    return a.state === 'parsed' ? a.featured?.kind === 'inline' && a.featured.sentence_index === 1 : Boolean(p.proxyMeta?.aiLead);
+  };
+  const inAnswer = (p: InsightPin) => {
+    const a = pinAi(p);
+    return a.state === 'parsed' ? a.visible === true : Boolean(p.targetCitedInAi) || place(p) != null || zero(p);
+  };
   const aiTop = (p: InsightPin) => zero(p) || ((place(p) ?? 99) <= 3);
   const wins = localTop3 + done.filter((p) => noPack(p) && aiTop(p)).length;
   return {
@@ -63,7 +79,19 @@ export function searchShare(pins: InsightPin[], target: string) {
     /** Map pack: points that had one, and the business's top-three share of them (Share of Local Voice). */
     local: { points: local.length, top3: localTop3, first: local.filter((p) => p.rankFound === 1).length, solv: local.length ? (100 * localTop3) / local.length : null },
     /** AI Overview: points that had one, where the business is named, in its top three, and in its opening sentences. */
-    ai: { points: answered.length, named: answered.filter((p) => p.targetCitedInAi || place(p) != null || zero(p)).length, top3: answered.filter(aiTop).length, zero: answered.filter(zero).length, winsWithoutPack: wins - localTop3 },
+    ai: {
+      points: answered.length,
+      unread: shownAi.length - answered.length,
+      named: answered.filter(inAnswer).length,
+      top3: answered.filter(aiTop).length,
+      zero: answered.filter(zero).length,
+      winsWithoutPack: wins - localTop3,
+      /** By the four flags, over the answers read with them (each point once in `appeared`); null when none was. */
+      flags: (() => {
+        const t = aiFlagTotals(shownAi);
+        return t.read ? t : null;
+      })(),
+    },
   };
 }
 

@@ -1,5 +1,6 @@
 // apps/nextjs/src/components/CompetitorLeaderboard.tsx
 'use client';
+import { pinAi, readByFlags } from '@stakeout/core/aiFlags';
 import React, { useMemo, useState } from 'react';
 import { Search, ArrowUpDown, Download, Sparkles } from 'lucide-react';
 import type { GridPinData } from './GeoGridDashboard';
@@ -165,16 +166,26 @@ export function CompetitorLeaderboard({
           citedOnThisPin.add(norm);
         }
       }
-      // 2B. Check if any known competitor business name is mentioned inside the AI Overview body text
+      // 2B. Check if any known competitor business name is mentioned inside the AI Overview body text.
+      // The tracked business itself counts by its four flags when the overview was read with them.
+      const ai = pinAi(pin);
       if (aioTextLower.length > 0) {
         for (const [knownKey, entry] of map.entries()) {
+          if (entry.isTarget && readByFlags(ai)) continue;
           if (knownKey.length >= 4 && aioTextLower.includes(knownKey)) {
             citedOnThisPin.add(knownKey);
-          } else if (entry.isTarget && pin.targetCitedInAi) {
+          } else if (entry.isTarget && ai.visible === true) {
             citedOnThisPin.add(knownKey);
           }
         }
       }
+      if (readByFlags(ai))
+        for (const [knownKey, entry] of map.entries()) {
+          if (entry.isTarget) {
+            if (ai.visible === true) citedOnThisPin.add(knownKey);
+            else citedOnThisPin.delete(knownKey);
+          }
+        }
       // Record AI citation credit for this pin
       for (const normKey of citedOnThisPin) {
         const entry = map.get(normKey);
@@ -190,7 +201,7 @@ export function CompetitorLeaderboard({
     const namedIn = new Map<string, number>();
     for (const row of aiBusinesses(completedPins, targetBusiness).rows) namedIn.set(loose(row.name), row.points);
     // The target also counts an answer that plainly names it but was captured without its list.
-    const targetNamed = completedPins.filter((p) => p.hasAiOverview && p.targetCitedInAi).length;
+    const targetNamed = completedPins.filter((p) => p.hasAiOverview && pinAi(p).visible === true).length;
     // Pass 3: Compute Final Ratios
     const stats: CompetitorMarketStat[] = [];
     for (const [normKey, item] of map.entries()) {

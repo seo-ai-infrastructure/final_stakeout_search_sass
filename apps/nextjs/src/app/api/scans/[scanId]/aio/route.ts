@@ -1,3 +1,4 @@
+import { withoutFlags } from '@stakeout/core/aiFlags';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { businessKey, citesOf, kindOf, mentions, type AioPin } from '@stakeout/core/aioChecklist';
@@ -71,7 +72,8 @@ export async function POST(req: Request, c: C) {
 
     if (b.action === 'check') {
       const pins = (await db.gridPin.findMany({ where: { scanId: scan.id, status: 'COMPLETED' }, select: { id: true, rowIdx: true, colIdx: true, status: true, hasAiOverview: true, aiCitations: true, insights: true, topCompetitors: true } })) as unknown as (AioPin & { topCompetitors: string[] | null })[];
-      const cited = new Set(pins.flatMap((p) => citesOf(p).map((x) => x.url)));
+      // Any page a point's answer listed may be checked, whichever way the answer is read.
+      const cited = new Set(pins.flatMap((p) => citesOf(withoutFlags(p)).map((x) => x.url)));
       const asked = [...new Set((Array.isArray(b.urls) ? b.urls : []).map(String))].filter((u) => cited.has(u) && kindOf(u, scan.targetDomain) !== 'own').slice(0, 15);
       if (!asked.length) throw new InputError('None of those pages was cited in this scan.');
       // The rivals looked for: the five businesses that most often ranked in the top three here.

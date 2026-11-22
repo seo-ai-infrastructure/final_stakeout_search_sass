@@ -47,8 +47,8 @@ test('the rollup: who was cited where, the business’s share of the answers, an
   const r = aioRollup(pins, 'Acme Plumbing', 'acmeplumbing.com');
   assert.deepEqual([r.points, r.answers, r.triggerRate], [4, 3, 75]);
   assert.deepEqual(r.state, { a: 'you', b: 'you', c: 'others', d: 'none', e: 'pending' });
-  assert.deepEqual(r.named, { pins: 1, share: 33.3, powerShare: 33.3 });
-  assert.deepEqual(r.ownSite, { pins: 1, share: 33.3 });
+  assert.deepEqual(r.named, { pins: 1, share: 33.3, powerShare: 33.3, ids: ['b'] });
+  assert.deepEqual(r.ownSite, { pins: 1, share: 33.3, ids: ['a'], possible: [] });
   assert.deepEqual(r.rival, { site: 'rotorooter.com', pins: 2, share: 66.7 });
   const yelpPage = r.pages.find((p) => p.url === 'https://yelp.com/search?cflt=plumbing')!;
   assert.deepEqual([yelpPage.pins, yelpPage.pinShare, yelpPage.avgSlot, yelpPage.kind, yelpPage.name], [['a', 'b'], 66.7, 1.5, 'directory', 'Yelp']);

@@ -1,3 +1,4 @@
+import { pinAi } from './aiFlags';
 /**
  * Where a free account is shown that a scan (or a listing plan) would answer a question its own
  * numbers raise. Each is a plain rule over figures the account can already see.
@@ -56,11 +57,12 @@ export function deviceFlag(devices: DeviceRow[]): { mobileShare: number; gap: nu
  * After a finished 5×5 scan: how many of its points the business missed the top three on (or, with
  * AI Overviews tracked, was left out of the AI answer on). Worth raising from four points up.
  */
-export function scanBridge(scan: { status: string; totalPins: number; trackAiOverviews: boolean }, pins: { status: string; rankFound: number | null; hasAiOverview: boolean; targetCitedInAi: boolean }[]): { weak: number; total: number; why: 'rank' | 'ai' } | null {
+export function scanBridge(scan: { status: string; totalPins: number; trackAiOverviews: boolean }, pins: { status: string; rankFound: number | null; hasAiOverview: boolean; targetCitedInAi: boolean; insights?: unknown }[]): { weak: number; total: number; why: 'rank' | 'ai' } | null {
   if (scan.status !== 'COMPLETED' || scan.totalPins !== 25) return null;
   const done = pins.filter((p) => p.status === 'COMPLETED');
   const low = done.filter((p) => p.rankFound === null || p.rankFound > 3).length;
-  const left = scan.trackAiOverviews ? done.filter((p) => p.hasAiOverview && !p.targetCitedInAi).length : 0;
+  // Left out of the AI answer: known to be absent (an answer that could not be read is not counted).
+  const left = scan.trackAiOverviews ? done.filter((p) => p.hasAiOverview && pinAi(p).visible === false).length : 0;
   if (low >= 4) return { weak: low, total: scan.totalPins, why: 'rank' };
   if (left >= 4) return { weak: left, total: scan.totalPins, why: 'ai' };
   return null;

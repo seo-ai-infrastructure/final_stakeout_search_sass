@@ -1,3 +1,5 @@
+import { pinAi, withoutFlags } from '@stakeout/core/aiFlags';
+import { getSettings } from '@stakeout/core/settings';
 import { siteFromScans } from '@/lib/businessSite';
 import { db, Prisma } from '@stakeout/db';
 import { ispLabel } from './ispLabel';
@@ -90,8 +92,14 @@ const reportSelect = {
  * a search is carried out, so only an admin may download it. Everyone else gets `hasBundle`.
  */
 export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: boolean } = {}) {
-  const s = await db.gridScan.findFirst({ where, select: reportSelect });
-  if (!s) throw new InputError('Report unavailable.', 404);
+  const found = await db.gridScan.findFirst({ where, select: reportSelect });
+  if (!found) throw new InputError('Report unavailable.', 404);
+  // The AI Overview's four flags (featured, named, listing cited, website cited): admins always see
+  // them; customers once an admin turns them on. Until then a customer's pages get the points
+  // without them, and read the AI Overview as before.
+  const aiFlagsLive = await getSettings().then((x) => x.aiFlagsForCustomers).catch(() => false);
+  const aiFlags = Boolean(opts.admin) || aiFlagsLive;
+  const s = aiFlags ? found : { ...found, pins: found.pins.map((p) => withoutFlags(p)) };
   await fillCensus(s.pins);
   // A scan made before websites were saved borrows the one from the account's other scans of the same business.
   const borrowed = s.targetDomain ? null : await db.gridScan.findUnique({ where: { id: s.id }, select: { userId: true } }).then((o) => (o ? siteFromScans(o.userId, s.targetBusiness) : null)).catch(() => null);
@@ -99,10 +107,13 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
   // if any, is its place in the AI Overview. The scan's rank numbers are worked out again here
   // without those points, so reports saved before this rule read the same way as new ones.
   const done = s.pins.filter((p) => p.status === 'COMPLETED');
-  const totals = done.length ? metrics(done.map((p) => ({ rankFound: p.rankFound, hasAiOverview: p.hasAiOverview, targetCitedInAi: p.targetCitedInAi, noLocal: noLocalResults(p.proxyMeta) }))) : null;
+  const totals = done.length ? metrics(done.map((p) => ({ rankFound: p.rankFound, hasAiOverview: p.hasAiOverview, targetCitedInAi: p.targetCitedInAi, noLocal: noLocalResults(p.proxyMeta), aiUnknown: pinAi(p).state === 'unparsed' }))) : null;
   return {
     ...s,
-    ...(totals ? { arp: totals.arp, atrp: totals.atrp, solv: totals.solv } : {}),
+    /** Whether this page reads the AI Overview by the four flags; `forCustomers`: whether customers see them too. */
+    aiFlags: { shown: aiFlags, forCustomers: aiFlagsLive },
+    // (The AI citation rate too: an unread overview is left out of it, and corrected points count as they now read.)
+    ...(totals ? { arp: totals.arp, atrp: totals.atrp, solv: totals.solv, aioCitationRate: totals.aioCitationRate } : {}),
     ...(borrowed ? { targetDomain: borrowed } : {}),
     pins: s.pins.map((p) => {
       const m = p.proxyMeta as Record<string, unknown> | null;

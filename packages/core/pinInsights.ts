@@ -1,3 +1,4 @@
+import type { AiPresenceData } from './aiFlags';
 import { isGoogleSource } from './googleSource';
 import { canonicalUrl } from './aioChecklist';
 import { aiNameFor, isLocalFinder, isMapsList, readAiCopy, readAiOverview, readLocalFinder, readMapsList, readResultsPage, sameBusiness, uiLabels } from './serpEvidence';
@@ -29,7 +30,14 @@ export type PinInsights = {
    * named. `cites`: the cited pages themselves, in the order the answer numbered them (only when
    * the answer's own text was copied; a snapshot alone names websites, not pages).
    */
-  ai: { shown: boolean; sources: string[]; named: string[]; cites?: { n: number; url: string }[] };
+  ai: {
+    shown: boolean;
+    sources: string[];
+    named: string[];
+    cites?: { n: number; url: string }[];
+    /** The tracked business as the role-aware capture read it (featured, named, listing cited, website cited): see aiFlags.ts. Absent on points read before it. */
+    presence?: AiPresenceData;
+  };
 };
 
 /** "0.4 mi" / "850 ft" / "1.2 km" as miles. */

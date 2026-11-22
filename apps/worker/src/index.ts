@@ -2,6 +2,7 @@ import { failureCode } from '@stakeout/core/fleetHealth';
 import { evidenceOf, failureKind, parseEntries, refusedRun, refusedSummary, stageSeconds, timingLine, timingSummary, REFUSED_KEEP, REFUSED_KEY, TIMINGS_KEEP, TIMINGS_KEY, type Marks, type RefusedRun, type RunTiming } from '@stakeout/core/runLog';
 import { backfillInsights, backfillPackRanks } from './insightsBackfill';
 import { replayAioCaptures } from './aioReplay';
+import { aioBackfill } from './aioBackfill';
 import 'dotenv/config';
 import { Queue, Worker, DelayedError, UnrecoverableError, type Job } from 'bullmq';
 import { db } from '@stakeout/db';
@@ -912,6 +913,9 @@ setTimeout(() => void rerankScans().catch((e) => console.warn('[rerank] skipped:
 // Points whose AI Overview page read is kept get their capture rebuilt with the current rules, from
 // the stored files (no search run): admin data only.
 setTimeout(() => void replayAioCaptures().catch((e) => console.warn('[aio-replay] skipped:', (e as Error).message)), 45_000);
+// Every point with an AI Overview read again by the four flags from what it kept: a dry run (nothing
+// on the points changes; what would, and why, goes to the Kept table), once per capture version.
+setTimeout(() => void aioBackfill().catch((e) => console.warn('[aio-backfill] skipped:', (e as Error).message)), 120_000);
 // A one-off: a scan run again around a different centre (RESCAN).
 setTimeout(() => void rescanAt().catch((e) => console.warn('[rescan] not started:', (e as Error).message)), 25_000);
 // What the phones themselves recorded about their data use (the last hours, by app): logged once.
