@@ -26,10 +26,6 @@ import { GOOGLE_ID_HELP, googleIdOf, googleShortLink } from '@stakeout/core/busi
 import { siteDomain } from '@stakeout/core/businessSite';
 import { scanKeywords } from '@/lib/scanKeywords';
 import styles from './NewScanWizard.module.css';
-import '@fontsource/inter/400.css';
-import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
-import '@fontsource/jetbrains-mono/400.css';
 import { Crosshair, Layers, RotateCcw, Save, Clock3, Info, ChevronDown, Check, Minus, Plus, SlidersHorizontal } from 'lucide-react';
 type TargetType =
   'mobile_maps' | 'mobile_chrome' | 'mobile_google' | 'desktop_aimode';

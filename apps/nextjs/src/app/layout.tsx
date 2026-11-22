@@ -1,6 +1,7 @@
 // apps/nextjs/src/app/layout.tsx
 import React from 'react';
 import type { Metadata } from 'next';
+import '@/lib/fonts';
 import './globals.css';
 export const metadata: Metadata = {
   title: 'Stakeout • Real-Device Mobile Search & AI GeoGrid Intelligence',

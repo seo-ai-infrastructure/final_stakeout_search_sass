@@ -1,0 +1,10 @@
+.session { display: flex; align-items: center; gap: 9px; font-family: Inter, system-ui, sans-serif; }
+.unit { margin-left: 4px; }
+.points, .logout { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 7px 10px; border: 1px solid #303844; border-radius: 8px; background: rgba(255,255,255,.025); color: #cbd2dc; cursor: pointer; font-size: 11px; font-weight: 500; line-height: 18px; white-space: nowrap; }
+.points { font-family: 'JetBrains Mono', ui-monospace, monospace; font-weight: 400; font-size: 11px; }.points svg { color: #da9a73; }.points:hover, .logout:hover { color: #fff; border-color: #59616d; background: rgba(255,255,255,.055); }
+.identity { display: flex; align-items: center; gap: 6px; color: #8f9baa; font-size: 11px; line-height: 18px; }.identity svg { color: #637082; }.identity span { max-width: 86px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logout { color: #9ca7b6; }.logout svg { color: #7e8a9c; }
+.paid { position: fixed; left: 50%; top: 76px; z-index: 50; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100vw - 32px); padding: 13px 16px; border: 1px solid #534334; border-radius: 11px; background: #141920; color: #e7d7c8; box-shadow: 0 12px 35px #0006; font-size: 13px; line-height: 1.6; }.paid button { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; color: #aab4c1; cursor: pointer; }
+@media (max-width: 760px) { .identity, .logout span { display: none; }.logout { width: 34px; padding: 7px; }.session { gap: 7px; } }
+@media (max-width: 440px) { .points { padding: 7px; font-size: 10px; gap: 4px; }.points svg { width: 12px; height: 12px; }.session { gap: 5px; } }
+@media (max-width: 375px) { .unit { display: none; } }

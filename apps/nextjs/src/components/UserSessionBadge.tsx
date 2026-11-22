@@ -2,15 +2,13 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Coins, LogOut, User } from 'lucide-react';
+import { Coins, LogOut, User, X } from 'lucide-react';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
-export function UserSessionBadge() {
+import styles from './UserSessionBadge.module.css';
+type SessionUser = { email: string; name?: string | null; creditBalance: number };
+export function UserSessionBadge({ initialUser }: { initialUser?: SessionUser } = {}) {
   const router = useRouter();
-  const [user, setUser] = useState<{
-    email: string;
-    name?: string;
-    creditBalance: number;
-  } | null>(null);
+  const [user, setUser] = useState<SessionUser | null>(initialUser ?? null);
   const [buying, setBuying] = useState(false);
   const [want, setWant] = useState('');
   const [paid, setPaid] = useState('');
@@ -60,11 +58,11 @@ export function UserSessionBadge() {
   }
   if (!user) return null;
   return (
-    <div className="flex items-center gap-3">
+    <div className={styles.session}>
       {paid && (
-        <p role="status" className="fixed left-1/2 top-16 z-50 flex -translate-x-1/2 items-center gap-3 rounded-xl border border-emerald-500/40 bg-slate-900 px-4 py-3 text-sm text-emerald-200 shadow-xl">
+        <p role="status" className={styles.paid}>
           {paid}
-          <button type="button" onClick={() => setPaid('')} className="text-slate-400 hover:text-white" aria-label="Dismiss">✕</button>
+          <button type="button" onClick={() => setPaid('')} aria-label="Dismiss"><X size={15} aria-hidden="true" /></button>
         </p>
       )}
       <button
@@ -72,10 +70,10 @@ export function UserSessionBadge() {
         onClick={() => setBuying(true)}
         title="Points: what they cost and how to get more"
         aria-label={user.creditBalance.toLocaleString() + ' points. See prices and get more'}
-        className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/30 px-2.5 py-1 hover:border-emerald-400 hover:bg-emerald-900/40"
+        className={styles.points}
       >
         <Coins className="h-3.5 w-3.5" />
-        <span>{user.creditBalance.toLocaleString()} pts</span>
+        <span>{user.creditBalance.toLocaleString()}<span className={styles.unit}>pts</span></span>
       </button>
       <CreditTopUpModal
         isOpen={buying}
@@ -85,20 +83,21 @@ export function UserSessionBadge() {
         currentBalance={user.creditBalance}
         onBalanceUpdated={(n) => setUser((u) => (u ? { ...u, creditBalance: n } : u))}
       />
-      <div className="hidden items-center gap-1.5 text-xs text-slate-300 sm:flex">
+      <div className={styles.identity}>
         <User className="h-3.5 w-3.5 text-slate-500" />
-        <span className="max-w-[160px] truncate font-medium">
+        <span>
           {user.name || user.email}
         </span>
       </div>
       <button
         type="button"
         onClick={handleLogout}
-        className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900 px-2.5 py-1.5 text-xs"
+        className={styles.logout}
+        aria-label="Sign out"
         title="Sign Out"
       >
         <LogOut className="h-3.5 w-3.5" />
-        <span className="hidden md:inline">Sign Out</span>
+        <span>Sign out</span>
       </button>
     </div>
   );
