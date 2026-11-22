@@ -383,6 +383,13 @@ test("no page read (every customer point): Google's copy alone, used once this r
   const stale = buildAioCapture(noPageRead('q'), { ...opts, copyCheck: ['AI Overview', 'Cash buyers can close in about a week.'] });
   assert.deepEqual([stale.capture_status, stale.telemetry.copy_used, stale.target_featured_in_aio], ['unparsed', false, null]);
   assert.equal(buildAioCapture(noPageRead('q'), { ...opts, copy: null }).capture_status, 'unparsed');
+  // A copy whose cards are not the screen's, in the screen's order: another answer (a clipboard left
+  // from a nearby point names the same firms), so the overview was not read. Same firms, other order: same.
+  const elsewhere = buildAioCapture(noPageRead('q'), { ...opts, shownBeforeExpansion: ['Biby Law Firm Injury and Accident Lawyers', 'Gorospe Law Group', 'Law Offices of Jeff Martin'] });
+  assert.deepEqual([elsewhere.capture_status, elsewhere.telemetry.copy_used, elsewhere.telemetry.copy_check], ['unparsed', false, 'cards differ from the screen']);
+  // A folded first screen shows only its first cards; those agreeing is enough.
+  const folded = buildAioCapture(noPageRead('q'), { ...opts, shownBeforeExpansion: ['Law Offices of Jeff Martin', 'Gorospe Law Group'] });
+  assert.deepEqual([folded.capture_status, folded.telemetry.copy_check], ['parsed', 'used']);
   assert.equal(aiPresence(stale).status, 'unparsed');
   // A written answer: its opening sentence on the first screen is enough.
   const text = buildAioCapture(noPageRead('q'), { keyword: 'sell my house fast', targetBusinessId: TD, targetName: 'Top Dollar Home Offer', copy: textCopy, copyCheck: ['AI Overview', 'To sell a house fast in Tulsa, you can choose between a direct cash sale'], overviewOnScreen: true, telemetry: NOT_WATCHED });

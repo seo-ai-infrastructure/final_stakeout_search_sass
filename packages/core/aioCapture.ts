@@ -93,6 +93,8 @@ export interface AioWatcherTelemetry {
   stop_reason: AioWatcherStopReason;
   /** Google's copied answer was used as the referee (it matched the page read). */
   copy_used: boolean;
+  /** Why the copy was or was not used: "used", "no copy", "cards differ from the screen" or "not on the screen". */
+  copy_check?: string;
 }
 
 type Seen = { first_seen_phase: FirstSeenPhase; first_seen_elapsed_ms: number; last_seen_elapsed_ms: number };
@@ -307,7 +309,7 @@ export interface AioCaptureResult {
 }
 
 /** The capture rules' version, written on every capture (a point is replayed when its capture is older). */
-export const AIO_CAPTURE_VERSION = 'v284';
+export const AIO_CAPTURE_VERSION = 'v285';
 
 /** What the watcher itself knows; the read counts come from the merged reads. */
 export type WatcherFacts = Omit<AioWatcherTelemetry, 'expanded_seen' | 'post_expand_added_sentences' | 'post_expand_added_entries' | 'copy_used'>;
@@ -523,11 +525,25 @@ export function buildAioCapture(
           return k.length >= 24 && hay.includes(k);
         })),
   );
+  // The copy's business cards against the first screen's, in order: the same firms in the same
+  // places, or the copy is another answer (a clipboard left from a nearby point names many of the
+  // same firms, so a name merely being on the screen is not enough). Up to the first three cards.
+  const screenCards = opts.shownBeforeExpansion ?? null;
+  const sameCard = (a: string, b: string) => {
+    const x = letters(a), y = letters(b);
+    return x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x));
+  };
+  const cardsAgree =
+    !copied || !screenCards?.length || !copied.cards.length
+      ? true
+      : copied.cards.slice(0, Math.min(3, screenCards.length)).every((c, i) => sameCard(c.name, screenCards[i]));
   const copyUsed = Boolean(
     copied &&
+      cardsAgree &&
       copied.sentences.length > 0 &&
       (clusters.length > 0 ? matched >= Math.ceil(copied.sentences.length / 2) : copied.cards.some((c) => pageIds.has(c.id)) || onScreen),
   );
+  const copyCheck = !copied ? 'no copy' : copyUsed ? 'used' : !cardsAgree ? 'cards differ from the screen' : 'not on the screen';
 
   // ---- Names by Google ID: the copy's cards and named businesses, then the page's listing titles.
   const names = new Map<string, string>();
@@ -1064,6 +1080,7 @@ export function buildAioCapture(
       post_expand_added_sentences: stats?.postExpandAddedSentences ?? 0,
       post_expand_added_entries: stats?.postExpandAddedEntries ?? 0,
       copy_used: copyUsed,
+      copy_check: copyCheck,
     },
     counts,
     sentences,
