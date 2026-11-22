@@ -7,9 +7,9 @@ import { promoLive } from '@/lib/pricing';
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: 'Stakeout Search: Every Data Point Comes with a Receipt',
+  title: 'Stakeout Search | Local Rank Tracking and AI Overviews on Real Phones',
   description:
-    'Local rank tracking on real Android phones, in Chrome and the Google Maps app: GPS set at every grid point, the AI Overview and Map Pack tracked together, and a screen recording behind every result. Seats from $39 per client a month; your first 5×5 audit is $5.',
+    'Show clients where they appear in Google’s AI Overviews and local results. Get 25 real-phone searches, recordings and a shareable report in your first $5 audit.',
 };
 
 export default function Home() {
