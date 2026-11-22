@@ -1,6 +1,6 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/core/pinInsights';
-import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst, readAiOverview } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { poolDigest, sampleEntries, summarizeAioSources } from '@stakeout/core/aioSources';
@@ -1595,11 +1595,12 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       if (b.aiCopy) Object.assign(proof, { aiLead: aiNamesFirst(b.aiCopy, scan.targetBusiness, scan.targetKgmid) });
     } else Object.assign(proof, { rankSource: 'maps_list' });
     // The capture of the AI Overview (capture schema): its sentences and their citations, each
-    // business by where it was matched (featured: a card or Google's link on its name; its listing
-    // referenced in a citation; its website cited; named in the words), the sources row, the ads and
-    // the pages it holds under no sentence, each match with its receipt. Built now that Google's
-    // copied answer (the referee for sentences, citations and linked names) and the rank are known:
-    // all of it to storage, the status, flags, counts and businesses on the point.
+    // business by where it was matched (featured, with its placement: a card or a sentence
+    // recommending it by Google's link on its name; its listing cited as a source; its website cited,
+    // verified or not; named in the words), the sources row, the ads and the pages it holds under no
+    // sentence, each match with its receipt. Built now that Google's copied answer (the referee for
+    // sentences, citations and linked names), the first screen (cards shown before "Show more") and
+    // the rank are known: all of it to storage, the status, flags, counts and businesses on the point.
     const mapPackRank = aiList ? (aiRankOnly ? null : aiList.rank) : result.targetRank;
     if (watched?.dossier && watched.telemetry) {
       try {
@@ -1611,6 +1612,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
           mapPackRank,
           copy: b.aiCopy ?? null,
           overviewOnScreen: result.hasAiOverview,
+          shownBeforeExpansion: b.aiInitial ? (readAiOverview(b.aiInitial)?.businesses.map((x) => x.name) ?? null) : null,
           telemetry: watched.telemetry,
           scanPointId: p.id,
         });
@@ -1622,7 +1624,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         console.log(
           `[aio-capture] ${tag}: ${capture.capture_status}, ${capture.overview_mode}${t.copy_used ? ' (copy used)' : ' (no copy)'} · ${n.sentences_count} sentence(s), ${n.cited_web_pages_count} web page(s) on ${n.websites_cited_count} site(s) and ${n.cited_gbp_listings_count} listing(s) cited` +
             ` · ${n.featured_businesses_count} featured (${n.card_businesses_count} card(s)), ${n.named_businesses_count} in the answer, ${n.sources_only_businesses_count} more only in the sources row (${n.sources_row_listings_count} listing(s)), ${n.ads_count} ad(s), ${n.unreferenced_web_sources_count} other page(s)` +
-            ` · target ${capture.target_match ?? 'not matched'}: featured ${capture.target_featured_in_aio}, listing referenced ${capture.target_listing_referenced}, website cited ${capture.target_website_cited}, named ${capture.target_named_in_prose}, map pack ${mapPackRank ?? '-'}${capture.target_suggested_id ? ', the answer links ' + capture.target_suggested_id + ' under its name' : ''}` +
+            ` · target (${capture.target_identity ?? 'not found'}): featured ${capture.target_featured_in_aio}${capture.target_featured_placement ? ' (' + (capture.target_featured_placement.kind === 'card' ? 'card #' + capture.target_featured_placement.card_position + (capture.target_featured_placement.after_expansion ? ' after expansion' : '') : 'inline recommendation') + ')' : ''}, named ${capture.target_named_in_prose}, listing cited as a source ${capture.target_listing_cited_as_source}, website cited ${capture.target_website_cited}, map pack ${mapPackRank ?? '-'}${capture.target_suggested_id ? ', the answer links ' + capture.target_suggested_id + ' under its name' : ''}` +
             ` · ${t.stop_reason}, expanded ${t.expanded_seen} (+${t.post_expand_added_sentences} sentence(s), +${t.post_expand_added_entries} entr(ies)), first read ${t.first_read_ms ?? '-'} ms, last good look ${t.last_valid_read_ms ?? '-'} ms, ${t.reads_succeeded} good / ${t.reads_missed} missed${t.resolved_via_warmup_tab ? ', via the warm-up tab' : ''}`,
         );
       } catch (e) {

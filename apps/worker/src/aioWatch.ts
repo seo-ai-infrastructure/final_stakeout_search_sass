@@ -1,5 +1,5 @@
 import { AIO_PROBE_JS, AIO_SOURCES_JS, isResultsPage, mergeReads, type AioDossier } from '@stakeout/core/aioSources';
-import type { WatcherFacts } from '@stakeout/core/aioCapture';
+import { AIO_CAPTURE_VERSION, type WatcherFacts } from '@stakeout/core/aioCapture';
 import { shellQuote } from '@stakeout/core/runner';
 import { adbForward, adbForwardRemove, shell } from './deviceShell';
 
@@ -212,7 +212,7 @@ export async function watchAioSources(opts: {
   };
   const msNow = () => Date.now() - t0;
   const tele: WatcherFacts = {
-    capture_version: 'v281',
+    capture_version: AIO_CAPTURE_VERSION,
     resolved_via_warmup_tab: false,
     warmup_tab_listed_url: null,
     reads_succeeded: 0,

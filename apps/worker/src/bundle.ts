@@ -78,6 +78,8 @@ export async function readBundleFile(tgzPath: string, tag: string, dir: string) 
         .map((f) => readFile(join(folder, f), 'utf8')),
     ),
     ai: await xml(/^aio_.*\.xml$/),
+    /** The AI Overview as first shown, before "Show more". */
+    aiInitial: entries.includes('aio_initial.xml') ? await readFile(join(folder, 'aio_initial.xml'), 'utf8') : null,
     flags: entries.includes('flags.txt') ? await readFile(join(folder, 'flags.txt'), 'utf8') : '',
     video: await readFile(join(folder, 'video.mp4')),
   };
