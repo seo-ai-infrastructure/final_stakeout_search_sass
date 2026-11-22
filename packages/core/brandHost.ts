@@ -23,6 +23,8 @@ export function isPrimaryHost(host: string, appUrl: string | undefined = process
 export function allowedOnCustomDomain(pathname: string): boolean {
   return (
     /^\/share\/[^/]+\/?$/.test(pathname) ||
+    // The visibility report page (its data comes from /api/share/…/visibility).
+    pathname === '/reports/visibility.html' ||
     /^\/api\/(share|evidence|proof|brand|census)\//.test(pathname) ||
     pathname.startsWith('/_next/') ||
     // The map's worker script (copied from the map library at build time).

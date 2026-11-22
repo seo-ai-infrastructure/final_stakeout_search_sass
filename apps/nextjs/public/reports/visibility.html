@@ -41,7 +41,7 @@ button,select,summary{cursor:pointer}
 /* hero */
 .hero{background:var(--hero);color:#f5f7f9;border-top:1px solid #2b3742}
 .hero .wrap{padding-top:28px;padding-bottom:26px;display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap}
-.hero .eyebrow{color:#ffab78;display:block;margin-bottom:8px}
+.hero .eyebrow{color:var(--eyebrow,#ffab78);display:block;margin-bottom:8px}
 .hero h1{font-size:clamp(26px,4vw,46px);line-height:1.06;letter-spacing:-.045em;font-weight:760;max-width:22ch}
 .hero .sub{margin-top:10px;color:#c3cfd9;font-size:14px;display:flex;flex-wrap:wrap;gap:6px 14px}
 .hero .sub span+span::before{content:"·";margin-right:14px;color:#6f8090}
@@ -179,7 +179,7 @@ footer .wrap{display:grid;gap:6px}
 <body>
 <header class="topbar">
   <div class="wrap">
-    <a class="brand" href="#top" aria-label="Stakeout Search"><span class="brand-mark" aria-hidden="true"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></a>
+    <a class="brand" id="brand" href="#top" aria-label="Stakeout Search"><span class="brand-mark" aria-hidden="true"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></a>
     <nav aria-label="Report sections">
       <a href="#coverage">Coverage</a><a href="#actions">Priority actions</a><a href="#history">Scan history</a><a href="#google">Google data</a><a href="#receipts">Point receipts</a>
     </nav>
@@ -292,7 +292,7 @@ footer .wrap{display:grid;gap:6px}
 
 <footer>
   <div class="wrap">
-    <b style="color:var(--ink)">Stakeout Search · every number comes with a real-device receipt.</b>
+    <b style="color:var(--ink)" id="footbrand">Stakeout Search · every number comes with a real-device receipt.</b>
     <span>Map pack positions and AI answers are what Google showed a real phone at each point, at the time listed. Area names come from each point's address; where that isn't a real place name, the ZIP code is shown instead.</span>
   </div>
 </footer>
@@ -315,19 +315,21 @@ const timeET = (iso) => {
 const dayET = (iso) => DAY.format(new Date(iso));
 
 /* ---- Data: exactly what Stakeout stores for this business's scans ---- */
-const scanId = new URLSearchParams(location.search).get('scan');
+const params = new URLSearchParams(location.search);
+const scanId = params.get('scan'), shareId = params.get('share');
 const status = (html) => {
   const el = $('#status');
   el.hidden = false;
   el.innerHTML = html;
 };
 let DATA = null;
-if (!scanId) status('<b>No scan chosen.</b> Open this report from a scan in Stakeout.');
+if (!scanId && !shareId) status('<b>No scan chosen.</b> Open this report from a scan, or from its share link.');
 else {
   try {
-    const r = await fetch('/api/scans/' + encodeURIComponent(scanId) + '/visibility', { credentials: 'same-origin', cache: 'no-store' });
-    if (r.status === 401) status('<b>Sign in to Stakeout</b> to see this report. <a href="/login?next=' + encodeURIComponent(location.pathname + location.search) + '">Sign in</a>');
-    else if (!r.ok) status('<b>This report isn’t available.</b> It is open to admins while it is in beta.');
+    const url = shareId ? '/api/share/' + encodeURIComponent(shareId) + '/visibility' : '/api/scans/' + encodeURIComponent(scanId) + '/visibility';
+    const r = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+    if (r.status === 401) status('<b>Sign in</b> to see this report. <a href="/login?next=' + encodeURIComponent(location.pathname + location.search) + '">Sign in</a>');
+    else if (!r.ok) status('<b>This report isn’t available.</b> The link may have been revoked, or the scan removed.');
     else DATA = await r.json();
   } catch {
     status('<b>The report couldn’t load.</b> Check the connection and reload the page.');
@@ -401,7 +403,19 @@ function packTotals(s) {
 
 /* ---- Header & KPIs ---- */
 function header() {
-  document.title = DATA.business + ' · Local & AI Visibility Report';
+  const brand = DATA.brand;
+  document.title = DATA.business + ' · Local & AI Visibility Report' + (brand ? ' · ' + brand.name : '');
+  // A shared report under the agency's own name (and logo, and colour) when it has one.
+  if (brand) {
+    const b = $('#brand');
+    b.setAttribute('aria-label', brand.name);
+    b.innerHTML = brand.logo ? `<img src="${esc(brand.logo)}" alt="${esc(brand.name)}" style="max-height:30px;max-width:180px;display:block">` : `<span><b>${esc(brand.name)}</b></span>`;
+    $('#footbrand').textContent = brand.name + ' · every number comes with a real-device receipt.';
+    if (/^#[0-9a-f]{6}$/i.test(brand.accent || '')) {
+      document.documentElement.style.setProperty('--accent', brand.accent);
+      document.documentElement.style.setProperty('--eyebrow', brand.accent);
+    }
+  }
   $('#biz').textContent = DATA.business;
   const bits = [DATA.market ? `${DATA.market} market` : '', DATA.website || '', `${SCANS.length} scan${SCANS.length > 1 ? 's' : ''} · ${SCANS.reduce((a, s) => a + s.pins.length, 0)} points`].filter(Boolean);
   $('#bizsub').innerHTML = bits.map((b) => `<span>${esc(b)}</span>`).join('');
@@ -567,7 +581,7 @@ function receipt() {
       <div class="row"><dt>${firstLabel}</dt><dd>${first}</dd></div>
       <div class="row"><dt>Sources in the answer</dt><dd>${src}</dd></div>
     </dl>
-    <a class="btnlink" href="${esc(DATA.app + s.id)}" target="_blank" rel="noopener">Open the recording and full evidence in Stakeout ↗</a>`;
+    <a class="btnlink" href="${esc(s.link)}" target="_blank" rel="noopener">Open the recording and full evidence${DATA.brand ? '' : ' in Stakeout'} ↗</a>`;
 }
 function competitors() {
   const s = state.scan, count = new Map();

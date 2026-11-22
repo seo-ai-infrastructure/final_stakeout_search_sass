@@ -728,15 +728,20 @@ export function GeoGridDashboard({
           </p>
         </div>
         {shared ? (
-          // New accounts are closed unless NEXT_PUBLIC_SIGNUPS_OPEN=true: no sign-up button on shared reports.
-          process.env.NEXT_PUBLIC_SIGNUPS_OPEN === 'true' && !scan.brand ? (
-            <Link
-              className="rounded border border-emerald-500 p-2 text-emerald-300"
-              href="/login?mode=register"
-            >
-              Create agency account
-            </Link>
-          ) : null
+          <div className="flex flex-wrap items-center gap-3">
+            <a href={'/reports/visibility.html?share=' + encodeURIComponent(identifier)} target="_blank" rel="noopener" className="rounded-lg border border-orange-400/60 px-3 py-2 text-sm font-semibold text-orange-200 hover:bg-orange-400/10">
+              Visibility report
+            </a>
+            {/* New accounts are closed unless NEXT_PUBLIC_SIGNUPS_OPEN=true: no sign-up button on shared reports. */}
+            {process.env.NEXT_PUBLIC_SIGNUPS_OPEN === 'true' && !scan.brand ? (
+              <Link
+                className="rounded border border-emerald-500 p-2 text-emerald-300"
+                href="/login?mode=register"
+              >
+                Create agency account
+              </Link>
+            ) : null}
+          </div>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
             <Link
@@ -747,12 +752,10 @@ export function GeoGridDashboard({
             </Link>
             <button onClick={() => changeShare('share')}>Share report</button>
             <button onClick={() => changeShare('revoke')}>Revoke link</button>
-            {/* The new visibility report, admins only while in beta (the evidence-bundle links are sent to admins alone). */}
-            {scan.pins.some((p) => Boolean(p.dumpsTarUrl)) && (
-              <a href={'/reports/visibility.html?scan=' + encodeURIComponent(scan.id)} target="_blank" rel="noopener" className="rounded-lg border border-orange-400/60 px-3 py-2 text-sm font-semibold text-orange-200 hover:bg-orange-400/10">
-                Visibility report (beta)
-              </a>
-            )}
+            {/* The Local & AI visibility report: this scan with the business's other scans, printable. */}
+            <a href={'/reports/visibility.html?scan=' + encodeURIComponent(scan.id)} target="_blank" rel="noopener" className="rounded-lg border border-orange-400/60 px-3 py-2 text-sm font-semibold text-orange-200 hover:bg-orange-400/10">
+              Visibility report
+            </a>
           </div>
         )}
       </header>
@@ -767,6 +770,17 @@ export function GeoGridDashboard({
               onFocus={(e) => e.target.select()}
             />
           </label>
+          {/\/share\/[^/?#]+/.test(share) && (
+            <label className="mt-2 block">
+              Visibility report link (the printable report, on the same link){' '}
+              <input
+                className="w-full bg-slate-800 p-2"
+                readOnly
+                value={share.replace(/\/share\/([^/?#]+).*$/, (_, t: string) => '/reports/visibility.html?share=' + t)}
+                onFocus={(e) => e.target.select()}
+              />
+            </label>
+          )}
         </div>
       )}
       {error && <p role="alert">{error}</p>}
