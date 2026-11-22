@@ -196,7 +196,7 @@ async function searchActivity(userId: string, website: string, page: string | nu
       // The page however Google filed it (http or https, www or not, with or without the last slash), as Connected Accounts reads it.
       const at = page ? pageOf(page) || undefined : undefined;
       const ask = (r: { from: string; to: string }, byQuery: boolean) =>
-        google<{ rows?: GscRow[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', gscRequest(r, { page: at }, byQuery ? 'query' : null, 100));
+        google<{ rows?: GscRow[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', gscRequest(r, { page: at }, byQuery ? 'query' : null, 1000));
       const [now, was, top] = await Promise.all([ask(p.recent, false), ask(p.before, false), ask(p.recent, true)]);
       const total = (x: { rows?: GscRow[] }) => ({ clicks: n(x.rows?.[0]?.clicks), impressions: n(x.rows?.[0]?.impressions), position: x.rows?.[0]?.position ?? null });
       const rows = (top.rows ?? []).map((r) => ({ query: r.keys?.[0] ?? '', clicks: n(r.clicks), impressions: n(r.impressions), position: r.position ?? null })).filter((r) => r.query);
@@ -212,12 +212,13 @@ async function searchActivity(userId: string, website: string, page: string | nu
           .map((r) => ({ ...r, es: isSpanish(r.query), elsewhere: elsewhere(r.query, r.position) })),
         /** Clicks Google gives a search for (it keeps rare searches private, with their clicks). */
         listedClicks: rows.reduce((a, r) => a + r.clicks, 0),
-        /** Of the searches it lists for the page, how many are in Spanish. */
+        /** Of the searches it lists for the page, how many are in Spanish, and how often they showed it. */
         spanish: rows.filter((r) => isSpanish(r.query)).length,
+        spanishShown: rows.filter((r) => isSpanish(r.query)).reduce((a, r) => a + r.impressions, 0),
         listed: rows.length,
         problem: null as string | null,
       };
-    })().catch((e) => ({ property: null as string | null, scope: null, recent: null, before: null, queries: [], listedClicks: 0, spanish: 0, listed: 0, problem: said(e) })),
+    })().catch((e) => ({ property: null as string | null, scope: null, recent: null, before: null, queries: [], listedClicks: 0, spanish: 0, spanishShown: 0, listed: 0, problem: said(e) })),
     (async () => {
       const list: { id: string; name: string }[] = [];
       const r = await google<{ accountSummaries?: { propertySummaries?: { property: string; displayName?: string }[] }[] }>(token, 'https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200');
@@ -280,7 +281,8 @@ async function build(main: Report, more: { r: Report; link: string }[], mainLink
   // activity, then Search Console and Analytics for the page it links to.
   let numbers: { listing: Awaited<ReturnType<typeof listingActivity>> | null; search: Awaited<ReturnType<typeof searchActivity>> | null; problem: string | null } | null = null;
   // Kept a quarter of an hour: Google's figures run days behind, and a share link can be opened often.
-  const cacheKey = 'stakeout:vis:google:' + main.id;
+  // The version changes when the numbers' shape does, so a page never reads an older shape.
+  const cacheKey = 'stakeout:vis:google:v2:' + main.id;
   const cached = withNumbers ? await redis().get(cacheKey).then((v) => (v ? JSON.parse(v) : null)).catch(() => null) : null;
   if (cached) numbers = cached;
   else if (withNumbers && userId) {

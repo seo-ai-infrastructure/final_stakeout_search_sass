@@ -997,6 +997,8 @@ function history() {
 /* ---- Google data: Google's own numbers where connected, never estimated ---- */
 const fmt = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('en-US'));
 const r1 = (v) => Math.round(v * 10) / 10;
+/** An average position as shown: always one decimal ("12.0", "35.5"). */
+const pos1 = (v) => (v === null || v === undefined ? '—' : r1(v).toFixed(1));
 const span = (r) => (r ? `${dayET(r.from + 'T12:00:00Z').replace(/, \d{4}$/, '')} – ${dayET(r.to + 'T12:00:00Z')}` : '');
 const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-09".."2026-11" → "Sep – Nov 2026". */
@@ -1018,12 +1020,15 @@ function deltaPill(now, was, lowerBetter) {
   const txt = was < 20 ? `${sign}${fmt(Math.abs(diff))} vs ${fmt(was)}` : `${sign}${Math.abs(Math.round((100 * diff) / was))}% vs ${fmt(was)}`;
   return `<span class="pill ${cls}" title="The 28 days before: ${fmt(was)}">${txt}</span>`;
 }
-/** Average position: a smaller number is better, said as spots gained or lost. */
+/**
+ * Average position: a smaller number is better, said as spots gained or lost. The change is worked
+ * out from the two figures as shown (41.4 → 35.5 is 5.9), so a reader's own sum agrees with it.
+ */
 function positionPill(now, was) {
   if (now === null || was === null || now === undefined || was === undefined) return '';
-  const d = r1(was - now);
+  const d = (Math.round(was * 10) - Math.round(now * 10)) / 10;
   if (!d) return '<span class="pill flat">no change</span>';
-  return `<span class="pill ${d > 0 ? 'up' : 'down'}" title="Closer to #1 is better">${d > 0 ? '▲' : '▼'} ${Math.abs(d)} spots</span><span class="was">was ${r1(was)}</span>`;
+  return `<span class="pill ${d > 0 ? 'up' : 'down'}" title="Closer to #1 is better">${d > 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(1)} spots</span><span class="was">was ${pos1(was)}</span>`;
 }
 const kpi = (label, value, pill) => `<div><div class="k">${label}</div><div class="v">${value}</div>${pill ? `<div class="d">${pill}</div>` : ''}</div>`;
 const eyebrow = (name, on) => `<span class="label eye${on ? ' on' : ''}"><i class="dot"></i>${name} <span class="st">· ${on ? 'connected' : 'not connected'}</span></span>`;
@@ -1062,10 +1067,14 @@ function listingCard(L, S) {
     html += `<h4>Searches that showed the listing <span class="quiet">(${esc(monthsSpan(k.months))})</span></h4><div class="bars">${k.rows
       .map((r, i) => `<div class="bar"><span class="name gname" title="${esc(r.keyword)}"><span class="nm">${i + 1}. ${esc(r.keyword)}</span>${r.es ? '<span class="tag" title="In Spanish">ES</span>' : ''}</span><span class="n">${r.exact ? fmt(r.total) : esc(r.latest)}</span><div class="track"><div class="fill" style="width:${r.exact ? Math.max(3, (100 * r.total) / max) : 3}%"></div></div></div>`)
       .join('')}</div><p class="quiet" style="font-size:11.5px;margin-top:6px">Google gives only “fewer than 15” for small searches.</p>`;
-    // Many searches in Spanish for the listing, none for the page it links to.
+    // Many searches in Spanish for the listing, next to none for the page it links to (under 1 in 20).
     const es = k.rows.filter((r) => r.es).length, g = S && S.gsc;
-    if (es >= 3 && g && g.recent && g.listed && g.spanish === 0)
-      html += `<div class="callout"><span aria-hidden="true">✦</span><span><b>Spanish demand gap:</b> ${es} of the top ${k.rows.length} searches that showed the listing are in Spanish, while none of the ${g.listed >= 100 ? 'top 100' : fmt(g.listed)} searches Search Console lists for the landing page is.</span></div>`;
+    if (es >= 3 && g && g.recent && g.listed && g.spanish / g.listed < 0.05) {
+      const of = g.listed >= 1000 ? 'top 1,000' : fmt(g.listed);
+      html += `<div class="callout"><span aria-hidden="true">✦</span><span><b>Spanish demand gap:</b> ${es} of the top ${k.rows.length} searches that showed the listing are in Spanish, while ${
+        g.spanish ? `only ${fmt(g.spanish)} of the ${of} searches Search Console lists for the landing page ${g.spanish === 1 ? 'is' : 'are'} (shown ${fmt(g.spanishShown)} time${g.spanishShown === 1 ? '' : 's'} in all)` : `none of the ${of} searches Search Console lists for the landing page is`
+      }.</span></div>`;
+    }
   } else if (k.problem) html += `<p class="quiet" style="font-size:12px;margin-top:10px">Searches couldn’t be read: ${esc(k.problem)}</p>`;
   return gcard(head, figures, html);
 }
@@ -1078,7 +1087,7 @@ function searchCard(S, L) {
   if (g && g.recent) {
     cells.push(kpi('Google clicks', fmt(g.recent.clicks), deltaPill(g.recent.clicks, g.before.clicks)));
     cells.push(kpi('Times shown', fmt(g.recent.impressions), deltaPill(g.recent.impressions, g.before.impressions)));
-    cells.push(kpi('Avg. position', g.recent.position !== null ? r1(g.recent.position) : '—', positionPill(g.recent.position, g.before.position)));
+    cells.push(kpi('Avg. position', pos1(g.recent.position), positionPill(g.recent.position, g.before.position)));
   }
   // Visits that landed on the page (GA4), and how many came from the listing's own link.
   if (a && a.page) {
@@ -1091,12 +1100,12 @@ function searchCard(S, L) {
     html += `<p class="funnel">From the listing: <b>${fmt(L.daily.totals.websiteClicks)}</b> website clicks → <b>${fmt(a.listing.recent.sessions)}</b> visits from its link${a.page.recent.sessions ? ` (${Math.round((100 * a.listing.recent.sessions) / a.page.recent.sessions)}% of this page’s visits)` : ''}. From Google Search: <b>${fmt(g.recent.clicks)}</b> click${g.recent.clicks === 1 ? '' : 's'}.</p>`;
   if (g && g.queries.length) {
     html += `<h4>Top searches <span class="quiet">(Search Console)</span></h4><div class="scroll"><table class="tbl"><thead><tr><th>Search term</th><th class="num">Clicks</th><th class="num">Shown</th><th class="num">Position</th></tr></thead><tbody>${g.queries
-      .map((q) => `<tr><td>${esc(q.query)}${q.es ? ' <span class="tag">ES</span>' : ''}${q.elsewhere ? ' <span class="tag unparsed" title="Names a place outside this office’s market, and Google ranks the page far down for it">Geo mismatch</span>' : ''}</td><td class="num">${fmt(q.clicks)}</td><td class="num">${fmt(q.impressions)}</td><td class="num"><span class="pos${q.position !== null && q.position <= 15 ? ' near' : ''}"${q.position !== null && q.position <= 15 ? ' title="Within reach of page one"' : ''}>${q.position !== null ? r1(q.position) : '—'}</span></td></tr>`)
+      .map((q) => `<tr><td>${esc(q.query)}${q.es ? ' <span class="tag">ES</span>' : ''}${q.elsewhere ? ' <span class="tag unparsed" title="Names a place outside this office’s market, and Google ranks the page far down for it">Geo mismatch</span>' : ''}</td><td class="num">${fmt(q.clicks)}</td><td class="num">${fmt(q.impressions)}</td><td class="num"><span class="pos${q.position !== null && q.position <= 15 ? ' near' : ''}"${q.position !== null && q.position <= 15 ? ' title="Within reach of page one"' : ''}>${pos1(q.position)}</span></td></tr>`)
       .join('')}</tbody></table></div>`;
     // Google lists a search only when enough people made it; the rest of the clicks are in the totals alone.
     if (g.recent && g.recent.clicks > g.listedClicks) {
       const part = g.listedClicks ? `${fmt(g.recent.clicks - g.listedClicks)} of the ${fmt(g.recent.clicks)} clicks` : `The ${fmt(g.recent.clicks)} click${g.recent.clicks === 1 ? '' : 's'}`;
-      html += `<p class="quiet" style="font-size:12px;margin-top:6px">${part} came from ${g.listed >= 100 ? 'searches beyond the top 100, or ' : ''}searches Google keeps private (each too rare to list).</p>`;
+      html += `<p class="quiet" style="font-size:12px;margin-top:6px">${part} came from ${g.listed >= 1000 ? 'searches beyond the top 1,000, or ' : ''}searches Google keeps private (each too rare to list).</p>`;
     }
   } else if (g && g.problem) html += `<p class="quiet" style="font-size:12px;margin-top:10px">Search Console: ${esc(g.problem)}</p>`;
   if (a && !a.recent && a.problem) html += `<p class="quiet" style="font-size:12px;margin-top:8px">Analytics: ${esc(a.problem)}</p>`;
