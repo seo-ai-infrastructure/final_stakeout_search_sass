@@ -25,6 +25,8 @@ export function allowedOnCustomDomain(pathname: string): boolean {
     /^\/share\/[^/]+\/?$/.test(pathname) ||
     // The visibility report page (its data comes from /api/share/…/visibility).
     pathname === '/reports/visibility.html' ||
+    // Its map library (copied from the installed packages at build time).
+    pathname.startsWith('/vendor/') ||
     /^\/api\/(share|evidence|proof|brand|census)\//.test(pathname) ||
     pathname.startsWith('/_next/') ||
     // The map's worker script (copied from the map library at build time).

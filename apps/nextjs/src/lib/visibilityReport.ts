@@ -56,6 +56,8 @@ function pointOf(p: Pin) {
   return {
     r: p.rowIdx,
     c: p.colIdx,
+    lat: p.lat,
+    lng: p.lng,
     area: p.city ?? null,
     zip: p.zip ?? null,
     rank: p.rankFound ?? null,
@@ -87,6 +89,7 @@ function scanOf(s: Report, link: string) {
     at: s.createdAt,
     size: s.gridSize,
     km: s.spacingKm,
+    center: [s.centerLng, s.centerLat] as [number, number],
     status: s.status,
     share: { rule: share.rule, share: share.share, wins: share.wins, points: share.points, packTop3: share.local.top3, packPoints: share.local.points, aiOnly: share.ai.onlyWins, left: share.noLocalSurface + share.unknown },
     pins: s.pins.filter((p) => p.status === 'COMPLETED').map(pointOf),
@@ -280,6 +283,8 @@ async function build(main: Report, more: { r: Report; link: string }[], mainLink
     market: centre?.city ? centre.city + (centre.stateCode ? ', ' + centre.stateCode : '') : null,
     built: new Date().toISOString(),
     scan: main.id,
+    /** The base map, as the New scan page draws it: its style, and the census tiles for income shading. */
+    map: { style: process.env.NEXT_PUBLIC_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/dark', census: (process.env.NEXT_PUBLIC_CENSUS_VINTAGE ?? '').trim() || null },
     brand,
     google: { searchConsole: Boolean(gsc), profile: Boolean(listing) || Boolean(numbers?.listing), numbers },
     /** For the owner's page: whether the share link carries Google's numbers. */

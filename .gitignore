@@ -17,3 +17,4 @@ census-build/
 
 # The map worker script, copied from node_modules at build time
 apps/nextjs/public/maplibre-gl-worker.mjs
+apps/nextjs/public/vendor/

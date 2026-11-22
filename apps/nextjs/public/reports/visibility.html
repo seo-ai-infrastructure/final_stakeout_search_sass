@@ -94,6 +94,17 @@ select{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6p
 .focus b{color:#9cecf8}
 .face{flex:1;min-height:330px;display:grid;place-items:center;padding:26px 8%;background-color:var(--map2);background-image:linear-gradient(#26333d 1px,transparent 1px),linear-gradient(90deg,#26333d 1px,transparent 1px);background-size:34px 34px}
 .grid{display:grid;gap:8px;width:100%;max-width:440px}
+.mapview{position:relative;flex:1;min-height:420px;height:clamp(420px,56vh,560px);background:#0b1220}
+#map{position:absolute;inset:0}
+.mpin{width:34px;height:34px;display:grid;place-items:center;border-radius:50%;font:700 11px/1 Inter,system-ui,sans-serif;color:#fff;cursor:pointer;padding:0;box-shadow:0 1px 4px rgba(0,0,0,.55)}
+.mpin.sq{border-radius:9px}
+.mpin[aria-pressed=true]{outline:3px solid #ff8a4c;outline-offset:2px}
+.bizpin{width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:#ffe5d9;border:1px solid #ff976a;background:#d84e1d;border-radius:50%;box-shadow:0 0 0 5px rgba(255,90,31,.12);pointer-events:none}
+.maptools{position:absolute;left:10px;top:10px;display:flex;gap:6px;z-index:2}
+.maptools label{display:inline-flex;align-items:center;gap:6px;background:rgba(11,17,23,.88);border:1px solid #2d3b47;color:#cbd5e1;border-radius:8px;padding:5px 9px;font-size:11.5px;font-weight:600;cursor:pointer}
+.inclegend{position:absolute;right:10px;bottom:30px;z-index:2;background:rgba(11,17,23,.9);border:1px solid #2d3b47;border-radius:9px;padding:9px 11px;color:#cbd5e1;font-size:11px;line-height:1.5}
+.inclegend b{display:block;color:#fff;font-size:12px;margin-bottom:4px}
+.inclegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 .cell{aspect-ratio:1;display:grid;place-items:center}
 .pin.sq{border-radius:10px;letter-spacing:.02em}
 .pin{width:min(46px,100%);aspect-ratio:1;border-radius:50%;border:2px solid transparent;display:grid;place-items:center;font:700 12px/1 Inter,system-ui,sans-serif;color:#fff;background:#4b5965;transition:transform .12s}
@@ -229,13 +240,24 @@ footer .wrap{display:grid;gap:6px}
       <div class="mapbox">
         <div class="mapbox-head">
           <div><h3 id="maptitle"></h3><p id="mapsub"></p></div>
-          <div class="pills" role="group" aria-label="Show">
-            <button type="button" data-mode="rank">Map pack</button>
-            <button type="button" data-mode="ai">AI answer</button>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+            <div class="pills" role="group" aria-label="View" id="viewpills" hidden>
+              <button type="button" data-view="map">Map</button>
+              <button type="button" data-view="grid">Grid</button>
+            </div>
+            <div class="pills" role="group" aria-label="Show">
+              <button type="button" data-mode="rank">Map pack</button>
+              <button type="button" data-mode="ai">AI answer</button>
+            </div>
           </div>
         </div>
         <p class="focus" id="focus"></p>
-        <div class="face"><div class="grid" id="grid" role="group" aria-label="Grid points"></div></div>
+        <div class="face" id="gridface"><div class="grid" id="grid" role="group" aria-label="Grid points"></div></div>
+        <div class="mapview" id="mapview" hidden>
+          <div id="map" role="region" aria-label="The scan's points on the map"></div>
+          <div class="maptools" id="maptools" hidden><label><input type="checkbox" id="incomebox"> Household income</label></div>
+          <div class="inclegend" id="inclegend" hidden></div>
+        </div>
         <div class="legend" id="legend"></div>
       </div>
       <div class="card pad receipt" id="receipt" aria-live="polite"></div>
@@ -636,7 +658,11 @@ function render() {
   $('#scanpick').innerHTML = list.map((x, i) => `<option value="${esc(x.id)}" ${x === s ? 'selected' : ''}>${esc(timeET(x.at))} · ${x.pins.length} points${i === 0 ? ' · latest' : ' · earlier run'}</option>`).join('');
   $('#maptitle').textContent = s.kw;
   $('#mapsub').textContent = `${timeET(s.at)} · ${s.size}×${s.size} grid, ${s.pins.length} points${s.km ? `, ${Number(s.km).toFixed(1)} km apart` : ''} · rows run north to south`;
-  document.querySelectorAll('.pills button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
+  document.querySelectorAll('.pills button[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode)));
+  document.querySelectorAll('.pills button[data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === state.view)));
+  $('#gridface').hidden = state.view === 'map';
+  $('#mapview').hidden = state.view !== 'map';
+  if (state.view === 'map') void drawMap();
   $('#focus').innerHTML = focusLine();
   legend();
   grid();
@@ -650,12 +676,169 @@ $('#scanpick').addEventListener('change', (e) => {
   state.pin = s.pins.find((p) => p.r === state.pin.r && p.c === state.pin.c) || s.pins[0];
   render();
 });
-document.querySelectorAll('.pills button').forEach((b) =>
+document.querySelectorAll('.pills button[data-mode]').forEach((b) =>
   b.addEventListener('click', () => {
     state.mode = b.dataset.mode;
     render();
   }),
 );
+
+/* ---- Map view: the scan's points on the base map, drawn as the New scan page draws it ---- */
+const VIEW_KEY = 'stakeout:vis:view';
+const remembered = (() => { try { return localStorage.getItem(VIEW_KEY); } catch { return null; } })();
+const canMap = Boolean(DATA.map && !window.__REPORT_DATA__ && SCANS.every((s) => Array.isArray(s.center) && s.pins.every((p) => typeof p.lat === 'number' && typeof p.lng === 'number')));
+state.view = canMap && remembered !== 'grid' ? 'map' : 'grid';
+if (canMap) $('#viewpills').hidden = false;
+document.querySelectorAll('.pills button[data-view]').forEach((b) =>
+  b.addEventListener('click', () => {
+    state.view = b.dataset.view;
+    try { localStorage.setItem(VIEW_KEY, state.view); } catch { /* storage unavailable */ }
+    render();
+  }),
+);
+// Warm, subdued income shading, the New scan page's (median household income by census tract).
+const INCOME = ['#261f18', '#4c3c28', '#735b38', '#9c7f49', '#c7aa6c', '#edd8a6'];
+const INCOME_BREAKS = [40000, 60000, 80000, 100000, 150000];
+const INCOME_LABELS = ['Under $40k', '$40k–$60k', '$60k–$80k', '$80k–$100k', '$100k–$150k', '$150k+'];
+const STORE = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10l1.5-5h13L20 10"/><path d="M4 10a2.7 2.7 0 0 0 5.3 0a2.7 2.7 0 0 0 5.4 0a2.7 2.7 0 0 0 5.3 0"/><path d="M5.5 12.5V20h13v-7.5"/><path d="M10 20v-4.5h4V20"/></svg>';
+let lib = null, map = null, mapReady = null, markers = [], fitted = null;
+function mapUnavailable() {
+  state.view = 'grid';
+  $('#viewpills').hidden = true;
+  $('#mapview').hidden = true;
+  $('#gridface').hidden = false;
+  grid();
+}
+/** The base map turned down so the pins are the strong colour: the New scan page's quiet dark style. */
+function quietBase(m) {
+  const attempt = (fn) => { try { fn(); } catch { /* this style lacks it */ } };
+  for (const l of m.getStyle().layers || []) {
+    const id = l.id, type = l.type, src = l['source-layer'];
+    if (src === 'poi') attempt(() => m.setLayoutProperty(id, 'visibility', 'none'));
+    else if (type === 'background') attempt(() => m.setPaintProperty(id, 'background-color', '#0b1220'));
+    else if (type === 'line' && src === 'transportation') {
+      if (/casing|path|track|service|rail|pier|ferry/i.test(id)) attempt(() => m.setLayoutProperty(id, 'visibility', 'none'));
+      else {
+        const minor = /minor|street|tertiary|residential/i.test(id), motorway = /motorway|trunk/i.test(id);
+        attempt(() => m.setPaintProperty(id, 'line-color', motorway ? '#3b4a61' : '#334155'));
+        attempt(() => m.setPaintProperty(id, 'line-opacity', minor ? 0.28 : motorway ? 0.8 : 0.55));
+      }
+    } else if (type === 'line') attempt(() => m.setPaintProperty(id, 'line-opacity', 0.3));
+    else if (type === 'fill' && src === 'water') {
+      attempt(() => m.setPaintProperty(id, 'fill-color', '#0d2238'));
+      attempt(() => m.setPaintProperty(id, 'fill-outline-color', '#3b82a6'));
+    } else if (type === 'fill' && /^(landuse|landcover|park|building|aeroway)$/.test(src || '')) attempt(() => m.setPaintProperty(id, 'fill-opacity', 0.2));
+    else if (type === 'symbol') {
+      attempt(() => m.setPaintProperty(id, 'text-color', src === 'water_name' ? '#7dd3fc' : src === 'transportation_name' ? '#94a3b8' : '#cbd5e1'));
+      attempt(() => m.setPaintProperty(id, 'text-halo-color', '#0b1220'));
+      attempt(() => m.setPaintProperty(id, 'text-halo-width', 1.6));
+    }
+  }
+}
+function ensureMap() {
+  if (mapReady) return mapReady;
+  mapReady = (async () => {
+    const css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = '/vendor/maplibre-gl.css';
+    document.head.appendChild(css);
+    lib = await import('/vendor/maplibre-gl.mjs');
+    lib.setWorkerUrl('/maplibre-gl-worker.mjs');
+    const s = state.scan;
+    map = new lib.Map({ container: 'map', style: DATA.map.style, center: s.center, zoom: 11, attributionControl: { compact: true }, canvasContextAttributes: { preserveDrawingBuffer: true }, cooperativeGestures: true });
+    map.addControl(new lib.NavigationControl({ showCompass: false }), 'top-right');
+    await new Promise((ok, no) => {
+      const t = setTimeout(() => no(new Error('the map did not load')), 20000);
+      map.once('load', () => { clearTimeout(t); ok(); });
+    });
+    quietBase(map);
+    const labels = (map.getStyle().layers || []).find((l) => l.type === 'symbol')?.id;
+    // Income shading under the pins, off until asked for.
+    if (DATA.map.census) {
+      try {
+        await new Promise((ok, no) => {
+          if (window.pmtiles) return ok();
+          const sc = document.createElement('script');
+          sc.src = '/vendor/pmtiles.js';
+          sc.onload = ok;
+          sc.onerror = no;
+          document.head.appendChild(sc);
+        });
+        lib.addProtocol('pmtiles', new window.pmtiles.Protocol().tile);
+        map.addSource('census', { type: 'vector', url: 'pmtiles://' + location.origin + '/api/census/' + DATA.map.census + '.pmtiles', promoteId: 'id' });
+        const step = ['step', ['to-number', ['get', 'inc']], INCOME[0]];
+        INCOME_BREAKS.forEach((b, i) => step.push(b, INCOME[i + 1]));
+        map.addLayer({ id: 'income', type: 'fill', source: 'census', 'source-layer': 'tract', layout: { visibility: 'none' }, paint: { 'fill-color': ['case', ['has', 'inc'], step, 'rgba(0,0,0,0)'], 'fill-opacity': 0.38 } }, labels);
+        // Lakes and roads above the shading (nobody lives in a lake).
+        for (const l of map.getStyle().layers || []) {
+          const src = l['source-layer'];
+          if ((l.type === 'fill' && src === 'water') || (l.type === 'line' && (src === 'transportation' || src === 'waterway'))) { try { map.moveLayer(l.id, labels); } catch { /* stays */ } }
+        }
+        $('#maptools').hidden = false;
+        $('#incomebox').addEventListener('change', (e) => {
+          map.setLayoutProperty('income', 'visibility', e.target.checked ? 'visible' : 'none');
+          $('#inclegend').hidden = !e.target.checked;
+        });
+        $('#inclegend').innerHTML = '<b>Median household income</b>' + INCOME_LABELS.map((t, i) => `<div><i style="background:${INCOME[i]}"></i>${t}</div>`).join('') + '<div style="color:#8494a4;margin-top:3px">U.S. Census Bureau, ACS 5-year</div>';
+      } catch (e) {
+        console.warn('[report map] no income shading:', e);
+      }
+    }
+    // The grid's frame, in the New scan page's orange.
+    map.addSource('frame', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    map.addLayer({ id: 'frame-fill', type: 'fill', source: 'frame', paint: { 'fill-color': '#ff5a1f', 'fill-opacity': 0.025 } }, labels);
+    map.addLayer({ id: 'frame-line', type: 'line', source: 'frame', paint: { 'line-color': '#ff5a1f', 'line-opacity': 0.75, 'line-width': 1.3 } });
+    return map;
+  })().catch((e) => {
+    console.warn('[report map] showing the grid instead:', e);
+    mapUnavailable();
+    return null;
+  });
+  return mapReady;
+}
+async function drawMap() {
+  const m = await ensureMap();
+  if (!m || state.view !== 'map') return;
+  m.resize();
+  markers.forEach((x) => x.remove());
+  markers = [];
+  const s = state.scan;
+  const lats = s.pins.map((p) => p.lat), lngs = s.pins.map((p) => p.lng);
+  const half = (Number(s.km) || 1) / 2;
+  const pLat = half / 111, pLng = half / (111 * Math.cos((s.center[1] * Math.PI) / 180));
+  const box = [Math.min(...lngs) - pLng, Math.min(...lats) - pLat, Math.max(...lngs) + pLng, Math.max(...lats) + pLat];
+  m.getSource('frame').setData({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]], [box[0], box[1]]]] } });
+  for (const p of s.pins) {
+    const st = pinStyle(p);
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'mpin' + (st.sq ? ' sq' : '');
+    el.textContent = st.txt;
+    el.title = label(p) + ' · ' + area(p) + ' · ' + st.tip;
+    el.setAttribute('aria-label', label(p) + ', ' + area(p) + ': ' + st.tip);
+    el.setAttribute('aria-pressed', String(state.pin === p));
+    el.style.background = st.bg;
+    el.style.border = `2px ${st.dash ? 'dashed' : 'solid'} ${st.bd}`;
+    if (st.small) el.style.fontSize = '9.5px';
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.pin = p;
+      markers.forEach((x) => { const b = x.getElement(); if (b.classList.contains('mpin')) b.setAttribute('aria-pressed', String(b === el)); });
+      receipt();
+    });
+    markers.push(new lib.Marker({ element: el }).setLngLat([p.lng, p.lat]).addTo(m));
+  }
+  // The business, beside the point at its own location so that point stays readable.
+  const biz = document.createElement('div');
+  biz.className = 'bizpin';
+  biz.title = DATA.business;
+  biz.innerHTML = STORE;
+  markers.push(new lib.Marker({ element: biz, offset: [20, -20] }).setLngLat(s.center).addTo(m));
+  if (fitted !== s.id) {
+    m.fitBounds([[box[0], box[1]], [box[2], box[3]]], { padding: 34, duration: 0 });
+    fitted = s.id;
+  }
+}
 
 /* ---- Priority actions: worked out from the points, nothing typed by hand ---- */
 function actions() {
