@@ -1,0 +1,31 @@
+.header { position: relative; z-index: 30; height: 64px; background: #0d1117; border-bottom: 1px solid rgba(255,255,255,.085); font-family: Inter, system-ui, sans-serif; color: #f4f5f7; }
+.bar { display: flex; height: 100%; align-items: center; gap: 18px; padding: 0 20px; }
+.brand { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 11px; color: #f4f5f7; text-decoration: none; padding: 5px 0; }
+.brandMark { display: block; width: 32px; height: 46px; object-fit: contain; }
+.wordmark { display: flex; flex-direction: column; width: 130px; gap: 4px; }
+.wordmark > span:first-child { font-size: 22px; font-weight: 800; line-height: 22px; letter-spacing: -.035em; }
+.search { display: flex; justify-content: space-between; font-size: 11px; line-height: 11px; font-weight: 600; color: #ff5a1f; padding-right: 2px; }
+.desktopNav { display: flex; align-items: center; justify-content: center; flex: 1 1 auto; min-width: 0; gap: 2px; }
+.navLink { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 10px; border-radius: 8px; color: #929aa8; text-decoration: none; white-space: nowrap; font-size: 13px; font-weight: 500; line-height: 20px; letter-spacing: -.015em; transition: color .15s, background .15s; }
+.navLink:hover { color: #f4f5f7; background: rgba(255,255,255,.035); }
+.navLink[aria-current=page] { color: #f4f5f7; background: rgba(255,255,255,.045); }
+.navLink[aria-current=page]::after { position: absolute; content: ''; left: 12px; right: 12px; bottom: 2px; height: 2px; border-radius: 2px; background: #ff5a1f; }
+.navLink[data-connect=true] { color: #edb49a; }
+.adminBadge { display: inline-flex; align-items: center; gap: 4px; font-size: 8px; line-height: 12px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; color: #8390a1; border: 1px solid #303844; border-radius: 20px; padding: 2px 5px; }
+.free { font-size: 9px; color: #8d9aab; }
+.account { margin-left: auto; flex: 0 0 auto; }
+.menuToggle { display: none; flex: 0 0 auto; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid #303844; border-radius: 9px; color: #c6cdd7; background: transparent; cursor: pointer; }
+.menuToggle:hover { color: white; background: rgba(255,255,255,.05); }
+.mobileMenu { display: none; }
+.header :is(a, button):focus-visible { outline: 2px solid #ff945e; outline-offset: 3px; }
+@media (min-width: 1280px) and (max-width: 1399px) { .desktopNav .adminBadge { display: none; } }
+@media (max-width: 1279px) {
+  .desktopNav { display: none; }.menuToggle { display: inline-flex; }.mobileMenu { display: block; }.bar { gap: 14px; }
+  .backdrop { position: fixed; inset: 64px 0 0; width: 100%; border: 0; background: rgba(0,0,0,.3); cursor: default; }
+  .menuPanel { position: absolute; z-index: 1; top: 72px; right: 14px; min-width: 294px; max-width: calc(100vw - 28px); display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 9px; border: 1px solid #2b333f; border-radius: 13px; background: #10151df7; backdrop-filter: blur(20px); box-shadow: 0 18px 45px #0006; }
+  .menuPanel .navLink { justify-content: flex-start; font-size: 13px; min-height: 44px; white-space: normal; }.menuPanel .adminBadge { margin-left: auto; flex-shrink: 0; }.menuPanel .navLink[aria-current=page]::after { left: 0; width: 2px; height: 18px; top: 13px; bottom: auto; }
+}
+@media (max-width: 600px) { .bar { padding: 0 14px; gap: 10px; }.brand { gap: 8px; }.brandMark { width: 29px; height: 42px; }.wordmark { width: 107px; }.wordmark > span:first-child { font-size: 18px; line-height: 19px; }.search { font-size: 9px; line-height: 10px; }.menuToggle { width: 44px; height: 44px; } }
+@media (max-width: 600px) { .menuPanel { left: 14px; right: 14px; min-width: 0; max-width: none; } }
+@media (max-width: 375px) { .bar { padding: 0 10px; gap: 7px; }.brandMark { width: 26px; height: 38px; }.wordmark { width: 95px; }.wordmark > span:first-child { font-size: 16px; line-height: 17px; }.brand { gap: 7px; } }
+@media (prefers-reduced-motion: reduce) { .navLink { transition: none; } }
