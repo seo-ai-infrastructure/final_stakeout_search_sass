@@ -21,7 +21,9 @@ export async function POST(req: Request) {
     if (u.role !== 'ADMIN') throw new InputError('Admins only.', 403);
     if (!adsConfigured()) throw new InputError('Google Ads is not set up: GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN and GOOGLE_ADS_CUSTOMER_ID on Vercel.', 503);
     const b = (await req.json().catch(() => ({}))) as { action?: unknown; keywords?: unknown; location?: unknown; placeId?: unknown; language?: unknown; customerId?: unknown; loginCustomerId?: unknown; raw?: unknown };
-    if (b.action === 'accounts') return NextResponse.json({ version: ADS_API, accounts: await reachableAccounts() });
+    // The Cloud project behind the OAuth client (a client ID begins with its project's number; not a secret):
+    // Google gives the API access level to that project.
+    if (b.action === 'accounts') return NextResponse.json({ version: ADS_API, oauthProject: (process.env.GOOGLE_ADS_CLIENT_ID ?? '').split('-')[0] || null, accounts: await reachableAccounts() });
     // A raw research call (historical | ideas | suggest) with the body given, for checking Google's answer.
     if (b.action === 'probe') {
       const m = (b as { method?: unknown }).method;
