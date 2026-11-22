@@ -25,3 +25,21 @@ export function placeIn(query: string): string | null {
   const inn = / in ((?:[a-z]+ ){0,2}[a-z]+)$/.exec(q);
   return inn ? clean(inn[1]) : null;
 }
+
+export const placeWords = (x: string) => x.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * Whether a search names another market: Google ranks the page far down for it (past 50) and the
+ * place in it is none of the scan's own. For a county, none of the counties the grid lies in (none
+ * known, never); for a town, none of the points' towns or the office's city.
+ */
+export function otherMarket(places: string[], counties: string[] | null) {
+  const local = places.map(placeWords).filter((x) => x.length >= 3);
+  return (query: string, position: number | null) => {
+    const at = placeIn(query);
+    if (!at || position === null || position <= 50) return false;
+    const county = /^(.+) county$/.exec(at);
+    if (county) return Boolean(counties?.length) && !counties!.includes(county[1]);
+    return !local.some((l) => at.includes(l) || l.includes(at));
+  };
+}

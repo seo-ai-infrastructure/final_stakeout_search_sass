@@ -12,7 +12,7 @@ import { dailySeries, latestSnapshot, monthsOf, topKeywords } from '@stakeout/co
 import { periods, propertyFor } from '@stakeout/core/googleSite';
 import { gscRequest, pageOf } from '@stakeout/core/googleExplore';
 import { redis } from '@stakeout/core/redis';
-import { isSpanish, placeIn } from './searchTerms';
+import { isSpanish, otherMarket, placeWords } from './searchTerms';
 
 /**
  * Whether a scan's share link carries Google's numbers (listing activity, Search Console,
@@ -176,14 +176,43 @@ type GaReport = { rows?: { metricValues?: { value?: string }[] }[] };
  * site's name in it, as Connected Accounts guesses), with the visits that came from the listing's
  * tracking tag. Through the scan owner's own Google sign-in; read-only.
  */
-async function searchActivity(userId: string, website: string, page: string | null, campaign: string, places: string[]) {
-  // A search names another market when the place in it is none of the scan's own (its points'
-  // towns, the office's city, the region), and Google ranks the page far down for it.
-  const local = places.map((x) => x.toLowerCase().trim()).filter((x) => x.length >= 3);
-  const elsewhere = (q: string, position: number | null) => {
-    const at = placeIn(q);
-    return Boolean(at && position !== null && position > 50 && !local.some((l) => at.includes(l) || l.includes(at)));
-  };
+/**
+ * The counties a scan's grid lies in: its centre and its four outermost points, from the Census
+ * Bureau's coordinates service ("suffolk"). Kept a month per scan; null when it can't say, and then
+ * no county in a search is ever called another market.
+ */
+async function countiesOf(scanId: string, pins: { lat: number | null; lng: number | null }[]): Promise<string[] | null> {
+  const key = 'stakeout:vis:counties:' + scanId;
+  const kept = await redis().get(key).catch(() => null);
+  if (kept) {
+    try {
+      const v = JSON.parse(kept);
+      return Array.isArray(v) && v.length ? v : null;
+    } catch {
+      /* read again */
+    }
+  }
+  const at = pins.filter((p): p is { lat: number; lng: number } => typeof p.lat === 'number' && typeof p.lng === 'number');
+  if (!at.length) return null;
+  const least = (f: (p: { lat: number; lng: number }) => number) => at.reduce((a, b) => (f(b) < f(a) ? b : a));
+  const centre = { lat: at.reduce((a, p) => a + p.lat, 0) / at.length, lng: at.reduce((a, p) => a + p.lng, 0) / at.length };
+  const picks = [centre, least((p) => p.lat), least((p) => -p.lat), least((p) => p.lng), least((p) => -p.lng)];
+  const names = await Promise.all(
+    picks.map(async (p) => {
+      const r = await fetch(`https://geocoding.geo.census.gov/geocoder/geographies/coordinates?x=${p.lng.toFixed(5)}&y=${p.lat.toFixed(5)}&benchmark=Public_AR_Current&vintage=Current_Current&layers=Counties&format=json`, { signal: AbortSignal.timeout(6000) });
+      if (!r.ok) throw new Error('Census ' + r.status);
+      const j = (await r.json()) as { result?: { geographies?: { Counties?: { BASENAME?: string }[] } } };
+      return (j.result?.geographies?.Counties ?? []).map((c) => placeWords(String(c.BASENAME ?? ''))).filter(Boolean);
+    }),
+  ).catch(() => null);
+  const out = names ? [...new Set(names.flat())] : [];
+  if (!out.length) return null;
+  await redis().set(key, JSON.stringify(out), 'EX', 30 * 86400).catch(() => null);
+  return out;
+}
+
+async function searchActivity(userId: string, website: string, page: string | null, campaign: string, places: string[], counties: string[] | null) {
+  const elsewhere = otherMarket(places, counties);
   const token = await googleAccess(userId);
   const p = periods(new Date(), 28, 3);
   const url = page ?? 'https://' + website + '/';
@@ -210,6 +239,13 @@ async function searchActivity(userId: string, website: string, page: string | nu
           .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions)
           .slice(0, 10)
           .map((r) => ({ ...r, es: isSpanish(r.query), elsewhere: elsewhere(r.query, r.position) })),
+        /** Searches naming another market beyond those ten, most often shown first. */
+        otherMarkets: [...rows]
+          .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions)
+          .slice(10)
+          .filter((r) => elsewhere(r.query, r.position))
+          .sort((a, b) => b.impressions - a.impressions)
+          .slice(0, 3),
         /** Clicks Google gives a search for (it keeps rare searches private, with their clicks). */
         listedClicks: rows.reduce((a, r) => a + r.clicks, 0),
         /** Of the searches it lists for the page, how many are in Spanish, and how often they showed it. */
@@ -218,7 +254,7 @@ async function searchActivity(userId: string, website: string, page: string | nu
         listed: rows.length,
         problem: null as string | null,
       };
-    })().catch((e) => ({ property: null as string | null, scope: null, recent: null, before: null, queries: [], listedClicks: 0, spanish: 0, spanishShown: 0, listed: 0, problem: said(e) })),
+    })().catch((e) => ({ property: null as string | null, scope: null, recent: null, before: null, queries: [], otherMarkets: [], listedClicks: 0, spanish: 0, spanishShown: 0, listed: 0, problem: said(e) })),
     (async () => {
       const list: { id: string; name: string }[] = [];
       const r = await google<{ accountSummaries?: { propertySummaries?: { property: string; displayName?: string }[] }[] }>(token, 'https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200');
@@ -282,7 +318,7 @@ async function build(main: Report, more: { r: Report; link: string }[], mainLink
   let numbers: { listing: Awaited<ReturnType<typeof listingActivity>> | null; search: Awaited<ReturnType<typeof searchActivity>> | null; problem: string | null } | null = null;
   // Kept a quarter of an hour: Google's figures run days behind, and a share link can be opened often.
   // The version changes when the numbers' shape does, so a page never reads an older shape.
-  const cacheKey = 'stakeout:vis:google:v2:' + main.id;
+  const cacheKey = 'stakeout:vis:google:v3:' + main.id;
   const cached = withNumbers ? await redis().get(cacheKey).then((v) => (v ? JSON.parse(v) : null)).catch(() => null) : null;
   if (cached) numbers = cached;
   else if (withNumbers && userId) {
@@ -300,7 +336,8 @@ async function build(main: Report, more: { r: Report; link: string }[], mainLink
     })();
     // The scan's own places: its points' towns, the office's city and the market.
     const places = [...new Set([...main.pins.map((p) => p.city ?? ''), ...more.flatMap((x) => x.r.pins.map((p) => p.city ?? '')), listing?.city ?? ''])].filter(Boolean);
-    const search = gsc && (website || page) ? await searchActivity(userId, website || domainOf(page), page, campaign, places).catch((e) => ({ periods: null, page: null, gsc: null, ga: null, problem: said(e) }) as never) : null;
+    const counties = gsc && (website || page) ? await countiesOf(main.id, main.pins).catch(() => null) : null;
+    const search = gsc && (website || page) ? await searchActivity(userId, website || domainOf(page), page, campaign, places, counties).catch((e) => ({ periods: null, page: null, gsc: null, ga: null, problem: said(e) }) as never) : null;
     numbers = { listing, search, problem: null };
     if (listing || search) await redis().set(cacheKey, JSON.stringify(numbers), 'EX', 900).catch(() => null);
   }
