@@ -179,6 +179,8 @@ export type GridScanData = {
   brand?: { name: string; accent: string | null; logo: string | null } | null;
   /** Set when an admin is reading another account's scan: that account's email. */
   viewingFor?: string;
+  /** For the owner: whether the share link's visibility report carries Google's numbers. */
+  shareGoogle?: boolean;
   /** For the owner of a finished 5×5 scan of a business with no paid listing: the points it was weak on. */
   bridge?: { weak: number; total: number; why: 'rank' | 'ai'; business: string; monthly: string } | null;
   id: string;
@@ -228,6 +230,8 @@ export function GeoGridDashboard({
     [selected, select] = useState<string | null>(initialPin),
     [error, setError] = useState(''),
     [share, setShare] = useState(''),
+    // Whether the share link's visibility report carries Google's numbers (null: as the scan says).
+    [googleOnShare, setGoogleOnShare] = useState<boolean | null>(null),
     [projected, project] = useState<CompetitorMarketStat | null>(null),
     [mapWarning, setMapWarning] = useState('');
   const [tab, setTab] = useState<'overview' | 'ai' | 'evidence'>(initialTab);
@@ -629,6 +633,19 @@ export function GeoGridDashboard({
       setError((e as Error).message);
     }
   }
+  /** Whether the shared visibility report carries Google's numbers (listing activity, Search Console, Analytics). */
+  async function changeShareGoogle(on: boolean) {
+    setGoogleOnShare(on);
+    try {
+      const r = await fetch('/api/scans/' + identifier, { method: 'POST', body: JSON.stringify({ action: 'share_google', on }) });
+      const v = await r.json();
+      if (!r.ok) throw Error(v.error);
+      setGoogleOnShare(v.shareGoogle);
+    } catch (e) {
+      setGoogleOnShare(!on);
+      setError((e as Error).message);
+    }
+  }
   /** Re-runs failed points (all of them, or the ones given): charged per point, refunded if they fail again. */
   async function rerun(pinIds?: string[]) {
     setRerunBusy(true);
@@ -781,6 +798,10 @@ export function GeoGridDashboard({
               />
             </label>
           )}
+          <label className="mt-2 flex items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" className="h-4 w-4" checked={googleOnShare ?? scan.shareGoogle ?? true} onChange={(e) => changeShareGoogle(e.target.checked)} />
+            Include Google data in the shared report: the listing&rsquo;s activity, Search Console and Analytics (where connected)
+          </label>
         </div>
       )}
       {error && <p role="alert">{error}</p>}

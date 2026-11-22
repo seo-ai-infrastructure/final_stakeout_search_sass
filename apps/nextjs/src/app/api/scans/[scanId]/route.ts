@@ -5,6 +5,7 @@ import { brandForUser } from '@stakeout/core/brands';
 import { randomBytes } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { report } from '@/lib/reports';
+import { setShareGoogle, shareGoogleOn } from '@/lib/visibilityReport';
 import { getAuthenticatedUser, readScope } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { InputError, scheduleCron } from '@stakeout/core/grid';
@@ -42,7 +43,7 @@ export async function GET(_: Request, c: C) {
     // An admin reading someone else's scan is told whose it is, so the page can say so.
     const owner = me.role === 'ADMIN' ? await db.gridScan.findUnique({ where: { id }, select: { userId: true, user: { select: { email: true } } } }) : null;
     if (owner && owner.userId !== me.id) return Response.json({ ...data, viewingFor: owner.user.email });
-    return Response.json({ ...data, bridge: await bridgeFor(id, me).catch(() => null) });
+    return Response.json({ ...data, shareGoogle: await shareGoogleOn(id), bridge: await bridgeFor(id, me).catch(() => null) });
   } catch (e) {
     return errorResponse(e);
   }
@@ -52,7 +53,7 @@ export async function POST(req: Request, c: C) {
     const id = (await c.params).scanId,
       me = await getAuthenticatedUser(),
       userId = me.id;
-    const { action, pinIds } = await req.json();
+    const { action, pinIds, on } = await req.json();
     // Stop: the owner, or an admin for any scan. Finished points are kept; every point still
     // pending is settled and refunded, and the worker cancels a phone task that is under way.
     if (action === 'stop') {
@@ -83,6 +84,11 @@ export async function POST(req: Request, c: C) {
       const brand = await brandForUser(userId).catch(() => null);
       const path = '/share/' + record.shareToken;
       return Response.json({ path, url: brand ? 'https://' + brand.domain + path : null });
+    }
+    // Whether the share link's visibility report carries Google's numbers (on unless turned off).
+    if (action === 'share_google') {
+      await setShareGoogle(id, on !== false);
+      return Response.json({ shareGoogle: on !== false });
     }
     if (action === 'revoke') {
       await db.gridScan.update({ where: { id }, data: { shareToken: null } });

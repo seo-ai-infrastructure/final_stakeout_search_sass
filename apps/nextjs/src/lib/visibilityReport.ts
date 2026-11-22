@@ -11,6 +11,20 @@ import { google, googleAccess } from './googleOAuth';
 import { dailySeries, latestSnapshot, monthsOf, topKeywords } from '@stakeout/core/gbpInsights';
 import { periods, propertyFor } from '@stakeout/core/googleSite';
 import { gscRequest, pageOf } from '@stakeout/core/googleExplore';
+import { redis } from '@stakeout/core/redis';
+
+/**
+ * Whether a scan's share link carries Google's numbers (listing activity, Search Console,
+ * Analytics). On unless the owner turned it off; kept as a row in Kept (scope "share-google").
+ */
+export async function shareGoogleOn(scanId: string): Promise<boolean> {
+  const rows = await db.$queryRaw<{ value: string }[]>`SELECT "value" FROM "Kept" WHERE "scope" = 'share-google' AND "key" = ${scanId}`.catch(() => []);
+  return rows[0]?.value !== 'off';
+}
+export async function setShareGoogle(scanId: string, on: boolean) {
+  if (on) await db.$executeRaw`DELETE FROM "Kept" WHERE "scope" = 'share-google' AND "key" = ${scanId}`;
+  else await db.$executeRaw`INSERT INTO "Kept" ("scope", "key", "value", "updatedAt") VALUES ('share-google', ${scanId}, 'off', NOW()) ON CONFLICT ("scope", "key") DO UPDATE SET "value" = 'off', "updatedAt" = NOW()`;
+}
 
 /**
  * The data behind the Local & AI visibility report (/reports/visibility.html): a scan and the
@@ -222,7 +236,7 @@ async function searchActivity(userId: string, website: string, page: string | nu
   return { periods: { recent: p.recent, before: p.before }, page: url, gsc, ga };
 }
 
-async function build(main: Report, more: { r: Report; link: string }[], mainLink: string, userId: string | null, brand: { name: string; accent: string | null; logo: string | null } | null, withNumbers = false) {
+async function build(main: Report, more: { r: Report; link: string }[], mainLink: string, userId: string | null, brand: { name: string; accent: string | null; logo: string | null } | null, withNumbers = false, shareGoogle: boolean | null = null) {
   const scans = [scanOf(main, mainLink), ...more.map((x) => scanOf(x.r, x.link))].filter((s) => s.pins.length > 0);
   // The market: the city of the point nearest the grid's centre.
   const mid = Math.floor(main.gridSize / 2);
@@ -239,7 +253,11 @@ async function build(main: Report, more: { r: Report; link: string }[], mainLink
   // Google's own numbers, for the owner's pages only (never on a share link): the listing's
   // activity, then Search Console and Analytics for the page it links to.
   let numbers: { listing: Awaited<ReturnType<typeof listingActivity>> | null; search: Awaited<ReturnType<typeof searchActivity>> | null; problem: string | null } | null = null;
-  if (withNumbers && userId) {
+  // Kept a quarter of an hour: Google's figures run days behind, and a share link can be opened often.
+  const cacheKey = 'stakeout:vis:google:' + main.id;
+  const cached = withNumbers ? await redis().get(cacheKey).then((v) => (v ? JSON.parse(v) : null)).catch(() => null) : null;
+  if (cached) numbers = cached;
+  else if (withNumbers && userId) {
     const owner = await db.user.findUnique({ where: { id: userId }, select: { id: true, role: true } });
     const t = owner ? await listingFor(owner, main).catch(() => null) : null;
     const listing = t?.profile && t.location ? await listingActivity({ profile: t.profile, location: t.location }).catch(() => null) : null;
@@ -254,6 +272,7 @@ async function build(main: Report, more: { r: Report; link: string }[], mainLink
     })();
     const search = gsc && (website || page) ? await searchActivity(userId, website || domainOf(page), page, campaign).catch((e) => ({ periods: null, page: null, gsc: null, ga: null, problem: said(e) }) as never) : null;
     numbers = { listing, search, problem: null };
+    if (listing || search) await redis().set(cacheKey, JSON.stringify(numbers), 'EX', 900).catch(() => null);
   }
   return {
     business: main.targetBusiness,
@@ -263,6 +282,8 @@ async function build(main: Report, more: { r: Report; link: string }[], mainLink
     scan: main.id,
     brand,
     google: { searchConsole: Boolean(gsc), profile: Boolean(listing) || Boolean(numbers?.listing), numbers },
+    /** For the owner's page: whether the share link carries Google's numbers. */
+    shareGoogle,
     scans,
   };
 }
@@ -274,7 +295,7 @@ export async function visibilityForScan(id: string, me: { id: string; role: stri
   const owner = admin ? ((await db.gridScan.findUnique({ where: { id }, select: { userId: true } }))?.userId ?? null) : me.id;
   const list = owner ? await others(owner, main) : [];
   const more = (await Promise.all(list.map((o) => report({ id: o.id }, { admin }).then((r) => ({ r, link: '/scans/' + o.id })).catch(() => null)))).filter((x): x is { r: Report; link: string } => Boolean(x));
-  return build(main, more, '/scans/' + id, owner, null, true);
+  return build(main, more, '/scans/' + id, owner, null, true, await shareGoogleOn(id));
 }
 
 /**
@@ -288,5 +309,8 @@ export async function visibilityForShare(token: string, brand: { name: string; a
   const more = (
     await Promise.all(list.map((o) => (o.shareToken ? report({ shareToken: o.shareToken }).then((r) => ({ r, link: '/share/' + o.shareToken })).catch(() => null) : null)))
   ).filter((x): x is { r: Report; link: string } => Boolean(x));
-  return build(main, more, '/share/' + token, owner, brand);
+  // Google's numbers go with the link unless the owner turned them off; then the section is left out.
+  const on = await shareGoogleOn(main.id);
+  const data = await build(main, more, '/share/' + token, owner, brand, on);
+  return on ? data : { ...data, google: null };
 }

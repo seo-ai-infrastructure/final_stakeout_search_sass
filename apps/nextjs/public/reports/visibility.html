@@ -264,7 +264,7 @@ footer .wrap{display:grid;gap:6px}
   </section>
 
   <section id="google" data-needs-data>
-    <div class="sec-head"><div><h2>Google data</h2><p>Only what is connected to Stakeout. Nothing here is estimated.</p></div></div>
+    <div class="sec-head"><div><h2>Google data</h2><p>Only what is connected to Stakeout. Nothing here is estimated.</p></div><label id="gshare" hidden style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);cursor:pointer"><input type="checkbox" id="gsharebox"> Include on the share link</label></div>
     <div class="gdata">
       <div class="card empty">
         <span class="label" style="color:var(--dim)" id="gprofile">Google Business Profile</span>
@@ -816,6 +816,31 @@ function searchBody(S) {
   return html || '<p class="quiet">No figures came back.</p>';
 }
 function google() {
+  // A share link whose owner left Google's numbers out: no Google section at all.
+  if (DATA.google === null) {
+    $('#google').hidden = true;
+    document.querySelector('a[href="#google"]')?.remove();
+    return;
+  }
+  // The owner's own page: whether the share link carries these numbers, changed here.
+  if (typeof DATA.shareGoogle === 'boolean' && !shareId && !window.__REPORT_DATA__) {
+    const box = $('#gsharebox');
+    $('#gshare').hidden = false;
+    box.checked = DATA.shareGoogle;
+    box.addEventListener('change', async () => {
+      const want = box.checked;
+      try {
+        const r = await fetch('/api/scans/' + encodeURIComponent(DATA.scan), { method: 'POST', credentials: 'same-origin', body: JSON.stringify({ action: 'share_google', on: want }) });
+        const v = await r.json();
+        if (!r.ok) throw new Error(v.error || 'Not saved');
+        box.checked = v.shareGoogle;
+      } catch (e) {
+        box.checked = !want;
+        $('#gshare').title = 'Not saved: ' + e.message;
+        $('#gshare').style.color = 'var(--red)';
+      }
+    });
+  }
   const g = DATA.google || {};
   const N = g.numbers || null;
   $('#gprofile').textContent = 'Google Business Profile · ' + (N && N.listing ? 'connected' : g.profile ? 'connected' : 'not connected');
@@ -876,7 +901,7 @@ const saveBtn = $('#savecopy');
 if (saveBtn) saveBtn.hidden = false;
 saveBtn?.addEventListener('click', () => {
   const page = document.documentElement.cloneNode(true);
-  page.querySelectorAll('[data-wxt-integrated], #savecopy').forEach((x) => x.remove());
+  page.querySelectorAll('[data-wxt-integrated], #savecopy, #gshare').forEach((x) => x.remove());
   const keep = document.createElement('script');
   keep.textContent = 'window.__REPORT_DATA__ = ' + JSON.stringify(DATA).replace(/</g, '\\u003c') + ';';
   page.querySelector('head').appendChild(keep);
