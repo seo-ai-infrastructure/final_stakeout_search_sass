@@ -12,6 +12,7 @@ import { dailySeries, latestSnapshot, monthsOf, topKeywords } from '@stakeout/co
 import { periods, propertyFor } from '@stakeout/core/googleSite';
 import { gscRequest, pageOf } from '@stakeout/core/googleExplore';
 import { redis } from '@stakeout/core/redis';
+import { isSpanish, placeIn } from './searchTerms';
 
 /**
  * Whether a scan's share link carries Google's numbers (listing activity, Search Console,
@@ -107,6 +108,7 @@ async function others(userId: string, main: Report, extra: Record<string, unknow
 }
 
 type Row = Record<string, unknown>;
+
 const said = (e: unknown) => (e instanceof Error ? e.message : 'Not available.').slice(0, 160);
 const words = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -148,7 +150,7 @@ async function listingActivity(t: { profile: string; location: string }) {
       const m = monthsOf(p.before.from, p.recent.to, 6);
       const r = await postproxy<{ months?: Parameters<typeof topKeywords>[0] }>(gbpPath(t.profile, 'search_keywords'), { query: { location_id: t.location, from_month: m.from, to_month: m.to } });
       const top = topKeywords(r.months ?? []);
-      return { rows: top.rows.slice(0, 10), months: top.months, problem: null as string | null };
+      return { rows: top.rows.slice(0, 10).map((x) => ({ ...x, es: isSpanish(x.keyword) })), months: top.months, problem: null as string | null };
     })().catch((e) => ({ rows: [], months: [] as string[], problem: said(e) })),
     readLocation(t.profile, t.location).catch(() => null),
   ]);
@@ -157,6 +159,8 @@ async function listingActivity(t: { profile: string; location: string }) {
     periods: { recent: p.recent, before: p.before },
     title: loc?.title ?? null,
     address: a ? [...(a.addressLines ?? []), a.locality, a.administrativeArea].filter(Boolean).join(', ') : null,
+    city: a?.locality ?? null,
+    region: a?.administrativeArea ?? null,
     website: loc?.websiteUri ?? null,
     daily,
     keywords,
@@ -172,7 +176,14 @@ type GaReport = { rows?: { metricValues?: { value?: string }[] }[] };
  * site's name in it, as Connected Accounts guesses), with the visits that came from the listing's
  * tracking tag. Through the scan owner's own Google sign-in; read-only.
  */
-async function searchActivity(userId: string, website: string, page: string | null, campaign: string) {
+async function searchActivity(userId: string, website: string, page: string | null, campaign: string, places: string[]) {
+  // A search names another market when the place in it is none of the scan's own (its points'
+  // towns, the office's city, the region), and Google ranks the page far down for it.
+  const local = places.map((x) => x.toLowerCase().trim()).filter((x) => x.length >= 3);
+  const elsewhere = (q: string, position: number | null) => {
+    const at = placeIn(q);
+    return Boolean(at && position !== null && position > 50 && !local.some((l) => at.includes(l) || l.includes(at)));
+  };
   const token = await googleAccess(userId);
   const p = periods(new Date(), 28, 3);
   const url = page ?? 'https://' + website + '/';
@@ -188,13 +199,25 @@ async function searchActivity(userId: string, website: string, page: string | nu
         google<{ rows?: GscRow[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', gscRequest(r, { page: at }, byQuery ? 'query' : null, 100));
       const [now, was, top] = await Promise.all([ask(p.recent, false), ask(p.before, false), ask(p.recent, true)]);
       const total = (x: { rows?: GscRow[] }) => ({ clicks: n(x.rows?.[0]?.clicks), impressions: n(x.rows?.[0]?.impressions), position: x.rows?.[0]?.position ?? null });
-      return { property, scope, recent: total(now), before: total(was), queries: (top.rows ?? [])
-          .map((r) => ({ query: r.keys?.[0] ?? '', clicks: n(r.clicks), impressions: n(r.impressions), position: r.position ?? null }))
-          .filter((r) => r.query)
-          // Most clicks first, then most often shown (on a page with few clicks, what it is shown for says more).
+      const rows = (top.rows ?? []).map((r) => ({ query: r.keys?.[0] ?? '', clicks: n(r.clicks), impressions: n(r.impressions), position: r.position ?? null })).filter((r) => r.query);
+      return {
+        property,
+        scope,
+        recent: total(now),
+        before: total(was),
+        // Most clicks first, then most often shown (on a page with few clicks, what it is shown for says more).
+        queries: [...rows]
           .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions)
-          .slice(0, 10), problem: null as string | null };
-    })().catch((e) => ({ property: null as string | null, scope: null, recent: null, before: null, queries: [], problem: said(e) })),
+          .slice(0, 10)
+          .map((r) => ({ ...r, es: isSpanish(r.query), elsewhere: elsewhere(r.query, r.position) })),
+        /** Clicks Google gives a search for (it keeps rare searches private, with their clicks). */
+        listedClicks: rows.reduce((a, r) => a + r.clicks, 0),
+        /** Of the searches it lists for the page, how many are in Spanish. */
+        spanish: rows.filter((r) => isSpanish(r.query)).length,
+        listed: rows.length,
+        problem: null as string | null,
+      };
+    })().catch((e) => ({ property: null as string | null, scope: null, recent: null, before: null, queries: [], listedClicks: 0, spanish: 0, listed: 0, problem: said(e) })),
     (async () => {
       const list: { id: string; name: string }[] = [];
       const r = await google<{ accountSummaries?: { propertySummaries?: { property: string; displayName?: string }[] }[] }>(token, 'https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200');
@@ -273,7 +296,9 @@ async function build(main: Report, more: { r: Report; link: string }[], mainLink
         return 'gbp_listing';
       }
     })();
-    const search = gsc && (website || page) ? await searchActivity(userId, website || domainOf(page), page, campaign).catch((e) => ({ periods: null, page: null, gsc: null, ga: null, problem: said(e) }) as never) : null;
+    // The scan's own places: its points' towns, the office's city and the market.
+    const places = [...new Set([...main.pins.map((p) => p.city ?? ''), ...more.flatMap((x) => x.r.pins.map((p) => p.city ?? '')), listing?.city ?? ''])].filter(Boolean);
+    const search = gsc && (website || page) ? await searchActivity(userId, website || domainOf(page), page, campaign, places).catch((e) => ({ periods: null, page: null, gsc: null, ga: null, problem: said(e) }) as never) : null;
     numbers = { listing, search, problem: null };
     if (listing || search) await redis().set(cacheKey, JSON.stringify(numbers), 'EX', 900).catch(() => null);
   }

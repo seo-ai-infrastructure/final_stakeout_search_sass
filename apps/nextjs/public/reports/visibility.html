@@ -169,6 +169,51 @@ details.scan[open]>summary::before{content:"▾"}
 
 /* google */
 .gdata{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.gcard{padding:18px 20px}
+/* The two cards share their rows (heading, figures, the rest), so the figures line up across them. */
+.gdata>.gcard{display:grid;grid-row:span 3;grid-template-rows:subgrid;grid-template-columns:minmax(0,1fr);row-gap:0;align-content:start}
+.gcard .gsub.one{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gcard .eye{display:flex;align-items:center;gap:7px;color:#52626f}
+.gcard .eye .dot{width:7px;height:7px;border-radius:50%;background:#9aa8b5}
+.gcard .eye.on .dot{background:var(--green2)}
+.gcard .eye .st{color:#8494a4}
+.gcard .eye.on .st{color:var(--green)}
+.gcard h3{font-size:17px;letter-spacing:-.02em;margin-top:7px}
+.gcard .gsub{font-size:12.5px;color:var(--dim);margin-top:2px;line-height:1.45}
+.gcard .gsub+.gsub{margin-top:0}
+.gcard h4{font-size:13px;margin:16px 0 8px}
+.gcard h4 .quiet{display:inline;margin:0;font-weight:500}
+.gk{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin:14px 0 6px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.gk>div{padding:10px 8px 11px 0;min-width:0}
+.gk>div+div{border-left:1px solid var(--line);padding-left:11px}
+.gk .k{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gk .v{font-size:23px;font-weight:750;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.25}
+.gk .d{margin-top:3px;display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px}
+.gk .was{font-size:11px;color:var(--dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font-size:11px;font-weight:650;border-radius:10px;padding:1px 8px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.gk .pill{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.pill.up{background:#e1f3ea;color:#17694c}
+.pill.down{background:#fbe4df;color:#9b3424}
+.pill.flat{background:#eef1f5;color:#4b5a68}
+.pill.info{background:#e3edf9;color:#245f9a}
+.split{display:grid;grid-template-columns:62px minmax(0,1fr);gap:0 10px;align-items:start;font-size:12.5px;margin-top:10px}
+.split>span{padding-top:1px}
+.split .sl{display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 10px;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+.split .sl b{color:var(--ink);font-weight:650}
+.split .sb{display:flex;gap:2px;height:8px;margin-top:4px}
+.split .sb i{display:block;border-radius:4px;min-width:4px}
+.split .sb i:first-child{background:#5d7488}
+.split .sb i+i{background:#bccad6}
+.bar .name.gname{display:flex;align-items:center;gap:6px;min-width:0}
+.bar .name.gname .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.bar .name.gname .tag{flex:none}
+.pos{display:inline-block;min-width:40px;text-align:center;border-radius:999px;padding:1px 7px;font-weight:650;font-variant-numeric:tabular-nums;background:#eef1f5;color:#4b5a68}
+.pos.near{background:#d6f0e3;color:#17694c}
+.gcard .tbl td.num,.gcard .tbl th.num{text-align:right}
+.callout{display:flex;gap:9px;margin-top:14px;padding:10px 12px;border-radius:9px;background:#fdf3dc;border:1px solid #f0dcaa;color:#5c4210;font-size:12.5px;line-height:1.5}
+.funnel{margin:10px 0 2px;font-size:12px;color:var(--dim)}
+.funnel b{color:var(--ink)}
+@media (max-width:620px){#savecopy:not([hidden])+.print{display:none}.topbar .wrap{gap:12px}.gk{grid-template-columns:repeat(2,minmax(0,1fr))}.gk>div:nth-child(3){border-left:0;padding-left:0}.gk>div:nth-child(n+3){border-top:1px solid var(--line)}}
 .empty{padding:18px 20px;border-style:dashed;background:#fbfcfd}
 .empty h3{font-size:15px;letter-spacing:-.02em}
 .empty p{font-size:13px;color:var(--dim);margin-top:6px}
@@ -288,16 +333,8 @@ footer .wrap{display:grid;gap:6px}
   <section id="google" data-needs-data>
     <div class="sec-head"><div><h2>Google data</h2><p>Only what is connected to Stakeout. Nothing here is estimated.</p></div><label id="gshare" hidden style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);cursor:pointer"><input type="checkbox" id="gsharebox"> Include on the share link</label></div>
     <div class="gdata">
-      <div class="card empty">
-        <span class="label" style="color:var(--dim)" id="gprofile">Google Business Profile</span>
-        <h3 style="margin-top:6px">Customer activity on the listing</h3>
-        <div id="gprofilebody"></div>
-      </div>
-      <div class="card empty">
-        <span class="label" style="color:var(--dim)" id="gsearch">Search Console &amp; Analytics</span>
-        <h3 style="margin-top:6px">How people found the website</h3>
-        <div id="gsearchbody"></div>
-      </div>
+      <div class="card gcard" id="gprofilecard"></div>
+      <div class="card gcard" id="gsearchcard"></div>
     </div>
   </section>
 
@@ -959,45 +996,113 @@ function history() {
 
 /* ---- Google data: Google's own numbers where connected, never estimated ---- */
 const fmt = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('en-US'));
-const delta = (now, was) => {
-  if (now === null || now === undefined || !was) return '';
-  const d = Math.round(((now - was) / was) * 100);
-  return ` <span class="quiet" style="display:inline;margin:0">${d > 0 ? '+' : ''}${d}% vs ${fmt(was)}</span>`;
-};
+const r1 = (v) => Math.round(v * 10) / 10;
 const span = (r) => (r ? `${dayET(r.from + 'T12:00:00Z').replace(/, \d{4}$/, '')} – ${dayET(r.to + 'T12:00:00Z')}` : '');
-const row = (label, now, was, note) => `<div class="row"><dt>${label}</dt><dd><b>${fmt(now)}</b>${delta(now, was)}${note ? ` <span class="quiet" style="display:inline;margin:0">· ${note}</span>` : ''}</dd></div>`;
-const LABEL = { views: 'Views on Search and Maps', calls: 'Calls', websiteClicks: 'Website clicks', directions: 'Direction requests', conversations: 'Messages', bookings: 'Bookings', mobileSearch: 'Search, on a phone', mobileMaps: 'Maps, on a phone', desktopSearch: 'Search, on a computer', desktopMaps: 'Maps, on a computer' };
-function listingBody(L) {
-  let html = `<p class="quiet" style="margin:4px 0 8px">${esc([L.title, L.address].filter(Boolean).join(' · '))}${L.periods ? `<br>Last 28 days, ${esc(span(L.periods.recent))}, against the 28 before. Google counts a listing about three days late.` : ''}</p>`;
-  const d = L.daily;
+const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "2026-09".."2026-11" → "Sep – Nov 2026". */
+const monthsSpan = (ms) => {
+  if (!ms || !ms.length) return '';
+  const [a, b] = [ms[0], ms[ms.length - 1]].map((m) => ({ y: m.slice(0, 4), m: MONTH[Number(m.slice(5, 7)) - 1] }));
+  return a.y === b.y ? (a.m === b.m ? `${a.m} ${a.y}` : `${a.m} – ${b.m} ${b.y}`) : `${a.m} ${a.y} – ${b.m} ${b.y}`;
+};
+/**
+ * The change against the 28 days before, green when better. Small numbers get the plain
+ * difference ("+2 vs 1", "+2 vs 11"), because a percentage of a handful ("+200%") overstates it.
+ */
+function deltaPill(now, was, lowerBetter) {
+  if (now === null || now === undefined || was === null || was === undefined) return '';
+  if (!was) return now ? '<span class="pill up" title="None in the 28 days before">new</span>' : '';
+  const diff = now - was;
+  const cls = diff === 0 ? 'flat' : (lowerBetter ? diff < 0 : diff > 0) ? 'up' : 'down';
+  const sign = diff > 0 ? '+' : diff < 0 ? '−' : '±';
+  const txt = was < 20 ? `${sign}${fmt(Math.abs(diff))} vs ${fmt(was)}` : `${sign}${Math.abs(Math.round((100 * diff) / was))}% vs ${fmt(was)}`;
+  return `<span class="pill ${cls}" title="The 28 days before: ${fmt(was)}">${txt}</span>`;
+}
+/** Average position: a smaller number is better, said as spots gained or lost. */
+function positionPill(now, was) {
+  if (now === null || was === null || now === undefined || was === undefined) return '';
+  const d = r1(was - now);
+  if (!d) return '<span class="pill flat">no change</span>';
+  return `<span class="pill ${d > 0 ? 'up' : 'down'}" title="Closer to #1 is better">${d > 0 ? '▲' : '▼'} ${Math.abs(d)} spots</span><span class="was">was ${r1(was)}</span>`;
+}
+const kpi = (label, value, pill) => `<div><div class="k">${label}</div><div class="v">${value}</div>${pill ? `<div class="d">${pill}</div>` : ''}</div>`;
+const eyebrow = (name, on) => `<span class="label eye${on ? ' on' : ''}"><i class="dot"></i>${name} <span class="st">· ${on ? 'connected' : 'not connected'}</span></span>`;
+/** One whole in two parts (Search and Maps, phone and computer): the figures at each end, a thin bar under them. */
+function splitBar(label, a, b) {
+  const total = a[1] + b[1];
+  if (!total) return '';
+  const pa = Math.round((100 * a[1]) / total), pb = 100 - pa;
+  return `<div class="split"><span>${label}</span><div><div class="sl"><span><b>${a[0]}</b> ${fmt(a[1])} · ${pa}%</span><span><b>${b[0]}</b> ${fmt(b[1])} · ${pb}%</span></div><div class="sb" aria-hidden="true"><i style="flex:${a[1]}"></i><i style="flex:${b[1]}"></i></div></div></div>`;
+}
+/** A card in three parts, which the two cards share row by row: heading, figures, the rest. */
+const gcard = (head, figures, body) => `<div class="ghead">${head}</div><div>${figures}</div><div class="gbody">${body}</div>`;
+function listingCard(L, S) {
+  const d = L.daily, place = [L.city, L.region].filter(Boolean).join(', ');
+  const who = [L.title, place].filter(Boolean).join(' · ');
+  const head = eyebrow('Google Business Profile', true) + `<h3>Customer activity on the listing</h3><p class="gsub one" title="${esc(who)}">${esc(who)}</p>${L.periods ? `<p class="gsub">${esc(span(L.periods.recent))} vs prior 28 days</p>` : ''}`;
+  let figures = '', html = '';
   if (d.kind === 'daily') {
-    const order = ['views', 'calls', 'websiteClicks', 'directions', 'conversations', 'bookings'].filter((k) => d.known.includes(k) && (['views', 'calls', 'websiteClicks', 'directions'].includes(k) || d.totals[k] || d.before[k]));
-    const where = ['mobileSearch', 'mobileMaps', 'desktopSearch', 'desktopMaps'].filter((k) => d.known.includes(k));
-    html += `<dl class="rows">${order.map((k) => row(LABEL[k], d.totals[k], d.before[k], k === 'views' && where.length ? where.map((w) => LABEL[w].toLowerCase() + ' ' + fmt(d.totals[w])).join(', ') : '')).join('')}</dl>`;
-    if (d.daysWithData < d.length) html += `<p style="font-size:12px" class="quiet">Google has ${d.daysWithData} of the ${d.length} days so far; the rest are pending, not zero.</p>`;
+    const T = d.totals, B = d.before, has = (k) => d.known.includes(k);
+    figures = `<div class="gk">${kpi('Views', fmt(T.views), deltaPill(T.views, B.views))}${kpi('Calls', fmt(T.calls), deltaPill(T.calls, B.calls))}${kpi('Website clicks', fmt(T.websiteClicks), deltaPill(T.websiteClicks, B.websiteClicks))}${kpi('Directions', fmt(T.directions), deltaPill(T.directions, B.directions))}</div>`;
+    if (['mobileSearch', 'mobileMaps', 'desktopSearch', 'desktopMaps'].every(has)) {
+      html += splitBar('Surface', ['Search', T.mobileSearch + T.desktopSearch], ['Maps', T.mobileMaps + T.desktopMaps]);
+      html += splitBar('Device', ['Phone', T.mobileSearch + T.mobileMaps], ['Computer', T.desktopSearch + T.desktopMaps]);
+    }
+    const more = ['conversations', 'bookings'].filter((k) => has(k) && (T[k] || B[k]));
+    if (more.length) html += `<p class="quiet" style="font-size:12px;margin-top:8px">${more.map((k) => `${k === 'conversations' ? 'Messages' : 'Bookings'} ${fmt(T[k])} (was ${fmt(B[k])})`).join(' · ')}</p>`;
+    if (d.daysWithData < d.length) html += `<p class="quiet" style="font-size:12px;margin-top:6px">Google has ${d.daysWithData} of the ${d.length} days so far; the rest are pending, not zero.</p>`;
   } else if (d.kind === 'snapshot') {
-    html += `<dl class="rows">${d.known.map((k) => row(LABEL[k] || k, d.totals[k], null)).join('')}</dl><p style="font-size:12px" class="quiet">Google's latest 30-day totals (${esc(dayET(d.recordedAt))}): no day-by-day figures yet.</p>`;
-  } else html += `<p class="quiet">${esc(d.kind === 'problem' ? 'Google’s numbers couldn’t be read: ' + d.problem : 'Google has no activity figures for this listing yet.')}</p>`;
+    const T = d.totals;
+    figures = `<div class="gk">${kpi('Views', fmt(T.views))}${kpi('Calls', fmt(T.calls))}${kpi('Website clicks', fmt(T.websiteClicks))}${kpi('Directions', fmt(T.directions))}</div>`;
+    html += `<p class="quiet" style="font-size:12px">Google's latest 30-day totals (${esc(dayET(d.recordedAt))}): no day-by-day figures yet.</p>`;
+  } else html += `<p class="quiet" style="margin-top:10px">${esc(d.kind === 'problem' ? 'Google’s numbers couldn’t be read: ' + d.problem : 'Google has no activity figures for this listing yet.')}</p>`;
   const k = L.keywords;
-  if (k.rows.length)
-    html += `<h4 style="margin:12px 0 6px;font-size:13px">Searches that showed the listing</h4><p class="quiet" style="margin:0 0 6px;font-size:12px">${esc(k.months.join(', '))} · Google gives only “fewer than 15” for small searches.</p><ol class="list">${k.rows.map((r) => `<li>${esc(r.keyword)} <span class="quiet" style="display:inline;margin:0">· ${esc(r.exact ? fmt(r.total) : r.latest)}</span></li>`).join('')}</ol>`;
-  else if (k.problem) html += `<p class="quiet" style="font-size:12px">Searches couldn’t be read: ${esc(k.problem)}</p>`;
-  return html;
+  if (k.rows.length) {
+    const max = Math.max(1, ...k.rows.filter((r) => r.exact).map((r) => r.total));
+    html += `<h4>Searches that showed the listing <span class="quiet">(${esc(monthsSpan(k.months))})</span></h4><div class="bars">${k.rows
+      .map((r, i) => `<div class="bar"><span class="name gname" title="${esc(r.keyword)}"><span class="nm">${i + 1}. ${esc(r.keyword)}</span>${r.es ? '<span class="tag" title="In Spanish">ES</span>' : ''}</span><span class="n">${r.exact ? fmt(r.total) : esc(r.latest)}</span><div class="track"><div class="fill" style="width:${r.exact ? Math.max(3, (100 * r.total) / max) : 3}%"></div></div></div>`)
+      .join('')}</div><p class="quiet" style="font-size:11.5px;margin-top:6px">Google gives only “fewer than 15” for small searches.</p>`;
+    // Many searches in Spanish for the listing, none for the page it links to.
+    const es = k.rows.filter((r) => r.es).length, g = S && S.gsc;
+    if (es >= 3 && g && g.recent && g.listed && g.spanish === 0)
+      html += `<div class="callout"><span aria-hidden="true">✦</span><span><b>Spanish demand gap:</b> ${es} of the top ${k.rows.length} searches that showed the listing are in Spanish, while none of the ${g.listed >= 100 ? 'top 100' : fmt(g.listed)} searches Search Console lists for the landing page is.</span></div>`;
+  } else if (k.problem) html += `<p class="quiet" style="font-size:12px;margin-top:10px">Searches couldn’t be read: ${esc(k.problem)}</p>`;
+  return gcard(head, figures, html);
 }
-function searchBody(S) {
+function searchCard(S, L) {
+  const g = S.gsc, a = S.ga;
+  const where = g && g.scope === 'page' ? (L && L.city ? L.city + ' office landing page' : 'The listing’s landing page') : 'The whole site';
+  const head = eyebrow('Search Console & Analytics', true) + `<h3>How people found the website</h3><p class="gsub one" title="${esc(S.page || '')}">${esc(where)}</p>${S.periods ? `<p class="gsub">${esc(span(S.periods.recent))} vs prior 28 days</p>` : ''}`;
   let html = '';
-  const g = S.gsc;
+  const cells = [];
   if (g && g.recent) {
-    html += `<p class="quiet" style="margin:4px 0 8px">Search Console · ${g.scope === 'page' ? 'the page the listing links to' : 'the whole site'}${S.periods ? `, ${esc(span(S.periods.recent))} against the 28 days before` : ''}<br><span style="word-break:break-all">${esc(S.page || '')}</span></p>`;
-    html += `<dl class="rows">${row('Clicks from Google', g.recent.clicks, g.before.clicks)}${row('Times shown', g.recent.impressions, g.before.impressions)}${row('Average position', g.recent.position !== null ? Math.round(g.recent.position * 10) / 10 : null, null, g.before.position !== null ? 'was ' + Math.round(g.before.position * 10) / 10 : '')}</dl>`;
-    if (g.queries.length) html += `<h4 style="margin:12px 0 6px;font-size:13px">Top searches</h4><ol class="list">${g.queries.map((q) => `<li>${esc(q.query)} <span class="quiet" style="display:inline;margin:0">· ${fmt(q.clicks)} clicks, ${fmt(q.impressions)} shown${q.position !== null ? ', position ' + Math.round(q.position * 10) / 10 : ''}</span></li>`).join('')}</ol>`;
-  } else if (g) html += `<p class="quiet">Search Console: ${esc(g.problem || 'no figures')}</p>`;
-  const a = S.ga;
-  if (a && a.recent) {
-    html += `<h4 style="margin:14px 0 6px;font-size:13px">Analytics · ${esc(a.name)}</h4><dl class="rows">${a.page ? row('Visits that landed on this page', a.page.recent.sessions, a.page.before.sessions, 'key events ' + fmt(a.page.recent.keyEvents)) : ''}${a.listing ? row(a.page ? '…of them from the listing’s link' : 'Visits from the listing’s link', a.listing.recent.sessions, a.listing.before.sessions, 'tagged utm_campaign=' + esc(a.campaign || 'gbp_listing')) : ''}${row('Visits to the whole site', a.recent.sessions, a.before.sessions, 'key events ' + fmt(a.recent.keyEvents))}</dl>`;
-  } else if (a) html += `<p class="quiet" style="font-size:12px">Analytics: ${esc(a.problem || 'no figures')}</p>`;
-  return html || '<p class="quiet">No figures came back.</p>';
+    cells.push(kpi('Google clicks', fmt(g.recent.clicks), deltaPill(g.recent.clicks, g.before.clicks)));
+    cells.push(kpi('Times shown', fmt(g.recent.impressions), deltaPill(g.recent.impressions, g.before.impressions)));
+    cells.push(kpi('Avg. position', g.recent.position !== null ? r1(g.recent.position) : '—', positionPill(g.recent.position, g.before.position)));
+  }
+  // Visits that landed on the page (GA4), and how many came from the listing's own link.
+  if (a && a.page) {
+    const from = a.listing ? a.listing.recent.sessions : null, share = from !== null && a.page.recent.sessions ? Math.round((100 * from) / a.page.recent.sessions) : null;
+    cells.push(kpi('Page visits (GA4)', fmt(a.page.recent.sessions), from !== null ? `<span class="pill info" title="Visits tagged utm_campaign=${esc(a.campaign || '')} (the listing’s website link) that landed on this page. The 28 days before: ${fmt(a.page.before.sessions)} visits, ${fmt(a.listing.before.sessions)} from the link.">${fmt(from)} from GBP</span>${share !== null ? `<span class="was">${share}% of visits</span>` : ''}` : deltaPill(a.page.recent.sessions, a.page.before.sessions)));
+  } else if (a && a.recent) cells.push(kpi('Site visits (GA4)', fmt(a.recent.sessions), deltaPill(a.recent.sessions, a.before.sessions)));
+  const figures = cells.length ? `<div class="gk">${cells.join('')}</div>` : '';
+  // The listing's clicks into the site, beside Google Search's own.
+  if (L && L.daily && L.daily.kind === 'daily' && a && a.listing && a.page && g && g.recent)
+    html += `<p class="funnel">From the listing: <b>${fmt(L.daily.totals.websiteClicks)}</b> website clicks → <b>${fmt(a.listing.recent.sessions)}</b> visits from its link${a.page.recent.sessions ? ` (${Math.round((100 * a.listing.recent.sessions) / a.page.recent.sessions)}% of this page’s visits)` : ''}. From Google Search: <b>${fmt(g.recent.clicks)}</b> click${g.recent.clicks === 1 ? '' : 's'}.</p>`;
+  if (g && g.queries.length) {
+    html += `<h4>Top searches <span class="quiet">(Search Console)</span></h4><div class="scroll"><table class="tbl"><thead><tr><th>Search term</th><th class="num">Clicks</th><th class="num">Shown</th><th class="num">Position</th></tr></thead><tbody>${g.queries
+      .map((q) => `<tr><td>${esc(q.query)}${q.es ? ' <span class="tag">ES</span>' : ''}${q.elsewhere ? ' <span class="tag unparsed" title="Names a place outside this office’s market, and Google ranks the page far down for it">Geo mismatch</span>' : ''}</td><td class="num">${fmt(q.clicks)}</td><td class="num">${fmt(q.impressions)}</td><td class="num"><span class="pos${q.position !== null && q.position <= 15 ? ' near' : ''}"${q.position !== null && q.position <= 15 ? ' title="Within reach of page one"' : ''}>${q.position !== null ? r1(q.position) : '—'}</span></td></tr>`)
+      .join('')}</tbody></table></div>`;
+    // Google lists a search only when enough people made it; the rest of the clicks are in the totals alone.
+    if (g.recent && g.recent.clicks > g.listedClicks) {
+      const part = g.listedClicks ? `${fmt(g.recent.clicks - g.listedClicks)} of the ${fmt(g.recent.clicks)} clicks` : `The ${fmt(g.recent.clicks)} click${g.recent.clicks === 1 ? '' : 's'}`;
+      html += `<p class="quiet" style="font-size:12px;margin-top:6px">${part} came from ${g.listed >= 100 ? 'searches beyond the top 100, or ' : ''}searches Google keeps private (each too rare to list).</p>`;
+    }
+  } else if (g && g.problem) html += `<p class="quiet" style="font-size:12px;margin-top:10px">Search Console: ${esc(g.problem)}</p>`;
+  if (a && !a.recent && a.problem) html += `<p class="quiet" style="font-size:12px;margin-top:8px">Analytics: ${esc(a.problem)}</p>`;
+  return gcard(head, figures, html);
 }
+
 function google() {
   // A share link whose owner left Google's numbers out: no Google section at all.
   if (DATA.google === null) {
@@ -1026,18 +1131,29 @@ function google() {
   }
   const g = DATA.google || {};
   const N = g.numbers || null;
-  $('#gprofile').textContent = 'Google Business Profile · ' + (N && N.listing ? 'connected' : g.profile ? 'connected' : 'not connected');
-  $('#gprofilebody').innerHTML = N && N.listing
-    ? listingBody(N.listing)
-    : g.profile
-      ? '<p>This listing is connected. Its activity (views from Search and Maps, calls, website clicks, direction requests and search terms) is in Connected Accounts' + (DATA.brand ? '' : ' (<a href="/profiles">open</a>)') + '.</p>'
-      : '<p>This listing isn’t connected, so its activity isn’t in this report. Once it is, this section shows, for the last 28 days against the 28 before:</p><ul><li>Profile views, and whether they came from Search or Maps</li><li>Calls, website clicks and direction requests</li><li>The search terms people used to find it, by month</li></ul><p style="font-size:12px">Google reports listing activity about three days late; the last days are marked as pending, never as zeros.</p>';
-  $('#gsearch').textContent = 'Search Console & Analytics · ' + (g.searchConsole ? 'connected' : 'not connected');
-  $('#gsearchbody').innerHTML = N && N.search
-    ? searchBody(N.search)
-    : g.searchConsole
-      ? '<p>Google is connected for this account (read-only). Queries, clicks and visits for the website are in Connected Accounts.</p>'
-      : '<p>Nobody has signed in with Google for this website yet. With read-only access, this section shows:</p><ul><li>Searches for the office’s landing page: times shown, clicks, position</li><li>Visits to the site, and those that came from the listing</li><li>Whether the pages the AI answers cite are the ones that get the clicks</li></ul>';
+  const L = N && N.listing, S = N && N.search && (N.search.gsc || N.search.ga) ? N.search : null;
+  const empty = (el, head, body) => {
+    el.classList.add('empty');
+    el.innerHTML = gcard(head, '', body);
+  };
+  if (L) $('#gprofilecard').innerHTML = listingCard(L, S);
+  else
+    empty(
+      $('#gprofilecard'),
+      eyebrow('Google Business Profile', Boolean(g.profile)) + '<h3>Customer activity on the listing</h3>',
+      g.profile
+          ? '<p>This listing is connected. Its activity (views from Search and Maps, calls, website clicks, direction requests and search terms) is in Connected Accounts' + (DATA.brand ? '' : ' (<a href="/profiles">open</a>)') + '.</p>'
+          : '<p>This listing isn’t connected, so its activity isn’t in this report. Once it is, this section shows, for the last 28 days against the 28 before:</p><ul><li>Profile views, and whether they came from Search or Maps</li><li>Calls, website clicks and direction requests</li><li>The search terms people used to find it, by month</li></ul><p style="font-size:12px">Google reports listing activity about three days late; the last days are marked as pending, never as zeros.</p>',
+    );
+  if (S) $('#gsearchcard').innerHTML = searchCard(S, L);
+  else
+    empty(
+      $('#gsearchcard'),
+      eyebrow('Search Console & Analytics', Boolean(g.searchConsole)) + '<h3>How people found the website</h3>',
+      g.searchConsole
+          ? '<p>Google is connected for this account (read-only). Queries, clicks and visits for the website are in Connected Accounts.</p>'
+          : '<p>Nobody has signed in with Google for this website yet. With read-only access, this section shows:</p><ul><li>Searches for the office’s landing page: times shown, clicks, position</li><li>Visits to the page, and how many came from the listing</li><li>Whether the pages the AI answers cite are the ones that get the clicks</li></ul>',
+    );
 }
 
 /* ---- Point receipts + CSV ---- */
