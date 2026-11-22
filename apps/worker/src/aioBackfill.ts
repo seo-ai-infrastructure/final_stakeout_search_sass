@@ -131,10 +131,10 @@ export async function aioBackfill() {
         copyCheck: shots.flatMap((x) => uiLabels(x).map((l) => l.label)),
         overviewOnScreen: true,
         // The first screen's cards: its own snapshot, else the results page (the same moment, on runs
-        // saved before that snapshot was kept), else the AI Overview's list as the run read it.
-        shownBeforeExpansion:
-          cardsBeforeExpansion(file('aio_initial.xml') ?? file('serp.xml')) ??
-          (c.rankFrom === 'ai_overview_list' && Array.isArray(c.list) && c.list.length ? c.list.map(String) : null),
+        // saved before that snapshot was kept). The copy is also checked against the AI Overview's
+        // list as the run read it, where the first screen's cards could not be read.
+        shownBeforeExpansion: cardsBeforeExpansion(file('aio_initial.xml') ?? file('serp.xml')),
+        screenCards: c.rankFrom === 'ai_overview_list' && Array.isArray(c.list) && c.list.length ? c.list.map(String) : null,
         telemetry: c.readKey && c.tele ? ({ ...NOT_WATCHED, ...c.tele, capture_version: AIO_CAPTURE_VERSION } as WatcherFacts) : NOT_WATCHED,
         scanPointId: c.id,
       };

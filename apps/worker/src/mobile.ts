@@ -1621,6 +1621,8 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
           copyCheck: shots.flatMap((x) => uiLabels(x).map((l) => l.label)),
           overviewOnScreen: result.hasAiOverview,
           shownBeforeExpansion: cardsBeforeExpansion(b.aiInitial ?? b.serp),
+          // The AI Overview's list as this run read it (a page with no map pack), to check the copy against.
+          screenCards: aiRankOnly && aiList?.list.length ? aiList.list : null,
           telemetry: (watched?.dossier && watched.telemetry) || NOT_WATCHED,
           scanPointId: p.id,
         });

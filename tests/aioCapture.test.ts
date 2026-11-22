@@ -390,6 +390,9 @@ test("no page read (every customer point): Google's copy alone, used once this r
   // A folded first screen shows only its first cards; those agreeing is enough.
   const folded = buildAioCapture(noPageRead('q'), { ...opts, shownBeforeExpansion: ['Law Offices of Jeff Martin', 'Gorospe Law Group'] });
   assert.deepEqual([folded.capture_status, folded.telemetry.copy_check], ['parsed', 'used']);
+  // Older runs whose first screen's cards could not be read: the list the run read from the screen is used instead.
+  const runList = buildAioCapture(noPageRead('q'), { ...opts, shownBeforeExpansion: [], screenCards: ['Biby Law Firm Injury and Accident Lawyers', 'Gorospe Law Group'] });
+  assert.deepEqual([runList.capture_status, runList.telemetry.copy_check], ['unparsed', 'cards differ from the screen']);
   assert.equal(aiPresence(stale).status, 'unparsed');
   // A written answer: its opening sentence on the first screen is enough.
   const text = buildAioCapture(noPageRead('q'), { keyword: 'sell my house fast', targetBusinessId: TD, targetName: 'Top Dollar Home Offer', copy: textCopy, copyCheck: ['AI Overview', 'To sell a house fast in Tulsa, you can choose between a direct cash sale'], overviewOnScreen: true, telemetry: NOT_WATCHED });

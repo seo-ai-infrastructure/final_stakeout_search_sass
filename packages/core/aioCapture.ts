@@ -309,7 +309,7 @@ export interface AioCaptureResult {
 }
 
 /** The capture rules' version, written on every capture (a point is replayed when its capture is older). */
-export const AIO_CAPTURE_VERSION = 'v286';
+export const AIO_CAPTURE_VERSION = 'v287';
 
 /** What the watcher itself knows; the read counts come from the merged reads. */
 export type WatcherFacts = Omit<AioWatcherTelemetry, 'expanded_seen' | 'post_expand_added_sentences' | 'post_expand_added_entries' | 'copy_used'>;
@@ -491,6 +491,11 @@ export function buildAioCapture(
     overviewOnScreen?: boolean | null;
     /** The business cards on the phone's screen before "Show more" (their names): a card not among them was featured only after expansion. */
     shownBeforeExpansion?: string[] | null;
+    /**
+     * The AI Overview's business cards as the run read them from the screen, in order, for checking a
+     * copied answer against when the first screen's own cards could not be read (not for "Show more").
+     */
+    screenCards?: string[] | null;
     telemetry: WatcherFacts;
     scanPointId?: string | null;
     capturedAt?: string;
@@ -528,7 +533,7 @@ export function buildAioCapture(
   // The copy's business cards against the first screen's, in order: the same firms in the same
   // places, or the copy is another answer (a clipboard left from a nearby point names many of the
   // same firms, so a name merely being on the screen is not enough). Up to the first three cards.
-  const screenCards = opts.shownBeforeExpansion ?? null;
+  const screenCards = opts.shownBeforeExpansion?.length ? opts.shownBeforeExpansion : opts.screenCards?.length ? opts.screenCards : null;
   const sameCard = (a: string, b: string) => {
     const x = letters(a), y = letters(b);
     return x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x));
