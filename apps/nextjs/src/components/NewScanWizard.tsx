@@ -7,7 +7,7 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import '@/lib/mapWorker';
 import { Protocol } from 'pmtiles';
-import { declutterBasemap, quietBasemap, fillColor, legend, CENSUS_VINTAGE } from '../lib/censusLayer';
+import { declutterBasemap, quietBasemap, liftAboveShading, fillColor, legend, CENSUS_VINTAGE, SETUP_INCOME_PALETTE } from '../lib/censusLayer';
 import {
   Smartphone,
   Monitor,
@@ -489,9 +489,10 @@ export function NewScanWizard() {
           maplibregl.addProtocol('pmtiles', new Protocol().tile);
           map.addSource('census', { type: 'vector', url: `pmtiles://${window.location.origin}/api/census/${CENSUS_VINTAGE}.pmtiles`, promoteId: 'id' });
           map.addLayer(
-            { id: 'setup-income', type: 'fill', source: 'census', 'source-layer': 'tract', paint: { 'fill-color': fillColor('income') as never, 'fill-opacity': 0.01 } },
+            { id: 'setup-income', type: 'fill', source: 'census', 'source-layer': 'tract', paint: { 'fill-color': fillColor('income', null, SETUP_INCOME_PALETTE) as never, 'fill-opacity': 0.01 } },
             beforeLabels,
           );
+          liftAboveShading(map, beforeLabels);
         } catch (e) {
           console.error('[census layer]', e);
         }
@@ -700,7 +701,7 @@ export function NewScanWizard() {
   // Income shading on or off.
   useEffect(() => {
     const map = mapRef.current;
-    if (map && mapState === 'ready' && map.getLayer('setup-income')) map.setPaintProperty('setup-income', 'fill-opacity', showWealth ? 0.45 : 0.01);
+    if (map && mapState === 'ready' && map.getLayer('setup-income')) map.setPaintProperty('setup-income', 'fill-opacity', showWealth ? 0.38 : 0.01);
   }, [showWealth, mapState]);
   async function findPlaces(q: string): Promise<Place[]> {
     const needle = q.toLowerCase();
@@ -988,7 +989,7 @@ export function NewScanWizard() {
         <div className={styles.mapNotes}>
           {showWealth && CENSUS_VINTAGE && <div className={styles.incomeLegend}>
             <span>Median household income</span>
-            <div>{legend('income').map((band) => <span key={band.label}><i style={{ backgroundColor: band.color }} />{band.label}</span>)}</div>
+            <div>{legend('income', null, SETUP_INCOME_PALETTE).map((band) => <span key={band.label}><i style={{ backgroundColor: band.color }} />{band.label}</span>)}</div>
             {richStat && <small>{richStat.rich} of {richStat.known} known points in $100k+ areas</small>}
           </div>}
           <div className={styles.telemetry} aria-live="polite">

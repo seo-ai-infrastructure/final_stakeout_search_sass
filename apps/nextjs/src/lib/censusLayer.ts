@@ -45,6 +45,8 @@ export const PALETTES: Record<Exclude<CensusMetric, 'off'>, string[]> = {
 };
 /** The income ramp, kept for callers that want a single palette. */
 export const PALETTE = PALETTES.income;
+/** Warm, subdued income shading for scan setup, distinct from the basemap's blue water. */
+export const SETUP_INCOME_PALETTE = ['#261f18', '#4c3c28', '#735b38', '#9c7f49', '#c7aa6c', '#edd8a6'];
 const paletteFor = (metric: Exclude<CensusMetric, 'off'>) =>
   METRICS[metric].reversed ? [...PALETTES[metric]].reverse() : PALETTES[metric];
 
@@ -61,9 +63,8 @@ function short(unit: MetricDef['unit'], v: number) {
 }
 
 /** MapLibre fill colour: six steps on the metric; areas without an estimate stay clear. */
-export function fillColor(metric: Exclude<CensusMetric, 'off'>, breaks?: number[] | null) {
+export function fillColor(metric: Exclude<CensusMetric, 'off'>, breaks?: number[] | null, colors: readonly string[] = paletteFor(metric)) {
   const m = { ...METRICS[metric], breaks: breaks ?? METRICS[metric].breaks };
-  const colors = paletteFor(metric);
   const step: unknown[] = ['step', ['to-number', ['get', m.prop]], colors[0]];
   m.breaks.forEach((b, i) => step.push(b, colors[i + 1]));
   return ['case', ['has', m.prop], step, 'rgba(0,0,0,0)'];
@@ -74,9 +75,8 @@ export function fillOpacity(metric: Exclude<CensusMetric, 'off'>, opacity = 0.55
   return metric === 'income' ? ['case', ['==', ['get', 'rel'], 0], Math.round(opacity * 40) / 100, opacity] : opacity;
 }
 
-export function legend(metric: Exclude<CensusMetric, 'off'>, breaks?: number[] | null) {
+export function legend(metric: Exclude<CensusMetric, 'off'>, breaks?: number[] | null, colors: readonly string[] = paletteFor(metric)) {
   const m = { ...METRICS[metric], breaks: breaks ?? METRICS[metric].breaks };
-  const colors = paletteFor(metric);
   const b = m.breaks;
   const labels =
     m.unit === 'year'
