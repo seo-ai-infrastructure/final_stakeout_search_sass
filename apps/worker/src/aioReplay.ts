@@ -2,7 +2,7 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
 import { r2, bucket, put } from '@stakeout/core/r2';
-import { readAiOverview, untarGz } from '@stakeout/core/serpEvidence';
+import { cardsBeforeExpansion, untarGz } from '@stakeout/core/serpEvidence';
 import { AIO_CAPTURE_VERSION, buildAioCapture, captureDigest, type WatcherFacts } from '@stakeout/core/aioCapture';
 import type { AioDossier } from '@stakeout/core/aioSources';
 
@@ -69,7 +69,7 @@ export async function replayAioCaptures(limit = 40) {
         mapPackRank: (was?.map_pack_rank as number | null | undefined) ?? p.rankFound,
         copy,
         overviewOnScreen: p.hasAiOverview,
-        shownBeforeExpansion: initial ? (readAiOverview(initial)?.businesses.map((x) => x.name) ?? null) : null,
+        shownBeforeExpansion: cardsBeforeExpansion(initial),
         telemetry,
         scanPointId: p.id,
       });

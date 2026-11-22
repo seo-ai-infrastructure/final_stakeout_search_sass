@@ -1,6 +1,6 @@
 import { rpaTemplate } from './rpa';
 import { buildPinInsights, isGoogleSource, type PinInsights } from '@stakeout/core/pinInsights';
-import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst, readAiOverview } from '@stakeout/core/serpEvidence';
+import { searchLocationLine, isLocalFinder, readLocalFinder, readResultsPage, rankWithoutFinder, otherSearch, aiNamesFirst, cardsBeforeExpansion } from '@stakeout/core/serpEvidence';
 import { randomBytes, createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
 import { poolDigest, sampleEntries, summarizeAioSources } from '@stakeout/core/aioSources';
@@ -1612,7 +1612,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
           mapPackRank,
           copy: b.aiCopy ?? null,
           overviewOnScreen: result.hasAiOverview,
-          shownBeforeExpansion: b.aiInitial ? (readAiOverview(b.aiInitial)?.businesses.map((x) => x.name) ?? null) : null,
+          shownBeforeExpansion: cardsBeforeExpansion(b.aiInitial),
           telemetry: watched.telemetry,
           scanPointId: p.id,
         });

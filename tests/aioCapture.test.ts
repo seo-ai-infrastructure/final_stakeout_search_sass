@@ -351,6 +351,16 @@ test('without the copy: the page read alone, each source once; names read from t
   assert.equal(c.counts.featured_businesses_count, 0);
 });
 
+test('found by its exact name on a website the answer names it by: that website is cited, but whose it is stays unverified', () => {
+  const d = mergeReads(undefined, textPage(), 112000);
+  const c = buildAioCapture(d, { keyword: 'sell my house fast', targetName: 'Top Dollar Home Offer', telemetry: facts });
+  assert.deepEqual([c.target_identity, c.target_named_in_prose, c.target_website_cited], ['name', true, 'unverified']);
+  assert.deepEqual([...new Set(c.target_receipts.map((r) => r.role))].sort(), ['prose_name', 'website_citation_unverified']);
+  // Its website saved: the same site, now known to be its own.
+  const saved = buildAioCapture(d, { keyword: 'sell my house fast', targetName: 'Top Dollar Home Offer', targetDomain: 'topdollarhomeoffer.com', telemetry: facts });
+  assert.deepEqual([saved.target_identity, saved.target_website_cited], ['website', 'verified']);
+});
+
 test('a copy from another search (a stale clipboard) is not used', () => {
   const d = mergeReads(undefined, textPage(), 112000);
   const c = buildAioCapture(d, { keyword: 'sell my house fast', copy: localCopy, telemetry: facts });

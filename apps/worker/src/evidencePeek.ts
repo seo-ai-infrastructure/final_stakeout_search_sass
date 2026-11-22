@@ -9,7 +9,23 @@
 import { GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { db } from '@stakeout/db';
 import { r2, bucket } from '@stakeout/core/r2';
-import { uiLabels, untarGz } from '@stakeout/core/serpEvidence';
+import { aiOverviewFold, uiBoxes, uiLabels, untarGz } from '@stakeout/core/serpEvidence';
+
+/** The overview's cards and its edges (fold button, footer, ads) with their boxes on the screen. */
+const overviewBoxes = (xml: string | null) => {
+  if (!xml) return null;
+  const L = uiBoxes(xml);
+  const start = L.findIndex((x) => x.label === 'AI Overview');
+  if (start < 0) return null;
+  const screen = /<node\b[^>]*bounds="\[0,0\]\[(\d+),(\d+)\]"/.exec(xml);
+  return {
+    screen: screen ? screen[1] + 'x' + screen[2] : null,
+    lines: L.slice(start)
+      .filter((x, i) => i === 0 || /Rated \d|^Show (more|less)|^Copy text|^Good response|^More options for response|^Sponsored|^People also ask|^Web results|^Ads$/.test(x.label))
+      .slice(0, 60)
+      .map((x) => `${x.cls} | ${x.label.slice(0, 70)} | ${x.box ? `[${x.box[0]},${x.box[1]}][${x.box[2]},${x.box[3]}]` : '-'}`),
+  };
+};
 
 const lines = (xml: string | null, from: (l: { cls: string; label: string }[]) => number, max: number) => {
   if (!xml) return null;
@@ -47,6 +63,9 @@ export async function evidencePeek() {
         aiCopy: read('aio_copy.txt')?.slice(0, 12000) ?? null,
         aiExpanded: lines(read('aio_expanded.xml'), ai, 260),
         aiInitial: lines(read('aio_initial.xml'), ai, 80),
+        aiInitialBoxes: overviewBoxes(read('aio_initial.xml')),
+        aiInitialFold: aiOverviewFold(read('aio_initial.xml')),
+        aiExpandedBoxes: overviewBoxes(read('aio_expanded.xml')),
         serpTop: lines(read('serp.xml'), () => 0, 140),
         finalTop: lines(read('final.xml'), () => 0, 140),
       });

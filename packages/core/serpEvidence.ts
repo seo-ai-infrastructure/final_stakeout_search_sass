@@ -289,8 +289,49 @@ export function readAiOverview(xml: string): AiOverview | null {
   return { paragraphs, businesses: finish(biz), related: finish(related) };
 }
 
+/** Every labelled element with its box on the screen (bounds="[x1,y1][x2,y2]"), in page order. */
+export function uiBoxes(xml: string): { cls: string; label: string; box: [number, number, number, number] | null }[] {
+  const out: { cls: string; label: string; box: [number, number, number, number] | null }[] = [];
+  const re = /<node\b((?:[^>"']|"[^"]*"|'[^']*')*?)\/?>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml))) {
+    const a = m[1];
+    const attr = (k: string) => {
+      const x = new RegExp('\\s' + k + '=(?:"([^"]*)"|\'([^\']*)\')').exec(a);
+      return x ? (x[1] ?? x[2] ?? '') : '';
+    };
+    const label = clean(decode(attr('content-desc') || attr('text')));
+    if (!label || label.length < 2) continue;
+    const b = /^\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]$/.exec(attr('bounds'));
+    out.push({ cls: attr('class').split('.').pop() ?? '', label, box: b ? [+b[1], +b[2], +b[3], +b[4]] : null });
+  }
+  return out;
+}
+
+/**
+ * Whether a snapshot's AI Overview was folded (it ends at its "Show more AI Overview" button) and
+ * the business cards it holds. A folded overview keeps only what it shows in the page: the cards
+ * above the button (the rest arrive when it opens, as two snapshots of one search showed: 2 cards
+ * folded, 7 opened). One Google shows whole has no such button. Boxes cannot tell either way:
+ * Chrome gives every element off the screen an empty box. Null when it holds no AI Overview.
+ */
+export function aiOverviewFold(xml: string | null | undefined): { folded: boolean; cards: string[] } | null {
+  if (!xml) return null;
+  const ai = readAiOverview(xml);
+  if (!ai) return null;
+  const L = uiLabels(xml);
+  const start = L.findIndex((x) => x.label === 'AI Overview');
+  const end = L.slice(start + 1).find((x) => /^(Show less|Web results|People also search for|Page Navigation|Footer Links|Copy text|Good response|Bad response|Show more AI Overview|People also ask)$/.test(x.label) || /^More options for response/.test(x.label) || /^Sponsored/.test(x.label));
+  return { folded: end?.label === 'Show more AI Overview', cards: ai.businesses.map((b) => b.name) };
+}
+
+/** The names of the cards an AI Overview showed before "Show more", from a snapshot taken before it was opened (all of them when it was not folded); null when the snapshot holds no AI Overview. */
+export function cardsBeforeExpansion(xml: string | null | undefined): string[] | null {
+  return aiOverviewFold(xml)?.cards ?? null;
+}
+
 /** Organic position of the tracked business in a section, or null if absent. */
-export const rankIn = (list: Listing[], business: string) => list.find((l) => !l.ad && sameBusiness(l.name, business))?.pos ?? null;
+export const rankIn =(list: Listing[], business: string) => list.find((l) => !l.ad && sameBusiness(l.name, business))?.pos ?? null;
 
 type AiCopyBusiness = {
   pos: number;

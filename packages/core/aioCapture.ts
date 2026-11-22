@@ -305,7 +305,7 @@ export interface AioCaptureResult {
 }
 
 /** The capture rules' version, written on every capture (a point is replayed when its capture is older). */
-export const AIO_CAPTURE_VERSION = 'v282';
+export const AIO_CAPTURE_VERSION = 'v283';
 
 /** What the watcher itself knows; the read counts come from the merged reads. */
 export type WatcherFacts = Omit<AioWatcherTelemetry, 'expanded_seen' | 'post_expand_added_sentences' | 'post_expand_added_entries' | 'copy_used'>;
@@ -972,11 +972,14 @@ export function buildAioCapture(
   }
   const proseHit = tName ? sents.filter((s) => hasName(s.text, tName)) : [];
   const placement = t ? placementOf(t) : null;
-  const websiteVerified = Boolean(tSite && webCites.some((c) => c.registrable_domain === tSite)) || Boolean(t && t.website.size > 0);
+  // Its website is verified when its saved website is cited, or a site its own card opens. A website
+  // the answer names it by (found by its name alone) is cited, but whose it is stays unverified.
+  const nameOnlySite = Boolean(t && t.kind === 'site' && !(tSite && t.domain === tSite));
+  const websiteVerified = Boolean(tSite && webCites.some((c) => c.registrable_domain === tSite)) || Boolean(t && !nameOnlySite && t.website.size > 0);
   const flags = {
     featured: placement !== null,
     listing: tId ? listingCites.some((c) => c.business_id === tId) : Boolean(t && t.listing.size > 0),
-    website: (websiteVerified ? 'verified' : t && t.websiteUnverified.size > 0 ? 'unverified' : false) as 'verified' | 'unverified' | false,
+    website: (websiteVerified ? 'verified' : t && (t.websiteUnverified.size > 0 || (nameOnlySite && t.website.size > 0)) ? 'unverified' : false) as 'verified' | 'unverified' | false,
     prose: Boolean(t && t.named.size > 0) || proseHit.length > 0,
     sources: Boolean(t && t.sources !== null),
     ad: Boolean(t && t.ad),
@@ -986,7 +989,7 @@ export function buildAioCapture(
   const nul = <T,>(v: T): T | null => (parsed ? v : null);
   const has = (role: AioMatchRole, s: number) => Boolean(t && t.receipts.some((r) => r.role.startsWith(role) && r.sentence_index === s));
   const target_receipts: AioReceipt[] = [
-    ...(t ? t.receipts : []),
+    ...(t ? t.receipts.map((r) => (nameOnlySite && r.role === 'website_citation' ? { ...r, role: 'website_citation_unverified' as const } : r)) : []),
     // Its saved website cited where no business here was credited with it.
     ...(tSite ? webCites.filter((c) => c.registrable_domain === tSite && !has('website_citation', c.sentence_index)).map((c) => ({ role: 'website_citation' as const, sentence_index: c.sentence_index, card_position: null, business_id: null, url: c.raw_url, text: null })) : []),
     ...(tId && !t ? listingCites.filter((c) => c.business_id === tId).map((c) => ({ role: 'listing_citation' as const, sentence_index: c.sentence_index, card_position: null, business_id: tId, url: c.raw_url, text: null })) : []),

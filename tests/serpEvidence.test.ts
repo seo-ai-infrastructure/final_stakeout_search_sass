@@ -207,3 +207,18 @@ test("real AI Overview: Google's own copy and the snapshot list the same 6 busin
   assert.deepEqual(copy.businesses.map((b) => b.kgmid), ['/g/11z8421vy4', '/g/11jj4sc8cf', '/g/11vbjvks67', '/g/1q5grk4dl', '/g/11nnp_f2z4', '/g/11qqtb5hl0']);
   assert.ok(copy.citations.some((c) => c.url === 'https://midtnplumbing.net/'), 'cited websites are kept');
 });
+
+test('first screen: a folded AI Overview holds only the cards it shows; one shown whole holds them all', async () => {
+  const { aiOverviewFold, cardsBeforeExpansion } = await import('../packages/core/serpEvidence');
+  // The same search, folded (2 cards above "Show more AI Overview") and opened (7 cards).
+  const folded = fx('real-aio-list-no-finder.xml').toString('utf8');
+  const opened = fx('real-aio-expanded-related.xml').toString('utf8');
+  assert.deepEqual(aiOverviewFold(folded), { folded: true, cards: ['Great Plumber of Mt.Juliet', 'Southern Skye Plumbing'] });
+  assert.equal(aiOverviewFold(opened)?.folded, false);
+  assert.equal(aiOverviewFold(opened)?.cards.length, 7);
+  // Google showed this one whole (8 cards, then its footer): every card was on view without "Show more".
+  const whole = fx('real-aio-2026-11-09.xml').toString('utf8');
+  assert.deepEqual([aiOverviewFold(whole)?.folded, cardsBeforeExpansion(whole)?.length], [false, 8]);
+  assert.equal(cardsBeforeExpansion(fx('real-uidump-mappack-noaio.xml').toString('utf8')), null, 'no AI Overview: unknown');
+  assert.equal(cardsBeforeExpansion(null), null);
+});
