@@ -1,4 +1,4 @@
-import { buyingPower } from './buyingPower';
+import { buyingPower, NO_FILTERS, type BuyingPowerPin } from './buyingPower';
 import { aiFlagTotals, pinAi } from '@stakeout/core/aiFlags';
 import { aiBusinesses, aiPosition, aiSources, aiVersusPack, groundOwners, packOrder, paidPressure, siteKind, winningRadius, type InsightPin } from './marketInsights';
 
@@ -40,18 +40,12 @@ const points = (n: number) => (n === 1 ? '1 point' : `${n} points`);
  * The report's headline numbers and what they mean, in plain language. Every finding is a sentence
  * built from the scan's own data; one is only included when the data behind it exists.
  */
-/**
- * Share of local search: at how many points the business is in the top three of whatever Google
- * showed there. Where the page had a map pack, that is the local results; where it had none, the
- * AI Overview (its list, or its opening sentences: "position zero"). The two parts are also given
- * on their own: Share of Local Voice over the points with a map pack, and the AI Overview over
- * the points that had one.
- */
-export function searchShare(pins: InsightPin[], target: string) {
+/** The page-one tests behind the share, per point (see searchShare). */
+export function pageOne(pins: InsightPin[], target: string) {
   const done = pins.filter((p) => p.status === 'COMPLETED');
   const noPack = (p: InsightPin) => Boolean(p.proxyMeta?.noLocal);
   const local = done.filter((p) => !noPack(p));
-  const localTop3 = local.filter((p) => p.rankFound != null && p.rankFound <= 3).length;
+  const packTop3 = (p: InsightPin) => !noPack(p) && p.rankFound != null && p.rankFound <= 3;
   // Its place in the AI Overview: its card's place where the answer was read with the four flags,
   // else the place the earlier reading kept. An answer that could not be read is left out.
   const place = (p: InsightPin) => {
@@ -59,8 +53,10 @@ export function searchShare(pins: InsightPin[], target: string) {
     if (a.state === 'parsed') return a.featured?.kind === 'card' ? a.featured.card_position : null;
     return p.proxyMeta?.aiPosition ?? (p.insights?.v === 1 ? (aiPosition(p.insights.ai.named, target)?.pos ?? null) : null);
   };
-  const shownAi = done.filter((p) => p.hasAiOverview ?? (p.insights?.v === 1 && p.insights.ai.shown));
-  const answered = shownAi.filter((p) => pinAi(p).state !== 'unparsed');
+  const hasAi = (p: InsightPin) => Boolean(p.hasAiOverview ?? (p.insights?.v === 1 && p.insights.ai.shown));
+  const shownAi = done.filter(hasAi);
+  const unread = (p: InsightPin) => hasAi(p) && pinAi(p).state === 'unparsed';
+  const answered = shownAi.filter((p) => !unread(p));
   // Position zero: named in the opening line (featured inline in the first sentence, on points read with the flags).
   const zero = (p: InsightPin) => {
     const a = pinAi(p);
@@ -70,22 +66,63 @@ export function searchShare(pins: InsightPin[], target: string) {
     const a = pinAi(p);
     return a.state === 'parsed' ? a.visible === true : Boolean(p.targetCitedInAi) || place(p) != null || zero(p);
   };
-  const aiTop = (p: InsightPin) => zero(p) || ((place(p) ?? 99) <= 3);
-  const wins = localTop3 + done.filter((p) => noPack(p) && aiTop(p)).length;
+  // Upfront in the AI Overview, as a searcher sees it without tapping "Show more": recommended in
+  // the answer's prose, or one of its first three business cards. (Earlier readings: in the top
+  // three of the answer's list, or in its opening line.)
+  const upfront = (p: InsightPin) => {
+    if (!hasAi(p) || unread(p)) return false;
+    const a = pinAi(p);
+    if (a.state === 'parsed') return a.featured?.kind === 'inline' || (a.featured?.kind === 'card' && a.featured.card_position <= 3 && !a.featured.after_expansion);
+    return zero(p) || (place(p) ?? 99) <= 3;
+  };
+  const win = (p: InsightPin) => packTop3(p) || upfront(p);
+  const counted = done.filter((p) => (!noPack(p) || hasAi(p)) && (win(p) || !unread(p)));
+  return { done, noPack, local, packTop3, place, hasAi, unread, shownAi, answered, zero, inAnswer, upfront, win, counted };
+}
+
+/**
+ * Share of local search: at how many of the points where Google showed local businesses on the
+ * first page (a map pack, a single-business panel, or an AI Overview) the business won an upfront
+ * spot: the top three of the pack, or upfront in the AI Overview (recommended in its prose, or one
+ * of its first three business cards before "Show more"). Either counts at any point, so a firm #6 in
+ * the pack and card #2 in the AI Overview above it holds that point. Points with neither (plain web
+ * results) are left out, as is a point whose outcome is unknown: no win, and an AI Overview that
+ * could not be read. The parts are also given on their own: Share of Local Voice over the points
+ * with a map pack, and the AI Overview over the answers that were read.
+ */
+export function searchShare(pins: InsightPin[], target: string, opts: { pageOne?: boolean } = {}) {
+  const { done, noPack, local, packTop3, place, hasAi, unread, shownAi, answered, zero, inAnswer, upfront, win, counted } = pageOne(pins, target);
+  // The earlier rule (until an admin switches customers to page one): the pack's top 3 where the
+  // page had a pack, the AI Overview's top 3 or opening line where it had none, over every point.
+  const byPageOne = opts.pageOne ?? true;
+  const oldTop = (p: InsightPin) => zero(p) || (place(p) ?? 99) <= 3;
+  const isWin = byPageOne ? win : (p: InsightPin) => packTop3(p) || (noPack(p) && oldTop(p));
+  const over = byPageOne ? counted : done;
+  const localTop3 = local.filter(packTop3).length;
+  const wins = over.filter(isWin).length;
   return {
-    points: done.length,
+    /** Which rule the share was counted by. */
+    rule: byPageOne ? ('page_one' as const) : ('earlier' as const),
+    /** Points the share is counted over: by page one, those where Google showed local businesses and the outcome is known. */
+    points: over.length,
     wins,
-    share: done.length ? (100 * wins) / done.length : null,
+    share: over.length ? (100 * wins) / over.length : null,
+    /** Completed points left out: no map pack and no AI Overview (plain web results), or an unknown outcome. */
+    noLocalSurface: byPageOne ? done.filter((p) => noPack(p) && !hasAi(p)).length : 0,
+    unknown: byPageOne ? done.filter((p) => (!noPack(p) || hasAi(p)) && !win(p) && unread(p)).length : 0,
+    /** Ids of the points that are wins (for showing them on the map). */
+    winIds: over.filter(isWin).map((p) => p.id),
     /** Map pack: points that had one, and the business's top-three share of them (Share of Local Voice). */
     local: { points: local.length, top3: localTop3, first: local.filter((p) => p.rankFound === 1).length, solv: local.length ? (100 * localTop3) / local.length : null },
-    /** AI Overview: points that had one, where the business is named, in its top three, and in its opening sentences. */
+    /** AI Overview: answers read, where the business is named, upfront, and in the opening line. */
     ai: {
       points: answered.length,
       unread: shownAi.length - answered.length,
       named: answered.filter(inAnswer).length,
-      top3: answered.filter(aiTop).length,
+      upfront: answered.filter(byPageOne ? upfront : oldTop).length,
       zero: answered.filter(zero).length,
-      winsWithoutPack: wins - localTop3,
+      /** Wins from the AI Overview alone: upfront there, not in the top three of a map pack. */
+      onlyWins: wins - counted.filter(packTop3).length,
       /** By the four flags, over the answers read with them (each point once in `appeared`); null when none was. */
       flags: (() => {
         const t = aiFlagTotals(shownAi);
@@ -95,12 +132,17 @@ export function searchShare(pins: InsightPin[], target: string) {
   };
 }
 
-export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string; centerLat: number; centerLng: number }) {
+export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string; centerLat: number; centerLng: number; scoring?: { pageOne?: boolean } | null }) {
   // Rank numbers are about the points that had local results. A point with no map pack has no
   // local rank: it is left out here and counted under the AI Overview.
   const allDone = scan.pins.filter((p) => p.status === 'COMPLETED').length;
   const localPins = scan.pins.filter((p) => !(p.status === 'COMPLETED' && p.proxyMeta?.noLocal));
-  const share = searchShare(scan.pins, scan.targetBusiness);
+  const share = searchShare(scan.pins, scan.targetBusiness, { pageOne: scan.scoring?.pageOne === true });
+  // The same page-one wins weighted by buying power, and how far out they hold.
+  // (Only where the share is counted by page one: the earlier rule's pages read as they did.)
+  const one = share.rule === 'page_one' ? pageOne(scan.pins, scan.targetBusiness) : null;
+  const pageOneBp = one ? buyingPower(one.counted, NO_FILTERS, (p: BuyingPowerPin) => (one.win(p as InsightPin) ? 1 : null)) : null;
+  const pageOneRadius = one ? winningRadius(one.counted.map((p) => ({ ...p, rankFound: one.win(p) ? 1 : null })), { lat: scan.centerLat, lng: scan.centerLng }) : null;
   const dist = rankDistribution(localPins);
   const top3 = dist.buckets[0].count + dist.buckets[1].count;
   const found = localPins.filter((p) => p.status === 'COMPLETED' && p.rankFound != null);
@@ -145,7 +187,7 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
       'ai',
       dist.total
         ? `Google showed no map pack at ${noPackPoints} of ${points(allDone)}: those have no local rank, and what counts there is the AI Overview.`
-        : `Google showed no map pack at any of the ${points(allDone)}, so there is no local rank on this search. What counts here is the AI Overview: ${scan.targetBusiness} is in its top three or opening line at ${share.ai.top3} of ${points(share.ai.points)}.`,
+        : `Google showed no map pack at any of the ${points(allDone)}, so there is no local rank on this search. What counts here is the AI Overview: ${scan.targetBusiness} is ${share.rule === 'page_one' ? 'upfront in it (recommended in the answer, or one of its first three business cards)' : 'in its top three or opening line'} at ${share.ai.upfront} of ${points(share.ai.points)}.`,
     );
   if (dist.total) {
     note('rank', 
@@ -196,6 +238,10 @@ export function reportSummary(scan: { pins: InsightPin[]; targetBusiness: string
     owners: owners.rows,
     leaders,
     radiusMiles: radius?.radius ?? null,
+    /** Share of local search weighted by buying power (null without neighborhood data). */
+    pageOneBuyingPower: pageOneBp?.buyingPower ?? null,
+    /** How far out the page-one wins hold (the map pack's top 3 or upfront in the AI Overview). */
+    pageOneRadiusMiles: pageOneRadius?.radius ?? null,
     adsAboveYou: paid.avgAdsAboveYou,
     ai,
     aiNamed,

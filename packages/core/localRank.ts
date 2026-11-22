@@ -23,5 +23,16 @@ export function aiPositionOf(meta: unknown, storedRank: number | null | undefine
   return typeof m.aiPosition === 'number' ? m.aiPosition : (storedRank ?? null);
 }
 
+/**
+ * A single-business panel instead of a map pack: Google showed one business and no pack. "won"
+ * when the panel is the business's own; "other" when another business held it (not a "20+": there
+ * was no list to rank in, though the point still counts as a loss where a pack's share is taken).
+ */
+export function oneBoxOf(meta: unknown, storedRank: number | null | undefined): 'won' | 'other' | null {
+  const m = meta as { finderShown?: unknown; rankFrom?: unknown } | null | undefined;
+  if (!m || m.finderShown !== false || m.rankFrom !== 'single_business') return null;
+  return storedRank === 1 ? 'won' : 'other';
+}
+
 /** The local rank to show and count: null on a page with no local results, whatever was stored. */
 export const localRankOf = (meta: unknown, storedRank: number | null | undefined): number | null => (noLocalResults(meta) ? null : (storedRank ?? null));

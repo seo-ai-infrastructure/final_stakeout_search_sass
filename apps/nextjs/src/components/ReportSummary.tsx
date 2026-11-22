@@ -69,22 +69,38 @@ export function ReportVerdict({
   const tiles: [string, string, string][] = [
     ['Buying-Power SoLV', noPack ? '—' : num(s.buyingPower, '%'), noPack ? 'no map pack on this search' : delta === null ? 'needs neighborhood data' : Math.round(delta) === 0 ? 'same as SoLV' : `${delta > 0 ? '+' : ''}${delta.toFixed(0)} against SoLV`],
     ['Average rank', num(s.avgRank, '', 1), !s.completed ? '—' : noPack ? `no map pack at ${s.completed} of ${s.completed}` : s.localPoints < s.completed ? `found at ${s.found} of ${s.localPoints} with a map pack` : `found at ${s.found} of ${s.completed}`],
-    ['Winning radius', s.radiusMiles === null ? '—' : s.radiusMiles.toFixed(1) + ' mi', 'top 3 holds this far out'],
+    ['Winning radius', s.radiusMiles === null ? (s.pageOneRadiusMiles === null ? '—' : s.pageOneRadiusMiles.toFixed(1) + ' mi') : s.radiusMiles.toFixed(1) + ' mi', s.radiusMiles === null ? (s.pageOneRadiusMiles === null ? 'top 3 holds this far out' : 'page one (AI Overview) holds this far out') : s.pageOneRadiusMiles !== null && s.pageOneRadiusMiles > s.radiusMiles + 0.05 ? `map pack · page one ${s.pageOneRadiusMiles.toFixed(1)} mi with the AI Overview` : 'map pack top 3 holds this far out'],
     ['Ads above you', num(s.adsAboveYou, '', 1), 'on average, per point'],
   ];
   return (
     <div className="space-y-4">
       <div className={box}>
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400" title="At how many points the business is in the top three of what Google showed there: the map pack where there is one, the AI Overview where there is not.">Share of local search</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400" title={sh.rule === 'page_one' ? 'At how many of the points where Google showed local businesses on page one (a map pack, a single-business panel or an AI Overview) the business won an upfront spot: the top 3 of the map pack, or upfront in the AI Overview (recommended in the answer, or one of its first three business cards). Points with only plain web results are left out.' : 'At how many points the business is in the top three of what Google showed there: the map pack where there is one, the AI Overview where there is not.'}>Share of local search</p>
           <span className={'rounded-full px-3 py-1 text-xs font-bold ' + tone.pill}>{v.label}</span>
         </div>
         <p className={'mt-2 text-7xl font-extrabold leading-none tracking-tight ' + tone.text}>{num(s.completed ? sh.share : null, '%')}</p>
         <p className="mt-3 text-sm leading-relaxed text-slate-300">
           {s.completed ? (
             <>
-              In the top 3 of what Google showed at <span className="font-bold text-white">{sh.wins} of {sh.points} points</span>
-              {sh.wins > 0 ? <>: {sh.local.top3} in the map pack, {sh.ai.winsWithoutPack} in the AI Overview.</> : '.'}
+              {sh.rule === 'page_one' ? (
+                <>
+                  Upfront on page one at <span className="font-bold text-white">{sh.wins} of {sh.points} points</span> with local results
+                  {sh.wins > 0 ? <>: {sh.local.top3} in the map pack&rsquo;s top 3{sh.ai.onlyWins ? <>, {sh.ai.onlyWins} more from the AI Overview alone</> : null}.</> : '.'}
+                  {s.pageOneBuyingPower !== null && sh.points > 0 ? <> By buying power: <span className="font-bold text-white">{num(s.pageOneBuyingPower, '%')}</span>.</> : null}
+                </>
+              ) : (
+                <>
+                  In the top 3 of what Google showed at <span className="font-bold text-white">{sh.wins} of {sh.points} points</span>
+                  {sh.wins > 0 ? <>: {sh.local.top3} in the map pack, {sh.ai.onlyWins} in the AI Overview.</> : '.'}
+                </>
+              )}
+              {sh.noLocalSurface || sh.unknown ? (
+                <span className="text-slate-400">
+                  {' '}
+                  Left out: {[sh.noLocalSurface ? `${sh.noLocalSurface} with only web results` : '', sh.unknown ? `${sh.unknown} whose AI Overview couldn’t be read` : ''].filter(Boolean).join(', ')}.
+                </span>
+              ) : null}
             </>
           ) : (
             'No completed points yet.'
@@ -99,10 +115,10 @@ export function ReportVerdict({
               <dd className="text-right text-slate-200">
                 {sh.local.points ? (
                   <>
-                    <span className="font-bold text-white">{num(sh.local.solv, '%')}</span> · top 3 at {sh.local.top3} of {sh.local.points}{sh.local.points < sh.points ? ' with a map pack' : ''}, #1 at {sh.local.first}
+                    <span className="font-bold text-white">{num(sh.local.solv, '%')}</span> · top 3 at {sh.local.top3} of {sh.local.points}{sh.local.points < s.completed ? ' with a map pack' : ''}, #1 at {sh.local.first}
                   </>
                 ) : (
-                  <span className="font-semibold text-cyan-300">No map pack at any of {sh.points} points</span>
+                  <span className="font-semibold text-cyan-300">No map pack at any of {s.completed} points</span>
                 )}
               </dd>
             </div>
@@ -139,7 +155,7 @@ export function ReportVerdict({
                   </>
                 ) : sh.ai.points ? (
                   <>
-                    named at <span className="font-bold text-white">{sh.ai.named} of {sh.ai.points}</span> · top 3 at {sh.ai.top3} · position zero at {sh.ai.zero}
+                    named at <span className="font-bold text-white">{sh.ai.named} of {sh.ai.points}</span> · {sh.rule === 'page_one' ? 'upfront' : 'top 3'} at {sh.ai.upfront} · position zero at {sh.ai.zero}
                   </>
                 ) : (
                   'No AI Overview at any point'

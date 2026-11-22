@@ -97,8 +97,11 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
   // The AI Overview's four flags (featured, named, listing cited, website cited): admins always see
   // them; customers once an admin turns them on. Until then a customer's pages get the points
   // without them, and read the AI Overview as before.
-  const aiFlagsLive = await getSettings().then((x) => x.aiFlagsForCustomers).catch(() => false);
+  const live = await getSettings().catch(() => null);
+  const aiFlagsLive = live?.aiFlagsForCustomers ?? false;
   const aiFlags = Boolean(opts.admin) || aiFlagsLive;
+  // Share of local search by page one (see searchShare): admins always, customers once it is switched on.
+  const pageOneLive = live?.pageOneShareForCustomers ?? false;
   const s = aiFlags ? found : { ...found, pins: found.pins.map((p) => withoutFlags(p)) };
   await fillCensus(s.pins);
   // A scan made before websites were saved borrows the one from the account's other scans of the same business.
@@ -115,6 +118,7 @@ export async function report(where: Prisma.GridScanWhereInput, opts: { admin?: b
     ...s,
     /** Whether this page reads the AI Overview by the four flags; `forCustomers`: whether customers see them too. */
     aiFlags: { shown: aiFlags, forCustomers: aiFlagsLive },
+    scoring: { pageOne: Boolean(opts.admin) || pageOneLive, forCustomers: pageOneLive },
     // (The AI citation rate too: an unread overview is left out of it, and corrected points count as they now read.)
     ...(totals ? { arp: totals.arp, atrp: totals.atrp, solv: totals.solv, aioCitationRate: totals.aioCitationRate } : {}),
     ...(borrowed ? { targetDomain: borrowed } : {}),

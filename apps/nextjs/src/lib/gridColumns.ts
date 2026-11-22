@@ -41,6 +41,9 @@ export function rankKey(status: string, rank: number | null | undefined): RankKe
  */
 export const NA_COLOR = '#22d3ee';
 
+/** A point where another business held Google's single-business panel (no map pack): a neutral slate, not the 20+ red. */
+export const ONE_BOX_COLOR = '#3a3f4b';
+
 export function rankColor(status: string, rank: number | null | undefined) {
   const k = rankKey(status, rank);
   return k ? RANK_COLORS[k] : RANK_COLORS.pending;

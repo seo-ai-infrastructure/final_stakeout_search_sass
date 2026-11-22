@@ -28,6 +28,13 @@ type Settings = {
    * the flags. Off until the backfill's dry run has been reviewed.
    */
   aiFlagsForCustomers: boolean;
+  /**
+   * Whether customers' Share of local search counts page one as a searcher sees it
+   * (PAGE_ONE_SHARE_FOR_CUSTOMERS): the map pack's top 3 or an upfront spot in the AI Overview at any
+   * point, over the points that showed local businesses. Otherwise the earlier rule: the pack's top
+   * 3, and the AI Overview only where there was no pack, over every point. Admins always see the new one.
+   */
+  pageOneShareForCustomers: boolean;
 };
 
 const KEY = 'stakeout:settings';
@@ -44,6 +51,7 @@ export const defaultSettings = (env: Record<string, string | undefined> = proces
   mobileCreditsPerPoint: num(env.MOBILE_CREDITS_PER_POINT, 2),
   mobileForCustomers: env.MOBILE_FOR_CUSTOMERS === 'true',
   aiFlagsForCustomers: env.AI_FLAGS_FOR_CUSTOMERS === 'true',
+  pageOneShareForCustomers: env.PAGE_ONE_SHARE_FOR_CUSTOMERS === 'true',
 });
 
 /** Checks values an admin typed; throws a message they can read. Only the given keys are returned. */
@@ -90,6 +98,10 @@ export function cleanSettings(input: Record<string, unknown>): Partial<Settings>
   if ('aiFlagsForCustomers' in input) {
     if (typeof input.aiFlagsForCustomers !== 'boolean') throw new Error('The AI Overview flags for customers must be on or off.');
     out.aiFlagsForCustomers = input.aiFlagsForCustomers;
+  }
+  if ('pageOneShareForCustomers' in input) {
+    if (typeof input.pageOneShareForCustomers !== 'boolean') throw new Error('The page-one share for customers must be on or off.');
+    out.pageOneShareForCustomers = input.pageOneShareForCustomers;
   }
   return out;
 }

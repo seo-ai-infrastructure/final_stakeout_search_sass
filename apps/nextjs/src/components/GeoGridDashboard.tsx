@@ -22,7 +22,8 @@ import { paintSplitPin } from '../lib/combinedPin';
 import { PinEvidenceCard } from './PinEvidenceCard';
 import { MarketInsights } from './MarketInsights';
 import { buyingPower, nearWins, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
-import { gridColumns, rankColor, rankTextColor, RANK_SCALE, columnColor, COLUMN_SCALE, RANK_KEYS, rankKey, ADS_SCALE, adsColor, NA_COLOR, type RankKey } from '../lib/gridColumns';
+import { gridColumns, rankColor, rankTextColor, RANK_SCALE, columnColor, COLUMN_SCALE, RANK_KEYS, rankKey, ADS_SCALE, adsColor, NA_COLOR, ONE_BOX_COLOR, type RankKey } from '../lib/gridColumns';
+import { oneBoxOf } from '@stakeout/core/localRank';
 import {
   CENSUS_LAYERS,
   CENSUS_SOURCE_LABEL,
@@ -510,7 +511,11 @@ export function GeoGridDashboard({
       // No map pack on that page: the local rank is not applicable (grey), not "20+".
       const na = p.status === 'COMPLETED' && !projected && Boolean(p.proxyMeta?.noLocal);
       if (na) fill = NA_COLOR;
-      let text = p.status === 'FAILED' ? '×' : p.status === 'PENDING' ? '…' : na ? 'N/A' : rank ? String(rank) : '20+';
+      // One business's panel instead of a map pack: "1-Box", green when it is the business's own,
+      // a neutral slate when another business held it (there was no list to rank in: not "20+").
+      const oneBox = p.status === 'COMPLETED' && !projected && !na ? oneBoxOf(p.proxyMeta, p.rankFound) : null;
+      if (oneBox === 'other') fill = ONE_BOX_COLOR;
+      let text = p.status === 'FAILED' ? '×' : p.status === 'PENDING' ? '…' : na ? 'N/A' : oneBox ? '1-Box' : rank ? String(rank) : '20+';
       // In AI place: a point with no AI Overview is a small muted dot; one that names the business stands out.
       let quiet = false, standout = false;
       let combined: ReturnType<typeof combinedReading> | null = null;
@@ -539,8 +544,9 @@ export function GeoGridDashboard({
         text = ads == null ? '?' : String(ads);
       }
       el.style.backgroundColor = fill;
-      el.style.color = quiet ? '#64748b' : rankTextColor(fill);
+      el.style.color = quiet ? '#64748b' : oneBox === 'other' && text === '1-Box' ? '#e2e8f0' : rankTextColor(fill);
       el.textContent = text;
+      if (text.length > 3) el.style.fontSize = '10px';
       // Combined view, 50/50 split: the top half is the AI Overview, the bottom half the local results.
       if (combined && pinStyle === 'split') paintSplitPin(el, combined);
       if (quiet) {
@@ -554,8 +560,22 @@ export function GeoGridDashboard({
       el.style.outline = solo ? '2px solid #fde047' : '';
       el.style.outlineOffset = solo ? '3px' : '';
       el.style.opacity = pinPasses(p, rank, { bpFilters, rankBand, legendBand, focusIds, id: p.id }) && !(mapMode === 'combined' && recommendedOnly && combined?.kind !== 'ai') ? '1' : '0.25';
-      el.title =
-        'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + (combined ? combined.detail : p.status);
+      // What the page showed, in words (rank view): why a point is N/A or 1-Box rather than a rank.
+      const shown =
+        p.status !== 'COMPLETED' || projected
+          ? p.status
+          : na
+            ? p.hasAiOverview
+              ? 'No map pack or single-business panel on page one: Google showed an AI Overview only'
+              : 'No map pack, single-business panel or AI Overview on page one'
+            : oneBox === 'won'
+              ? 'Won the single-business panel on page one (no map pack shown)'
+              : oneBox === 'other'
+                ? 'No map pack shown: another business held the single-business panel'
+                : rank
+                  ? 'Rank #' + rank + ' in the local results'
+                  : 'Map pack shown on page one: not found in the top 20';
+      el.title = 'Pin ' + (p.rowIdx + 1) + ',' + (p.colIdx + 1) + ' · ' + (combined ? combined.detail : shown);
       el.onclick = () => select(p.id);
       return new maplibregl.Marker({ element: el })
         .setLngLat([p.lng, p.lat])
@@ -981,7 +1001,7 @@ export function GeoGridDashboard({
                 {mapMode === 'rank' && soloPins.length > 0 && (
                   <span className="inline-flex items-center gap-1.5 px-1.5 py-1 text-slate-300" title="Google answered with one business at these points">
                     <span className="inline-block h-2.5 w-2.5 rounded-full bg-slate-700" style={{ outline: '2px solid #fde047', outlineOffset: 2 }} />
-                    Single-business result
+                    Single-business result{soloPins.some((x) => x.rankFound !== 1) ? <> · <span className="inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: ONE_BOX_COLOR }} /> 1-Box: another business held it</> : null}
                   </span>
                 )}
                 {radiusMiles !== null && (

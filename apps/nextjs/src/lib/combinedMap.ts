@@ -6,7 +6,7 @@
  * even where the AI Overview above them names it first. Here a point is a miss only when the
  * business is in neither.
  */
-import { NA_COLOR, RANK_COLORS, RANK_SCALE, rankColor, rankTextColor } from './gridColumns';
+import { NA_COLOR, ONE_BOX_COLOR, RANK_COLORS, RANK_SCALE, rankColor, rankTextColor } from './gridColumns';
 
 export type CombinedKind = 'both' | 'ai' | 'local' | 'miss';
 export type CombinedReading = {
@@ -19,6 +19,8 @@ export type CombinedReading = {
   /** The page had local results at all (a map pack, the full list or a single-business result). When
    *  false there was nothing local to rank in. */
   localShown: boolean;
+  /** Google showed one business's panel instead of a map pack: the business's own ("won") or another's ("other"). */
+  oneBox: 'won' | 'other' | null;
   /** The best placement of the two is in the top 3 (or the business is named without a place). */
   top3: boolean;
   /** The one short label on the pin: the best placement ("#2"), "✓" where the AI Overview names the
@@ -45,15 +47,18 @@ export function combinedReading(p: {
   const inAi = typeof ai === 'number' || ai === 'named', inLocal = local != null;
   const kind: CombinedKind = inAi && inLocal ? 'both' : inAi ? 'ai' : inLocal ? 'local' : 'miss';
   const localShown = !(fromAiList || p.rankFrom === 'none');
+  const oneBox = p.rankFrom === 'single_business' ? (p.rank === 1 ? 'won' : 'other') : null;
   // The better of the two placements (null: named in the AI Overview without a place, and not in the local results).
   const best = typeof ai === 'number' ? (inLocal ? Math.min(ai, local!) : ai) : local;
   const aiWords = typeof ai === 'number' ? 'AI Overview #' + ai : ai === 'named' ? 'named in the AI Overview' : ai === 'no' ? 'not in the AI Overview' : 'no AI Overview';
-  const localWords = inLocal ? 'local results #' + local : localShown ? 'not in the local results' : 'no local results on the page';
+  const localWords =
+    oneBox === 'won' ? 'its own single-business panel (no map pack)' : oneBox === 'other' ? 'another business held the single-business panel (no map pack)' : inLocal ? 'local results #' + local : localShown ? 'not in the local results' : 'no local results on the page';
   return {
     kind,
     ai,
     local,
     localShown,
+    oneBox,
     top3: kind !== 'miss' && (best == null || best <= 3),
     label: kind === 'miss' ? '20+' : best == null ? '✓' : '#' + best,
     detail: aiWords[0].toUpperCase() + aiWords.slice(1) + ' · ' + localWords,
@@ -77,6 +82,7 @@ export function combinedPin(r: CombinedReading, noLocalPack: boolean): { fill: s
   if (r.ai === 'named') return { fill: AI_PURPLE, text: '✓', from: 'ai' };
   if (r.ai === 'no') return { fill: AI_PURPLE_OUT, text: 'no', from: 'ai' };
   if (noLocalPack || !r.localShown) return { fill: NA_COLOR, text: 'N/A', from: 'na' };
+  if (r.oneBox === 'other') return { fill: ONE_BOX_COLOR, text: '1-Box', from: 'local' };
   return { fill: rankColor('COMPLETED', r.local), text: r.local != null ? '#' + r.local : '20+', from: 'local' };
 }
 /** The legend: the Pack rank colours, the two purples for a page with an AI Overview, and N/A. */
@@ -85,6 +91,7 @@ export const COMBINED_LEGEND: CombinedStyle[] = [
   { label: 'AI Overview: you are in it', swatch: AI_PURPLE },
   { label: 'AI Overview: you are not', swatch: AI_PURPLE_OUT },
   { label: 'No local pack', swatch: NA_COLOR },
+  { label: 'Another business’s single panel (1-Box)', swatch: ONE_BOX_COLOR },
 ];
 
 /**
@@ -105,6 +112,7 @@ export function combinedHalves(r: CombinedReading) {
           ? { text: 'No', fill: AI_PURPLE_OUT, ink: '#ddd6fe' }
           : { text: '–', fill: '#1e293b', ink: '#94a3b8' };
   if (!r.localShown) return { top, bottom: { text: 'N/A', fill: NA_COLOR, ink: rankTextColor(NA_COLOR) } };
+  if (r.oneBox === 'other') return { top, bottom: { text: '1-Box', fill: ONE_BOX_COLOR, ink: '#e2e8f0' } };
   const fill = r.local != null ? rankColor('COMPLETED', r.local) : r.kind === 'miss' ? RANK_COLORS.none : '#0f172a';
   const bottom = {
     text: r.local != null ? '#' + r.local : r.localShown ? '20+' : '–',
