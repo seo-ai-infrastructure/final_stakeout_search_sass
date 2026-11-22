@@ -44,12 +44,13 @@ async function accessToken(): Promise<string> {
 
 type AdsError = { error?: { message?: string; status?: string; details?: { errors?: { errorCode?: Record<string, string>; message?: string }[] }[] } };
 
-async function ads<T>(path: string, body: unknown): Promise<T> {
-  const login = digits(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID);
+/** One call. `login` is the manager account to act through (default GOOGLE_ADS_LOGIN_CUSTOMER_ID; null for none). */
+async function ads<T>(path: string, body: unknown, opts: { login?: string | null; method?: 'GET' | 'POST' } = {}): Promise<T> {
+  const login = opts.login === undefined ? digits(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID) : digits(opts.login ?? '');
   const r = await fetch(BASE + path, {
-    method: 'POST',
+    method: opts.method ?? 'POST',
     headers: { authorization: 'Bearer ' + (await accessToken()), 'content-type': 'application/json', ...(login ? { 'login-customer-id': login } : {}) },
-    body: JSON.stringify(body),
+    ...(opts.method === 'GET' ? {} : { body: JSON.stringify(body) }),
   });
   const v = (await r.json().catch(() => ({}))) as T & AdsError;
   if (!r.ok) {
@@ -88,11 +89,11 @@ const LANGUAGES = { en: '1000', es: '1003' } as const;
 const num = (v: unknown) => (v === undefined || v === null || v === '' ? null : Number(v));
 const dollars = (micros: unknown) => (num(micros) === null ? null : Math.round(Number(micros) / 10_000) / 100);
 
-/** Monthly searches and top-of-page bids for up to 50 searches, in one place and language. */
-export async function keywordPrices(keywords: string[], placeId: string, language: keyof typeof LANGUAGES = 'en'): Promise<KeywordPrice[]> {
+/** Monthly searches and top-of-page bids for up to 50 searches, in one place and language (asked for `customerId`, default GOOGLE_ADS_CUSTOMER_ID). */
+export async function keywordPrices(keywords: string[], placeId: string, language: keyof typeof LANGUAGES = 'en', customerId?: string): Promise<KeywordPrice[]> {
   type M = { avgMonthlySearches?: string; competition?: string; competitionIndex?: string; lowTopOfPageBidMicros?: string; highTopOfPageBidMicros?: string; averageCpcMicros?: string; monthlySearchVolumes?: { year?: string; month?: string; monthlySearches?: string }[] };
   type H = { results?: { text?: string; closeVariants?: string[]; keywordMetrics?: M }[] };
-  const customer = digits(process.env.GOOGLE_ADS_CUSTOMER_ID);
+  const customer = digits(customerId ?? process.env.GOOGLE_ADS_CUSTOMER_ID);
   const v = await ads<H>(`/customers/${customer}:generateKeywordHistoricalMetrics`, {
     keywords,
     language: 'languageConstants/' + LANGUAGES[language],
@@ -114,4 +115,42 @@ export async function keywordPrices(keywords: string[], placeId: string, languag
       months: (m.monthlySearchVolumes ?? []).map((s) => ({ year: Number(s.year), month: s.month ?? '', searches: num(s.monthlySearches) })),
     };
   });
+}
+
+export type AdsAccount = { id: string; name: string | null; status: string; manager: boolean | null; test: boolean | null; via: 'direct' | 'manager'; setAsCustomer: boolean; setAsLogin: boolean };
+
+/**
+ * Every Google Ads account this sign-in can reach, with its status (ENABLED, CANCELED, SUSPENDED,
+ * CLOSED, or the error Google gave), directly or under the manager account. For choosing
+ * GOOGLE_ADS_CUSTOMER_ID: Keyword Planner needs an enabled account.
+ */
+export async function reachableAccounts(): Promise<AdsAccount[]> {
+  const customer = digits(process.env.GOOGLE_ADS_CUSTOMER_ID), login = digits(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID);
+  const mark = (a: Omit<AdsAccount, 'setAsCustomer' | 'setAsLogin'>): AdsAccount => ({ ...a, setAsCustomer: a.id === customer, setAsLogin: a.id === login });
+  type Row = { customer?: { id?: string; descriptiveName?: string; status?: string; manager?: boolean; testAccount?: boolean }; customerClient?: { id?: string; descriptiveName?: string; status?: string; manager?: boolean; testAccount?: boolean } };
+  const out = new Map<string, AdsAccount>();
+  const direct = await ads<{ resourceNames?: string[] }>('/customers:listAccessibleCustomers', null, { method: 'GET', login: null });
+  for (const id of (direct.resourceNames ?? []).map((n) => n.replace('customers/', '')).slice(0, 25)) {
+    try {
+      const v = await ads<{ results?: Row[] }>(`/customers/${id}/googleAds:search`, { query: 'SELECT customer.id, customer.descriptive_name, customer.status, customer.manager, customer.test_account FROM customer LIMIT 1' }, { login: id });
+      const c = v.results?.[0]?.customer ?? {};
+      out.set(id, mark({ id, name: c.descriptiveName ?? null, status: c.status ?? 'UNKNOWN', manager: c.manager ?? null, test: c.testAccount ?? null, via: 'direct' }));
+    } catch (e) {
+      out.set(id, mark({ id, name: null, status: e instanceof Error ? e.message : 'error', manager: null, test: null, via: 'direct' }));
+    }
+  }
+  // Accounts under the manager account, one level down.
+  if (login) {
+    try {
+      const v = await ads<{ results?: Row[] }>(`/customers/${login}/googleAds:search`, { query: 'SELECT customer_client.id, customer_client.descriptive_name, customer_client.status, customer_client.manager, customer_client.test_account FROM customer_client WHERE customer_client.level <= 1' }, { login });
+      for (const r of v.results ?? []) {
+        const c = r.customerClient ?? {};
+        if (c.id && !out.has(c.id)) out.set(c.id, mark({ id: c.id, name: c.descriptiveName ?? null, status: c.status ?? 'UNKNOWN', manager: c.manager ?? null, test: c.testAccount ?? null, via: 'manager' }));
+      }
+    } catch {
+      /* the manager account itself is in the list above, with its error */
+    }
+  }
+  if (customer && !out.has(customer)) out.set(customer, mark({ id: customer, name: null, status: 'NOT REACHABLE with this sign-in', manager: null, test: null, via: 'direct' }));
+  return [...out.values()];
 }

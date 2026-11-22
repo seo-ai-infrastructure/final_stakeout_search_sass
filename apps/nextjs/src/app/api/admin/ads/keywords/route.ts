@@ -4,14 +4,15 @@ import { InputError } from '@stakeout/core/grid';
 import { redis } from '@stakeout/core/redis';
 import { errorResponse } from '@/lib/api';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { ADS_API, adsConfigured, keywordPrices, placeFor } from '@/lib/googleAds';
+import { ADS_API, adsConfigured, keywordPrices, placeFor, reachableAccounts } from '@/lib/googleAds';
 
 export const maxDuration = 60;
 
 /**
  * POST /api/admin/ads/keywords (admins only, read-only): Google Ads Keyword Planner's monthly
  * searches and top-of-page bids for up to 50 searches in one place.
- *   { keywords: ["car accident lawyer", ...], location: "Huntington, New York" | placeId: "1023191", language?: "en" | "es" }
+ *   { keywords: ["car accident lawyer", ...], location: "Huntington, New York" | placeId: "1023191", language?: "en" | "es", customerId? }
+ *   { action: "accounts" }: every Google Ads account the connection reaches, with its status.
  * Answers are kept a day: Google's figures are monthly, and each lookup counts against the daily quota.
  */
 export async function POST(req: Request) {
@@ -19,7 +20,10 @@ export async function POST(req: Request) {
     const u = await getAuthenticatedUser();
     if (u.role !== 'ADMIN') throw new InputError('Admins only.', 403);
     if (!adsConfigured()) throw new InputError('Google Ads is not set up: GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN and GOOGLE_ADS_CUSTOMER_ID on Vercel.', 503);
-    const b = (await req.json().catch(() => ({}))) as { keywords?: unknown; location?: unknown; placeId?: unknown; language?: unknown };
+    const b = (await req.json().catch(() => ({}))) as { action?: unknown; keywords?: unknown; location?: unknown; placeId?: unknown; language?: unknown; customerId?: unknown };
+    if (b.action === 'accounts') return NextResponse.json({ version: ADS_API, accounts: await reachableAccounts() });
+    // Another of the reachable accounts, to try before changing GOOGLE_ADS_CUSTOMER_ID on Vercel.
+    const customerId = typeof b.customerId === 'string' && /^[\d-]+$/.test(b.customerId) ? b.customerId : undefined;
     const keywords = [...new Set((Array.isArray(b.keywords) ? b.keywords : []).map((k) => String(k).trim().toLowerCase()).filter(Boolean))].slice(0, 50);
     if (!keywords.length) throw new InputError('Give at least one search in "keywords".', 400);
     const language = b.language === 'es' ? 'es' : 'en';
@@ -30,10 +34,10 @@ export async function POST(req: Request) {
         : null;
     if (!place) throw new InputError('Give a "location" Google knows (e.g. "Huntington, New York") or a numeric "placeId".', 400);
 
-    const key = 'stakeout:ads:kw:' + createHash('sha256').update(JSON.stringify([ADS_API, place.id, language, [...keywords].sort()])).digest('hex').slice(0, 32);
+    const key = 'stakeout:ads:kw:' + createHash('sha256').update(JSON.stringify([ADS_API, place.id, language, [...keywords].sort(), customerId ?? ''])).digest('hex').slice(0, 32);
     const kept = await redis().get(key).catch(() => null);
     if (kept) return NextResponse.json({ ...JSON.parse(kept), cached: true });
-    const results = await keywordPrices(keywords, place.id, language);
+    const results = await keywordPrices(keywords, place.id, language, customerId);
     const out = { version: ADS_API, place, language, results, at: new Date().toISOString() };
     await redis().set(key, JSON.stringify(out), 'EX', 86_400).catch(() => null);
     return NextResponse.json(out);
