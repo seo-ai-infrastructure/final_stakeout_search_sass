@@ -1,38 +1,14 @@
 'use client';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { BONUS_POINTS, DEMO_REPORT_URL, PROMO, PROSPECT_PACKS, WELCOME, usd } from '@/lib/pricing';
+import { useState, type ReactNode } from 'react';
+import { HREF } from './links';
+export { HREF } from './links';
+import { BONUS_POINTS, PROMO, PROSPECT_PACKS, WELCOME, usd } from '@/lib/pricing';
 
 /** The pieces the home and pricing pages share: colors, links, icons, the header, the footer and the offer bar. */
 
 export const ACCENT = '#FF5500';
 export const TONE = { accent: ACCENT, accentSoft: ACCENT + '1F', accentLine: ACCENT + '66', accentGlow: ACCENT + '26' };
 export const MONO = "'JetBrains Mono', ui-monospace, monospace";
-
-const signUp = (next: string) => '/login?mode=register&next=' + encodeURIComponent(next);
-
-/** Where the buttons go. A new visitor creates an account first, then lands on the right page of the app. */
-export const HREF = {
-  /** The $5 first audit: the points dialog opens on it, on the new-scan page. */
-  firstAudit: signUp('/new-scan?buy=welcome'),
-  /** Seats are bought on the Plan and billing page. */
-  seats: signUp('/profiles?tab=plan'),
-  /** A prospect audit pack, by its price list key. */
-  prospects: (key: string) => signUp('/scans?buy=' + key),
-  login: '/login',
-  pricing: '/pricing',
-  /** A real report anyone can open (Lakeland, FL, 5×5, 17 Nov 2026). */
-  report: DEMO_REPORT_URL,
-  /** The 7×7 scan the rank-tracker comparison is drawn from (Lakeland, FL, 15 Nov 2026). */
-  sevenGrid: '/share/432807474370d4d4b14e2bc306975ceac268a3f055f93375',
-  /** The hero point's own recording (point 5,5, 17 Nov 2026). */
-  recording: '/api/media/hero',
-  demo: '/demo',
-  agency: '/agency',
-  truth: '/truth',
-  privacy: '/privacy',
-  terms: '/terms',
-  support: 'mailto:support@stakeoutsearch.com',
-};
 
 /** How many 5×5 Scan Now audits the Black Friday bonus buys. */
 const BONUS_AUDITS = BONUS_POINTS / WELCOME.credits;
@@ -67,14 +43,6 @@ export function Arrow({ size = 18 }: { size?: number }) {
     </svg>
   );
 }
-export function Play({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M7 4.5v15l12.5-7.5z" />
-    </svg>
-  );
-}
-
 function Wordmark({ size }: { size: number }) {
   return (
     <span style={{ fontWeight: 800, fontSize: size, lineHeight: 1.2, letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>
@@ -102,23 +70,22 @@ export function OfferBanner({ live, href }: { live: boolean; href: string }) {
 }
 
 const NAV: [string, string][] = [
-  ['real-vs-reported', 'Real vs. Reported'],
-  ['ai-overviews', 'AI Overviews'],
-  ['google-listings', 'GBP & Social Command'],
-  ['watchdog', 'Listing Watchdog'],
+  ['ai-overviews', 'Recorded search'],
+  ['report', 'Client reports'],
+  ['google-listings', 'Listing tools'],
 ];
 
 const ctaSmall = { display: 'inline-flex', alignItems: 'center', minHeight: 44, boxSizing: 'border-box', background: ACCENT, color: '#0B1017', fontWeight: 700, padding: '10px 18px', borderRadius: 10, fontSize: 14, lineHeight: 1.3, whiteSpace: 'nowrap' } as const;
 
 /** The sticky header. On the home page its links scroll; elsewhere they lead to the home page. */
-export function SiteNav({ page, onWatchdog }: { page: 'home' | 'pricing'; onWatchdog?: () => void }) {
+export function SiteNav({ page }: { page: 'home' | 'pricing' }) {
   const [open, setOpen] = useState(false);
   const home = page === 'home';
   const links = NAV.map(([id, label]) => ({
     id,
     label,
     href: (home ? '' : '/') + '#' + id,
-    onClick: id === 'watchdog' && onWatchdog ? (e: React.MouseEvent) => { e.preventDefault(); setOpen(false); onWatchdog(); } : () => setOpen(false),
+    onClick: () => setOpen(false),
   }));
   const pricingLink = { padding: '13px 0', ...(page === 'pricing' ? { color: '#F1F5F9', fontWeight: 700, boxShadow: `inset 0 -2px 0 ${ACCENT}` } : {}) };
   return (
@@ -136,8 +103,9 @@ export function SiteNav({ page, onWatchdog }: { page: 'home' | 'pricing'; onWatc
         </nav>
         <div className="so-wide" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <a href={HREF.login} style={{ padding: '13px 14px', fontSize: 14, lineHeight: 1.4, color: '#CBD5E1' }}>Log in</a>
-          <a className="so-btn" href={HREF.firstAudit} style={ctaSmall}>Run your first scan — {usd(WELCOME.cents)}</a>
+          <a className="so-btn" href={HREF.firstAudit} style={ctaSmall}>Run my {usd(WELCOME.cents)} audit</a>
         </div>
+        {home && <a className="lp-mobile-audit so-btn" href={HREF.firstAudit} aria-label={'Run my ' + usd(WELCOME.cents) + ' audit'}>{usd(WELCOME.cents)} audit</a>}
         <button
           type="button"
           className="so-burger"
@@ -166,7 +134,7 @@ export function SiteNav({ page, onWatchdog }: { page: 'home' | 'pricing'; onWatc
             <a href={HREF.login} style={{ display: 'block', padding: '12px 0', color: '#CBD5E1' }}>Log in</a>
           </li>
         </ul>
-        <a className="so-btn" href={HREF.firstAudit} style={{ ...ctaSmall, marginTop: 10, width: '100%', justifyContent: 'center', minHeight: 48, fontSize: 16 }}>Run your first scan — {usd(WELCOME.cents)}</a>
+        <a className="so-btn" href={HREF.firstAudit} style={{ ...ctaSmall, marginTop: 10, width: '100%', justifyContent: 'center', minHeight: 48, fontSize: 16 }}>Run my {usd(WELCOME.cents)} audit</a>
       </nav>
     </header>
   );
@@ -239,33 +207,5 @@ export function Faq({ id, items, wide }: { id: string; items: FaqItem[]; wide?: 
         </div>
       </div>
     </section>
-  );
-}
-
-/** The hero point's real screen recording, in a player over the page. */
-export function RecordingDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const d = ref.current;
-    if (!d) return;
-    if (open && !d.open) d.showModal();
-    if (!open && d.open) d.close();
-  }, [open]);
-  return (
-    <dialog
-      ref={ref}
-      className="so-dialog"
-      aria-label="Screen recording of a real search"
-      onClose={onClose}
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-        <p style={{ margin: 0, fontSize: 13, lineHeight: 1.45, color: '#CBD5E1' }}>“emergency plumber near me” · point 5,5 · near Lakeland, FL · Nov 17, 2026</p>
-        <button type="button" onClick={onClose} aria-label="Close the recording" style={{ flex: 'none', width: 40, height: 40, borderRadius: 10, border: '1px solid rgba(255, 255, 255, 0.2)', background: '#111823', color: '#F1F5F9', fontSize: 18, lineHeight: 1 }}>✕</button>
-      </div>
-      <div style={{ borderRadius: 28, border: '8px solid #1E2836', overflow: 'hidden', background: '#000' }}>
-        {open && <video src={HREF.recording} controls autoPlay muted playsInline preload="metadata" style={{ display: 'block', width: '100%', aspectRatio: '9 / 16', maxHeight: '78vh', background: '#000' }} />}
-      </div>
-    </dialog>
   );
 }

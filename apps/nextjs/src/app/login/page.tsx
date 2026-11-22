@@ -16,6 +16,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { TurnstileWidget } from '@/components/TurnstileWidget';
+import { usd, WELCOME } from '@/lib/pricing';
 const verifyNotice: Record<string, string> = {
   expired: 'That link has expired or was already used. Sign in to request a new one.',
   error: 'We couldn’t confirm that link. Try again from the latest email.',
@@ -34,6 +35,7 @@ function LoginFormContent() {
   const [mode, setMode] = useState<'login' | 'register'>(
     signups && searchParams.get('mode') === 'register' ? 'register' : 'login',
   );
+  const auditSignup = signups && mode === 'register' && nextPath === '/new-scan?buy=welcome';
   useEffect(() => {
     fetch('/api/auth/config', { cache: 'no-store' })
       .then((r) => r.json())
@@ -91,11 +93,13 @@ function LoginFormContent() {
             <Crosshair className="h-7 w-7 stroke-[2.5]" />
           </div>
         </div>
-        <h1 className="mt-4 text-center text-2xl font-extrabold tracking-tight text-white uppercase">
-          Stakeout Observatory
+        <h1 className={`mt-4 text-center text-2xl font-extrabold tracking-tight text-white${auditSignup ? '' : ' uppercase'}`}>
+          {auditSignup ? `Create an account for your ${usd(WELCOME.cents)} audit` : 'Stakeout Observatory'}
         </h1>
-        <p className="mt-1 text-center text-xs text-slate-400">
-          Device-Observed Mobile Search & AI GeoGrid Intelligence
+        <p className={auditSignup ? 'mt-2 text-center text-sm leading-6 text-slate-300' : 'mt-1 text-center text-xs text-slate-400'}>
+          {auditSignup
+            ? 'See one local search from 25 locations. Get a phone recording at each point and a second scan seven days later.'
+            : 'Device-Observed Mobile Search & AI GeoGrid Intelligence'}
         </p>
       </div>
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -137,10 +141,12 @@ function LoginFormContent() {
             </button>
           </div>
           {mode === 'register' && (
-            <div className="mb-5 flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/25">
+            <div className={`mb-5 flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/25${auditSignup ? ' p-3 text-sm leading-5' : ''}`}>
               <Coins className="h-4 w-4 shrink-0 text-emerald-400" />
               <span>
-                Confirm your email after signing up to <strong>activate your account</strong>.
+                {auditSignup
+                  ? 'Next, review your first audit and continue to checkout.'
+                  : <>Confirm your email after signing up to <strong>activate your account</strong>.</>}
               </span>
             </div>
           )}
@@ -231,22 +237,28 @@ function LoginFormContent() {
                 </>
               ) : (
                 <>
-                  Create account
+                  {auditSignup ? 'Create account and continue' : 'Create account'}
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}
             </button>
           </form>
-          <div className="mt-6 flex items-center justify-between border-t border-slate-800 pt-4 text-[11px]">
-            <span className="flex items-center gap-1">
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-              Isolated Credit Ledger
-            </span>
-            <span className="flex items-center gap-1">
-              <Sparkles className="h-3.5 w-3.5 text-purple-400" />
-              HMAC-Signed Cookie
-            </span>
-          </div>
+          {auditSignup ? (
+            <p className="mt-4 text-center text-xs leading-5 text-slate-300">
+              Pay {usd(WELCOME.cents)} once. If you start a monthly plan, we’ll take {usd(WELCOME.cents)} off your first month.
+            </p>
+          ) : (
+            <div className="mt-6 flex items-center justify-between border-t border-slate-800 pt-4 text-[11px]">
+              <span className="flex items-center gap-1">
+                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                Isolated Credit Ledger
+              </span>
+              <span className="flex items-center gap-1">
+                <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+                HMAC-Signed Cookie
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>
