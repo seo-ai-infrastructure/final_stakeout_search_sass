@@ -1,4 +1,5 @@
 'use client';
+import { aiFlagPins, type AiFlagKey } from '@stakeout/core/aiFlags';
 import type { GridScanData } from './GeoGridDashboard';
 import type { SiteKind } from '@/lib/marketInsights';
 import { reportSummary, verdictFor, type RankBucket, type FindingKind } from '@/lib/reportSummary';
@@ -38,13 +39,28 @@ export function ReportVerdict({
   scan,
   activeFinding = null,
   onFinding,
+  aiFocus = null,
+  onAiFocus,
 }: {
   scan: GridScanData;
   /** The finding whose view is on the map now, and what to do when one is chosen. */
   activeFinding?: FindingKind | null;
   onFinding?: (kind: FindingKind) => void;
+  /** The AI Overview count whose points are lit on the map now, and what to do when one is chosen. */
+  aiFocus?: AiFlagKey | null;
+  onAiFocus?: (key: AiFlagKey, ids: string[]) => void;
 }) {
   const s = reportSummary(scan);
+  const flagPins = aiFlagPins(scan.pins.filter((p) => p.status === 'COMPLETED'));
+  // A count that lights its points on the map (each opens its evidence there).
+  const Count = ({ k, children }: { k: AiFlagKey; children: React.ReactNode }) =>
+    onAiFocus && flagPins[k].length ? (
+      <button type="button" onClick={() => onAiFocus(k, flagPins[k])} aria-pressed={aiFocus === k} title="Show these points on the map" className={'underline decoration-dotted underline-offset-2 hover:text-white ' + (aiFocus === k ? 'text-sky-300' : '')}>
+        {children}
+      </button>
+    ) : (
+      <>{children}</>
+    );
   const sh = s.share;
   const v = verdictFor(s.completed ? sh.share : null);
   const tone = VERDICT[v.tone];
@@ -98,12 +114,28 @@ export function ReportVerdict({
                 {sh.ai.flags ? (
                   // Read by the four flags: each point counted once where the business appeared, then each flag on its own.
                   <>
-                    appeared at <span className="font-bold text-white">{sh.ai.flags.appeared} of {sh.ai.flags.read}</span>
-                    {' · '}featured {sh.ai.flags.featured}
+                    <Count k="appeared">appeared at <span className="font-bold text-white">{sh.ai.flags.appeared} of {sh.ai.flags.read}</span></Count>
+                    {' · '}
+                    <Count k="featured">featured {sh.ai.flags.featured}</Count>
                     {sh.ai.flags.featured ? ` (${[sh.ai.flags.featuredCard ? sh.ai.flags.featuredCard + ' as a card' : '', sh.ai.flags.featuredInline ? sh.ai.flags.featuredInline + ' inline' : ''].filter(Boolean).join(', ')})` : ''}
-                    {' · '}named in the answer {sh.ai.flags.named} · listing cited {sh.ai.flags.listing} · website cited {sh.ai.flags.website}
-                    {sh.ai.flags.possibleWebsite ? <span className="text-amber-200"> · possible website citation {sh.ai.flags.possibleWebsite}</span> : null}
-                    {sh.ai.unread ? <span className="text-slate-400"> · unparsed {sh.ai.unread}</span> : null}
+                    {' · '}
+                    <Count k="named">named in the answer {sh.ai.flags.named}</Count>
+                    {' · '}
+                    <Count k="listing">listing cited {sh.ai.flags.listing}</Count>
+                    {' · '}
+                    <Count k="website">website cited {sh.ai.flags.website}</Count>
+                    {sh.ai.flags.possibleWebsite ? (
+                      <span className="text-amber-200">
+                        {' · '}
+                        <Count k="possibleWebsite">possible website citation {sh.ai.flags.possibleWebsite}</Count>
+                      </span>
+                    ) : null}
+                    {sh.ai.unread ? (
+                      <span className="text-slate-400">
+                        {' · '}
+                        <Count k="unread">unparsed {sh.ai.unread}</Count>
+                      </span>
+                    ) : null}
                   </>
                 ) : sh.ai.points ? (
                   <>

@@ -82,3 +82,10 @@ test('Sponsored results above the AI Overview do not cut the answer short', () =
   assert.deepEqual(readAiOverview(xml)?.businesses.map((b) => b.name), ['Law Offices of Jeff Martin', 'LaCourse Accident & Injury Law']);
   assert.deepEqual(aiOverviewFold(xml), { folded: false, cards: ['Law Offices of Jeff Martin', 'LaCourse Accident & Injury Law'] });
 });
+
+test('each count opens the very points it counts', async () => {
+  const { aiFlagPins } = await import('../packages/core/aiFlags');
+  const pins = [...topDollar, pin('p9', presence({ status: 'unparsed', named: null, websiteCited: null }), true), pin('p8', null, true)];
+  const ids = aiFlagPins(pins);
+  assert.deepEqual([ids.appeared, ids.featured, ids.named, ids.website, ids.possibleWebsite, ids.unread], [['p1', 'p2', 'p3', 'p4', 'p5'], ['p1', 'p3', 'p4', 'p5'], ['p1', 'p2', 'p3', 'p4', 'p5'], [], ['p1', 'p2', 'p3', 'p4', 'p5'], ['p9']]);
+});

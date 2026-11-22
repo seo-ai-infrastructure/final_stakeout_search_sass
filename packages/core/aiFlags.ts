@@ -151,6 +151,22 @@ export function aiFlagLines(a: PinAi): AiFlagLine[] {
   ];
 }
 
+export type AiFlagKey = 'appeared' | 'featured' | 'named' | 'listing' | 'website' | 'possibleWebsite' | 'unread';
+/** The points behind each count (see aiFlagTotals), so a count opens the very points it counts. */
+export function aiFlagPins(pins: (PinLike & { id: string })[]): Record<AiFlagKey, string[]> {
+  const of = (f: (a: PinAi) => boolean) => pins.filter((p) => f(pinAi(p))).map((p) => p.id);
+  const read = (a: PinAi) => a.state === 'parsed';
+  return {
+    appeared: of((a) => read(a) && a.visible === true),
+    featured: of((a) => read(a) && Boolean(a.featured)),
+    named: of((a) => read(a) && a.named),
+    listing: of((a) => read(a) && Boolean(a.listing)),
+    website: of((a) => read(a) && a.websiteCited === 'verified'),
+    possibleWebsite: of((a) => read(a) && a.websiteCited === 'unverified'),
+    unread: of((a) => a.state === 'unparsed'),
+  };
+}
+
 /** Across points: where the business appeared (each point once), and each flag's count. */
 export function aiFlagTotals(pins: PinLike[]) {
   const read = pins.map(pinAi).filter((a) => a.state === 'parsed');

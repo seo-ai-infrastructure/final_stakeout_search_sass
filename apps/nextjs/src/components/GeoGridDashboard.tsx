@@ -1,5 +1,5 @@
 'use client';
-import { pinAi, readByFlags } from '@stakeout/core/aiFlags';
+import { pinAi, readByFlags, type AiFlagKey } from '@stakeout/core/aiFlags';
 import { useEffect, useRef, useState } from 'react';
 import { EvidencePanel } from './EvidencePanel';
 import Link from 'next/link';
@@ -249,6 +249,7 @@ export function GeoGridDashboard({
     [legendBand, setLegendBand] = useState<RankKey | null>(null),
     // The opportunity card's points, when it is showing them: only these stay lit.
     [focusIds, setFocusIds] = useState<Set<string> | null>(null),
+    [aiFocus, setAiFocus] = useState<AiFlagKey | null>(null),
     [aiRing, setAiRing] = useState(true),
     [finding, setFinding] = useState<FindingKind | null>(null),
     [style3d, setStyle3d] = useState<'columns' | 'areas'>('columns'),
@@ -1227,10 +1228,19 @@ export function GeoGridDashboard({
         <div className="space-y-4">
         <ReportVerdict
           scan={scan}
+          aiFocus={aiFocus}
+          onAiFocus={(key, ids) => {
+            // An AI Overview count lights exactly its points on the AI map; choosing it again shows every point.
+            const off = aiFocus === key;
+            setAiFocus(off ? null : key);
+            setFocusIds(off ? null : new Set(ids));
+            if (!off) setMapMode('ai');
+          }}
           activeFinding={finding}
           onFinding={(kind) => {
             // Choosing a finding puts its view on the map; choosing it again returns to the plain rank map.
             const off = finding === kind;
+            setAiFocus(null);
             setFinding(off ? null : kind);
             setRankBand(null);
             setLegendBand(off ? null : kind === 'rank' ? 'top' : null);
