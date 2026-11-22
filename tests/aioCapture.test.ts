@@ -437,3 +437,69 @@ test('expansion is counted from the first read that shows the answer, not from o
   assert.equal(d.meta.stats?.expandedSeen, true);
   assert.equal(d.meta.stats?.postExpandAddedSentences, 1);
 });
+
+test('a bulleted list of businesses: an entry without a Google link is a card only beside a verified one; topics never are', () => {
+  const link = (id: string) => ' (https://www.google.com/search?kgmid=' + encodeURIComponent(id) + ')';
+  // Google's nearby list, as on the Centerport point: the firm first, without a link, then two linked firms.
+  const nearby = [
+    'Top-rated attorneys serving Huntington include Brandon J. Broderick, Personal Injury Attorney at Law, and Zandra Law, PLLC' + link('/g/z') + '. [1] (https://example.com/a)',
+    '',
+    'Huntington & Huntington Station',
+    '',
+    '• Brandon J. Broderick, Personal Injury Attorney at Law',
+    '\t• Address: 215 E Main St #203, Huntington, NY 11743',
+    '\t• Focus: Motor vehicle accidents. [1] (https://example.com/b)',
+    '• Zandra Law, PLLC' + link('/g/z'),
+    '\t• Address: 1100 New York Ave A, Huntington Station, NY 11746',
+    '• Mandler & Sieger, LLP' + link('/g/m'),
+    '\t• Rating: 4.9/5 (100 reviews)',
+    '',
+    'Nearby Long Island Options',
+    'Brian J. Levy & Associates, P.C.' + link('/g/l'),
+    '• Address: 75 Jackson Ave, Syosset, NY 11791',
+    '• Focus: Auto accidents. [1] (https://example.com/c)',
+  ].join('\n');
+  const r = readCopiedAnswer(nearby);
+  assert.deepEqual(r.cards.map((c) => [c.pos, c.name, c.id, c.kind]), [
+    [1, 'Brandon J. Broderick, Personal Injury Attorney at Law', '', 'list'],
+    [2, 'Zandra Law, PLLC', '/g/z', 'list'],
+    [3, 'Mandler & Sieger, LLP', '/g/m', 'list'],
+    [4, 'Brian J. Levy & Associates, P.C.', '/g/l', 'card'],
+  ]);
+  // Topics in a list beside a linked firm: the firm is a card, the topics are not.
+  const topics = ['Why choose a local firm [1] (https://example.com/d)', '', '• Free consultations', '• No win, no fee', '• Zandra Law, PLLC' + link('/g/z')].join('\n');
+  assert.deepEqual(readCopiedAnswer(topics).cards.map((c) => c.name), ['Zandra Law, PLLC']);
+  // Firms with details but nothing verified in their list: no cards...
+  const unverified = ['Some firms [1] (https://example.com/e)', '', '• Firm X', '\t• Address: 1 Main St', '• Firm Y', '\t• Address: 2 Main St'].join('\n');
+  assert.deepEqual(readCopiedAnswer(unverified).cards, []);
+  // ...until the phone's screen shows one of them as a card: then both are.
+  assert.deepEqual(readCopiedAnswer(unverified, ['Firm Y']).cards.map((c) => c.name), ['Firm X', 'Firm Y']);
+  // A topic bullet with details under it still needs a verified sibling.
+  assert.deepEqual(readCopiedAnswer(['x [1] (https://example.com/f)', '', '• Parking', '\t• Hours: 9–5'].join('\n')).cards, []);
+});
+
+test('the Centerport point: the firm’s own nearby-list entry reads as card #1, and the copy agrees with the screen either way', () => {
+  const link = (id: string) => ' (https://www.google.com/search?kgmid=' + encodeURIComponent(id) + ')';
+  const copy = [
+    'Top-rated attorneys serving Huntington include Brandon J. Broderick, Personal Injury Attorney at Law, and Zandra Law, PLLC' + link('/g/z') + '. [1] (https://example.com/a)',
+    '',
+    '• Brandon J. Broderick, Personal Injury Attorney at Law',
+    '\t• Address: 215 E Main St #203, Huntington, NY 11743',
+    '• Zandra Law, PLLC' + link('/g/z'),
+    '\t• Address: 1100 New York Ave A',
+    '• Mandler & Sieger, LLP' + link('/g/m'),
+    '\t• Address: 1609 New York Ave',
+    '',
+    'Nearby',
+    'Brian J. Levy & Associates, P.C.' + link('/g/l'),
+    'Law Office of Carl Maltese' + link('/g/c'),
+    'The Odierno Law Firm' + link('/g/o'),
+  ].join('\n');
+  const base = { keyword: 'q', targetDomain: 'brandonjbroderick.com', targetBusinessId: null, targetName: 'Brandon J. Broderick, Personal Injury Attorney at Law', mapPackRank: null, copy, copyCheck: ['Top-rated attorneys serving Huntington include', 'Brandon J. Broderick, Personal Injury Attorney at Law'], overviewOnScreen: true, telemetry: NOT_WATCHED, scanPointId: 'p' };
+  // Against the run's own list (the list's firms first)...
+  const a = aiPresence(buildAioCapture(noPageRead('q'), { ...base, shownBeforeExpansion: null, screenCards: ['Brandon J. Broderick, Personal Injury Attorney at Law', 'Zandra Law, PLLC', 'Mandler & Sieger, LLP'] }));
+  assert.deepEqual([a.status, a.featured, a.identity], ['parsed', { kind: 'card', card_position: 1, card_count: 6, after_expansion: null }, 'name']);
+  // ...and against a first screen whose reader leaves the list out (only the nearby cards).
+  const b = aiPresence(buildAioCapture(noPageRead('q'), { ...base, shownBeforeExpansion: ['Brian J. Levy & Associates, P.C.', 'Law Office of Carl Maltese', 'The Odierno Law Firm'] }));
+  assert.deepEqual([b.status, b.featured?.kind, b.featured && 'card_position' in b.featured ? b.featured.card_position : null, b.featured && 'after_expansion' in b.featured ? b.featured.after_expansion : 'x'], ['parsed', 'card', 1, null]);
+});

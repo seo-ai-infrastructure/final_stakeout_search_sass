@@ -309,7 +309,7 @@ export interface AioCaptureResult {
 }
 
 /** The capture rules' version, written on every capture (a point is replayed when its capture is older). */
-export const AIO_CAPTURE_VERSION = 'v287';
+export const AIO_CAPTURE_VERSION = 'v288';
 
 /** What the watcher itself knows; the read counts come from the merged reads. */
 export type WatcherFacts = Omit<AioWatcherTelemetry, 'expanded_seen' | 'post_expand_added_sentences' | 'post_expand_added_entries' | 'copy_used'>;
@@ -422,27 +422,88 @@ const sameCardName = (screen: string, name: string) => {
 };
 
 type CopySentence = { text: string; urls: string[]; mentions: { name: string | null; id: string }[]; /** The copy's card (1-based) this is the description of: the first citing line under its name. */ card: number | null };
-/** Google's copied answer, as far as a capture needs it. */
-export type CopiedAnswer = { cards: { pos: number; name: string; id: string }[]; sentences: CopySentence[]; sponsored: string[] };
+/**
+ * Google's copied answer, as far as a capture needs it. A card is a business entry: a line that is a
+ * name and its Google link ("card"), or an entry of a bulleted list of businesses ("list"), whose id
+ * is '' when the entry has no Google link and none of the answer's links has its name.
+ */
+export type CopiedAnswer = { cards: { pos: number; name: string; id: string; kind: 'card' | 'list' }[]; sentences: CopySentence[]; sponsored: string[] };
 
 const CARD_LINE = /^(.+?) \((https:\/\/www\.google\.com\/search\?kgmid=([^&)\s]+)[^)\s]*)\)$/;
 const KG_LINK = /\s\((https:\/\/www\.google\.com\/search\?kgmid=([^&)\s]+)[^)\s]*)\)/g;
 const CITE = /\[(\d+)\] \(([^)\s]+)\)/g;
 
 /**
- * The parts of Google's copied answer a capture uses: the business cards (a line that is a name and
- * its Google link), every sentence that cites something (its text, the pages it cites in order, the
- * businesses it names with their Google IDs), and the Sponsored block (everything from "Sponsored").
+ * Bulleted lists of businesses in a copied answer: runs of top-level "• Name" lines, each with its
+ * indented "• Address / Phone / Rating / Hours" lines (Google lists nearby firms this way, and the
+ * first of them may come without a Google link). An entry is a business card only when it is one:
+ * a bare name with its Google link; or a bare name without one that has an address, phone, rating
+ * or hours under it (or is a card on the phone's screen), in a list where another entry is a
+ * verified business (its own Google link, or a card on the screen). So a list of topics ("• Free
+ * consultations") never adds cards. Returns the line numbers of the entries that are cards.
  */
-export function readCopiedAnswer(text: string): CopiedAnswer {
+function listCards(lines: string[], screen: string[]): Map<number, { name: string; id: string }> {
+  const out = new Map<number, { name: string; id: string }>();
+  type Entry = { at: number; name: string; id: string | null; entity: boolean; nameLike: boolean };
+  const top = (l: string) => /^•\s+/.test(l);
+  const sub = (l: string) => /^\s+•\s+/.test(l);
+  const onScreen = (name: string) => screen.some((x) => sameCardName(x, name) || flatWords(x).trim() === flatWords(name).trim());
+  const lists: Entry[][] = [];
+  let cur: Entry[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^Sponsored(?![a-z])/.test(l.trim())) break;
+    if (top(l)) {
+      const text = l.replace(/^•\s+/, '').trim();
+      let entity = false;
+      for (let j = i + 1; j < lines.length && sub(lines[j]); j++) if (/^\s+•\s+(Address|Phone|Rating|Hours)\s*:/i.test(lines[j])) entity = true;
+      const cited = /\[\d+\] \(/.test(text);
+      const m = cited ? null : CARD_LINE.exec(text);
+      const name = (m ? m[1] : text).trim();
+      const nameLike = !cited && !name.includes(':') && name.length >= 3 && name.length <= 90 && !/[.!?]$/.test(name) && name.split(/\s+/).length <= 12;
+      cur.push({ at: i, name, id: m ? decodeURIComponent(m[3]) : null, entity, nameLike });
+      continue;
+    }
+    if (sub(l) || !l.trim()) continue;
+    // Any other line ends the list.
+    if (cur.length) lists.push(cur);
+    cur = [];
+  }
+  if (cur.length) lists.push(cur);
+  for (const list of lists) {
+    // A verified business: its own Google link, or a card on the phone's screen.
+    const verified = (e: Entry) => e.nameLike && (e.id !== null || onScreen(e.name));
+    const sibling = (e: Entry) => list.some((o) => o !== e && verified(o));
+    for (const e of list) {
+      if (!e.nameLike) continue;
+      if (e.id !== null) out.set(e.at, { name: e.name, id: e.id });
+      // On the screen but without a link: a card when it has a business's details, or a verified sibling.
+      else if (onScreen(e.name) && (e.entity || sibling(e))) out.set(e.at, { name: e.name, id: '' });
+      // Neither: only a business's details under it, in a list where another entry is verified.
+      else if (e.entity && sibling(e)) out.set(e.at, { name: e.name, id: '' });
+    }
+  }
+  return out;
+}
+
+/**
+ * The parts of Google's copied answer a capture uses: the business cards (a line that is a name and
+ * its Google link, or an entry of a bulleted list of businesses, see listCards), every sentence that
+ * cites something (its text, the pages it cites in order, the businesses it names with their Google
+ * IDs), and the Sponsored block (everything from "Sponsored"). `screen`: the business cards the
+ * phone's screen showed, when known, which can vouch for a list entry without a Google link.
+ */
+export function readCopiedAnswer(text: string, screen: string[] = []): CopiedAnswer {
   const cards: CopiedAnswer['cards'] = [];
   const sentences: CopySentence[] = [];
   const sponsored: string[] = [];
   let ads = false;
   // The card whose description is still to come: the first citing line under a card's name.
   let open: number | null = null;
-  for (const raw of text.replace(/\r/g, '').split('\n')) {
-    const line = raw.trim();
+  const lines = text.replace(/\r/g, '').split('\n');
+  const listed = listCards(lines, screen);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
     if (!line) continue;
     // The ads come after the answer, the word glued to the next ("SponsoredYou might consider…").
     if (ads || /^Sponsored(?![a-z])/.test(line)) {
@@ -451,9 +512,15 @@ export function readCopiedAnswer(text: string): CopiedAnswer {
       if (rest) sponsored.push(rest);
       continue;
     }
+    const entry = listed.get(i);
+    if (entry) {
+      cards.push({ pos: cards.length + 1, name: entry.name, id: entry.id, kind: 'list' });
+      open = cards.length;
+      continue;
+    }
     const card = line.startsWith('•') ? null : CARD_LINE.exec(line);
     if (card && !/\[\d+\] \(/.test(line)) {
-      cards.push({ pos: cards.length + 1, name: card[1].trim(), id: decodeURIComponent(card[3]) });
+      cards.push({ pos: cards.length + 1, name: card[1].trim(), id: decodeURIComponent(card[3]), kind: 'card' });
       open = cards.length;
       continue;
     }
@@ -467,6 +534,21 @@ export function readCopiedAnswer(text: string): CopiedAnswer {
       .trim();
     sentences.push({ text: words, urls, mentions, card: open });
     open = null;
+  }
+  // A list entry without its own Google link takes the one the answer gives elsewhere for the same
+  // business ("Brandon J. Broderick (…kgmid=…)" in a sentence, beside the entry's longer name).
+  const known: { name: string; id: string }[] = [
+    ...cards.filter((c) => c.id).map((c) => ({ name: c.name, id: c.id })),
+    ...sentences.flatMap((x) => x.mentions.filter((m) => m.name).map((m) => ({ name: m.name as string, id: m.id }))),
+  ];
+  const prefix = (a: string, b: string) => {
+    const x = flatWords(a).trim(), y = flatWords(b).trim();
+    return x.split(' ').length >= 2 && y.split(' ').length >= 2 && (x === y || x.startsWith(y + ' ') || y.startsWith(x + ' '));
+  };
+  for (const c of cards) {
+    if (c.id) continue;
+    const ids = [...new Set(known.filter((k) => prefix(k.name, c.name)).map((k) => k.id))];
+    if (ids.length === 1) c.id = ids[0];
   }
   return { cards, sentences, sponsored };
 }
@@ -505,7 +587,7 @@ export function buildAioCapture(
   const clusters = d.clusters;
 
   // ---- Google's copy, used only when it is this page's answer (its sentences are the page's).
-  const copied = opts.copy ? readCopiedAnswer(opts.copy) : null;
+  const copied = opts.copy ? readCopiedAnswer(opts.copy, [...(opts.shownBeforeExpansion ?? []), ...(opts.screenCards ?? [])]) : null;
   const clusterKeys = clusters.map((c) => letters(c.claimText));
   const usedCluster = new Set<number>();
   const match = (text: string): number | null => {
@@ -538,10 +620,13 @@ export function buildAioCapture(
     const x = letters(a), y = letters(b);
     return x.length >= 4 && y.length >= 4 && (x.startsWith(y) || y.startsWith(x));
   };
-  const cardsAgree =
-    !copied || !screenCards?.length || !copied.cards.length
-      ? true
-      : copied.cards.slice(0, Math.min(3, screenCards.length)).every((c, i) => sameCard(c.name, screenCards[i]));
+  // The screen may list a bulleted list's firms as cards or leave them out (as the first screen's
+  // reader does): the copy agrees with it either way, with its list entries or without them.
+  const agreeWith = (list: { name: string }[]) => {
+    const k = Math.min(3, screenCards!.length, list.length);
+    return k > 0 && list.slice(0, k).every((c, i) => sameCard(c.name, screenCards![i]));
+  };
+  const cardsAgree = !copied || !screenCards?.length || !copied.cards.length ? true : agreeWith(copied.cards) || agreeWith(copied.cards.filter((c) => c.kind === 'card'));
   const copyUsed = Boolean(
     copied &&
       cardsAgree &&
@@ -553,7 +638,7 @@ export function buildAioCapture(
   // ---- Names by Google ID: the copy's cards and named businesses, then the page's listing titles.
   const names = new Map<string, string>();
   if (copyUsed) {
-    for (const c of copied!.cards) names.set(c.id, c.name);
+    for (const c of copied!.cards) if (c.id) names.set(c.id, c.name);
     for (const s of copied!.sentences) for (const m of s.mentions) if (m.name && !names.has(m.id)) names.set(m.id, m.name);
   }
   for (const c of clusters) for (const e of c.candidatePool) if (e.extracted?.mid && e.extracted.title && !names.has(e.extracted.mid)) names.set(e.extracted.mid, e.extracted.title);
@@ -820,13 +905,16 @@ export function buildAioCapture(
     r.afterExpansion = expandedOnly(r.name);
     receipt(r, { role: 'card', card_position: c.position, url: c.links.find((l) => l.action === 'website')?.r.url ?? null, text: r.name });
   }
+  // Whether the first screen's reader lists a bulleted list's firms at all: when it does not, it
+  // cannot say whether they were shown before "Show more".
+  const foldHasLists = Boolean(before && copied?.cards.some((c) => c.kind === 'list' && before.some((x) => sameCardName(x, c.name))));
   if (copyUsed)
     for (const c of copied!.cards) {
-      const r = make(c.id, c.id, 'listing');
+      const r = c.id ? make(c.id, c.id, 'listing') : make('name:' + flatWords(c.name).trim(), null, 'listing');
       r.name ??= c.name;
       if (r.card === null) {
         r.card = c.pos;
-        r.afterExpansion = expandedOnly(r.name);
+        r.afterExpansion = c.kind === 'list' && !foldHasLists ? null : expandedOnly(r.name);
         receipt(r, { role: 'card', card_position: c.pos, text: c.name });
       }
     }
