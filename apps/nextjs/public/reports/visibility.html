@@ -95,6 +95,7 @@ select{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6p
 .face{flex:1;min-height:330px;display:grid;place-items:center;padding:26px 8%;background-color:var(--map2);background-image:linear-gradient(#26333d 1px,transparent 1px),linear-gradient(90deg,#26333d 1px,transparent 1px);background-size:34px 34px}
 .grid{display:grid;gap:8px;width:100%;max-width:440px}
 .cell{aspect-ratio:1;display:grid;place-items:center}
+.pin.sq{border-radius:10px;letter-spacing:.02em}
 .pin{width:min(46px,100%);aspect-ratio:1;border-radius:50%;border:2px solid transparent;display:grid;place-items:center;font:700 12px/1 Inter,system-ui,sans-serif;color:#fff;background:#4b5965;transition:transform .12s}
 .pin:hover{transform:scale(1.08)}
 .pin[aria-pressed=true]{outline:3px solid #ffb27d;outline-offset:3px}
@@ -183,7 +184,7 @@ footer .wrap{display:grid;gap:6px}
     <nav aria-label="Report sections">
       <a href="#coverage">Coverage</a><a href="#actions">Priority actions</a><a href="#history">Scan history</a><a href="#google">Google data</a><a href="#receipts">Point receipts</a>
     </nav>
-    <button class="print" type="button" onclick="window.print()">Print report</button>
+    <button class="print" type="button" id="savecopy" hidden style="margin-right:8px">Save offline copy</button><button class="print" type="button" onclick="window.print()">Print report</button>
   </div>
 </header>
 
@@ -322,8 +323,10 @@ const status = (html) => {
   el.hidden = false;
   el.innerHTML = html;
 };
-let DATA = null;
-if (!scanId && !shareId) status('<b>No scan chosen.</b> Open this report from a scan, or from its share link.');
+let DATA = window.__REPORT_DATA__ || null;
+if (DATA) {
+  // A saved copy: its data is inside the file.
+} else if (!scanId && !shareId) status('<b>No scan chosen.</b> Open this report from a scan, or from its share link.');
 else {
   try {
     const url = shareId ? '/api/share/' + encodeURIComponent(shareId) + '/visibility' : '/api/scans/' + encodeURIComponent(scanId) + '/visibility';
@@ -384,7 +387,7 @@ function aiTotals(s) {
     website: n((p) => p.website === 'confirmed'),
     possible: n((p) => p.website === 'possible'),
     best,
-    bestAt: read.filter((p) => p.featured && p.featured.card === best).map(area),
+    bestAt: [...new Set(read.filter((p) => p.featured && p.featured.card === best).map(area))],
   };
 }
 function packTotals(s) {
@@ -397,6 +400,7 @@ function packTotals(s) {
     ranked: ranked.length,
     notFound: shown.filter((p) => p.rank === null && !p.oneBox).length,
     oneBoxOther: shown.filter((p) => p.oneBox === 'other').length,
+    oneBoxWon: shown.filter((p) => p.oneBox === 'won').length,
     arp: ranked.length ? ranked.reduce((a, p) => a + p.rank, 0) / ranked.length : null,
   };
 }
@@ -453,7 +457,7 @@ function kpis() {
   // 3. The map pack.
   if (packScan) {
     const k = packTotals(packScan);
-    cards.push(`<article class="card kpi"><span class="label">Map pack top 3</span><strong>${k.top3} / ${k.points}<span>${pct(k.top3, k.points)}%</span></strong><span class="kw">${esc(packScan.kw)}</span><p>${k.arp !== null ? `Average rank #${k.arp.toFixed(1)} where found · ` : ''}#1 at ${k.ones} point${k.ones === 1 ? '' : 's'} · not found at ${k.notFound}${k.oneBoxOther ? ` · another firm's single panel at ${k.oneBoxOther}` : ''}</p><small>${esc(timeET(packScan.at))} · counted over the ${k.points} points that showed a map pack</small></article>`);
+    cards.push(`<article class="card kpi"><span class="label">Map pack top 3</span><strong>${k.top3} / ${k.points}<span>${pct(k.top3, k.points)}%</span></strong><span class="kw">${esc(packScan.kw)}</span><p>${k.arp !== null ? `Average rank #${k.arp.toFixed(1)} where found · ` : ''}#1 at ${k.ones} point${k.ones === 1 ? '' : 's'} · not found at ${k.notFound}${k.oneBoxOther ? ` · another firm's single panel at ${k.oneBoxOther}` : ''}</p><small>${esc(timeET(packScan.at))} · counted over the ${k.points} points that showed ${k.oneBoxOther || k.oneBoxWon ? 'a map pack or a single-business panel' : 'a map pack'}</small></article>`);
   } else {
     cards.push(`<article class="card kpi"><span class="label">Map pack top 3</span><strong>—</strong><p>Google showed no map pack in these scans: the AI answer is the local result here.</p></article>`);
   }
@@ -496,20 +500,35 @@ function pinStyle(p) {
   if (p.state === 'none') return { bg: '#3c4853', bd: '#5d6b77', txt: '–', tip: 'No AI answer here' };
   if (p.state === 'unparsed') return { bg: '#2d3943', bd: '#f1c56a', txt: '?', tip: 'AI answer shown, but it couldn’t be read', dash: true };
   if (p.state === 'legacy') return { bg: p.old ? '#5f5285' : '#3a4650', bd: '#8d96a0', txt: p.old ? '✓' : '×', tip: p.old ? 'Earlier reading: named' : 'Earlier reading: not named', dash: true };
-  if (p.conflict && !p.featured) return { bg: '#4a3d73', bd: '#f1c56a', txt: '!', tip: `Needs a second look: the screen shows card #${p.conflict}, the answer read doesn't`, dash: true };
-  if (p.featured) return { bg: 'var(--purple)', bd: '#c6b5f2', txt: p.featured.card ? '#' + p.featured.card : '★', tip: p.featured.card ? `Featured: card #${p.featured.card}${p.featured.of ? ' of ' + p.featured.of : ''}${p.featured.afterMore ? ', after “Show more”' : ''}` : 'Featured: recommended by name' };
-  if (p.named) return { bg: '#4a3d73', bd: 'var(--purple2)', txt: 'N', tip: 'Named in the answer' };
-  if (p.listing) return { bg: '#244e78', bd: '#7fb1e3', txt: 'L', tip: 'Google listing cited as a source' };
-  if (p.website === 'confirmed') return { bg: '#1f5f4a', bd: '#6fd0ac', txt: 'W', tip: 'Website cited' };
-  return { bg: '#1a242c', bd: '#4c5a66', txt: '×', tip: 'Not in the AI answer' };
+  if (p.conflict && !p.featured) return { bg: '#4a3d73', bd: '#f1c56a', txt: '!', tip: `Needs a second look: the screen shows card #${p.conflict}, the answer read doesn't`, dash: true, sq: true };
+  // Featured: upfront (one of the first three cards before "Show more", or recommended in the text) in green; lower or after "Show more" in amber.
+  if (p.featured && p.featured.inline) return { bg: 'var(--green)', bd: '#7fd3b1', txt: '★', tip: 'Featured: recommended in the answer', sq: true };
+  if (p.featured) {
+    const up = p.featured.card <= 3 && !p.featured.afterMore;
+    return { bg: up ? 'var(--green)' : 'var(--amber)', bd: up ? '#7fd3b1' : '#ecc06e', txt: String(p.featured.card), tip: `Featured: card #${p.featured.card}${p.featured.of ? ' of ' + p.featured.of : ''}${p.featured.afterMore ? ', after “Show more”' : ''}`, sq: true };
+  }
+  if (p.named) return { bg: '#4a3d73', bd: 'var(--purple2)', txt: 'TXT', tip: 'Named in the answer’s text', sq: true, small: true };
+  if (p.listing) return { bg: '#244e78', bd: '#7fb1e3', txt: 'GBP', tip: 'Google listing cited as a source', sq: true, small: true };
+  if (p.website === 'confirmed') return { bg: '#1f5f4a', bd: '#6fd0ac', txt: 'WEB', tip: 'Website cited', sq: true, small: true };
+  return { bg: '#1a242c', bd: '#4c5a66', txt: '×', tip: 'Not in the AI answer', sq: true };
 }
 function legend() {
-  const sw = (bg, bd, t, dash) => `<span><i class="dot" style="width:12px;height:12px;background:${bg};border:2px ${dash ? 'dashed' : 'solid'} ${bd}"></i>${t}</span>`;
-  const solo = state.scan.pins.some((p) => p.oneBox);
+  const sw = (bg, bd, t, dash, sq) => `<span><i class="dot" style="width:12px;height:12px;background:${bg};border:2px ${dash ? 'dashed' : 'solid'} ${bd}${sq ? ';border-radius:3px' : ''}"></i>${t}</span>`;
+  const pins = state.scan.pins, has = (f) => pins.some(f);
   $('#legend').innerHTML =
     state.mode === 'rank'
-      ? [sw('var(--green)', '#59c79c', '#1'), sw('#3a8f6f', '#7fd3b1', '#2–3'), sw('var(--amber)', '#ecc06e', '#4–10'), sw('var(--red)', '#e07a68', 'Not found'), solo ? sw('#3a3f4b', '#fde047', '1-Box: one firm’s panel') : '', sw('#3c4853', '#5d6b77', 'No map pack')].join('')
-      : [sw('var(--purple)', '#c6b5f2', 'Featured (card #)'), sw('#4a3d73', 'var(--purple2)', 'Named'), sw('#244e78', '#7fb1e3', 'Listing cited'), sw('#1f5f4a', '#6fd0ac', 'Website cited'), sw('#1a242c', '#4c5a66', 'Not in it'), sw('#2d3943', '#f1c56a', 'Unparsed', true), sw('#5f5285', '#8d96a0', 'Earlier reading', true), sw('#3c4853', '#5d6b77', 'No AI answer')].join('');
+      ? [sw('var(--green)', '#59c79c', '#1'), sw('#3a8f6f', '#7fd3b1', '#2–3'), sw('var(--amber)', '#ecc06e', '#4–10'), sw('var(--red)', '#e07a68', 'Not found'), has((p) => p.oneBox === 'won') ? sw('var(--green)', '#fde047', '1-Box: its own panel') : '', has((p) => p.oneBox === 'other') ? sw('#3a3f4b', '#fde047', '1-Box: another firm’s panel') : '', sw('#3c4853', '#5d6b77', 'No map pack')].join('')
+      : [
+          sw('var(--green)', '#7fd3b1', 'Featured upfront (card 1–3, ★ in the text)', false, true),
+          sw('var(--amber)', '#ecc06e', 'Featured lower (card 4+ or after “Show more”)', false, true),
+          sw('#4a3d73', 'var(--purple2)', 'TXT named in the text', false, true),
+          sw('#244e78', '#7fb1e3', 'GBP listing cited', false, true),
+          sw('#1f5f4a', '#6fd0ac', 'WEB website cited', false, true),
+          sw('#1a242c', '#4c5a66', 'Not in it', false, true),
+          has((p) => p.state === 'unparsed') ? sw('#2d3943', '#f1c56a', 'Unparsed', true) : '',
+          has((p) => p.state === 'legacy') ? sw('#5f5285', '#8d96a0', 'Earlier reading', true) : '',
+          has((p) => p.state === 'none') ? sw('#3c4853', '#5d6b77', 'No AI answer') : '',
+        ].join('');
 }
 function focusLine() {
   const s = state.scan, biz = esc(short(DATA.business));
@@ -521,7 +540,7 @@ function focusLine() {
   }
   const k = packTotals(s);
   if (!k.points) return `<b>No map pack at any of the ${s.pins.length} points</b> in this scan: see the AI answer.`;
-  return `<b>Top 3 in the map pack at ${k.top3} of ${k.points} points</b> that showed one (#1 at ${k.ones})${k.arp !== null ? `; average rank #${k.arp.toFixed(1)} where found` : ''}, not found at ${k.notFound}.${k.oneBoxOther ? ` Another firm held Google's single-business panel at ${k.oneBoxOther}.` : ''}${s.ai ? ` An AI answer appeared at ${s.ai} point${s.ai > 1 ? 's' : ''}.` : ''}`;
+  return `<b>Top 3 at ${k.top3} of ${k.points} points</b> that showed ${k.oneBoxOther || k.oneBoxWon ? 'a map pack or a single-business panel' : 'a map pack'} (#1 at ${k.ones})${k.arp !== null ? `; average rank #${k.arp.toFixed(1)} where found` : ''}, not found at ${k.notFound}.${k.oneBoxOther ? ` Another firm held Google's single-business panel at ${k.oneBoxOther}.` : ''}${s.ai ? ` An AI answer appeared at ${s.ai} point${s.ai > 1 ? 's' : ''}.` : ''}`;
 }
 function grid() {
   const s = state.scan, n = s.size, at = new Map(s.pins.map((p) => [p.r + ',' + p.c, p]));
@@ -537,7 +556,7 @@ function grid() {
         continue;
       }
       const st = pinStyle(p), on = state.pin === p;
-      html += `<div class="cell"><button type="button" class="pin" aria-pressed="${on}" data-k="${r},${c}" title="${esc(label(p) + ' · ' + area(p) + ' · ' + st.tip)}" aria-label="${esc(label(p) + ', ' + area(p) + ': ' + st.tip)}" style="background:${st.bg};border:2px ${st.dash ? 'dashed' : 'solid'} ${st.bd}${st.small ? ';font-size:9.5px' : ''}">${esc(st.txt)}</button></div>`;
+      html += `<div class="cell"><button type="button" class="pin${st.sq ? ' sq' : ''}" aria-pressed="${on}" data-k="${r},${c}" title="${esc(label(p) + ' · ' + area(p) + ' · ' + st.tip)}" aria-label="${esc(label(p) + ', ' + area(p) + ': ' + st.tip)}" style="background:${st.bg};border:2px ${st.dash ? 'dashed' : 'solid'} ${st.bd}${st.small ? ';font-size:9.5px' : ''}">${esc(st.txt)}</button></div>`;
     }
   g.innerHTML = html;
   g.querySelectorAll('.pin').forEach((b) =>
@@ -554,7 +573,7 @@ function flagRow(on, labelText, det, maybe) {
 function packText(p) {
   if (!p.pack) return 'No map pack on this page';
   if (p.oneBox === 'won') return '<b>Its own single-business panel</b> (Google showed one firm, no map pack)';
-  if (p.oneBox === 'other') return "Another firm's single-business panel (no map pack)";
+  if (p.oneBox === 'other') return p.first[0] ? `<b>${esc(short(p.first[0]))}</b> held Google's single-business panel (no map pack)` : "Another firm's single-business panel (no map pack)";
   return p.rank === null ? '<b>Not found</b> in the map pack' : `<b>#${p.rank}</b>`;
 }
 function receipt() {
@@ -567,8 +586,10 @@ function receipt() {
     ai =
       (p.conflict ? `<p style="margin:0 0 8px;padding:7px 9px;border-radius:7px;background:#fdf3dc;color:#5c4210;font-size:12.5px"><b>Needs a second look.</b> The phone's screen shows the firm as card #${p.conflict}, but the answer read here doesn't. Until they agree, this point is counted as the answer reads it.</p>` : '') +
       `<div class="flags">${flagRow(Boolean(p.featured), 'Featured', p.featured ? (p.featured.card ? `card #${p.featured.card}${p.featured.of ? ' of ' + p.featured.of : ''}${p.featured.afterMore ? ', after “Show more”' : ''}` : 'recommended by name') : '')}${flagRow(p.named || false, 'Named in the answer')}${flagRow(Boolean(p.listing), 'Google listing cited as a source', p.listing ? (p.listing.links ? `${p.listing.links} link${p.listing.links > 1 ? 's' : ''}` : `among its sources (#${p.listing.inSources})`) : '')}${p.website === 'possible' ? flagRow(false, 'Possible website citation', 'confirm the site is the firm’s', true) : flagRow(p.website === 'confirmed', 'Website cited', p.website === 'confirmed' ? esc(DATA.website || '') : '')}</div>`;
-  const firstLabel = p.pack ? 'Map pack, top 3' : p.aiShown ? 'AI answer, first 3 cards' : 'First 3 results';
-  const first = p.first.length ? `<ol class="list">${p.first.map((n) => `<li class="${me(n) ? 'you' : ''}">${esc(n)}${me(n) ? ' (you)' : ''}</li>`).join('')}</ol>` : '<span class="quiet" style="margin:0">Not kept for this point.</span>';
+  const ol = (list) => `<ol class="list">${list.map((n) => `<li class="${me(n) ? 'you' : ''}">${esc(n)}${me(n) ? ' (you)' : ''}</li>`).join('')}</ol>`;
+  const firstLabel = p.oneBox ? 'Single panel' : p.pack ? 'Map pack, top 3' : p.aiShown ? 'AI answer, first 3' : 'First 3 results';
+  const first = p.first.length ? ol(p.oneBox ? p.first.slice(0, 1) : p.first) : '<span class="quiet" style="margin:0">Not kept for this point.</span>';
+  const aiList = p.pack && p.aiFirst && p.aiFirst.length ? `<div class="row"><dt>AI answer, first 3 named</dt><dd>${ol(p.aiFirst)}</dd></div>` : '';
   const read = p.state === 'parsed' || p.state === 'legacy';
   const src = read && p.sources.length ? p.sources.map((d) => `${esc(d)}${isOwnSite(d) ? '<span class="own">yours</span>' : ''}`).join(', ') : '<span class="quiet" style="margin:0">' + (p.state === 'unparsed' ? 'Not counted (answer unparsed).' : p.state === 'none' ? '—' : 'None listed.') + '</span>';
   $('#receipt').innerHTML = `
@@ -578,19 +599,22 @@ function receipt() {
     <dl class="rows">
       <div class="row"><dt>Map pack</dt><dd>${packText(p)}</dd></div>
       <div class="row"><dt>AI answer</dt><dd>${ai}</dd></div>
-      <div class="row"><dt>${firstLabel}</dt><dd>${first}</dd></div>
+      <div class="row"><dt>${firstLabel}</dt><dd>${first}</dd></div>${aiList}
       <div class="row"><dt>Sources in the answer</dt><dd>${src}</dd></div>
     </dl>
     <a class="btnlink" href="${esc(s.link)}" target="_blank" rel="noopener">Open the recording and full evidence${DATA.brand ? '' : ' in Stakeout'} ↗</a>`;
 }
 function competitors() {
-  const s = state.scan, count = new Map();
-  s.pins.forEach((p) => p.first.forEach((n) => count.set(n, (count.get(n) || 0) + 1)));
+  const s = state.scan, count = new Map(), ai = state.mode === 'ai';
+  // AI view: the first three businesses each answer named. Map view: the first three local results, where the page had them.
+  const listOf = (p) => (ai ? (p.aiFirst && p.aiFirst.length ? p.aiFirst : !p.pack ? p.first : []) : p.pack ? p.first : []);
+  const counted = s.pins.filter((p) => listOf(p).length);
+  counted.forEach((p) => listOf(p).forEach((n) => count.set(n, (count.get(n) || 0) + 1)));
   const rows = [...count].sort((a, b) => b[1] - a[1]).slice(0, 8);
   const mine = [...count].find(([n]) => me(n));
   if (!rows.some(([n]) => me(n)) && mine) rows.push(mine);
   const max = Math.max(1, ...rows.map((r) => r[1]));
-  $('#compsub').textContent = (s.isAiScan ? 'Firms among the first three AI answer cards' : 'Firms in the first three local results') + `, out of ${s.pins.length} points in this scan.`;
+  $('#compsub').textContent = (ai ? 'Firms among the first three the AI answer named' : 'Firms in the first three local results (map pack or single panel)') + `, at ${counted.length} of ${s.pins.length} points in this scan.`;
   $('#comps').innerHTML = rows.map(([n, c]) => `<div class="bar ${me(n) ? 'me' : ''}"><span class="name" title="${esc(n)}">${esc(short(n))}${me(n) ? ' (you)' : ''}</span><span class="n">${c}</span><div class="track"><div class="fill" style="width:${(100 * c) / max}%"></div></div></div>`).join('') || '<p class="quiet">Not kept for this scan.</p>';
 }
 function sources() {
@@ -665,7 +689,7 @@ function actions() {
         tag: 'AI answer gap',
         title: `Win the AI answer in ${names.slice(0, 3).join(' & ')}`,
         body: `${runs.length > 1 ? `Across ${runs.length} runs of “${kw}”, Google's AI answer left the firm out at ${weak.length} point${weak.length > 1 ? 's' : ''} almost every time it could be read.` : `In “${kw}”, Google's AI answer left the firm out at ${weak.length} point${weak.length > 1 ? 's' : ''}.`}${top.length ? ` The firms it put first there instead: ${top.join(' and ')}.` : ''}`,
-        ev: weak.map((x) => `${label(x.p)} ${area(x.p)}: in ${x.appeared}/${x.read}`).join(' · '),
+        ev: weak.map((x) => ({ scan: runs[0].id, r: x.p.r, c: x.p.c, mode: 'ai', text: `${label(x.p)} ${area(x.p)}: in ${x.appeared}/${x.read}` })),
       });
     }
   }
@@ -691,8 +715,8 @@ function actions() {
       out.push({
         tag: 'Map pack edge',
         title: `Hold the map pack into ${lowAreas.slice(0, 2).join(' & ') || 'the edge of the grid'}`,
-        body: `For “${pack.kw}” the firm is top 3 at ${strong.length} of ${shown.length} points with a map pack${strongAreas.length ? `, strongest in ${strongAreas.slice(0, 3).join(', ')}` : ''}. It falls to #6 or lower, or out of the pack, at ${low.length} point${low.length > 1 ? 's' : ''}${where.length ? ': ' + where.join(' and ') : ''}.`,
-        ev: low.map((p) => `${label(p)} ${p.oneBox === 'other' ? '1-Box' : p.rank === null ? 'NF' : '#' + p.rank}`).join(' · '),
+        body: `For “${pack.kw}” the firm is top 3 at ${strong.length} of ${shown.length} points with local results${strongAreas.length ? `, strongest in ${strongAreas.slice(0, 3).join(', ')}` : ''}. It falls to #6 or lower, out of the pack, or behind another firm's single panel at ${low.length} point${low.length > 1 ? 's' : ''}${where.length ? ': ' + where.join(' and ') : ''}.`,
+        ev: low.map((p) => ({ scan: pack.id, r: p.r, c: p.c, mode: 'rank', text: `${label(p)} ${p.oneBox === 'other' ? '1-Box' : p.rank === null ? 'NF' : '#' + p.rank}` })),
       });
     }
   }
@@ -716,9 +740,26 @@ function actions() {
       body: `Over ${read} AI answers read, the most cited sites were ${dirs.map(([d, c]) => `${d} (${c})`).join(', ')}. ${DATA.website ? `The firm's own site was cited in ${own}.` : 'Save the firm’s website on its scans to count its own citations.'} A complete, current profile on the sites the answer leans on is the most direct way into it.`,
       ev: DATA.website ? `${own}/${read} answers cite ${DATA.website}` : `${read} answers read`,
     });
+  const evHtml = (ev) =>
+    typeof ev === 'string'
+      ? esc(ev)
+      : ev.map((x) => `<button type="button" class="evpt" data-scan="${esc(x.scan)}" data-r="${x.r}" data-c="${x.c}" data-mode="${x.mode}" style="all:unset;cursor:pointer;text-decoration:underline dotted">${esc(x.text)}</button>`).join(' · ');
   $('#actionlist').innerHTML = out.length
-    ? out.map((a, i) => `<article class="card action"><span class="label">${i + 1} · ${esc(a.tag)}</span><h3>${esc(a.title)}</h3><p>${esc(a.body)}</p><div class="ev">${esc(a.ev)}</div></article>`).join('')
+    ? out.map((a, i) => `<article class="card action"><span class="label">${i + 1} · ${esc(a.tag)}</span><h3>${esc(a.title)}</h3><p>${esc(a.body)}</p><div class="ev">${evHtml(a.ev)}</div></article>`).join('')
     : '<p class="quiet">No action stands out from these scans yet: more runs of the same keyword show where the gaps repeat.</p>';
+  // A point in the evidence opens on the grid, with its receipt.
+  $('#actionlist').querySelectorAll('.evpt').forEach((b) =>
+    b.addEventListener('click', () => {
+      const s = SCANS.find((x) => x.id === b.dataset.scan);
+      if (!s) return;
+      state.kw = s.kw;
+      state.scan = s;
+      state.mode = b.dataset.mode;
+      state.pin = s.pins.find((p) => p.r === Number(b.dataset.r) && p.c === Number(b.dataset.c)) || s.pins[0];
+      render();
+      $('#coverage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }),
+  );
 }
 
 /* ---- Scan history ---- */
@@ -747,7 +788,7 @@ function listingBody(L) {
   let html = `<p class="quiet" style="margin:4px 0 8px">${esc([L.title, L.address].filter(Boolean).join(' · '))}${L.periods ? `<br>Last 28 days, ${esc(span(L.periods.recent))}, against the 28 before. Google counts a listing about three days late.` : ''}</p>`;
   const d = L.daily;
   if (d.kind === 'daily') {
-    const order = ['views', 'calls', 'websiteClicks', 'directions', 'conversations', 'bookings'].filter((k) => d.known.includes(k));
+    const order = ['views', 'calls', 'websiteClicks', 'directions', 'conversations', 'bookings'].filter((k) => d.known.includes(k) && (['views', 'calls', 'websiteClicks', 'directions'].includes(k) || d.totals[k] || d.before[k]));
     const where = ['mobileSearch', 'mobileMaps', 'desktopSearch', 'desktopMaps'].filter((k) => d.known.includes(k));
     html += `<dl class="rows">${order.map((k) => row(LABEL[k], d.totals[k], d.before[k], k === 'views' && where.length ? where.map((w) => LABEL[w].toLowerCase() + ' ' + fmt(d.totals[w])).join(', ') : '')).join('')}</dl>`;
     if (d.daysWithData < d.length) html += `<p style="font-size:12px" class="quiet">Google has ${d.daysWithData} of the ${d.length} days so far; the rest are pending, not zero.</p>`;
@@ -770,7 +811,7 @@ function searchBody(S) {
   } else if (g) html += `<p class="quiet">Search Console: ${esc(g.problem || 'no figures')}</p>`;
   const a = S.ga;
   if (a && a.recent) {
-    html += `<h4 style="margin:14px 0 6px;font-size:13px">Analytics · ${esc(a.name)}</h4><dl class="rows">${row('Visits to the site', a.recent.sessions, a.before.sessions)}${row('Key events', a.recent.keyEvents, a.before.keyEvents)}${a.listing ? row('Visits from the listing’s link', a.listing.recent.sessions, a.listing.before.sessions, 'tagged utm_campaign=' + esc(a.campaign || 'gbp_listing')) : ''}</dl>`;
+    html += `<h4 style="margin:14px 0 6px;font-size:13px">Analytics · ${esc(a.name)}</h4><dl class="rows">${a.page ? row('Visits that landed on this page', a.page.recent.sessions, a.page.before.sessions, 'key events ' + fmt(a.page.recent.keyEvents)) : ''}${a.listing ? row(a.page ? '…of them from the listing’s link' : 'Visits from the listing’s link', a.listing.recent.sessions, a.listing.before.sessions, 'tagged utm_campaign=' + esc(a.campaign || 'gbp_listing')) : ''}${row('Visits to the whole site', a.recent.sessions, a.before.sessions, 'key events ' + fmt(a.recent.keyEvents))}</dl>`;
   } else if (a) html += `<p class="quiet" style="font-size:12px">Analytics: ${esc(a.problem || 'no figures')}</p>`;
   return html || '<p class="quiet">No figures came back.</p>';
 }
@@ -830,6 +871,21 @@ function receiptsTable() {
   });
 }
 
+// A copy of this page that carries its own data: opens anywhere, without a sign-in or the network.
+const saveBtn = $('#savecopy');
+if (saveBtn) saveBtn.hidden = false;
+saveBtn?.addEventListener('click', () => {
+  const page = document.documentElement.cloneNode(true);
+  page.querySelectorAll('[data-wxt-integrated], #savecopy').forEach((x) => x.remove());
+  const keep = document.createElement('script');
+  keep.textContent = 'window.__REPORT_DATA__ = ' + JSON.stringify(DATA).replace(/</g, '\\u003c') + ';';
+  page.querySelector('head').appendChild(keep);
+  const blob = new Blob(['<!DOCTYPE html>\n' + page.outerHTML], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (DATA.business || 'report').replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 60) + '-visibility-report.html';
+  a.click();
+});
 header();
 kpis();
 const opened = SCANS.find((s) => s.id === DATA.scan) || SCANS[0];

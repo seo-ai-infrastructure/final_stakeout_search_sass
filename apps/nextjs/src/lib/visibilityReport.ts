@@ -36,7 +36,7 @@ const domainOf = (v: string | null | undefined) =>
 function pointOf(p: Pin) {
   const a = pinAi(p);
   const m = p.proxyMeta as { noLocal?: boolean } | null;
-  const ins = p.insights as { ai?: { sources?: string[]; presence?: { citedSites?: string[] } } } | null;
+  const ins = p.insights as { ai?: { sources?: string[]; named?: unknown; presence?: { citedSites?: string[] } } } | null;
   const sources = (a.state === 'parsed' ? (ins?.ai?.presence?.citedSites ?? []) : ((p.aiCitations as string[] | null) ?? ins?.ai?.sources ?? [])).map(domainOf).filter(Boolean);
   const f = a.featured;
   return {
@@ -55,7 +55,10 @@ function pointOf(p: Pin) {
     named: a.state === 'parsed' && a.named,
     listing: a.state === 'parsed' && a.listing ? (a.listing.links ? { links: a.listing.links } : { inSources: a.listing.inSources }) : null,
     website: a.state === 'parsed' ? (a.websiteCited === 'verified' ? 'confirmed' : a.websiteCited === 'unverified' ? 'possible' : null) : null,
+    /** The first three local results the phone saw: the map pack (or the single panel's firm) where there was one, else the AI answer's list. */
     first: ((p.topCompetitors as string[] | null) ?? []).slice(0, 3),
+    /** The first three businesses the AI answer named, in its order. */
+    aiFirst: p.hasAiOverview && Array.isArray(ins?.ai?.named) ? (ins.ai.named as unknown[]).map(String).filter(Boolean).slice(0, 3) : [],
     sources: [...new Set(sources)].slice(0, 12),
   };
 }
@@ -165,10 +168,15 @@ async function searchActivity(userId: string, website: string, page: string | nu
       // The page however Google filed it (http or https, www or not, with or without the last slash), as Connected Accounts reads it.
       const at = page ? pageOf(page) || undefined : undefined;
       const ask = (r: { from: string; to: string }, byQuery: boolean) =>
-        google<{ rows?: GscRow[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', gscRequest(r, { page: at }, byQuery ? 'query' : null, 10));
+        google<{ rows?: GscRow[] }>(token, 'https://www.googleapis.com/webmasters/v3/sites/' + encodeURIComponent(property) + '/searchAnalytics/query', gscRequest(r, { page: at }, byQuery ? 'query' : null, 100));
       const [now, was, top] = await Promise.all([ask(p.recent, false), ask(p.before, false), ask(p.recent, true)]);
       const total = (x: { rows?: GscRow[] }) => ({ clicks: n(x.rows?.[0]?.clicks), impressions: n(x.rows?.[0]?.impressions), position: x.rows?.[0]?.position ?? null });
-      return { property, scope, recent: total(now), before: total(was), queries: (top.rows ?? []).map((r) => ({ query: r.keys?.[0] ?? '', clicks: n(r.clicks), impressions: n(r.impressions), position: r.position ?? null })).filter((r) => r.query), problem: null as string | null };
+      return { property, scope, recent: total(now), before: total(was), queries: (top.rows ?? [])
+          .map((r) => ({ query: r.keys?.[0] ?? '', clicks: n(r.clicks), impressions: n(r.impressions), position: r.position ?? null }))
+          .filter((r) => r.query)
+          // Most clicks first, then most often shown (on a page with few clicks, what it is shown for says more).
+          .sort((a, b) => b.clicks - a.clicks || b.impressions - a.impressions)
+          .slice(0, 10), problem: null as string | null };
     })().catch((e) => ({ property: null as string | null, scope: null, recent: null, before: null, queries: [], problem: said(e) })),
     (async () => {
       const list: { id: string; name: string }[] = [];
@@ -177,15 +185,38 @@ async function searchActivity(userId: string, website: string, page: string | nu
       const stem = website.split('.')[0].replace(/[^a-z0-9]/g, '');
       const hit = stem.length >= 4 ? list.filter((x) => x.name.toLowerCase().replace(/[^a-z0-9]/g, '').includes(stem)) : [];
       if (hit.length !== 1) return { property: null as string | null, name: null as string | null, recent: null, before: null, listing: null, problem: hit.length ? 'More than one Analytics property fits ' + website + ': pick it in Connected Accounts.' : 'No Analytics property named for ' + website + ' on the connected Google login.' };
-      const run = (range: { from: string; to: string }, listingOnly: boolean) =>
+      // The page the listing links to (its path), when there is one: one campaign tag is often on
+      // every office's listing, so the listing's visits are those that landed on its own page.
+      const path = page ? new URL(page).pathname.replace(/\/+$/, '') || '/' : null;
+      const onPage = path && path !== '/' ? { filter: { fieldName: 'landingPage', stringFilter: { matchType: 'BEGINS_WITH', value: path } } } : null;
+      const tagged = { filter: { fieldName: 'sessionCampaignName', stringFilter: { matchType: 'EXACT', value: campaign } } };
+      const run = (range: { from: string; to: string }, f: object | null) =>
         google<GaReport>(token, 'https://analyticsdata.googleapis.com/v1beta/' + hit[0].id + ':runReport', {
           dateRanges: [{ startDate: range.from, endDate: range.to }],
           metrics: [{ name: 'sessions' }, { name: 'keyEvents' }],
-          ...(listingOnly ? { dimensionFilter: { filter: { fieldName: 'sessionCampaignName', stringFilter: { matchType: 'EXACT', value: campaign } } } } : {}),
+          ...(f ? { dimensionFilter: f } : {}),
         });
       const read = (x: GaReport) => ({ sessions: Number(x.rows?.[0]?.metricValues?.[0]?.value ?? 0), keyEvents: Number(x.rows?.[0]?.metricValues?.[1]?.value ?? 0) });
-      const [all, allWas, tag, tagWas] = await Promise.all([run(p.recent, false), run(p.before, false), run(p.recent, true), run(p.before, true)]);
-      return { property: hit[0].id, name: hit[0].name, campaign, recent: read(all), before: read(allWas), listing: { recent: read(tag), before: read(tagWas) }, problem: null as string | null };
+      const both = onPage ? { andGroup: { expressions: [onPage, tagged] } } : tagged;
+      const [all, allWas, pg, pgWas, tag, tagWas] = await Promise.all([
+        run(p.recent, null),
+        run(p.before, null),
+        onPage ? run(p.recent, onPage) : Promise.resolve(null),
+        onPage ? run(p.before, onPage) : Promise.resolve(null),
+        run(p.recent, both),
+        run(p.before, both),
+      ]);
+      return {
+        property: hit[0].id,
+        name: hit[0].name,
+        campaign,
+        path: onPage ? path : null,
+        recent: read(all),
+        before: read(allWas),
+        page: pg && pgWas ? { recent: read(pg), before: read(pgWas) } : null,
+        listing: { recent: read(tag), before: read(tagWas) },
+        problem: null as string | null,
+      };
     })().catch((e) => ({ property: null as string | null, name: null as string | null, recent: null, before: null, listing: null, problem: said(e) })),
   ]);
   return { periods: { recent: p.recent, before: p.before }, page: url, gsc, ga };
