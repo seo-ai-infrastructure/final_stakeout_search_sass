@@ -53,7 +53,7 @@ export async function POST(req: Request, c: C) {
     const id = (await c.params).scanId,
       me = await getAuthenticatedUser(),
       userId = me.id;
-    const { action, pinIds, on } = await req.json();
+    const { action, pinIds, on, google } = await req.json();
     // Stop: the owner, or an admin for any scan. Finished points are kept; every point still
     // pending is settled and refunded, and the worker cancels a phone task that is under way.
     if (action === 'stop') {
@@ -72,6 +72,8 @@ export async function POST(req: Request, c: C) {
       return Response.json(rerun);
     }
     if (action === 'share') {
+      // Chosen when the link is made: whether its visibility report carries Google's numbers.
+      if (typeof google === 'boolean') await setShareGoogle(id, google);
       await db.gridScan.updateMany({
         where: { id, userId, shareToken: null },
         data: { shareToken: randomBytes(24).toString('hex') },

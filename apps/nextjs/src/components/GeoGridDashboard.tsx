@@ -621,9 +621,10 @@ export function GeoGridDashboard({
   }, [scan, mapReady, radiusMiles]);
   async function changeShare(action: string) {
     try {
+      const google = googleOnShare ?? scan?.shareGoogle ?? true;
       const r = await fetch('/api/scans/' + identifier, {
           method: 'POST',
-          body: JSON.stringify({ action }),
+          body: JSON.stringify(action === 'share' ? { action, google } : { action }),
         }),
         v = await r.json();
       if (!r.ok) throw Error(v.error);
@@ -768,6 +769,11 @@ export function GeoGridDashboard({
               Run again
             </Link>
             <button onClick={() => changeShare('share')}>Share report</button>
+            {/* Whether the client's link carries Google's numbers (the listing's activity, Search Console, Analytics). */}
+            <label className="flex items-center gap-1.5 text-xs text-slate-400" title="The shared visibility report shows the listing's activity, Search Console and Analytics, where connected">
+              <input type="checkbox" className="h-3.5 w-3.5" checked={googleOnShare ?? scan.shareGoogle ?? true} onChange={(e) => (share ? changeShareGoogle(e.target.checked) : setGoogleOnShare(e.target.checked))} />
+              Include Google data
+            </label>
             <button onClick={() => changeShare('revoke')}>Revoke link</button>
             {/* The Local & AI visibility report: this scan with the business's other scans, printable. */}
             <a href={'/reports/visibility.html?scan=' + encodeURIComponent(scan.id)} target="_blank" rel="noopener" className="rounded-lg border border-orange-400/60 px-3 py-2 text-sm font-semibold text-orange-200 hover:bg-orange-400/10">
