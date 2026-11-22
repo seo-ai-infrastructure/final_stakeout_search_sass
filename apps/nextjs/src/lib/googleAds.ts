@@ -158,3 +158,13 @@ export async function reachableAccounts(): Promise<AdsAccount[]> {
   if (customer && !out.has(customer)) out.set(customer, mark({ id: customer, name: null, status: 'NOT REACHABLE with this sign-in', manager: null, test: null, via: 'direct' }));
   return [...out.values()];
 }
+
+/**
+ * Admin probe: Google's raw answer to one research call, for checking a request's shape. Only
+ * Keyword Planner's research methods and the place lookup, which read and never change an account.
+ */
+export async function probe(method: 'historical' | 'ideas' | 'suggest', body: unknown, customerId?: string, login?: string | null) {
+  const customer = digits(customerId ?? process.env.GOOGLE_ADS_CUSTOMER_ID);
+  const path = method === 'suggest' ? '/geoTargetConstants:suggest' : `/customers/${customer}:${method === 'ideas' ? 'generateKeywordIdeas' : 'generateKeywordHistoricalMetrics'}`;
+  return ads<unknown>(path, body, login === undefined ? (customerId ? { login: customerId } : {}) : { login });
+}

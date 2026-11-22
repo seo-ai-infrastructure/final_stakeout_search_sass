@@ -4,7 +4,7 @@ import { InputError } from '@stakeout/core/grid';
 import { redis } from '@stakeout/core/redis';
 import { errorResponse } from '@/lib/api';
 import { getAuthenticatedUser } from '@/lib/auth';
-import { ADS_API, adsConfigured, keywordPrices, placeFor, reachableAccounts } from '@/lib/googleAds';
+import { ADS_API, adsConfigured, keywordPrices, placeFor, probe, reachableAccounts } from '@/lib/googleAds';
 
 export const maxDuration = 60;
 
@@ -22,6 +22,13 @@ export async function POST(req: Request) {
     if (!adsConfigured()) throw new InputError('Google Ads is not set up: GOOGLE_ADS_CLIENT_ID, GOOGLE_ADS_CLIENT_SECRET, GOOGLE_ADS_REFRESH_TOKEN and GOOGLE_ADS_CUSTOMER_ID on Vercel.', 503);
     const b = (await req.json().catch(() => ({}))) as { action?: unknown; keywords?: unknown; location?: unknown; placeId?: unknown; language?: unknown; customerId?: unknown; loginCustomerId?: unknown; raw?: unknown };
     if (b.action === 'accounts') return NextResponse.json({ version: ADS_API, accounts: await reachableAccounts() });
+    // A raw research call (historical | ideas | suggest) with the body given, for checking Google's answer.
+    if (b.action === 'probe') {
+      const m = (b as { method?: unknown }).method;
+      if (m !== 'historical' && m !== 'ideas' && m !== 'suggest') throw new InputError('method: historical, ideas or suggest.', 400);
+      const id = typeof b.customerId === 'string' && /^[\d-]+$/.test(b.customerId) ? b.customerId : undefined;
+      return NextResponse.json({ version: ADS_API, raw: await probe(m, (b as { body?: unknown }).body ?? {}, id) });
+    }
     // Another of the reachable accounts, to try before changing GOOGLE_ADS_CUSTOMER_ID on Vercel.
     const customerId = typeof b.customerId === 'string' && /^[\d-]+$/.test(b.customerId) ? b.customerId : undefined;
     // An account tried directly acts as itself, unless a manager is named for it.
