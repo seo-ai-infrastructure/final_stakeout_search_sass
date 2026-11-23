@@ -290,27 +290,34 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
     const p = priceIn(byKw, k);
     if (p) prices[k] = p;
   }
-  // A small county can have no Google Ads price for a scanned search, even a broader one: price it across the state (one request, kept 45 days).
-  const lacking = plain.filter((k) => !prices[k]);
-  const stateName = where.state ? `${where.state},United States` : null;
-  if (lacking.length && stateName) {
+  // A small county often has no Google Ads price for a scanned search, even a broader one (Google only
+  // reports local figures for well-searched, costly searches). Price what's missing across the state,
+  // then, as the last resort, the US: one request a place, only for what's missing, kept 45 days.
+  const wider: { name: string; code?: number; label: string }[] = [
+    ...(where.state ? [{ name: `${where.state},United States`, label: where.state }] : []),
+    { name: 'United States', code: 2840, label: 'the US' },
+  ];
+  for (const area of wider) {
+    const lacking = plain.filter((k) => !prices[k]);
+    if (!lacking.length) break;
     const wide = [...new Set(lacking.flatMap((k) => [k, ...fallbacksOf(k), ...headsOf(k)]))].slice(0, 200);
-    const keptState = await figures(wide, stateName, false, false);
-    const st = lacking.some((k) => !keptState.has(k)) && lookUp
-      ? await figures(wide, stateName, true, false).catch((e: Error) => {
-          console.warn('[brief] state prices:', e.message);
-          if (strict && pricingShort(lacking, keptState)) throw new PricingUnavailable();
-          return keptState;
+    const keptHere = await figures(wide, area.name, false, false);
+    const got = lacking.some((k) => !keptHere.has(k)) && lookUp
+      ? await figures(wide, area.name, true, false, area.code).catch((e: Error) => {
+          console.warn(`[brief] ${area.label} prices:`, e.message);
+          if (strict && pricingShort(lacking, keptHere)) throw new PricingUnavailable();
+          return keptHere;
         })
-      : keptState;
-    const byState = new Map([...st].filter((e): e is [string, KeywordPrice] => Boolean(e[1])));
+      : keptHere;
+    const byArea = new Map([...got].filter((e): e is [string, KeywordPrice] => Boolean(e[1])));
     for (const k of lacking) {
-      const p = priceIn(byState, k, where.state!);
+      const p = priceIn(byArea, k, area.label);
       if (p) prices[k] = p;
     }
   }
-  const fromState = plain.filter((k) => prices[k]?.area).length, fromCounty = plain.filter((k) => prices[k] && !prices[k].area).length;
-  const priceArea = fromState && fromCounty ? `${where.countyName} and ${where.state}` : fromState ? where.state : where.countyName;
+  // Where the prices are from, for the brief's labels: "Wilson County", or "Wilson County, Tennessee and the US".
+  const areas = [...new Set(plain.map((k) => (prices[k] ? prices[k].area ?? where.countyName : null)).filter((x): x is string => Boolean(x)))];
+  const priceArea = areas.length > 1 ? `${areas.slice(0, -1).join(', ')} and ${areas[areas.length - 1]}` : areas[0] ?? where.countyName;
   // The basket: the scanned searches and their variants, each group Google prices counted once, by searches.
   const seen = new Set<string>(), groups: KeywordPrice[] = [];
   for (const k of [...plain, ...plain.flatMap(variantsOf)]) {
