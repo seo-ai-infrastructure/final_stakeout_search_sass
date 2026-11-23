@@ -13,6 +13,7 @@
  * overlap with another search's, so they are not added up.
  */
 import { InputError } from '@stakeout/core/grid';
+import { redis } from '@stakeout/core/redis';
 
 const API = 'https://api.dataforseo.com/v3/keywords_data/google_ads/';
 /** Searches asked again on their own after one request: 1 + 10 stays inside 12 requests a minute. */
@@ -168,4 +169,70 @@ export async function keywordIdeas(seeds: string[], place: Place, language: 'en'
   const { prices, cost } = await ask('keywords_for_keywords/live', { keywords: seeds.slice(0, 20), ...place, language_code: language, sort_by: 'search_volume' });
   const priced = prices.filter((p) => !empty(p));
   return { results: priced.slice(0, limit), found: priced.length, cost };
+}
+
+/** A place as Google Ads targets it. */
+export type GeoPlace = { code: number; name: string; type: string };
+
+const CITY_TYPES = ['City', 'Municipality', 'Borough', 'Township', 'Neighborhood'];
+const COUNTY_TYPES = ['County', 'Parish', 'Borough'];
+const LOC_KEY = 'stakeout:dfs:loc:v1:us:';
+const LOC_KEEP_S = 30 * 86400;
+
+/** A place name as written anywhere ("Mt. Juliet", "Mount Juliet", "St. Lucie", "Saint Lucie") reduced to one form. */
+export const placeWord = (s: string) =>
+  s.toLowerCase().replace(/[.'’]/g, '').replace(/-/g, ' ').replace(/\bmt\b/g, 'mount').replace(/\bste\b/g, 'sainte').replace(/\bst\b/g, 'saint').replace(/\bft\b/g, 'fort').replace(/\s+/g, ' ').trim();
+
+/** The place in a state's list with this name, a city or a county, preferring the plain kind (a City over a Neighborhood). */
+export function pickPlace(list: GeoPlace[], name: string, kind: 'city' | 'county'): GeoPlace | null {
+  const want = placeWord(name), types = kind === 'city' ? CITY_TYPES : COUNTY_TYPES;
+  const found = list.filter((p) => types.includes(p.type) && placeWord(p.name.split(',')[0]) === want);
+  return found.sort((a, b) => types.indexOf(a.type) - types.indexOf(b.type))[0] ?? null;
+}
+
+/**
+ * Google Ads' places in one US state (cities, counties and the like), from DataForSEO's location
+ * list, which costs nothing; the whole list is read at most once a month and kept by state. null:
+ * the list couldn't be had (the caller goes on with the name it built).
+ */
+async function statePlaces(state: string): Promise<GeoPlace[] | null> {
+  const r = redis();
+  const kept = await r.get(LOC_KEY + state).catch(() => null);
+  if (kept) return JSON.parse(kept) as GeoPlace[];
+  if (await r.get(LOC_KEY + 'ready').catch(() => null)) return [];
+  if (!pricesConfigured()) return null;
+  const auth = Buffer.from(process.env.DATAFORSEO_LOGIN + ':' + process.env.DATAFORSEO_PASSWORD).toString('base64');
+  const res = await fetch(API + 'locations/us', { headers: { Authorization: 'Basic ' + auth }, cache: 'no-store', signal: AbortSignal.timeout(60000) }).catch(() => null);
+  const j = (await res?.json().catch(() => null)) as { status_code?: number; status_message?: string; tasks?: { status_code?: number; result?: unknown[] | null }[] } | null;
+  const t = j?.tasks?.[0];
+  if (!res?.ok || j?.status_code !== 20000 || t?.status_code !== 20000 || !Array.isArray(t.result)) {
+    console.warn('[dataforseo] locations/us refused · ' + String(j?.status_message ?? res?.status ?? 'no answer'));
+    return null;
+  }
+  const byState = new Map<string, GeoPlace[]>();
+  for (const x of t.result as Record<string, unknown>[]) {
+    const type = String(x?.location_type ?? ''), name = String(x?.location_name ?? ''), code = Number(x?.location_code);
+    if (x?.country_iso_code !== 'US' || !Number.isInteger(code) || (!CITY_TYPES.includes(type) && !COUNTY_TYPES.includes(type))) continue;
+    const parts = name.split(',');
+    if (parts.length < 3) continue;
+    const st = parts[parts.length - 2];
+    if (!byState.has(st)) byState.set(st, []);
+    byState.get(st)!.push({ code, name, type });
+  }
+  const pipe = r.pipeline();
+  for (const [st, list] of byState) pipe.set(LOC_KEY + st, JSON.stringify(list), 'EX', LOC_KEEP_S);
+  pipe.set(LOC_KEY + 'ready', '1', 'EX', LOC_KEEP_S);
+  await pipe.exec().catch(() => null);
+  console.info(`[dataforseo] locations/us · ${[...byState.values()].reduce((a, l) => a + l.length, 0)} places in ${byState.size} states kept · $0`);
+  return byState.get(state) ?? [];
+}
+
+/**
+ * A city or county as Google Ads names it: { place } when found; 'none' when Google Ads has no such
+ * place in the state (a small town is counted at its county); 'unknown' when the list couldn't be had.
+ */
+export async function findPlace(name: string, state: string, kind: 'city' | 'county'): Promise<GeoPlace | 'none' | 'unknown'> {
+  const list = await statePlaces(state).catch(() => null);
+  if (!list) return 'unknown';
+  return pickPlace(list, name, kind) ?? 'none';
 }

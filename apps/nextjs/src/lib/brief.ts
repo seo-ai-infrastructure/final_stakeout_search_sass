@@ -6,7 +6,7 @@ import type { VisibilityData as Full } from './visibilityReport';
 /** The visibility report's data; a share link may carry no Google numbers. */
 type VisibilityData = Omit<Full, 'google'> & { google: Full['google'] | null };
 import { SCORING_VERSION, brandSearch, isBranded, matchedChange, sameBusiness, type BrandHints, paidUnitsAbove, scorePoints, summarize, type Point, type Scored } from './briefScore';
-import { empty, keywordPrices, pricesConfigured, type KeywordPrice } from './keywordPrices';
+import { empty, findPlace, keywordPrices, pricesConfigured, type KeywordPrice } from './keywordPrices';
 
 /**
  * The local search and revenue brief (/reports/brief.html): the visibility report's data, scored with
@@ -114,7 +114,26 @@ function placesOf(market: string | null, pins: Point[]) {
   const state = STATES[(st ?? '').toUpperCase()];
   const counties = pins.map((p) => /,\s*([^,]+ (County|Parish|Borough))\s*$/i.exec(p.tract ?? '')?.[1]).filter((x): x is string => Boolean(x));
   const county = counties.sort((a, b) => counties.filter((x) => x === b).length - counties.filter((x) => x === a).length)[0];
-  return { city: city && state ? `${city},${state},United States` : null, county: county && state ? `${county},${state},United States` : null, cityName: city || null, countyName: county || null };
+  return { city: city && state ? `${city},${state},United States` : null, county: county && state ? `${county},${state},United States` : null, cityName: city || null, countyName: county || null, state: state ?? null };
+}
+
+/**
+ * The county and city as Google Ads itself names them, from its location list (free, kept a month):
+ * "Mount Juliet" may be listed as "Mt. Juliet", and a town Google Ads doesn't target has no list
+ * entry, so its searches are counted at the county and labelled with the county's name. When the list
+ * can't be had, the names built from the market are used, as before.
+ */
+async function googlePlaces(where: ReturnType<typeof placesOf>) {
+  const out = { county: where.county, countyCode: undefined as number | undefined, city: where.city, cityCode: undefined as number | undefined, cityFromCounty: false };
+  if (!where.state) return out;
+  const [c, t] = await Promise.all([
+    where.countyName ? findPlace(where.countyName, where.state, 'county') : Promise.resolve('unknown' as const),
+    where.cityName ? findPlace(where.cityName, where.state, 'city') : Promise.resolve('unknown' as const),
+  ]);
+  if (typeof c === 'object') { out.county = c.name; out.countyCode = c.code; }
+  if (typeof t === 'object') { out.city = t.name; out.cityCode = t.code; }
+  else if (t === 'none') { out.city = null; out.cityFromCounty = true; }
+  return out;
 }
 
 /** Variants Google may price when it withholds a search: lawyer ↔ attorney, with or without "near me". */
@@ -148,7 +167,7 @@ type Market = { county: string | null; city: string | null; countyName: string |
  */
 const priceKey = (location: string, k: string) => 'stakeout:brief:kw:v1:' + createHash('sha256').update(location + '|' + k).digest('hex').slice(0, 32);
 
-async function figures(keywords: string[], location: string, lookUp: boolean, alone: boolean) {
+async function figures(keywords: string[], location: string, lookUp: boolean, alone: boolean, code?: number) {
   const got = new Map<string, KeywordPrice | null>();
   if (!keywords.length) return got;
   const keyOf = (k: string) => priceKey(location, k);
@@ -156,7 +175,7 @@ async function figures(keywords: string[], location: string, lookUp: boolean, al
   keywords.forEach((k, i) => { const v = kept[i]; if (v) got.set(k, JSON.parse(v) as KeywordPrice | null); });
   const missing = keywords.filter((k) => !got.has(k));
   if (!missing.length || !lookUp) return got;
-  const r = await keywordPrices(missing, { location_name: location }, 'en', { alone });
+  const r = await keywordPrices(missing, code ? { location_code: code } : { location_name: location }, 'en', { alone });
   const answered = new Set(r.answered);
   for (const [i, k] of missing.entries()) {
     const p = r.results[i] ? { ...r.results[i], keyword: k } : null;
@@ -206,6 +225,7 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   const where = placesOf(market, pins);
   if (!where.county) return null;
   if (!pricesConfigured()) { if (strict) throw new PricingUnavailable(); return null; }
+  const geo = await googlePlaces(where);
   const brand = brandSearch(v.business);
   // One request a place: the scanned searches, the brand, Search Console's near misses, and the forms Google may file a withheld search under.
   const priced = [...new Set([...plain, brand, ...extra, ...plain.flatMap(fallbacksOf), ...extra.flatMap(fallbacksOf)])].slice(0, 200);
@@ -213,7 +233,7 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   // Markets priced before figures were kept per search sit under one key for the whole set; use it while it lasts.
   const before = [...new Set([...plain, ...plain.flatMap(variantsOf), ...extra, ...extra.flatMap(variantsOf), brand])].slice(0, 60);
   const kept = async () => { const v = await redis().get('stakeout:brief:market:v1:' + createHash('sha256').update(JSON.stringify([where.county, where.city, before, counted])).digest('hex').slice(0, 32)).catch(() => null); return v ? (JSON.parse(v) as Market) : null; };
-  const cached = await figures(priced, where.county, false, true);
+  const cached = await figures(priced, geo.county!, false, true);
   if (cached.size < priced.length) {
     const old = await kept();
     if (old) {
@@ -222,17 +242,17 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
     }
   }
   const county = cached.size < priced.length && lookUp
-    ? await figures(priced, where.county, true, false).catch((e: Error) => {
+    ? await figures(priced, geo.county!, true, false, geo.countyCode).catch((e: Error) => {
         console.warn('[brief] county prices:', e.message);
         // Search Console's near misses can wait; the scanned searches and the brand can't.
         if (strict && pricingShort(counted, cached)) throw new PricingUnavailable();
         return cached;
       })
     : cached;
-  const city = where.city
-    ? await figures(counted, where.city, lookUp, false).catch(async (e: Error) => {
+  const city = geo.city
+    ? await figures(counted, geo.city, lookUp, false, geo.cityCode).catch(async (e: Error) => {
         console.warn('[brief] city searches:', e.message);
-        const kept = await figures(counted, where.city!, false, false);
+        const kept = await figures(counted, geo.city!, false, false);
         if (strict && pricingShort(counted, kept)) throw new PricingUnavailable();
         return kept;
       })
@@ -259,9 +279,13 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   const total = groups.reduce((a, p) => a + (p.searches ?? 0), 0);
   const w = (f: (p: KeywordPrice) => number | null) => { const ok = groups.filter((p) => f(p) !== null); const t = ok.reduce((a, p) => a + (p.searches ?? 0), 0); return t ? ok.reduce((a, p) => a + (f(p) as number) * (p.searches ?? 0), 0) / t : null; };
   const out: Market = {
-    ...where,
+    county: geo.county,
+    city: geo.city,
+    countyName: where.countyName,
+    // A town Google Ads doesn't target: its searches are the county's, and say so.
+    cityName: geo.cityFromCounty ? where.countyName : where.cityName,
     prices,
-    searches: Object.fromEntries(counted.map((k) => [k, city?.get(k)?.searches ?? null])),
+    searches: Object.fromEntries(counted.map((k) => [k, (geo.cityFromCounty ? county.get(k) : city?.get(k))?.searches ?? null])),
     basket: total ? { cpc: w((p) => p.cpc) as number, low: w((p) => p.lowBid), high: w((p) => p.highBid), searches: total } : null,
     at: new Date().toISOString(),
   };

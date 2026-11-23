@@ -72,3 +72,22 @@ test('keyword prices: one paid request by default; asking empty searches alone i
     if (env.password === undefined) delete process.env.DATAFORSEO_PASSWORD;
   }
 });
+
+test('places: a city or county found in Google Ads’ own list, however its name is written', async () => {
+  const { pickPlace, placeWord } = await import('../apps/nextjs/src/lib/keywordPrices');
+  assert.equal(placeWord('Mt. Juliet'), placeWord('Mount Juliet'));
+  assert.equal(placeWord('St. Lucie County'), 'saint lucie county');
+  assert.equal(placeWord("Coeur d'Alene"), 'coeur dalene');
+  assert.equal(placeWord('Winston-Salem'), 'winston salem');
+  const tn = [
+    { code: 9051111, name: 'Mt. Juliet,Tennessee,United States', type: 'City' },
+    { code: 9051112, name: 'Wilson County,Tennessee,United States', type: 'County' },
+    { code: 9051113, name: 'Lebanon,Tennessee,United States', type: 'Neighborhood' },
+    { code: 9051114, name: 'Lebanon,Tennessee,United States', type: 'City' },
+  ];
+  assert.equal(pickPlace(tn, 'Mount Juliet', 'city')?.code, 9051111, 'Mount Juliet is Mt. Juliet to Google Ads');
+  assert.equal(pickPlace(tn, 'Wilson County', 'county')?.code, 9051112);
+  assert.equal(pickPlace(tn, 'Lebanon', 'city')?.code, 9051114, 'a City before a Neighborhood of the same name');
+  assert.equal(pickPlace(tn, 'Wilson County', 'city'), null, 'a county is not a city');
+  assert.equal(pickPlace(tn, 'Gladeville', 'city'), null, 'a town Google Ads doesn’t target: counted at its county');
+});
