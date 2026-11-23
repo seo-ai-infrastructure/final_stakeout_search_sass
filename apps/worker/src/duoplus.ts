@@ -671,7 +671,8 @@ export async function restartStuckPhone(imageId: string, why: string, strikesNee
     await r.zremrangebyscore(fleetKey, 0, now - ADB_RESTART.fleetWindowSec * 1000);
     await r.expire(fleetKey, ADB_RESTART.fleetWindowSec * 3);
     const phones = await r.zcard(fleetKey);
-    if (adbFleetWide(phones)) {
+    const succeeding = await db.devicePool.count({ where: { lastSuccessAt: { gte: new Date(now - ADB_RESTART.fleetWindowSec * 1000) } } });
+    if (adbFleetWide(phones, succeeding)) {
       await adbFleetAlert(phones, why);
       return false;
     }
@@ -748,7 +749,8 @@ export async function restartStuckAtStart() {
   const phones = await db.devicePool.findMany({ select: { imageId: true, isEnabled: true, lastFailureCode: true, lastFailureAt: true, lastSuccessAt: true } });
   const ids = stuckOnAdb(phones);
   if (!ids.length || process.env.DUOPLUS_AUTO_RESTART === 'false') return;
-  if (adbFleetWide(ids.length)) {
+  const succeeding = phones.filter((d) => d.lastSuccessAt && Date.now() - d.lastSuccessAt.getTime() <= ADB_RESTART.fleetWindowSec * 1000).length;
+  if (adbFleetWide(ids.length, succeeding)) {
     await adbFleetAlert(ids.length, 'their last points failed on ADB before the worker started');
     return;
   }

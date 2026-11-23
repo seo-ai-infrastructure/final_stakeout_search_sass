@@ -214,8 +214,12 @@ export function adbUnreachable(message: string) {
  */
 export const ADB_RESTART = { strikes: 2, strikeWindowSec: 600, gapSec: 1200, perDay: 6, restSec: 300, offForMs: 30000, fleetWide: 3, fleetWindowSec: 300, powerOnTries: 3 } as const;
 
-/** Whether ADB refusals from this many phones at once point at the connection rather than the phones. */
-export const adbFleetWide = (phones: number) => phones > ADB_RESTART.fleetWide;
+/**
+ * Whether ADB refusals point at the connection rather than the phones: many phones refused and
+ * none succeeding meanwhile. When other phones are completing points, the refused ones are stale
+ * and a restart is the fix.
+ */
+export const adbFleetWide = (phones: number, succeeding = 0) => phones > ADB_RESTART.fleetWide && succeeding === 0;
 
 /** IPv4 addresses DuoPlus names when it refuses a phone action ("… is not allowed to access"). */
 export const refusedAddresses = (text: string) =>

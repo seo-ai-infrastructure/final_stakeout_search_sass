@@ -179,7 +179,8 @@ test('ADB refusals from many phones at once are the connection, not the phones: 
   assert.equal(adbFleetWide(1), false);
   assert.equal(adbFleetWide(3), false);
   assert.equal(adbFleetWide(4), true);
-  assert.equal(adbFleetWide(9), true, 'today: 9 phones refused within minutes = a whitelist problem');
+  assert.equal(adbFleetWide(9), true, '9 phones refused and none succeeding: the connection');
+  assert.equal(adbFleetWide(5, 4), false, '5 stale phones refused while 4 others complete points: restart the stale ones');
   assert.deepEqual(refusedAddresses('DuoPlus rejected /api/v1/cloudPhone/powerOn: Success {"dL0Ue":"The current IP：152.55.180.242 address is not allowed to access"}'), ['152.55.180.242']);
   assert.deepEqual(refusedAddresses('{"success":["dL0Ue"],"fail":[]}'), []);
 });
