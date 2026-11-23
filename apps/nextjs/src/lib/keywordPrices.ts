@@ -1,13 +1,16 @@
 /**
  * Monthly searches and what advertisers pay per click, for searches in one place, from DataForSEO's
  * Google Ads keyword data (DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD on Vercel, the same login the
- * rival listings use). Each request is paid for (about 7.5 cents, however many searches it holds)
- * and the live endpoint takes at most 12 requests a minute per account, so answers are kept.
+ * rival listings use). Each live request is one paid task, $0.09 at DataForSEO's price list
+ * whether it holds 1 search or 1,000, and the live endpoint takes at most 12 requests a minute per
+ * account, so answers are kept and every paid request is logged with its cost ("[dataforseo]").
  *
  * Google reports one set of figures for a group of near-identical searches ("car accident lawyer",
- * "car accident attorney") and can leave the others in the same request empty. A search that comes
- * back empty is asked again on its own, once, so each search gets its own price; those are marked
- * `alone`, and their monthly searches may overlap with another search's, so they are not added up.
+ * "car accident attorney") and can leave the others in the same request empty. Asking each empty
+ * one again on its own costs a task apiece (ten of them made a brief cost about $1), so it is off
+ * unless a caller asks for it with `alone: true`; callers put a search's variants and plurals in the
+ * same request instead. Searches asked alone are marked `alone`, and their monthly searches may
+ * overlap with another search's, so they are not added up.
  */
 import { InputError } from '@stakeout/core/grid';
 
@@ -102,6 +105,7 @@ const blank = (keyword: string): KeywordPrice => ({ keyword, spell: null, search
 type Answer = { status_code?: number; status_message?: string; cost?: number; tasks?: { status_code?: number; status_message?: string; cost?: number; result?: unknown[] | null }[] };
 
 async function ask(path: 'search_volume/live' | 'keywords_for_keywords/live', task: Record<string, unknown>, alone = false): Promise<{ prices: KeywordPrice[]; cost: number }> {
+  const where = String(task.location_name ?? task.location_code ?? '?'), n = Array.isArray(task.keywords) ? task.keywords.length : 0;
   const auth = Buffer.from(process.env.DATAFORSEO_LOGIN + ':' + process.env.DATAFORSEO_PASSWORD).toString('base64');
   const res = await fetch(API + path, {
     method: 'POST',
@@ -114,15 +118,19 @@ async function ask(path: 'search_volume/live' | 'keywords_for_keywords/live', ta
   const t = j?.tasks?.[0];
   if (!res.ok || !j || j.status_code !== 20000 || !t || t.status_code !== 20000) {
     const why = String(t?.status_message ?? j?.status_message ?? 'HTTP ' + res.status).slice(0, 200);
+    console.warn(`[dataforseo] ${path} refused · ${n} searches · ${where} · ${why}`);
     throw new InputError('DataForSEO refused the keyword lookup: ' + why, res.status === 429 || /rate|limit/i.test(why) ? 429 : 502);
   }
-  return { prices: readPrices(t.result, alone), cost: num(j.cost) ?? num(t.cost) ?? 0 };
+  const cost = num(j.cost) ?? num(t.cost) ?? 0;
+  console.info(`[dataforseo] ${path} · ${n} searches · ${where} · $${cost.toFixed(4)}${alone ? ' · asked alone' : ''}`);
+  return { prices: readPrices(t.result, alone), cost };
 }
 
 /**
- * Prices for these searches in one place, in the order given. `cost`: what DataForSEO charged, US
- * dollars. `complete`: every search that came back empty was asked again on its own and answered
- * (a request refused for the rate limit leaves it empty, and the answer should not be kept).
+ * Prices for these searches in one place, in the order given: one paid request. `alone: true` also
+ * asks up to 10 searches that came back empty again on their own (a paid request each). `cost`: what
+ * DataForSEO charged, US dollars. `complete`: Google has had its full say on every search (with
+ * `alone`, a request refused for the rate limit leaves it empty, and the answer should not be kept).
  */
 export async function keywordPrices(keywords: string[], place: Place, language: 'en' | 'es' = 'en', opts: { alone?: boolean } = {}): Promise<{ results: KeywordPrice[]; cost: number; askedAlone: number; answered: string[]; complete: boolean }> {
   if (!pricesConfigured()) throw new InputError('DataForSEO is not set up: DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD on Vercel.', 503);
@@ -131,12 +139,13 @@ export async function keywordPrices(keywords: string[], place: Place, language: 
   const got = new Map(first.prices.map((p) => [p.keyword, p]));
   let cost = first.cost;
   const missing = keywords.filter((k) => { const p = got.get(k); return !p || empty(p); });
-  // Only the first request when asked to (another lookup in the same minute may need the rest of the 12).
-  const retry = opts.alone === false ? [] : missing.slice(0, ALONE);
+  // One request unless asked to retry the empty ones alone: each retry is another paid task.
+  const alone = opts.alone === true;
+  const retry = alone ? missing.slice(0, ALONE) : [];
   const again = await Promise.allSettled(retry.map((k) => ask('search_volume/live', { keywords: [k], ...place, language_code: language }, true)));
-  let complete = opts.alone === false || missing.length <= ALONE;
-  // The searches Google has had its full say on: everything it priced, and each empty one asked alone.
-  const answered = new Set(keywords.filter((k) => !missing.includes(k) || opts.alone === false));
+  let complete = !alone || missing.length <= ALONE;
+  // The searches Google has had its full say on: everything it priced, and each empty one (asked alone, when that was asked for).
+  const answered = new Set(keywords.filter((k) => !missing.includes(k) || !alone));
   again.forEach((r, i) => {
     if (r.status !== 'fulfilled') { complete = false; return; }
     answered.add(retry[i]);

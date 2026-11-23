@@ -140,7 +140,11 @@ const fallbacksOf = (kw: string) => [...new Set([...variantsOf(kw), ...[kw, ...v
 
 type Market = { county: string | null; city: string | null; countyName: string | null; cityName: string | null; prices: Record<string, KeywordPrice & { via?: string }>; searches: Record<string, number | null>; basket: { cpc: number; low: number | null; high: number | null; searches: number } | null; at: string };
 
-/** Google Ads figures for searches in one place, each kept 14 days on its own, so any set of searches (a share link's too) reuses them. */
+/**
+ * Google Ads figures for searches in one place, each kept 45 days on its own under the place and the
+ * search (not the account), so any business's brief in that place, and any share link, reuses them.
+ * A lookup is one paid request for every search not yet kept.
+ */
 async function figures(keywords: string[], location: string, lookUp: boolean, alone: boolean) {
   const got = new Map<string, KeywordPrice | null>();
   if (!keywords.length) return got;

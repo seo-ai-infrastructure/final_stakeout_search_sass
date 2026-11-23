@@ -34,3 +34,41 @@ test('prices read from the answer, with money in cents and Google’s blanks kep
   assert.equal(readPrices(null).length, 0);
   assert.equal(readPrices([{ keyword: 'x', search_volume: 10 }], true)[0].alone, true);
 });
+
+test('keyword prices: one paid request by default; asking empty searches alone is opt-in', async () => {
+  const { keywordPrices } = await import('../apps/nextjs/src/lib/keywordPrices');
+  const env = { login: process.env.DATAFORSEO_LOGIN, password: process.env.DATAFORSEO_PASSWORD };
+  process.env.DATAFORSEO_LOGIN = 'test';
+  process.env.DATAFORSEO_PASSWORD = 'test';
+  const real = globalThis.fetch, info = console.info;
+  let calls = 0;
+  // Google prices the first search and leaves the other two empty, as it does for grouped searches.
+  globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+    calls++;
+    const [task] = JSON.parse(String(init?.body)) as [{ keywords: string[] }];
+    const result = task.keywords.map((k, i) => (i === 0 && k === task.keywords[0] && task.keywords.length > 1 ? { keyword: k, search_volume: 1900, cpc: 120 } : { keyword: k, search_volume: task.keywords.length === 1 ? 50 : null, cpc: task.keywords.length === 1 ? 80 : null }));
+    return new Response(JSON.stringify({ status_code: 20000, cost: 0.09, tasks: [{ status_code: 20000, cost: 0.09, result }] }), { status: 200 });
+  }) as typeof fetch;
+  console.info = () => {};
+  try {
+    const kws = ['car accident lawyer near me', 'car accident lawyer', 'car accident attorney'];
+    const one = await keywordPrices(kws, { location_name: 'Suffolk County,New York,United States' });
+    assert.equal(calls, 1, 'one request for all three');
+    assert.equal(one.cost, 0.09);
+    assert.equal(one.askedAlone, 0);
+    assert.equal(one.complete, true, 'Google had its say: the empty ones are kept as empty');
+    assert.deepEqual(one.answered.sort(), [...kws].sort());
+    calls = 0;
+    const alone = await keywordPrices(kws, { location_name: 'Suffolk County,New York,United States' }, 'en', { alone: true });
+    assert.equal(calls, 3, 'the two empty ones asked again, a request each');
+    assert.equal(alone.cost, 0.27);
+    assert.equal(alone.results[1].cpc, 80);
+  } finally {
+    globalThis.fetch = real;
+    console.info = info;
+    process.env.DATAFORSEO_LOGIN = env.login;
+    process.env.DATAFORSEO_PASSWORD = env.password;
+    if (env.login === undefined) delete process.env.DATAFORSEO_LOGIN;
+    if (env.password === undefined) delete process.env.DATAFORSEO_PASSWORD;
+  }
+});
