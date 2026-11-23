@@ -21,7 +21,7 @@ import { BONUS_POINTS, FIRST_AUDIT_COUPON, WELCOME, promoLive } from '@/lib/pric
 type Item = { id: string; quantity?: number; current_period_end?: number; current_period_start?: number; price?: { id: string; lookup_key?: string | null } };
 type Invoice = { id: string; status?: string; billing_reason?: string | null; created?: number; subscription?: string | null; parent?: { subscription_details?: { subscription?: string | null } | null } | null; hosted_invoice_url?: string | null };
 type Sub = { id: string; status: string; customer: string; /** A change held back until its payment clears. */ pending_update?: unknown | null; latest_invoice?: Invoice | string | null; cancel_at_period_end?: boolean; current_period_end?: number; current_period_start?: number; items?: { data?: Item[] }; metadata?: Record<string, string> };
-type Session = { id: string; url?: string; mode?: string; status?: string; payment_status?: string; client_reference_id?: string; customer?: string | null; subscription?: string | null; metadata?: Record<string, string> };
+type Session = { id: string; url?: string; mode?: string; status?: string; payment_status?: string; client_reference_id?: string; customer?: string | null; subscription?: string | null; metadata?: Record<string, string>; amount_total?: number | null };
 export type Pick = { profile: string; location: string; plan: Plan };
 
 const ENDED = new Set(['canceled', 'unpaid', 'incomplete_expired']);
@@ -356,14 +356,14 @@ export async function accountPlanNow(userId: string): Promise<AccountPlan | null
  * first month's points are added. Called when the buyer comes back and again by Stripe's webhook;
  * doing it twice changes nothing.
  */
-export async function activate(sessionId: string, userId?: string) {
+export async function activate(sessionId: string, userId?: string): Promise<{ on: boolean; cents: number | null }> {
   const s = await stripe<Session>('/checkout/sessions/' + encodeURIComponent(sessionId));
-  if (s.mode !== 'subscription' || s.metadata?.kind !== 'gbp') return false;
+  if (s.mode !== 'subscription' || s.metadata?.kind !== 'gbp') return { on: false, cents: null };
   const owner = s.metadata.userId;
   if (!owner || owner !== s.client_reference_id || (userId && owner !== userId)) throw new InputError('Order unavailable.', 404);
   if (s.status !== 'complete' || !s.subscription || !['paid', 'no_payment_required'].includes(s.payment_status ?? '')) throw new InputError('Payment is still pending.', 409);
   const sub = await readSub(s.subscription);
-  if (!(await applySub(sub, owner)) || ENDED.has(sub.status)) return false;
+  if (!(await applySub(sub, owner)) || ENDED.has(sub.status)) return { on: false, cents: null };
   const fresh = await db.gbpPlan.updateMany({ where: { userId: owner, status: 'PENDING' }, data: { status: 'ACTIVE' } });
   const points = await grantPoints(sub.id).catch((e) => (console.error('[seats] points not added yet:', (e as Error).message), 0));
   if (fresh.count || points) {
@@ -376,7 +376,8 @@ export async function activate(sessionId: string, userId?: string) {
     }, 60).catch(() => {});
     await flushAlerts().catch(() => {});
   }
-  return true;
+  // What the checkout charged (the first month), for the ad conversion.
+  return { on: true, cents: typeof s.amount_total === 'number' ? s.amount_total : null };
 }
 
 /**

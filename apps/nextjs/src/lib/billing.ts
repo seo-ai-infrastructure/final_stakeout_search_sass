@@ -149,5 +149,5 @@ export async function fulfill(sessionId: string) {
   if (result === null) return sendBack(purchase, { intent, payment, card, cents: paidCents });
   // Only the first time this payment is recorded: the browser and Stripe's webhook both report it.
   if (fresh) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: paidCents, balance: result.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item });
-  return { ...result, credits: purchase.credits, briefs, item: purchase.item, fresh, refunded: false as const };
+  return { ...result, credits: purchase.credits, briefs, item: purchase.item, cents: paidCents, fresh, refunded: false as const };
 }

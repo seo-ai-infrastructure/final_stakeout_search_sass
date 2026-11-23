@@ -13,6 +13,7 @@ import GbpOverview from '@/components/GbpOverview';
 import GbpAllCalendar from '@/components/GbpAllCalendar';
 import WebsiteInsights, { Lock, LockedListingCard } from '@/components/WebsiteInsights';
 import { ACCOUNT_PLANS } from '@stakeout/core/gbpPlans';
+import { trackPurchase } from '@/lib/googleTag';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, addressOf, descriptionWarnings, openingOf, serviceAreasOf, diff, highScrutiny, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type AddressForm, type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
@@ -166,8 +167,9 @@ export default function GbpEditor({ addon = false }: { addon?: boolean } = {}) {
       // Back from paying for the AI agents add-on, or for listings.
       const forAgents = q.get('tab') === 'agents';
       go(forAgents ? 'agents' : 'plan');
-      api<{ on: boolean; plan?: string | null; pointsPerMonth?: number; briefs?: { perMonth?: number } }>('/api/billing/gbp', { confirm: paid })
+      api<{ on: boolean; cents?: number | null; plan?: string | null; pointsPerMonth?: number; briefs?: { perMonth?: number } }>('/api/billing/gbp', { confirm: paid })
         .then((r) => {
+          if (r.on) trackPurchase({ id: paid, cents: Number(r.cents) });
           // An account plan (Scout, Agency, Scale) says what the month brings, listing add-ons included.
           const name = r.plan ? (ACCOUNT_PLANS as Record<string, { name: string }>)[r.plan]?.name : undefined;
           const briefs = r.briefs?.perMonth ?? 0;

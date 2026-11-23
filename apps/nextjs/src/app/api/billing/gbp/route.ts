@@ -54,8 +54,8 @@ export async function POST(req: Request) {
       return Response.json(await billingSummary(u.id));
     }
     if (typeof b.confirm === 'string' && /^cs_[A-Za-z0-9_]{10,200}$/.test(b.confirm)) {
-      const on = await activate(b.confirm, u.id);
-      return Response.json({ on, ...(await billingSummary(u.id)) });
+      const { on, cents } = await activate(b.confirm, u.id);
+      return Response.json({ on, cents, ...(await billingSummary(u.id)) });
     }
     if (b.portal === true) return Response.json({ url: await portalUrl(u.id, origin) });
     throw new InputError('Unknown request.');

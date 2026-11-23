@@ -3,6 +3,7 @@ import React from 'react';
 import type { Metadata } from 'next';
 import '@/lib/fonts';
 import './globals.css';
+import GoogleTag from '@/components/GoogleTag';
 export const metadata: Metadata = {
   title: 'Stakeout • Real-Device Mobile Search & AI GeoGrid Intelligence',
   description:
@@ -17,6 +18,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">
         {children}
+        <GoogleTag />
       </body>
     </html>
   );

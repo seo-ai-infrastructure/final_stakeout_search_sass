@@ -89,7 +89,7 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
             <div className="hero-grid">
               <div className="video-stage">
                 <div className="stage-top">
-                  <span>RECORDED ON A REAL ANDROID PHONE</span>
+                  <span>UNROOTED ARM ANDROID · RECORDED</span>
                   <span>1 PIN = 1 SESSION</span>
                 </div>
                 <p className="stage-line">Every pin traces to a recorded phone screen.</p>
@@ -150,6 +150,21 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
             <h2>Why “7,500 credits” evaporates before you close a single retainer.</h2>
             <p className="sec-lead">Credit plans anchor you with a big monthly number. Then AI visibility checks and AI summaries draw extra credits, and on monthly plans whatever is left expires at the end of the month.</p>
 
+            <aside className="lf-receipt" aria-label="What a 5×5 scan cost on Local Falcon">
+              <p className="lf-kicker">We checked · Local Falcon · November 23, 2026</p>
+              <div className="lf-grid">
+                <div>
+                  <p className="lf-label">Their help center</p>
+                  <blockquote>“…a 5×5 grid scan has 25 points and uses 25 credits.”</blockquote>
+                </div>
+                <div>
+                  <p className="lf-label">Their confirm box, for a 5×5 Google AI Overviews scan of Stuart’s Plumbing in Lakeland, one keyword</p>
+                  <blockquote>“You are about to run 1 scan which will use 50 credits.”</blockquote>
+                </div>
+              </div>
+              <p className="lf-math"><strong>25 pins, 50 credits</strong>, and that scan reads AI Overviews only: the map results are a separate scan, and Falcon AI analysis is 25 credits a report. On Stakeout, 25 pins are 25 phone sessions, each with the map results, the AI answer, the ads and a screen recording.</p>
+            </aside>
+
             <div className="math-grid">
               <div className="ledger-box ledger-bad">
                 <p className="ledger-kicker">A typical credit-based grid tracker</p>
@@ -207,7 +222,7 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
                     <th scope="row">What runs each pin</th>
                     <td>A search sent from a server for that location</td>
                     <td>Rank checks run from servers</td>
-                    <td className="col-stakeout"><strong>A real Android phone with its GPS set to the pin</strong></td>
+                    <td className="col-stakeout"><strong>An unrooted ARM Android phone with its GPS set to the pin</strong></td>
                   </tr>
                   <tr>
                     <th scope="row">What one pin costs</th>
@@ -236,7 +251,7 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
                 </tbody>
               </table>
             </div>
-            <p className="table-note">Credit details for other tools come from their public pricing and help pages, November 2026.</p>
+            <p className="table-note">Credit details for other tools come from their public pricing and help pages, November 2026, and from a scan set up in our own Local Falcon account on November 23, 2026.</p>
           </div>
         </section>
 

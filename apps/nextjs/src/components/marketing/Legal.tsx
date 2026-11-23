@@ -74,6 +74,7 @@ function ContactCard({ heading, text, rows }: { heading: string; text: string; r
 export function PrivacyPolicy() {
   return (
     <Page
+      updated="November 23, 2026"
       badge="Legal & data governance"
       title="Privacy Policy"
       lead="How Stakeout Search collects, encrypts, processes and protects account information, search telemetry, white-label reports and authorized Google API integrations."
@@ -236,8 +237,13 @@ export function PrivacyPolicy() {
         },
         {
           id: 'cookies',
-          title: 'Cookies & First-Party Session Storage',
-          body: <p>Stakeout Search uses strictly necessary HTTP-only cookies and browser storage to keep you signed in, to validate OAuth <Code>state</Code> parameters against cross-site request forgery, and to remember interface preferences (such as which Analytics property belongs to a website). We do not use advertising cookies.</p>,
+          title: 'Cookies, Session Storage & Ad Measurement',
+          body: (
+            <>
+              <p>Stakeout Search uses strictly necessary HTTP-only cookies and browser storage to keep you signed in, to validate OAuth <Code>state</Code> parameters against cross-site request forgery, and to remember interface preferences (such as which Analytics property belongs to a website).</p>
+              <p>We advertise on Google. On our public marketing pages, and on the page that confirms a purchase, we load Google’s advertising tag (Google Ads conversion measurement). It sets first-party cookies that record which Google ad, if any, brought you to our site, so we can count the sign-ups and purchases our ads lead to. With a purchase we send Google only its amount and an order reference: never your name, email address, reports or Google account data. We have turned off Google’s ad personalization signals for this tag, so your visits are not used to build advertising audiences. The tag does not load in the signed-in app, on shared report links or on account links. Google describes how it uses this information at <a href="https://policies.google.com/technologies/partner-sites" target="_blank" rel="noopener noreferrer">policies.google.com/technologies/partner-sites</a>, and you can block these cookies in your browser without affecting your use of Stakeout Search.</p>
+            </>
+          ),
         },
         {
           id: 'children',

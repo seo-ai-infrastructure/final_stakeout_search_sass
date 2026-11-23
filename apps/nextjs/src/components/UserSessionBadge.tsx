@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Coins, LogOut, User, X } from 'lucide-react';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 import { paidMessage } from '@/lib/pricing';
+import { trackPurchase } from '@/lib/googleTag';
 import styles from './UserSessionBadge.module.css';
 type SessionUser = { email: string; name?: string | null; creditBalance: number };
 export function UserSessionBadge({ initialUser }: { initialUser?: SessionUser } = {}) {
@@ -36,6 +37,8 @@ export function UserSessionBadge({ initialUser }: { initialUser?: SessionUser } 
       .then(async (r) => ({ ok: r.ok, d: await r.json() }))
       .then(({ ok, d }) => {
         setPaid(ok ? paidMessage(d) : d.error || 'Your payment is still being confirmed. Your phone sessions will appear shortly.');
+        // The ad conversion, once per checkout (refunds and free checkouts aren't counted).
+        if (ok && !d.refunded) trackPurchase({ id, cents: Number(d.cents) });
         window.dispatchEvent(new Event('balance-change'));
       })
       .catch(() => setPaid('Your payment is still being confirmed. Your phone sessions will appear shortly.'));
