@@ -91,7 +91,8 @@ export async function compileBrief(scanId: string, me: Me) {
   const v = await visibilityForScan(scanId, me);
   const kept = await redis().get(assumptionsKey(s.userId, s.targetBusiness)).catch(() => null);
   const own = kept ? (JSON.parse(kept) as Record<string, unknown>) : null;
-  const brief = await buildBrief(v, { lookUp: true, assumptions: own, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(scanId) } });
+  // Built before any credit is spent: if the market prices can't be had, it stops here (PricingUnavailable) and nothing is used.
+  const brief = await buildBrief(v, { lookUp: true, strict: true, assumptions: own, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(scanId) } });
   const row = await db.$transaction(async (tx) => {
     const paidBy = await spend(tx, me);
     return tx.brief.create({ data: { userId: s.userId, scanId, business: s.targetBusiness, version: brief.version, paidBy, data: JSON.parse(JSON.stringify(brief)), ...(own ? { assumptions: JSON.parse(JSON.stringify(own)) } : {}) } });
@@ -137,7 +138,8 @@ export async function refreshBrief(id: string, me: Me, scanId?: unknown) {
   // The owner's own scans (an admin reads them as an admin).
   const v = await visibilityForScan(target, me);
   const kept = row.assumptions ?? (await redis().get(assumptionsKey(row.userId, row.business)).then((x) => (x ? JSON.parse(x) : null)).catch(() => null));
-  const brief = await buildBrief(v, { lookUp: true, assumptions: kept, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(target) } });
+  // As with compiling: no prices, no update, no credit used.
+  const brief = await buildBrief(v, { lookUp: true, strict: true, assumptions: kept, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(target) } });
   const at = new Date().toISOString();
   await db.$transaction(async (tx) => {
     await spend(tx, me);

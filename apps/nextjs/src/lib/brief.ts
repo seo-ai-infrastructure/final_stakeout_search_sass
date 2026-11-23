@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { InputError } from '@stakeout/core/grid';
 import { redis } from '@stakeout/core/redis';
 import type { VisibilityData as Full } from './visibilityReport';
 
@@ -165,9 +166,29 @@ async function figures(keywords: string[], location: string, lookUp: boolean, al
   return got;
 }
 
-async function marketFor(v: VisibilityData, market: string | null, plain: string[], extra: string[], pins: Point[], lookUp: boolean): Promise<Market | null> {
+/**
+ * A paid price lookup failed (DataForSEO out of funds, down, rate-limited or timed out) and what is
+ * kept doesn't cover the scanned searches: a compiled brief would go out without its prices, so it
+ * is not made, and no brief credit is spent.
+ */
+export class PricingUnavailable extends InputError {
+  constructor() {
+    super('Market pricing temporarily unavailable — your brief credit was not used. Try again in a few minutes.', 503);
+  }
+}
+
+/** Whether a failed lookup leaves a search the brief can't do without unanswered. */
+export const pricingShort = (need: string[], kept: Map<string, unknown>) => need.some((k) => !kept.has(k));
+
+/**
+ * County prices and city search counts for the brief: one request a place for what isn't kept.
+ * `strict` (compiling or updating, which spend a brief credit): a failed lookup that leaves the
+ * scanned searches or the brand unanswered throws PricingUnavailable instead of going on without.
+ */
+async function marketFor(v: VisibilityData, market: string | null, plain: string[], extra: string[], pins: Point[], lookUp: boolean, strict = false): Promise<Market | null> {
   const where = placesOf(market, pins);
-  if (!where.county || !pricesConfigured()) return null;
+  if (!where.county) return null;
+  if (!pricesConfigured()) { if (strict) throw new PricingUnavailable(); return null; }
   const brand = brandSearch(v.business);
   // One request a place: the scanned searches, the brand, Search Console's near misses, and the forms Google may file a withheld search under.
   const priced = [...new Set([...plain, brand, ...extra, ...plain.flatMap(fallbacksOf), ...extra.flatMap(fallbacksOf)])].slice(0, 200);
@@ -178,9 +199,21 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   const cached = await figures(priced, where.county, false, true);
   if (cached.size < priced.length) { const old = await kept(); if (old) return old; }
   const county = cached.size < priced.length && lookUp
-    ? await figures(priced, where.county, true, false).catch((e: Error) => { console.warn('[brief] county prices:', e.message); return cached; })
+    ? await figures(priced, where.county, true, false).catch((e: Error) => {
+        console.warn('[brief] county prices:', e.message);
+        // Search Console's near misses can wait; the scanned searches and the brand can't.
+        if (strict && pricingShort(counted, cached)) throw new PricingUnavailable();
+        return cached;
+      })
     : cached;
-  const city = where.city ? await figures(counted, where.city, lookUp, false).catch((e: Error) => { console.warn('[brief] city searches:', e.message); return figures(counted, where.city!, false, false); }) : null;
+  const city = where.city
+    ? await figures(counted, where.city, lookUp, false).catch(async (e: Error) => {
+        console.warn('[brief] city searches:', e.message);
+        const kept = await figures(counted, where.city!, false, false);
+        if (strict && pricingShort(counted, kept)) throw new PricingUnavailable();
+        return kept;
+      })
+    : null;
   if (![...county.values()].some(Boolean)) return null;
   const byKw = new Map([...county].filter((e): e is [string, KeywordPrice] => Boolean(e[1])));
   const prices: Market['prices'] = {};
@@ -214,8 +247,12 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
 
 const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
-/** The brief, from the visibility report's data. `lookUp`: may pay for a price lookup (never on a share link). */
-export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; assumptions: unknown; link: { report: string } }) {
+/**
+ * The brief, from the visibility report's data. `lookUp`: may pay for a price lookup (never on a share
+ * link). `strict`: a brief that spends a credit (compiled or updated) is not made without its prices
+ * when the lookup fails (PricingUnavailable); the live brief goes on with what is kept.
+ */
+export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; strict?: boolean; assumptions: unknown; link: { report: string } }) {
   const business = v.business, short = shortName(business);
   // Branded searches are told apart from the name and website, leaving out the places the scans cover.
   const listingAt = (v.google?.numbers as null | { listing?: { city?: string | null; region?: string | null } | null } | undefined)?.listing;
@@ -342,7 +379,10 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
   // The market: the listing's own city when Google says it, else the city at the grid's centre.
   const lc = g?.listing as { city?: string | null; region?: string | null } | null | undefined;
   const place = lc?.city && lc?.region ? `${lc.city}, ${lc.region}` : v.market;
-  const market = await marketFor(v, place, plainKws, offPageOne.map((q) => words(q.query)), mapPins, opts.lookUp).catch(() => null);
+  const market = await marketFor(v, place, plainKws, offPageOne.map((q) => words(q.query)), mapPins, opts.lookUp, opts.strict === true).catch((e) => {
+    if (e instanceof PricingUnavailable) throw e;
+    return null;
+  });
   const priceOf = (k: string) => market?.prices[words(k)] ?? null;
 
   // Assumptions: the client's own, else the sample inputs.
