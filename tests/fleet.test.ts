@@ -146,3 +146,30 @@ test('one phone-status request answers for many phones', async () => {
   assert.equal(readPhoneStatus({ data: { list: [{ status: 2 }] } }, 'UXsp5', 2), null);
   assert.equal(readPhoneStatus(null, 'UXsp5'), null);
 });
+
+test('a phone whose ADB refuses the worker is recognised for a restart; other failures are not', async () => {
+  const { adbUnreachable } = await import('../packages/core/fleetHealth');
+  assert.ok(adbUnreachable('ADB_COMMAND_FAILED shell mkdir: ADB_CONNECT_FAILED failed to connect to 98.98.125.9:20565'));
+  assert.ok(adbUnreachable('ADB_COMMAND_FAILED shell mkdir: error: device offline'));
+  assert.ok(adbUnreachable("error: device '98.98.125.9:20565' not found"));
+  assert.ok(!adbUnreachable('PROXY_EXIT_CHANGED exit IP moved'));
+  assert.ok(!adbUnreachable('FLAG_CAPTCHA_DETECTED'));
+  assert.ok(!adbUnreachable('ADB_COMMAND_FAILED shell am start: Error type 3'), 'a command that ran and failed is not a dead connection');
+});
+
+test('at start-up, only phones whose last point failed on ADB within the hour, with no success since, are restarted', async () => {
+  const { stuckOnAdb, ADB_RESTART } = await import('../packages/core/fleetHealth');
+  const now = Date.parse('2026-11-23T21:40:00Z');
+  const at = (iso: string) => new Date(iso);
+  const phone = (imageId: string, x: Partial<{ isEnabled: boolean; lastFailureCode: string | null; lastFailureAt: Date | null; lastSuccessAt: Date | null }>) => ({ imageId, isEnabled: true, lastFailureCode: 'ADB_COMMAND_FAILED', lastFailureAt: at('2026-11-23T21:26:00Z'), lastSuccessAt: at('2026-11-22T20:42:00Z'), ...x });
+  const ids = stuckOnAdb([
+    phone('stuck', {}),
+    phone('never-ok', { lastSuccessAt: null }),
+    phone('ok-since', { lastSuccessAt: at('2026-11-23T21:30:00Z') }),
+    phone('old', { lastFailureAt: at('2026-11-23T19:00:00Z') }),
+    phone('proxy', { lastFailureCode: 'PROXY_EXIT_CHANGED' }),
+    phone('disabled', { isEnabled: false }),
+  ], now);
+  assert.deepEqual(ids, ['stuck', 'never-ok']);
+  assert.deepEqual([ADB_RESTART.strikes, ADB_RESTART.strikeWindowSec, ADB_RESTART.gapSec, ADB_RESTART.perDay], [2, 600, 1200, 6], 'twice in 10 minutes; once per 20 minutes; 6 a day');
+});

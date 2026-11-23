@@ -1,4 +1,4 @@
-import { failureCode } from '@stakeout/core/fleetHealth';
+import { adbUnreachable, failureCode } from '@stakeout/core/fleetHealth';
 import { evidenceOf, failureKind, parseEntries, refusedRun, refusedSummary, stageSeconds, timingLine, timingSummary, REFUSED_KEEP, REFUSED_KEY, TIMINGS_KEEP, TIMINGS_KEY, type Marks, type RefusedRun, type RunTiming } from '@stakeout/core/runLog';
 import { backfillInsights, backfillPackRanks } from './insightsBackfill';
 import { replayAioCaptures } from './aioReplay';
@@ -21,7 +21,7 @@ import { queuePriority } from '@stakeout/core/speed';
 import { listsForPin, proxyPlace, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
-import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, type LeasedDevice } from './duoplus';
+import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, restartStuckAtStart, restartStuckPhone, type LeasedDevice } from './duoplus';
 import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
@@ -230,7 +230,12 @@ async function execute(job: Job, token?: string) {
       // Can't reach the phone over ADB: our outbound IP may have changed. Re-whitelist it.
       if (e instanceof Error && e.message.startsWith('ADB_CONNECT_FAILED') && Date.now() - lastWhitelistFix > 60000) {
         lastWhitelistFix = Date.now();
-        await ensureAdbWhitelist(true).catch(() => {});
+        await ensureAdbWhitelist(true).catch((err) => console.warn('[duoplus] ADB whitelist not updated:', err instanceof Error ? err.message : err));
+      }
+      // The phone's ADB refused us (it shows as on but won't connect): a second refusal within
+      // 10 minutes switches it off and on again. This point still holds the phone meanwhile.
+      if (e instanceof Error && adbUnreachable(e.message)) {
+        await restartStuckPhone(d.imageId, e.message).catch((err) => console.warn('[duoplus] restart skipped for', d.imageId, '-', (err as Error).message));
       }
       if (e instanceof Error && e.message === 'FLAG_CAPTCHA_DETECTED') {
         await db.devicePool.update({
@@ -769,10 +774,16 @@ async function startReruns() {
   }
 }
 
+let startupRestartsDone = false;
 async function tick() {
   if (busy) return;
   busy = true;
   try {
+    // First tick only, before any phone is leased: phones left stuck on ADB are restarted.
+    if (!startupRestartsDone) {
+      startupRestartsDone = true;
+      await restartStuckAtStart().catch((e) => console.warn('[duoplus] start-up restarts skipped:', (e as Error).message));
+    }
     if (mayRest(Date.now(), lastBusy, lastFull, IDLE_AFTER_MS, IDLE_EVERY_MS) && Date.now() < nextDue) {
       if (!resting) console.log(`[rest] nothing open for ${Math.round(IDLE_AFTER_MS / 60000)} min: the database is left alone, looked at every ${Math.round(IDLE_EVERY_MS / 60000)} min or on a wake-up call`);
       resting = true;

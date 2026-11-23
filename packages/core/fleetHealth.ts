@@ -196,3 +196,29 @@ export function adbWhitelist(ownIp: string, extra = '') {
   const list = [ownIp, ...extra.split(',').map((s) => s.trim())].filter(valid);
   return [...new Set(list)].slice(0, 10);
 }
+
+
+/**
+ * A phone's ADB endpoint refused us: the connection failed, or the phone shows as offline or
+ * missing. DuoPlus can still report such a phone as on; switching it off and on resets ADB.
+ */
+export function adbUnreachable(message: string) {
+  return /ADB_CONNECT_FAILED|device offline|device '[^']*' not found|no devices\/emulators found/i.test(message);
+}
+
+/**
+ * When the worker restarts a phone whose ADB refuses it: after 2 refusals within 10 minutes; at most
+ * once every 20 minutes and 6 times a day per phone; no new points for 5 minutes while it boots.
+ */
+export const ADB_RESTART = { strikes: 2, strikeWindowSec: 600, gapSec: 1200, perDay: 6, restSec: 300, offForMs: 30000 } as const;
+
+/**
+ * At worker start: phones whose last point failed on ADB within the hour, with no success since.
+ * They were stuck when the worker stopped, so they are restarted straight away.
+ */
+export function stuckOnAdb(phones: { imageId: string; isEnabled: boolean; lastFailureCode: string | null; lastFailureAt: Date | null; lastSuccessAt: Date | null }[], now = Date.now()) {
+  return phones
+    .filter((d) => d.isEnabled && d.lastFailureCode === 'ADB_COMMAND_FAILED' && d.lastFailureAt && now - d.lastFailureAt.getTime() <= 3600000)
+    .filter((d) => !d.lastSuccessAt || d.lastSuccessAt < d.lastFailureAt!)
+    .map((d) => d.imageId);
+}
