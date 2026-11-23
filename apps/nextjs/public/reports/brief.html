@@ -270,7 +270,8 @@ body{width:auto;max-width:none}
   .plate .mapbox{position:relative;height:560px}
   .plate .receipt{position:static;width:auto;margin:16px 24px 24px;box-shadow:none}
   .plate .band{display:none}
-  .pair{grid-template-columns:1fr;gap:0}
+  .plate .attrib{position:static;padding:0 24px 14px;background:none;border-radius:0;text-align:right}
+  .pair{grid-template-columns:minmax(0,1fr);gap:0}
   .flow{grid-template-columns:1fr;gap:18px}.flow .arrow{display:none}
   .move{grid-template-columns:40px minmax(0,1fr)}.move .play{grid-column:2;border-left:0;padding-left:0;border-top:1px solid var(--hair);padding-top:14px}
   .method{grid-template-columns:1fr}.mnotes{grid-template-columns:1fr}
@@ -285,6 +286,25 @@ body{width:auto;max-width:none}
   .cell:nth-child(even){padding-left:0;border-left:0}
   .maphead{flex-direction:column;align-items:flex-start;gap:14px}
   .plate .mapbox{height:440px}
+  .mgrid{grid-template-columns:repeat(var(--runs),minmax(0,1fr)) !important;gap:0 6px}
+  .mgrid>.corner{display:none}
+  .mgrid .lab{grid-column:1/-1;padding:12px 0 0;border-bottom:0}
+  .mgrid .g{grid-template-columns:repeat(var(--w),9px) !important;gap:2px}
+  .mgrid .g i{width:9px;height:9px}
+  .mgrid .mg{gap:6px}.mgrid .mg b{font-size:18px}
+  /* Tables become one block per row */
+  .mkt,.mkt tbody,.rc,.rc tbody{display:block}
+  .mkt thead,.rc thead{display:none}
+  .mkt tr{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;padding:14px 0;border-bottom:1px solid var(--hair2)}
+  .mkt td{display:block;padding:0;border:0;text-align:left !important}
+  .mkt td:first-child{grid-column:1/-1;font-weight:600}
+  .mkt td[data-l]::before,.rc td[data-l]::before{content:attr(data-l);display:block;font-size:11.5px;font-weight:400;color:var(--fog);margin-bottom:2px}
+  .rc tr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 10px;padding:14px 0;border-bottom:1px solid var(--hair2)}
+  .rc td{display:block;padding:0;border:0}
+  .rc td.pt{grid-row:1;grid-column:1}.rc td.ar{grid-row:1;grid-column:2;color:var(--graphite)}.rc td.r{grid-row:1;grid-column:3}
+  .rc td.sw,.rc td.ad{grid-column:1/-1}
+  .rc td:last-child{grid-column:1/-1;font-size:12.5px}
+  .bars .row{grid-template-columns:minmax(0,1fr) 72px 24px;gap:10px}
   .mast .wrap{height:auto;padding:14px 0;gap:12px;flex-wrap:wrap}
 }
 @media print{.edit,.tabs,.more .btn{display:none}}
@@ -632,6 +652,11 @@ function overlay() {
       } else {
         const y = (A.reduce((a, p) => a + p.y, 0) / A.length + B.reduce((a, p) => a + p.y, 0) / B.length) / 2, x0 = Math.min(...all.map((p) => p.x)) - 34, x1 = Math.max(...all.map((p) => p.x)) + 34;
         html += `<path d="M${x0} ${y} H${x1}" fill="none" stroke="rgba(226,234,240,.62)" stroke-width="1.4" stroke-dasharray="5 5"/>`;
+        // Without the side bands (narrow screens), name the halves above and below the grid.
+        if (window.innerWidth <= 1100) {
+          const xl = Math.min(...all.map((p) => p.x)) - 18;
+          lab(half(s.a.label), xl, Math.min(...all.map((p) => p.y)) - 26, 'start'); lab(half(s.b.label), xl, Math.max(...all.map((p) => p.y)) + 40, 'start');
+        }
       }
       if (window.innerWidth > 1100) {
         const ya = (A.length ? 0 : 0) + (s.axis === 'rows' ? M.pins.filter((p) => p.r < s.cut).map(at).reduce((a, p, _, l) => a + p.y / l.length, 0) : plate.height * 0.36);
@@ -665,8 +690,9 @@ function exhibitB() {
   void lead;
   const W = B.width;
   $('#mgrid').style.gridTemplateColumns = `minmax(0,1fr) repeat(${grids.length},${Math.max(76, W * 16 + 44)}px)`;
+  $('#mgrid').style.setProperty('--runs', grids.length); $('#mgrid').style.setProperty('--w', W);
   const dup = new Set(grids.map((g) => dayShort(g.at))).size < grids.length;
-  $('#mgrid').innerHTML = '<span></span>' + grids.map((g) => `<span class="hd">${esc(dayShort(g.at))}${dup ? `<br><span class="muted" style="font-weight:400">${esc(timeEt(g.at).replace(' ET', ''))}</span>` : ''}</span>`).join('') + rows.map(([label, gs]) => `<span class="lab">${esc(label)}</span>` + gs.map((g) => `<span class="mg"><span class="g" style="grid-template-columns:repeat(${W},13px)">${[...g.cells].map((v) => `<i class="${v === '1' ? 'on' : v === 'u' ? 'u' : v === 'x' ? 'x' : ''}"></i>`).join('')}</span><b>${[...g.cells].filter((v) => v === '1').length}</b></span>`).join('')).join('');
+  $('#mgrid').innerHTML = '<span class="corner"></span>' + grids.map((g) => `<span class="hd">${esc(dayShort(g.at))}${dup ? `<br><span class="muted" style="font-weight:400">${esc(timeEt(g.at).replace(' ET', ''))}</span>` : ''}</span>`).join('') + rows.map(([label, gs]) => `<span class="lab">${esc(label)}</span>` + gs.map((g) => `<span class="mg"><span class="g" style="grid-template-columns:repeat(${W},13px)">${[...g.cells].map((v) => `<i class="${v === '1' ? 'on' : v === 'u' ? 'u' : v === 'x' ? 'x' : ''}"></i>`).join('')}</span><b>${[...g.cells].filter((v) => v === '1').length}</b></span>`).join('')).join('');
   const mixed = D.map && grids.length;
   $('#bsrc').innerHTML = `<b>Source:</b> the same ${B.points} points on ${grids.map((g) => `${dayMd(g.at)} (${timeEt(g.at)})`).join(', ')}.${mixed ? ' Answers read card by card count card 1; earlier readings count the first business named.' : ''}`;
 }
@@ -720,7 +746,7 @@ function exhibitD() {
   $('#dh2').textContent = md ? `${md.city || 'The city'} makes ${plain.length === 1 ? 'this search' : `these ${word(plain.length)} searches`} ${int(total)} times a month.${cpcs.length ? ` Advertisers pay ${money2(Math.min(...cpcs))}${Math.max(...cpcs) > Math.min(...cpcs) ? ' to ' + money2(Math.max(...cpcs)) : ''} a click for ${plain.length === 1 ? 'it' : 'them'}.` : ''}` : `What ${D.short} is missing until its Google accounts are connected`;
   $('#dsub').textContent = md ? `Google Ads figures, 12-month averages: searches from ${md.city || 'the city'}, cost per click across ${md.county}.${D.googleHidden ? '' : ` ${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.`}` : `${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.`;
   $('#dbody').innerHTML = (md ? `<div class="tscroll"><table class="tbl mkt"><thead><tr><th>Search</th><th class="r" style="width:170px">Searches a month, ${esc(md.city || 'the city')}</th><th class="r" style="width:170px">Cost per click, ${esc(md.county)}</th><th class="r" style="width:190px">Top-of-page bids</th><th class="r" style="width:190px">${esc(D.short)} in the top three</th></tr></thead><tbody>` +
-    rows.map((r) => `<tr class="${r.brand ? 'brand' : ''}"><td>${esc(r.kw)}${r.brand ? '<span>Searches naming the business</span>' : r.via ? `<span>Priced as “${esc(r.via)}”: Google withholds this exact search</span>` : ''}</td><td class="r">${r.searches === null ? 'Not reported' : int(r.searches)}</td><td class="r">${r.cpc === null ? 'Not reported' : money2(r.cpc)}</td><td class="r">${r.low !== null && r.high !== null ? `${money2(r.low)} to ${money2(r.high)}` : 'Not reported'}</td><td class="r">${r.brand ? 'Not scanned' : `${r.top3} of ${r.points} points<span>${esc(dayMd(r.at))}</span>`}</td></tr>`).join('') + '</tbody></table></div>' : '') +
+    rows.map((r) => `<tr class="${r.brand ? 'brand' : ''}"><td>${esc(r.kw)}${r.brand ? '<span>Searches naming the business</span>' : r.via ? `<span>Priced as “${esc(r.via)}”: Google withholds this exact search</span>` : ''}</td><td class="r" data-l="Searches a month, ${esc(md.city || 'the city')}">${r.searches === null ? 'Not reported' : int(r.searches)}</td><td class="r" data-l="Cost per click, ${esc(md.county)}">${r.cpc === null ? 'Not reported' : money2(r.cpc)}</td><td class="r" data-l="Top-of-page bids">${r.low !== null && r.high !== null ? `${money2(r.low)} to ${money2(r.high)}` : 'Not reported'}</td><td class="r" data-l="${esc(D.short)} in the top three">${r.brand ? 'Not scanned' : `${r.top3} of ${r.points} points<span>${esc(dayMd(r.at))}</span>`}</td></tr>`).join('') + '</tbody></table></div>' : '') +
     (D.googleHidden ? '' : `<div class="conn"><h4>Not connected yet</h4><div class="cgrid"><div><b>Google Business Profile</b><p>Calls, website clicks and direction requests from the listing, and the searches that showed it.</p></div><div><b>Search Console</b><p>The searches that showed ${esc(D.website || 'the website')}, and the clicks they sent.</p></div><div><b>Google Analytics</b><p>Visits from the listing’s link, and what those visitors did on the site.</p></div></div><p>Once connected, counted calls and visits replace the sample tap rate in the ledger${md ? `, priced at the same ${esc(md.county)} rates` : ''}.</p></div>`);
 }
 
@@ -733,7 +759,7 @@ function moves() {
 }
 function receipts() {
   $('#rsub').textContent = `“${cap(D.map.kw)}”, ${dayLong(D.map.at)}, ${timeEt(D.map.at)}.`;
-  $('#rcpts').innerHTML = D.receipts.map((r) => `<tr><td class="pt">${esc(r.point)}</td><td>${esc(r.area || '')}</td><td>${esc(r.saw)}</td><td>${esc(r.ads)}</td><td class="r" style="font-weight:600">${one(r.score)}</td><td class="${r.rec ? 'rec' : 'muted'}">${r.rec ? 'Recording' : 'No recording'}</td></tr>`).join('');
+  $('#rcpts').innerHTML = D.receipts.map((r) => `<tr><td class="pt">${esc(r.point)}</td><td class="ar">${esc(r.area || '')}</td><td class="sw">${esc(r.saw)}</td><td class="ad" data-l="Ads on the page">${esc(r.ads)}</td><td class="r" style="font-weight:600">${one(r.score)}</td><td class="${r.rec ? 'rec' : 'muted'}">${r.rec ? 'Recording' : 'No recording'}</td></tr>`).join('');
   $('#rall').textContent = `Show all ${int(D.receiptsTotal)} receipts from ${D.scansTotal} scans`;
   $('#rall').href = D.link.report;
 }
