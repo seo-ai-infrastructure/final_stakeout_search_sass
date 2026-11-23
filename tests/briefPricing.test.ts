@@ -12,3 +12,19 @@ test('brief pricing: a failed lookup blocks a paid brief only when the scanned s
   assert.equal(e.status, 503);
   assert.match(e.message, /your brief credit was not used/);
 });
+
+test('brief pricing: the broader search a missing price falls back to keeps the trade and "near me"', async () => {
+  const { headsOf } = await import('../apps/nextjs/src/lib/brief');
+  assert.deepEqual(headsOf('exterior house painters near me'), ['house painters near me', 'house painter near me']);
+  assert.deepEqual(headsOf('best painters near me'), ['painters near me', 'painter near me']);
+  assert.deepEqual(headsOf('emergency painting companies near me now'), ['painting companies near me', 'painting company near me']);
+  assert.deepEqual(headsOf('car accident lawyer'), [], 'nothing to drop: no broader search');
+  assert.deepEqual(headsOf('house painters near me'), []);
+});
+
+test('brief pricing: singular and plural, -y and -ies too', async () => {
+  const { headsOf } = await import('../apps/nextjs/src/lib/brief');
+  // headsOf's second form is the plural or singular of the first.
+  assert.deepEqual(headsOf('best roofing company near me'), ['roofing company near me', 'roofing companies near me']);
+  assert.deepEqual(headsOf('top attorneys near me'), ['attorneys near me', 'attorney near me']);
+});
