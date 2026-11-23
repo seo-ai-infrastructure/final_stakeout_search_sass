@@ -5,7 +5,7 @@ import type { VisibilityData as Full } from './visibilityReport';
 
 /** The visibility report's data; a share link may carry no Google numbers. */
 type VisibilityData = Omit<Full, 'google'> & { google: Full['google'] | null };
-import { SCORING_VERSION, brandSearch, isBranded, matchedChange, sameBusiness, type BrandHints, paidUnitsAbove, scorePoints, summarize, type Point, type Scored } from './briefScore';
+import { MODIFIERS, SCORING_VERSION, TRADE, brandSearch, isBranded, matchedChange, sameBusiness, type BrandHints, paidUnitsAbove, scorePoints, summarize, type Point, type Scored } from './briefScore';
 import { empty, findPlace, keywordPrices, pricesConfigured, type KeywordPrice } from './keywordPrices';
 
 /**
@@ -46,12 +46,26 @@ export function cleanAssumptions(v: unknown, base: Assumptions): Assumptions {
 }
 
 /** The short name a brief uses: "Stuart's Plumbing" → "Stuart’s"; "Brandon J. Broderick, Personal Injury…" → "Broderick". */
+/**
+ * What the brief calls the business: a person by surname ("Brandon J. Broderick, Personal Injury
+ * Attorney at Law" → "Broderick"); a short business name as it is ("McIntyre Painting"); a long one by
+ * the words before its trade ("Charlotte's Best Roofing And Gutters" → "Charlotte’s").
+ */
 export function shortName(business: string) {
-  const head = business.split(',')[0].trim();
-  const parts = head.split(/\s+/);
-  const trade = /^(plumbing|plumbers?|law|lawyers?|attorneys?|services?|company|co\.?|llc|inc\.?|group|firm|heating|cooling|roofing|electric|hvac|dental|pllc|p\.?c\.?)$/i;
-  const short = parts.length > 1 && trade.test(parts[parts.length - 1]) ? parts[0] : parts[parts.length - 1];
-  return short.replace(/'/g, '’');
+  const head = business.split(/,| - /)[0].trim();
+  const parts = head.split(/\s+/).filter(Boolean);
+  const bare = (w: string) => w.toLowerCase().replace(/[’']s$/, '').replace(/[^a-z0-9]/g, '');
+  const generic = (w: string) => w === '&' || TRADE.has(bare(w)) || MODIFIERS.has(bare(w));
+  const tidy = (x: string) => x.replace(/'/g, '’');
+  // "Name, title": a person.
+  if (/[,]/.test(business) && parts.length >= 2 && parts.length <= 4 && !parts.some(generic)) return tidy(parts[parts.length - 1]);
+  if (parts.length <= 3) return tidy(head);
+  const lead: string[] = [];
+  for (const w of parts) {
+    if (generic(w) || lead.length === 2) break;
+    lead.push(w);
+  }
+  return tidy(lead.length ? lead.join(' ') : head);
 }
 
 const ordinal = (n: number) => ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'][n - 1] ?? `#${n}`;
@@ -250,9 +264,7 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   // Markets priced before figures were kept per search sit under one key for the whole set; use it while it lasts.
   const before = [...new Set([...plain, ...plain.flatMap(variantsOf), ...extra, ...extra.flatMap(variantsOf), brand])].slice(0, 60);
   const kept = async () => { const v = await redis().get('stakeout:brief:market:v1:' + createHash('sha256').update(JSON.stringify([where.county, where.city, before, counted])).digest('hex').slice(0, 32)).catch(() => null); return v ? (JSON.parse(v) as Market) : null; };
-  const heads = [...new Set(plain.flatMap(headsOf))].filter((h) => !priced.includes(h));
-  const all = [...priced, ...heads].slice(0, 300);
-  const cached = await figures(all, geo.county!, false, true);
+  const cached = await figures(priced, geo.county!, false, true);
   const needLookup = priced.some((k) => !cached.has(k));
   if (needLookup) {
     const old = await kept();
@@ -262,7 +274,7 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
     }
   }
   const county = needLookup && lookUp
-    ? await figures(all, geo.county!, true, false, geo.countyCode).catch((e: Error) => {
+    ? await figures(priced, geo.county!, true, false, geo.countyCode).catch((e: Error) => {
         console.warn('[brief] county prices:', e.message);
         // Search Console's near misses can wait; the scanned searches and the brand can't.
         if (strict && pricingShort(counted, cached)) throw new PricingUnavailable();
@@ -279,10 +291,12 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
     : null;
   if (![...county.values()].some(Boolean)) return null;
   const byKw = new Map([...county].filter((e): e is [string, KeywordPrice] => Boolean(e[1])));
-  const priceIn = (m: Map<string, KeywordPrice>, k: string, area?: string): (KeywordPrice & { via?: string; area?: string }) | null => {
+  // A search's own price, else a same-meaning variant's (lawyer/attorney, "near me", plural); with
+  // `broad`, a broader search's too (only nationally, as the last resort).
+  const priceIn = (m: Map<string, KeywordPrice>, k: string, area?: string, broad = false): (KeywordPrice & { via?: string; area?: string }) | null => {
     const own = m.get(k);
     if (own && own.cpc !== null) return area ? { ...own, area } : own;
-    const alt = [...fallbacksOf(k), ...headsOf(k)].map((x) => m.get(x)).find((x) => x && x.cpc !== null);
+    const alt = [...fallbacksOf(k), ...(broad ? headsOf(k) : [])].map((x) => m.get(x)).find((x) => x && x.cpc !== null);
     return alt ? { ...alt, keyword: k, via: alt.keyword, ...(area ? { area } : {}) } : null;
   };
   const prices: Market['prices'] = {};
@@ -290,13 +304,11 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
     const p = priceIn(byKw, k);
     if (p) prices[k] = p;
   }
-  // A small county often has no Google Ads price for a scanned search, even a broader one (Google only
-  // reports local figures for well-searched, costly searches). Price what's missing across the state,
-  // then, as the last resort, the US: one request a place, only for what's missing, kept 45 days.
-  const wider: { name: string; code?: number; label: string }[] = [
-    ...(where.state ? [{ name: `${where.state},United States`, label: where.state }] : []),
-    { name: 'United States', code: 2840, label: 'the US' },
-  ];
+  // Keyword Planner often has no local figure for a search, even a costly one, in a smaller county
+  // (it reports local prices only with enough data), and what it does have nearby (the state, a broader
+  // search) runs far below what a campaign there pays. A search with no county price is priced at the
+  // national average instead: one request for what's missing, kept 45 days and shared by every market.
+  const wider: { name: string; code?: number; label: string }[] = [{ name: 'United States', code: 2840, label: 'the US' }];
   for (const area of wider) {
     const lacking = plain.filter((k) => !prices[k]);
     if (!lacking.length) break;
@@ -311,7 +323,7 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
       : keptHere;
     const byArea = new Map([...got].filter((e): e is [string, KeywordPrice] => Boolean(e[1])));
     for (const k of lacking) {
-      const p = priceIn(byArea, k, area.label);
+      const p = priceIn(byArea, k, area.label, true);
       if (p) prices[k] = p;
     }
   }

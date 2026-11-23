@@ -28,3 +28,19 @@ test('brief pricing: singular and plural, -y and -ies too', async () => {
   assert.deepEqual(headsOf('best roofing company near me'), ['roofing company near me', 'roofing companies near me']);
   assert.deepEqual(headsOf('top attorneys near me'), ['attorneys near me', 'attorney near me']);
 });
+
+test('brief: what the brief calls the business', async () => {
+  const { shortName } = await import('../apps/nextjs/src/lib/brief');
+  const cases: [string, string][] = [
+    ['McIntyre Painting', 'McIntyre Painting'],
+    ["Stuart's Plumbing", 'Stuart’s Plumbing'],
+    ['Brandon J. Broderick, Personal Injury Attorney at Law', 'Broderick'],
+    ['Gisela N Sanchez, REALTOR', 'Sanchez'],
+    ['Mark Ayzenberg, MD - Iron Mountain Orthopaedic Institute', 'Ayzenberg'],
+    ["Charlotte's Best Roofing And Gutters", 'Charlotte’s'],
+    ['Top Dollar Home Offer', 'Top Dollar'],
+    ['Payne Air Conditioning & Heating', 'Payne'],
+    ['Lakeland Accident & Injury Attorney at Law', 'Lakeland'],
+  ];
+  for (const [name, want] of cases) assert.equal(shortName(name), want, name);
+});
