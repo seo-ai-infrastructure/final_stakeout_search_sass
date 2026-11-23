@@ -808,7 +808,7 @@ function state() {
   if (C) {
     const when = `<b>Compiled ${esc(dayLong(C.at))}, ${esc(timeEt(C.at))}</b>` + (C.updated ? ` · <b>updated ${esc(dayLong(C.updated))}, ${esc(timeEt(C.updated))}</b>` : '');
     el.innerHTML = `<span>${when} · scoring version ${esc(D.version)}. ${D.canEdit ? 'It stays as it is until you update it.' : ''}</span>` +
-      (D.canEdit ? `<span class="acts">${C.admin ? `<a href="/reports/brief.html?scan=${encodeURIComponent(C.scan)}">Open the live brief</a>` : ''}<button type="button" id="refreshbtn" class="quiet">Update brief</button><button type="button" id="sharebtn">${C.share ? 'Copy share link' : 'Make a share link'}</button><span class="note" id="sharemsg"></span></span><div class="refresh" id="refreshbox" hidden></div>` : '');
+      (D.canEdit ? `<span class="acts">${C.admin ? `<a href="/reports/brief.html?scan=${encodeURIComponent(C.scan)}">Open the live brief</a>` : ''}<button type="button" id="refreshbtn" class="quiet">Update brief</button><button type="button" id="sharebtn">${C.share ? 'Copy share link' : 'Make a share link'}</button>${D.connected || D.google ? `<span class="note">Google data ${C.shareGoogle === false ? 'left out of' : 'included on'} the share link · <a href="/scans/${encodeURIComponent(C.scan)}">set it on the scan</a></span>` : ''}<span class="note" id="sharemsg"></span></span><div class="refresh" id="refreshbox" hidden></div>` : '');
     // Updating rebuilds it from the newest scan of its search, under the same link: one brief credit.
     $('#refreshbtn')?.addEventListener('click', () => {
       const box = $('#refreshbox'), n = C.next;

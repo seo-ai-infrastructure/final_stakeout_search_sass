@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { redis } from '@stakeout/core/redis';
-import { visibilityForScan } from '@/lib/visibilityReport';
+import { shareGoogleOn, visibilityForScan } from '@/lib/visibilityReport';
 import { assumptionsKey, buildBrief, cleanAssumptions, defaultsFor } from '@/lib/brief';
 import { briefSource, briefsLeft, type BriefSource } from '@stakeout/core/briefWallet';
 import { getSettings, newPlansFor } from '@stakeout/core/settings';
@@ -94,8 +94,8 @@ async function mine(id: string, me: Me) {
 }
 
 /** What the page needs: the brief as compiled, with the inputs in force now. */
-function view(row: { id: string; scanId: string; createdAt: Date; data: unknown; assumptions: unknown; shareToken: string | null }, report: string | null, canEdit: boolean, owner?: { admin: boolean; next: { id: string; at: string; keyword: string } | null; left: number }) {
-  const data = row.data as Built & { updatedAt?: string };
+function view(row: { id: string; scanId: string; createdAt: Date; data: unknown; assumptions: unknown; shareToken: string | null }, report: string | null, canEdit: boolean, owner?: { admin: boolean; next: { id: string; at: string; keyword: string } | null; left: number; shareGoogle: boolean }) {
+  const { withoutGoogle: _bare, ...data } = row.data as Stored;
   const base = (data.assumptions as { base?: Record<string, unknown> } | undefined)?.base ?? {};
   const own = row.assumptions as Record<string, unknown> | null;
   return {
@@ -106,6 +106,19 @@ function view(row: { id: string; scanId: string; createdAt: Date; data: unknown;
     canEdit,
     canCompile: false,
   };
+}
+
+/** What a compiled brief keeps: the brief, and the same brief without the business's Google data for a share link with it left out. */
+type Stored = Built & { updatedAt?: string; withoutGoogle?: Built };
+
+/**
+ * The same brief without the business's Google data (its listing activity, Search Console and
+ * Analytics), for a share link whose scan has "Include Google data" off. Built from figures the
+ * first build just kept, so it looks nothing up.
+ */
+async function withoutGoogle(v: Awaited<ReturnType<typeof visibilityForScan>>, assumptions: unknown, report: string) {
+  if (!v.google) return null;
+  return buildBrief({ ...v, google: null }, { lookUp: false, assumptions, link: { report } }).catch(() => null);
 }
 
 /** Compiles the brief for a scan: built now (a first look-up of local prices may be paid for), then kept as it is. */
@@ -121,6 +134,7 @@ export async function compileBrief(scanId: string, me: Me) {
     const own = kept ? (JSON.parse(kept) as Record<string, unknown>) : null;
     // Built before any credit is spent: if the market prices can't be had, it stops here (PricingUnavailable) and nothing is used.
     const brief = await buildBrief(v, { lookUp: true, strict: true, assumptions: own, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(scanId) } });
+    const bare = await withoutGoogle(v, own, '/reports/visibility.html?scan=' + encodeURIComponent(scanId));
     // The credit and the brief together, or neither. The scan's row is locked while saving, so two
     // saves for one scan run one after the other, and the second finds the first's brief.
     const row = await db.$transaction(async (tx) => {
@@ -128,7 +142,7 @@ export async function compileBrief(scanId: string, me: Me) {
       const just = await tx.brief.findFirst({ where: { userId: s.userId, scanId, createdAt: { gte: new Date(Date.now() - SAME_REQUEST_MS) } }, orderBy: { createdAt: 'desc' }, select: { id: true } });
       if (just) return just;
       const paidBy = await spend(tx, me);
-      return tx.brief.create({ data: { userId: s.userId, scanId, business: s.targetBusiness, version: brief.version, paidBy, data: JSON.parse(JSON.stringify(brief)), ...(own ? { assumptions: JSON.parse(JSON.stringify(own)) } : {}) } });
+      return tx.brief.create({ data: { userId: s.userId, scanId, business: s.targetBusiness, version: brief.version, paidBy, data: JSON.parse(JSON.stringify(bare ? { ...brief, withoutGoogle: bare } : brief)), ...(own ? { assumptions: JSON.parse(JSON.stringify(own)) } : {}) } });
     });
     return { id: row.id };
   });
@@ -150,8 +164,8 @@ async function newestFor(row: { userId: string; scanId: string; business: string
 
 export async function briefFor(id: string, me: Me) {
   const row = await mine(id, me);
-  const [next, wallet] = await Promise.all([newestFor(row), me.role === 'ADMIN' ? null : walletOf(me.id)]);
-  return view(row, '/reports/visibility.html?scan=' + encodeURIComponent(row.scanId), true, { admin: me.role === 'ADMIN', next, left: wallet?.left ?? 0 });
+  const [next, wallet, shareGoogle] = await Promise.all([newestFor(row), me.role === 'ADMIN' ? null : walletOf(me.id), shareGoogleOn(row.scanId)]);
+  return view(row, '/reports/visibility.html?scan=' + encodeURIComponent(row.scanId), true, { admin: me.role === 'ADMIN', next, left: wallet?.left ?? 0, shareGoogle });
 }
 
 /**
@@ -182,6 +196,7 @@ async function rebuild(row: Awaited<ReturnType<typeof mine>>, me: Me, target: st
   const kept = row.assumptions ?? (await redis().get(assumptionsKey(row.userId, row.business)).then((x) => (x ? JSON.parse(x) : null)).catch(() => null));
   // As with compiling: no prices, no update, no credit used.
   const brief = await buildBrief(v, { lookUp: true, strict: true, assumptions: kept, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(target) } });
+  const bare = await withoutGoogle(v, kept, '/reports/visibility.html?scan=' + encodeURIComponent(target));
   const at = new Date().toISOString();
   // The credit and the update together, or neither; the brief's row is locked while saving, so a
   // second save of the same update a moment later finds it done and spends nothing.
@@ -190,7 +205,7 @@ async function rebuild(row: Awaited<ReturnType<typeof mine>>, me: Me, target: st
     const was = (cur?.data as { updatedAt?: string } | null)?.updatedAt;
     if (cur && cur.scan_id === target && was && Date.now() - Date.parse(was) < SAME_REQUEST_MS) return was;
     await spend(tx, me);
-    await tx.brief.update({ where: { id }, data: { scanId: target, version: brief.version, data: JSON.parse(JSON.stringify({ ...brief, updatedAt: at })) } });
+    await tx.brief.update({ where: { id }, data: { scanId: target, version: brief.version, data: JSON.parse(JSON.stringify({ ...brief, updatedAt: at, ...(bare ? { withoutGoogle: { ...bare, updatedAt: at } } : {}) })) } });
     return at;
   });
   return { id, updated: done };
@@ -201,8 +216,11 @@ export async function briefByToken(token: string) {
   if (!/^[a-f0-9]{48}$/.test(token)) throw new InputError('Brief unavailable.', 404);
   const row = await db.brief.findUnique({ where: { shareToken: token } });
   if (!row) throw new InputError('Brief unavailable.', 404);
-  const scan = await db.gridScan.findUnique({ where: { id: row.scanId }, select: { shareToken: true } });
-  return view(row, scan?.shareToken ? '/reports/visibility.html?share=' + encodeURIComponent(scan.shareToken) : null, false);
+  const [scan, google] = await Promise.all([db.gridScan.findUnique({ where: { id: row.scanId }, select: { shareToken: true } }), shareGoogleOn(row.scanId)]);
+  // With "Include Google data" off on its scan, the link gets the copy built without the business's Google data.
+  const stored = row.data as Stored;
+  const data = !google && stored.withoutGoogle ? { ...stored.withoutGoogle, updatedAt: stored.updatedAt } : stored;
+  return view({ ...row, data }, scan?.shareToken ? '/reports/visibility.html?share=' + encodeURIComponent(scan.shareToken) : null, false);
 }
 
 /**
