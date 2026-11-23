@@ -11,7 +11,7 @@
  */
 import { InputError } from '@stakeout/core/grid';
 
-const API = 'https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live';
+const API = 'https://api.dataforseo.com/v3/keywords_data/google_ads/';
 /** Searches asked again on their own after one request: 1 + 10 stays inside 12 requests a minute. */
 const ALONE = 10;
 
@@ -101,12 +101,12 @@ const blank = (keyword: string): KeywordPrice => ({ keyword, spell: null, search
 
 type Answer = { status_code?: number; status_message?: string; cost?: number; tasks?: { status_code?: number; status_message?: string; cost?: number; result?: unknown[] | null }[] };
 
-async function ask(keywords: string[], place: Place, language: string, alone = false): Promise<{ prices: KeywordPrice[]; cost: number }> {
+async function ask(path: 'search_volume/live' | 'keywords_for_keywords/live', task: Record<string, unknown>, alone = false): Promise<{ prices: KeywordPrice[]; cost: number }> {
   const auth = Buffer.from(process.env.DATAFORSEO_LOGIN + ':' + process.env.DATAFORSEO_PASSWORD).toString('base64');
-  const res = await fetch(API, {
+  const res = await fetch(API + path, {
     method: 'POST',
     headers: { Authorization: 'Basic ' + auth, 'Content-Type': 'application/json' },
-    body: JSON.stringify([{ keywords, ...place, language_code: language, search_partners: false }]),
+    body: JSON.stringify([{ ...task, search_partners: false }]),
     cache: 'no-store',
     signal: AbortSignal.timeout(45000),
   });
@@ -127,12 +127,12 @@ async function ask(keywords: string[], place: Place, language: string, alone = f
 export async function keywordPrices(keywords: string[], place: Place, language: 'en' | 'es' = 'en'): Promise<{ results: KeywordPrice[]; cost: number; askedAlone: number; complete: boolean }> {
   if (!pricesConfigured()) throw new InputError('DataForSEO is not set up: DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD on Vercel.', 503);
   if (!keywords.length) return { results: [], cost: 0, askedAlone: 0, complete: true };
-  const first = await ask(keywords, place, language);
+  const first = await ask('search_volume/live', { keywords, ...place, language_code: language });
   const got = new Map(first.prices.map((p) => [p.keyword, p]));
   let cost = first.cost;
   const missing = keywords.filter((k) => { const p = got.get(k); return !p || empty(p); });
   const retry = missing.slice(0, ALONE);
-  const again = await Promise.allSettled(retry.map((k) => ask([k], place, language, true)));
+  const again = await Promise.allSettled(retry.map((k) => ask('search_volume/live', { keywords: [k], ...place, language_code: language }, true)));
   let complete = missing.length <= ALONE;
   again.forEach((r, i) => {
     if (r.status !== 'fulfilled') { complete = false; return; }
@@ -141,4 +141,18 @@ export async function keywordPrices(keywords: string[], place: Place, language: 
     if (p && !empty(p)) got.set(retry[i], { ...p, keyword: retry[i] });
   });
   return { results: keywords.map((k) => got.get(k) ?? blank(k)), cost: Math.round(cost * 10000) / 10000, askedAlone: retry.length, complete };
+}
+
+/**
+ * Google's related searches around up to 20 seeds in one place, with their prices, most searched
+ * first (one request). For a search Google leaves unpriced even on its own ("car accident lawyer"),
+ * its family here says what the market pays. Google repeats a group's figures on each search in the
+ * group, so these monthly searches are not added up either.
+ */
+export async function keywordIdeas(seeds: string[], place: Place, language: 'en' | 'es' = 'en', limit = 300): Promise<{ results: KeywordPrice[]; found: number; cost: number }> {
+  if (!pricesConfigured()) throw new InputError('DataForSEO is not set up: DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD on Vercel.', 503);
+  if (!seeds.length) return { results: [], found: 0, cost: 0 };
+  const { prices, cost } = await ask('keywords_for_keywords/live', { keywords: seeds.slice(0, 20), ...place, language_code: language, sort_by: 'search_volume' });
+  const priced = prices.filter((p) => !empty(p));
+  return { results: priced.slice(0, limit), found: priced.length, cost };
 }
