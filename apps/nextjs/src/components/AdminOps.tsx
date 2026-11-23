@@ -6,7 +6,7 @@ import { AdminRuns } from './AdminRuns';
 
 type OpenScan = { id: string; keyword: string; targetBusiness: string; targetType: string; gridSize: number; status: string; totalPins: number; completedPins: number; failedPins: number; createdAt: string; owner: string };
 type Brand = { domain: string; userId: string; name: string; hasLogo: boolean };
-type Account = { id: string; email: string; role: string; credits: number; confirmed: boolean; createdAt: string; scans: number; onboarding: 'exempt' | 'paid' | 'waived' | 'no' };
+type Account = { id: string; email: string; role: string; credits: number; briefs: number; confirmed: boolean; createdAt: string; scans: number; onboarding: 'exempt' | 'paid' | 'waived' | 'no' };
 
 type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
@@ -75,6 +75,7 @@ export function AdminOps() {
   const [brandForm, setBrandForm] = useState<{ userId: string; email: string; domain: string; name: string; logo: string; logoName: string; existing: boolean } | null>(null);
   const [brandNote, setBrandNote] = useState<{ domain: string; hosting: string } | null>(null);
   const [credit, setCredit] = useState({ email: '', amount: '', note: '' });
+  const [gift, setGift] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
   const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string; mobileCredits: string; mobileCustomers: boolean; aiFlags: boolean; pageOne: boolean; newPlans: boolean; preview: string } | null>(null);
@@ -269,6 +270,29 @@ export function AdminOps() {
       </section>
 
       <section className={card}>
+        <h2 className="text-sm font-bold text-white">Add brief credits</h2>
+        <p className="mt-1 text-xs text-slate-400">
+          Given brief credits never expire and are used after a plan’s own. One compiles a revenue brief or updates one. Until the new plans are live, only admins and the preview accounts compile briefs. A negative amount takes given or bought credits back.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input className={input + ' w-64'} list="admin-accounts" placeholder="account email" value={gift.email} onChange={(e) => setGift({ ...gift, email: e.target.value })} />
+          <input className={input + ' w-28'} type="number" placeholder="brief credits" value={gift.amount} onChange={(e) => setGift({ ...gift, amount: e.target.value })} />
+          <input className={input + ' w-64'} maxLength={80} placeholder="note (optional)" value={gift.note} onChange={(e) => setGift({ ...gift, note: e.target.value })} />
+          <button
+            type="button"
+            disabled={busy !== '' || !gift.email || !gift.amount}
+            className={btn + ' bg-emerald-500 text-slate-950 hover:bg-emerald-400'}
+            onClick={async () => {
+              const ok = await run('briefs', { action: 'add_briefs', email: gift.email, amount: Number(gift.amount), note: gift.note }, (d) => `${d.email} now has ${d.briefs} given or bought brief credit${d.briefs === 1 ? '' : 's'}.`);
+              if (ok) setGift({ email: '', amount: '', note: '' });
+            }}
+          >
+            {busy === 'briefs' ? 'Saving…' : 'Apply'}
+          </button>
+        </div>
+      </section>
+
+      <section className={card}>
         <h2 className="text-sm font-bold text-white">
           <button
             type="button"
@@ -299,6 +323,7 @@ export function AdminOps() {
                 <th className="py-2 pr-4 font-medium">Status</th>
                 <th className="py-2 pr-4 font-medium">Onboarding</th>
                 <th className="py-2 pr-4 font-medium">Sessions</th>
+                <th className="py-2 pr-4 font-medium" title="Given or bought brief credits; a plan's own are on its Plan page">Brief credits</th>
                 <th className="py-2 pr-4 font-medium">Scans</th>
                 <th className="py-2 pr-4 font-medium">Joined</th>
                 <th className="py-2" />
@@ -344,6 +369,7 @@ export function AdminOps() {
                     )}
                   </td>
                   <td className="py-2 pr-4 text-slate-200">{u.credits}</td>
+                  <td className="py-2 pr-4 text-slate-200">{u.briefs}</td>
                   <td className="py-2 pr-4 text-slate-200">{u.scans}</td>
                   <td className="py-2 pr-4 text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td className="py-2 text-right">

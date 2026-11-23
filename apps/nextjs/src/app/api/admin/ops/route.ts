@@ -58,7 +58,7 @@ export async function GET() {
       }),
       db.user.findMany({
         orderBy: { createdAt: 'asc' },
-        select: { id: true, email: true, role: true, creditBalance: true, emailVerifiedAt: true, createdAt: true, _count: { select: { scans: true } } },
+        select: { id: true, email: true, role: true, creditBalance: true, briefBalance: true, emailVerifiedAt: true, createdAt: true, _count: { select: { scans: true } } },
       }),
     ]);
     const onboarding = await onboardingOf(users);
@@ -110,7 +110,7 @@ export async function GET() {
       captchas: { today: Number(capToday ?? 0), yesterday: Number(capYesterday ?? 0) },
       scans: scans.map((s) => ({ ...s, owner: s.user.email, user: undefined })),
       brands: await listBrands(true).catch(() => []),
-      users: users.map((u) => ({ id: u.id, email: u.email, role: u.role, credits: u.creditBalance, confirmed: Boolean(u.emailVerifiedAt), createdAt: u.createdAt, scans: u._count.scans, onboarding: onboarding.get(u.id) ?? 'no' })),
+      users: users.map((u) => ({ id: u.id, email: u.email, role: u.role, credits: u.creditBalance, briefs: u.briefBalance, confirmed: Boolean(u.emailVerifiedAt), createdAt: u.createdAt, scans: u._count.scans, onboarding: onboarding.get(u.id) ?? 'no' })),
     });
   } catch (e) {
     return errorResponse(e);
@@ -167,6 +167,25 @@ export async function POST(req: Request) {
         return (await tx.user.update({ where: { id: u.id }, data: { creditBalance: { increment: amount } }, select: { creditBalance: true } })).creditBalance;
       });
       return Response.json({ email, balance });
+    }
+
+    if (b.action === 'add_briefs') {
+      const amount = Number(b.amount);
+      if (!Number.isSafeInteger(amount) || amount === 0 || Math.abs(amount) > 1000) throw new InputError('Enter a whole number of brief credits (not zero, at most 1,000).');
+      const note = String(b.note ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 80);
+      // Given brief credits are like bought ones: they never expire, and they're used after the plan's.
+      // The balance change and a record of who gave them go together.
+      const briefs = await db.$transaction(async (tx) => {
+        const u = await tx.user.findUnique({ where: { email }, select: { id: true, briefBalance: true } });
+        if (!u) throw new InputError('No account has that email.', 404);
+        if (u.briefBalance + amount < 0) throw new InputError(`That account only has ${u.briefBalance} given or bought brief credits.`);
+        const left = (await tx.user.update({ where: { id: u.id }, data: { briefBalance: { increment: amount } }, select: { briefBalance: true } })).briefBalance;
+        const at = new Date().toISOString();
+        await tx.kept.create({ data: { scope: 'brief-grant', key: `${u.id}:${at}:${randomBytes(3).toString('hex')}`, value: JSON.stringify({ amount, by: me.email, note, balance: left, at }) } });
+        return left;
+      });
+      console.info(`[ops] brief credits ${amount > 0 ? '+' : ''}${amount} for ${email} by ${me.email}${note ? ' (' + note + ')' : ''}`);
+      return Response.json({ email, briefs });
     }
 
     if (b.action === 'block' || b.action === 'unblock') {
