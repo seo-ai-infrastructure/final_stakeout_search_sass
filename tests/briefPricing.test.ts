@@ -13,20 +13,11 @@ test('brief pricing: a failed lookup blocks a paid brief only when the scanned s
   assert.match(e.message, /your brief credit was not used/);
 });
 
-test('brief pricing: the broader search a missing price falls back to keeps the trade and "near me"', async () => {
-  const { headsOf } = await import('../apps/nextjs/src/lib/brief');
-  assert.deepEqual(headsOf('exterior house painters near me'), ['house painters near me', 'house painter near me']);
-  assert.deepEqual(headsOf('best painters near me'), ['painters near me', 'painter near me']);
-  assert.deepEqual(headsOf('emergency painting companies near me now'), ['painting companies near me', 'painting company near me']);
-  assert.deepEqual(headsOf('car accident lawyer'), [], 'nothing to drop: no broader search');
-  assert.deepEqual(headsOf('house painters near me'), []);
-});
-
-test('brief pricing: singular and plural, -y and -ies too', async () => {
-  const { headsOf } = await import('../apps/nextjs/src/lib/brief');
-  // headsOf's second form is the plural or singular of the first.
-  assert.deepEqual(headsOf('best roofing company near me'), ['roofing company near me', 'roofing companies near me']);
-  assert.deepEqual(headsOf('top attorneys near me'), ['attorneys near me', 'attorney near me']);
+test('brief pricing: singular and plural ride as variants, -y and -ies too', async () => {
+  const { fallbacksOf } = await import('../apps/nextjs/src/lib/brief');
+  assert.ok(fallbacksOf('roofing company near me').includes('roofing companies near me'));
+  assert.ok(fallbacksOf('painting companies near me').includes('painting company near me'), 'not "companie"');
+  assert.ok(fallbacksOf('car accident lawyer').includes('car accident attorney'));
 });
 
 test('brief: what the brief calls the business', async () => {
@@ -54,19 +45,31 @@ test('brief pricing: category roots ride in the same request', async () => {
   assert.deepEqual(rootsOf('house painters'), [], 'already a root');
 });
 
-test('brief pricing: a quotable price, and when a county is too thin to price locally', async () => {
-  const { quotable, thinCounty } = await import('../apps/nextjs/src/lib/brief');
-  const p = (cpc: number | null, lowBid: number | null, highBid: number | null, searches: number | null = 10) => ({ keyword: 'k', spell: null, searches, cpc, lowBid, highBid, competition: null, competitionIndex: null, months: [], alone: false });
-  assert.equal(quotable(p(2.11, null, null)), null, 'under $5 with no top-of-page bids: remnant clicks, no price');
-  assert.equal(quotable(p(6.5, null, null))?.cpc, 6.5);
-  assert.equal(quotable(p(4, 12.67, 79.28))?.cpc, 45.98, 'average dragged under the low bid: the middle of the bid range');
-  assert.equal(quotable(p(4, 12.67, 79.28))?.avgCpc, 4);
-  assert.equal(quotable(p(56.53, 17.76, 204.6))?.cpc, 56.53, 'a normal average stands');
-  assert.equal(quotable(p(null, 10, 30))?.cpc, 20);
-  assert.equal(thinCounty([p(18, 7, 42, 10), p(13, 7, 46, 10), p(16, 7, 30, 10)]), true, 'Wilson County: 30 searches a month');
-  assert.equal(thinCounty([p(157, 87, 225, 2900), p(150, 80, 210, 300)]), false, 'Suffolk County: plenty of searches and bids');
-  assert.equal(thinCounty([p(157, 87, 225, 2900), p(150, null, null, 300)]), true, 'only one with a bid range');
-  assert.equal(thinCounty([p(157, 87, 225, 200), p(157, 87, 225, 200)]), true, 'one group repeated counts once');
+const price = (keyword: string, cpc: number | null, lowBid: number | null, highBid: number | null, searches: number | null = 10) => ({ keyword, spell: null, searches, cpc, lowBid, highBid, competition: null, competitionIndex: null, months: [], alone: false });
+
+test('brief pricing: when a county is too thin to price locally', async () => {
+  const { thinCounty } = await import('../apps/nextjs/src/lib/brief');
+  assert.equal(thinCounty([price('a', 18, 7, 42, 10), price('b', 13, 7, 46, 10), price('c', 16, 7, 30, 10)]), true, 'Wilson County: 30 searches a month');
+  assert.equal(thinCounty([price('a', 157, 87, 225, 2900), price('b', 150, 80, 210, 300)]), false, 'Suffolk County: plenty of searches and bids');
+  assert.equal(thinCounty([price('a', 157, 87, 225, 2900), price('b', 150, null, null, 300)]), true, 'only one with a bid range');
+  assert.equal(thinCounty([price('a', 157, 87, 225, 200), price('b', 157, 87, 225, 200)]), true, 'one group repeated counts once');
+});
+
+test('brief pricing: a thin county is priced at the U.S. high top-of-page bid, never called an average', async () => {
+  const { topBid } = await import('../apps/nextjs/src/lib/brief');
+  const us = new Map([
+    ['exterior house painters near me', price('exterior house painters near me', 18.13, 7.68, 42.41, 70)],
+    ['painting companies near me', price('painting companies near me', 12.22, 7.74, 39.33, 900)],
+    ['best painters near me', price('best painters near me', 16.86, null, null, 50)],
+    ['painters near me', price('painters near me', 15, 7, 30.22, 4000)],
+  ]);
+  const own = topBid(us, 'exterior house painters near me');
+  assert.deepEqual([own?.cpc, own?.avgCpc, own?.area, own?.via], [42.41, 18.13, 'U.S.', undefined], 'the high bid, the average kept beside it');
+  const root = topBid(us, 'emergency painting companies near me now');
+  assert.deepEqual([root?.cpc, root?.via], [39.33, 'painting companies near me'], 'a category root when the search has no bid');
+  const noBid = topBid(us, 'best painters near me');
+  assert.deepEqual([noBid?.cpc, noBid?.via], [30.22, 'painters near me'], 'no bid range on the search itself: its root’s');
+  assert.equal(topBid(new Map([['x', price('x', 20, null, null)]]), 'x'), null, 'an average alone is never quoted as a bid');
 });
 
 test('brief pricing: no trade-alone root from a specialty', async () => {
