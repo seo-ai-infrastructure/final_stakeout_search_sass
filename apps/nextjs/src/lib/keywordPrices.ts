@@ -124,9 +124,9 @@ async function ask(path: 'search_volume/live' | 'keywords_for_keywords/live', ta
  * dollars. `complete`: every search that came back empty was asked again on its own and answered
  * (a request refused for the rate limit leaves it empty, and the answer should not be kept).
  */
-export async function keywordPrices(keywords: string[], place: Place, language: 'en' | 'es' = 'en', opts: { alone?: boolean } = {}): Promise<{ results: KeywordPrice[]; cost: number; askedAlone: number; complete: boolean }> {
+export async function keywordPrices(keywords: string[], place: Place, language: 'en' | 'es' = 'en', opts: { alone?: boolean } = {}): Promise<{ results: KeywordPrice[]; cost: number; askedAlone: number; answered: string[]; complete: boolean }> {
   if (!pricesConfigured()) throw new InputError('DataForSEO is not set up: DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD on Vercel.', 503);
-  if (!keywords.length) return { results: [], cost: 0, askedAlone: 0, complete: true };
+  if (!keywords.length) return { results: [], cost: 0, askedAlone: 0, answered: [], complete: true };
   const first = await ask('search_volume/live', { keywords, ...place, language_code: language });
   const got = new Map(first.prices.map((p) => [p.keyword, p]));
   let cost = first.cost;
@@ -135,13 +135,16 @@ export async function keywordPrices(keywords: string[], place: Place, language: 
   const retry = opts.alone === false ? [] : missing.slice(0, ALONE);
   const again = await Promise.allSettled(retry.map((k) => ask('search_volume/live', { keywords: [k], ...place, language_code: language }, true)));
   let complete = opts.alone === false || missing.length <= ALONE;
+  // The searches Google has had its full say on: everything it priced, and each empty one asked alone.
+  const answered = new Set(keywords.filter((k) => !missing.includes(k) || opts.alone === false));
   again.forEach((r, i) => {
     if (r.status !== 'fulfilled') { complete = false; return; }
+    answered.add(retry[i]);
     cost += r.value.cost;
     const p = r.value.prices.find((x) => x.keyword === retry[i]) ?? r.value.prices[0];
     if (p && !empty(p)) got.set(retry[i], { ...p, keyword: retry[i] });
   });
-  return { results: keywords.map((k) => got.get(k) ?? blank(k)), cost: Math.round(cost * 10000) / 10000, askedAlone: retry.length, complete };
+  return { results: keywords.map((k) => got.get(k) ?? blank(k)), cost: Math.round(cost * 10000) / 10000, askedAlone: retry.length, answered: [...answered], complete };
 }
 
 /**

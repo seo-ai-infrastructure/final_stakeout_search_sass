@@ -329,9 +329,9 @@ body{width:auto;max-width:none}
   </section>
 </div>
 
-<section class="wrap sec"><p class="sec-k">Exhibit D</p><h2 id="dh2"></h2><p class="sub" id="dsub"></p><div id="dbody"></div></section>
+<section class="wrap sec" id="exd"><p class="sec-k">Exhibit D</p><h2 id="dh2"></h2><p class="sub" id="dsub"></p><div id="dbody"></div></section>
 
-<section class="wrap sec" id="movesec"><p class="sec-k">Next moves</p><h2>Three moves, ranked by the demand each puts in play</h2><div class="moves" id="moves"></div></section>
+<section class="wrap sec" id="movesec"><p class="sec-k">Next moves</p><h2 id="mvh2">Three moves, ranked by the demand each puts in play</h2><div class="moves" id="moves"></div></section>
 
 <section class="wrap sec">
   <p class="sec-k">Receipts</p><h2>Every score traces to a screen</h2><p class="sub" id="rsub"></p>
@@ -404,7 +404,7 @@ function title() {
   $('#h1').innerHTML = h1;
   const m = D.measured;
   const span = m.from && m.to ? (dayMd(m.from) === dayMd(m.to) ? dayLong(m.to) : `${dayMd(m.from)} to ${dayLong(m.to).replace(/, \d{4}$/, '')}`) : '';
-  $('#dek').innerHTML = `Measured on real phones at ${int(m.points)} points across ${m.scans} scans of ${m.searches} search${m.searches > 1 ? 'es' : ''}${span ? ', ' + esc(span) : ''}${D.connected ? `, and from ${esc(poss(D.short))} own Google accounts` : ''}. Each point is scored by what its screen showed: the AI answer, the map results and the ads above them.${D.connected ? '' : ` ${esc(D.short)} hasn’t connected its Google accounts, so the calls and visits this visibility brings are estimated from Google’s own search counts, and marked as estimates.`}`;
+  $('#dek').innerHTML = `Measured on real phones at ${int(m.points)} points across ${m.scans} scans of ${m.searches} search${m.searches > 1 ? 'es' : ''}${span ? ', ' + esc(span) : ''}${D.connected ? `, and from ${esc(poss(D.short))} own Google accounts` : ''}. Each point is scored by what its screen showed: the AI answer, the map results and the ads above them.${D.connected ? '' : D.googleHidden ? ` This link leaves out ${esc(poss(D.short))} Google account figures, so the calls and visits this visibility brings are estimated from Google’s own search counts, and marked as estimates.` : ` ${esc(D.short)} hasn’t connected its Google accounts, so the calls and visits this visibility brings are estimated from Google’s own search counts, and marked as estimates.`}`;
   $('#mastdate').textContent = dayLong(D.built);
   $('#ver').textContent = 'Scoring version ' + D.version;
   document.title = D.business + ' · Local search and revenue brief';
@@ -416,7 +416,7 @@ function title() {
 function ledger() {
   const h = D.headline, L = D.ledger, a = D.assumptions, md = D.marketData;
   const c1 = `<div class="cell"><div class="k">Search visibility</div><div class="fig tn">${one(h.score)}<small>of 100</small></div>
-    ${h.change ? `<div class="chg ${h.change.change >= 0 ? 'up' : 'dn'}">${h.change.change >= 0 ? '▲' : '▼'} ${one(Math.abs(h.change.change))}${h.change.map ? ' in the map results' : ''} on ${h.change.points} matched points</div>` : '<div class="chg" style="color:var(--graphite)">Change shows after a second scan of the same points</div>'}
+    ${h.change ? `<div class="chg ${h.change.change >= 0 ? 'up' : 'dn'}">${h.change.change >= 0 ? '▲' : '▼'} ${one(Math.abs(h.change.change))}${h.change.map ? ' in the map results' : ''} on ${h.change.points} matched points</div>` : `<div class="chg" style="color:var(--graphite)">Change shows after a second scan of the same points${h.changeWhy === 'legacy' ? '; the earlier scans read the AI answer the older way' : ''}</div>`}
     <div class="ln">${h.searches.map((s) => `${esc(cap(s.kw))} <b class="tn">${one(s.score)}</b>`).join('<br>')}</div>
     <div class="ft">Weighted by household income: ${one(h.weighted)} · After ads: ${one(h.afterAds)}${h.branded.length ? `<br>Searches naming ${esc(D.short)}, shown apart: ${h.branded.map((b) => esc(b.kw) + ' ' + one(b.score)).join(', ')}` : ''}</div></div>`;
   let c2, c3, c4, g2, g3, g4;
@@ -661,7 +661,7 @@ function exhibitB() {
   const last = counts[counts.length - 1], prev = counts.slice(0, -1);
   const lo = Math.min(...prev), hi = Math.max(...prev), runs = prev.length === 1 ? 'the run before' : `the ${word(prev.length)} runs before`;
   const tail = lo === hi ? (last === lo ? `the same as in ${runs}` : `${last > lo ? 'up' : 'down'} from ${lo} in ${runs}`) : last > hi ? `up from ${lo} to ${hi} in ${runs}` : last < lo ? `down from ${lo} to ${hi} in ${runs}` : `against ${lo} to ${hi} in ${runs}`;
-  $('#bh2').textContent = `On the same ${B.points} points, ${rows[0] === rows.find((r) => r[0].startsWith('Named')) ? `Google’s AI answer named ${D.short} first` : `${D.short} came first in the map results`} at ${last} on ${dayMd(grids[grids.length - 1].at)}, ${tail}`;
+  $('#bh2').textContent = `On the same ${B.points} points, ${rows[0] === rows.find((r) => r[0].startsWith('Named')) ? `Google’s AI answer named ${D.short} first` : `${D.short} came first in the map results`} at ${last === 0 ? 'none of them' : last === B.points ? 'all of them' : last + ' of them'} on ${dayMd(grids[grids.length - 1].at)}, ${tail}`;
   void lead;
   const W = B.width;
   $('#mgrid').style.gridTemplateColumns = `minmax(0,1fr) repeat(${grids.length},${Math.max(76, W * 16 + 44)}px)`;
@@ -712,21 +712,24 @@ function exhibitD() {
       <div><h4>Just off page one</h4>${G.offPageOne.length ? G.offPageOne.map((q) => `<div class="kv"><span>${esc(q.query)}<em>${int(q.impressions)} times shown</em></span><b class="${q.position <= 12 ? 'g' : ''}">${one(q.position)}</b></div>`).join('') : '<p class="muted" style="font-size:13.5px;padding-top:10px">No search sits at positions 9 to 20.</p>'}</div></div>`;
     return;
   }
+  if (D.googleHidden && !md) { $('#exd').hidden = true; return; }
   const rows = md?.rows ?? [];
   const plain = rows.filter((r) => !r.brand);
   const total = plain.reduce((a, r) => a + (r.searches ?? 0), 0);
   const cpcs = plain.map((r) => r.cpc).filter((x) => x !== null);
   $('#dh2').textContent = md ? `${md.city || 'The city'} makes ${plain.length === 1 ? 'this search' : `these ${word(plain.length)} searches`} ${int(total)} times a month.${cpcs.length ? ` Advertisers pay ${money2(Math.min(...cpcs))}${Math.max(...cpcs) > Math.min(...cpcs) ? ' to ' + money2(Math.max(...cpcs)) : ''} a click for ${plain.length === 1 ? 'it' : 'them'}.` : ''}` : `What ${D.short} is missing until its Google accounts are connected`;
-  $('#dsub').textContent = md ? `Google Ads figures, 12-month averages: searches from ${md.city || 'the city'}, cost per click across ${md.county}. ${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.` : `${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.`;
+  $('#dsub').textContent = md ? `Google Ads figures, 12-month averages: searches from ${md.city || 'the city'}, cost per click across ${md.county}.${D.googleHidden ? '' : ` ${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.`}` : `${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.`;
   $('#dbody').innerHTML = (md ? `<div class="tscroll"><table class="tbl mkt"><thead><tr><th>Search</th><th class="r" style="width:170px">Searches a month, ${esc(md.city || 'the city')}</th><th class="r" style="width:170px">Cost per click, ${esc(md.county)}</th><th class="r" style="width:190px">Top-of-page bids</th><th class="r" style="width:190px">${esc(D.short)} in the top three</th></tr></thead><tbody>` +
     rows.map((r) => `<tr class="${r.brand ? 'brand' : ''}"><td>${esc(r.kw)}${r.brand ? '<span>Searches naming the business</span>' : r.via ? `<span>Priced as “${esc(r.via)}”: Google withholds this exact search</span>` : ''}</td><td class="r">${r.searches === null ? 'Not reported' : int(r.searches)}</td><td class="r">${r.cpc === null ? 'Not reported' : money2(r.cpc)}</td><td class="r">${r.low !== null && r.high !== null ? `${money2(r.low)} to ${money2(r.high)}` : 'Not reported'}</td><td class="r">${r.brand ? 'Not scanned' : `${r.top3} of ${r.points} points<span>${esc(dayMd(r.at))}</span>`}</td></tr>`).join('') + '</tbody></table></div>' : '') +
-    `<div class="conn"><h4>Not connected yet</h4><div class="cgrid"><div><b>Google Business Profile</b><p>Calls, website clicks and direction requests from the listing, and the searches that showed it.</p></div><div><b>Search Console</b><p>The searches that showed ${esc(D.website || 'the website')}, and the clicks they sent.</p></div><div><b>Google Analytics</b><p>Visits from the listing’s link, and what those visitors did on the site.</p></div></div><p>Once connected, counted calls and visits replace the sample tap rate in the ledger${md ? `, priced at the same ${esc(md.county)} rates` : ''}.</p></div>`;
+    (D.googleHidden ? '' : `<div class="conn"><h4>Not connected yet</h4><div class="cgrid"><div><b>Google Business Profile</b><p>Calls, website clicks and direction requests from the listing, and the searches that showed it.</p></div><div><b>Search Console</b><p>The searches that showed ${esc(D.website || 'the website')}, and the clicks they sent.</p></div><div><b>Google Analytics</b><p>Visits from the listing’s link, and what those visitors did on the site.</p></div></div><p>Once connected, counted calls and visits replace the sample tap rate in the ledger${md ? `, priced at the same ${esc(md.county)} rates` : ''}.</p></div>`);
 }
 
 /* ---- Moves, receipts, method ---- */
 function moves() {
   $('#moves').innerHTML = D.moves.map((m, i) => `<div class="move"><span class="n">${i + 1}</span><div><h3>${esc(m.title)}</h3><p>${esc(m.why)}</p></div><div class="play"><small>In play</small><b>${esc(m.inPlay)}</b><span>${esc(m.inPlayNote)}</span>${m.price ? `<em class="px"><strong>${esc(m.price.split(' a click')[0])}</strong> a click${esc(m.price.split(' a click')[1] ?? '')}</em>` : ''}</div></div>`).join('');
   $('#movesec').hidden = !D.moves.length;
+  const k = D.moves.length;
+  $('#mvh2').textContent = k === 1 ? 'One move, and the demand it puts in play' : `${cap(word(k))} moves, ranked by the demand each puts in play`;
 }
 function receipts() {
   $('#rsub').textContent = `“${cap(D.map.kw)}”, ${dayLong(D.map.at)}, ${timeEt(D.map.at)}.`;
@@ -740,6 +743,7 @@ function method() {
 
 async function load() {
   if (!scanId && !shareId) return status('<b>No scan chosen.</b> Open this brief from a scan in Stakeout.');
+  const slow = setTimeout(() => { if (!$('#status').hidden) $('#status').innerHTML = 'Loading the brief… The first time, this looks up the area’s Google Ads prices, which can take up to half a minute.'; }, 5000);
   try {
     const r = await fetch(shareId ? '/api/share/' + encodeURIComponent(shareId) + '/brief' : '/api/scans/' + encodeURIComponent(scanId) + '/brief', { credentials: 'same-origin', cache: 'no-store' });
     if (r.status === 401) return status('<b>Sign in to Stakeout</b> to see this brief. <a href="/login?next=' + encodeURIComponent(location.pathname + location.search) + '">Sign in</a>');
@@ -748,6 +752,8 @@ async function load() {
     D = v;
   } catch (e) {
     return status('<b>This brief didn’t load.</b> Check the connection and reload.');
+  } finally {
+    clearTimeout(slow);
   }
   $('#status').hidden = true; $('#brief').hidden = false;
   title(); ledger(); exhibitA(); exhibitB(); exhibitC(); exhibitD(); moves(); receipts(); method();
