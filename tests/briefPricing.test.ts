@@ -44,3 +44,33 @@ test('brief: what the brief calls the business', async () => {
   ];
   for (const [name, want] of cases) assert.equal(shortName(name), want, name);
 });
+
+test('brief pricing: category roots ride in the same request', async () => {
+  const { rootsOf } = await import('../apps/nextjs/src/lib/brief');
+  assert.deepEqual(rootsOf('exterior house painters near me'), ['house painters', 'house painters near me', 'painters', 'painters near me']);
+  assert.deepEqual(rootsOf('exterior painting contractors near me'), ['painting contractors', 'painting contractors near me', 'exterior painting', 'exterior painting near me']);
+  assert.deepEqual(rootsOf('best painters near me'), ['painters', 'painters near me']);
+  assert.ok(rootsOf('emergency painting companies near me now').includes('painting companies near me'));
+  assert.deepEqual(rootsOf('house painters'), [], 'already a root');
+});
+
+test('brief pricing: a quotable price, and when a county is too thin to price locally', async () => {
+  const { quotable, thinCounty } = await import('../apps/nextjs/src/lib/brief');
+  const p = (cpc: number | null, lowBid: number | null, highBid: number | null, searches: number | null = 10) => ({ keyword: 'k', spell: null, searches, cpc, lowBid, highBid, competition: null, competitionIndex: null, months: [], alone: false });
+  assert.equal(quotable(p(2.11, null, null)), null, 'under $5 with no top-of-page bids: remnant clicks, no price');
+  assert.equal(quotable(p(6.5, null, null))?.cpc, 6.5);
+  assert.equal(quotable(p(4, 12.67, 79.28))?.cpc, 45.98, 'average dragged under the low bid: the middle of the bid range');
+  assert.equal(quotable(p(4, 12.67, 79.28))?.avgCpc, 4);
+  assert.equal(quotable(p(56.53, 17.76, 204.6))?.cpc, 56.53, 'a normal average stands');
+  assert.equal(quotable(p(null, 10, 30))?.cpc, 20);
+  assert.equal(thinCounty([p(18, 7, 42, 10), p(13, 7, 46, 10), p(16, 7, 30, 10)]), true, 'Wilson County: 30 searches a month');
+  assert.equal(thinCounty([p(157, 87, 225, 2900), p(150, 80, 210, 300)]), false, 'Suffolk County: plenty of searches and bids');
+  assert.equal(thinCounty([p(157, 87, 225, 2900), p(150, null, null, 300)]), true, 'only one with a bid range');
+  assert.equal(thinCounty([p(157, 87, 225, 200), p(157, 87, 225, 200)]), true, 'one group repeated counts once');
+});
+
+test('brief pricing: no trade-alone root from a specialty', async () => {
+  const { rootsOf } = await import('../apps/nextjs/src/lib/brief');
+  assert.ok(!rootsOf('best car accident lawyer near me').includes('lawyer near me'));
+  assert.deepEqual(rootsOf('car accident lawyer near me'), []);
+});

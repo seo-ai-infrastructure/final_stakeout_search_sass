@@ -186,10 +186,77 @@ export function headsOf(kw: string) {
   return [...new Set([h, pluralOf(h)])].filter((x) => x !== kw && x.split(' ').length <= 10);
 }
 
+/** Nouns for the business that follow its service: "painting contractors", "roofing company". */
+const BUSINESS_NOUNS = new Set(['contractor', 'contractors', 'company', 'companies', 'service', 'services', 'specialist', 'specialists', 'expert', 'experts', 'pros', 'firm', 'firms']);
+
+/**
+ * A scanned search's category roots, asked in the same request at no extra cost: the search without
+ * the words that narrow it ("exterior house painters near me" → "house painters near me", "house
+ * painters"), its trade ("painters near me"), and its service ("exterior painting contractors near
+ * me" → "exterior painting", "painting contractors").
+ */
+export function rootsOf(kw: string): string[] {
+  const near = / near me\b/.test(kw);
+  const words = kw.replace(/ near me( now)?$/, '').replace(/ now$/, '').split(' ').filter(Boolean);
+  const out = new Set<string>();
+  const add = (ws: string[]) => {
+    const t = ws.join(' ').trim();
+    if (!t || t.split(' ').length > 9) return;
+    out.add(t);
+    if (near) out.add(t + ' near me');
+  };
+  const core = words.filter((w) => !QUALIFIERS.has(w));
+  if (core.length && core.length < words.length) add(core);
+  // The trade alone only from a short narrowed search ("exterior house painters" → "painters"), never
+  // from a specialty ("car accident lawyer" is not "lawyer").
+  const last = core[core.length - 1];
+  if (core.length === 2 && core.length < words.length && last && !BUSINESS_NOUNS.has(last)) add([last]);
+  const i = words.findIndex((w, j) => /ing$/.test(w) && BUSINESS_NOUNS.has(words[j + 1] ?? ''));
+  // The service itself, with the kind of work when the search names it: "exterior painting".
+  const kind = words[i - 1];
+  if (i >= 0) add([...(kind && ['exterior', 'interior', 'residential', 'commercial'].includes(kind) ? [kind] : []), words[i]]);
+  out.delete(kw);
+  return [...out];
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * A price fit to quote. Google's average cost per click, unless bottom-of-page ads drag it under the
+ * low top-of-page bid: then the middle of the top-of-page bid range. With no top-of-page bid range, an
+ * average under $5 is remnant clicks, not an auction anyone would quote: no price.
+ */
+export function quotable<T extends KeywordPrice>(p: T | null | undefined): (T & { avgCpc?: number | null }) | null {
+  if (!p) return null;
+  const bids = p.lowBid !== null && p.highBid !== null && p.highBid >= p.lowBid;
+  if (!bids) return p.cpc !== null && p.cpc >= 5 ? p : null;
+  const mid = (p.lowBid! + p.highBid!) / 2;
+  if (p.cpc === null || p.cpc < p.lowBid!) return { ...p, cpc: round2(Math.max(p.cpc ?? 0, mid)), avgCpc: p.cpc };
+  return p;
+}
+
+/**
+ * Too little local data for a county's auction prices to mean anything: under 250 searches a month
+ * across the scanned searches and their roots, or fewer than two of them with a top-of-page bid range.
+ * Google repeats one group's figures on each search in it, so each group counts once.
+ */
+export function thinCounty(rows: KeywordPrice[]): boolean {
+  const seen = new Set<string>();
+  let searches = 0, bids = 0;
+  for (const p of rows) {
+    const sig = [p.searches, p.cpc, p.lowBid, p.highBid].join('|');
+    if (seen.has(sig)) continue;
+    seen.add(sig);
+    searches += p.searches ?? 0;
+    if (p.lowBid !== null && p.highBid !== null) bids++;
+  }
+  return searches < 250 || bids < 2;
+}
+
 /** Where a withheld search's figures may sit in the same request: its variants, singular or plural. */
 const fallbacksOf = (kw: string) => [...new Set([...variantsOf(kw), ...[kw, ...variantsOf(kw)].map(pluralOf)])].filter((k) => k !== kw && k.split(' ').length <= 10);
 
-type Market = { county: string | null; city: string | null; countyName: string | null; cityName: string | null; priceArea?: string | null; prices: Record<string, KeywordPrice & { via?: string; area?: string }>; searches: Record<string, number | null>; basket: { cpc: number; low: number | null; high: number | null; searches: number } | null; at: string };
+type Market = { county: string | null; city: string | null; countyName: string | null; cityName: string | null; priceArea?: string | null; priceNote?: string | null; prices: Record<string, KeywordPrice & { via?: string; area?: string }>; searches: Record<string, number | null>; basket: { cpc: number; low: number | null; high: number | null; searches: number } | null; at: string };
 
 /**
  * Google Ads figures for searches in one place, each kept 45 days on its own under the place and the
@@ -264,7 +331,9 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   // Markets priced before figures were kept per search sit under one key for the whole set; use it while it lasts.
   const before = [...new Set([...plain, ...plain.flatMap(variantsOf), ...extra, ...extra.flatMap(variantsOf), brand])].slice(0, 60);
   const kept = async () => { const v = await redis().get('stakeout:brief:market:v1:' + createHash('sha256').update(JSON.stringify([where.county, where.city, before, counted])).digest('hex').slice(0, 32)).catch(() => null); return v ? (JSON.parse(v) as Market) : null; };
-  const cached = await figures(priced, geo.county!, false, true);
+  const roots = [...new Set(plain.flatMap(rootsOf))].filter((r) => !priced.includes(r));
+  const batch = [...priced, ...roots].slice(0, 300);
+  const cached = await figures(batch, geo.county!, false, true);
   const needLookup = priced.some((k) => !cached.has(k));
   if (needLookup) {
     const old = await kept();
@@ -274,7 +343,7 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
     }
   }
   const county = needLookup && lookUp
-    ? await figures(priced, geo.county!, true, false, geo.countyCode).catch((e: Error) => {
+    ? await figures(batch, geo.county!, true, false, geo.countyCode).catch((e: Error) => {
         console.warn('[brief] county prices:', e.message);
         // Search Console's near misses can wait; the scanned searches and the brand can't.
         if (strict && pricingShort(counted, cached)) throw new PricingUnavailable();
@@ -291,60 +360,54 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
     : null;
   if (![...county.values()].some(Boolean)) return null;
   const byKw = new Map([...county].filter((e): e is [string, KeywordPrice] => Boolean(e[1])));
-  // A search's own price, else a same-meaning variant's (lawyer/attorney, "near me", plural); with
-  // `broad`, a broader search's too (only nationally, as the last resort).
-  const priceIn = (m: Map<string, KeywordPrice>, k: string, area?: string, broad = false): (KeywordPrice & { via?: string; area?: string }) | null => {
-    const own = m.get(k);
-    if (own && own.cpc !== null) return area ? { ...own, area } : own;
-    const alt = [...fallbacksOf(k), ...(broad ? headsOf(k) : [])].map((x) => m.get(x)).find((x) => x && x.cpc !== null);
+  // A search's own quotable price, else a same-meaning variant's (lawyer/attorney, "near me", plural),
+  // else one of its category roots'.
+  const priceIn = (m: Map<string, KeywordPrice>, k: string, area?: string): (KeywordPrice & { via?: string; area?: string }) | null => {
+    const own = quotable(m.get(k));
+    if (own) return area ? { ...own, area } : own;
+    const alt = [...fallbacksOf(k), ...rootsOf(k)].map((x) => quotable(m.get(x))).find(Boolean);
     return alt ? { ...alt, keyword: k, via: alt.keyword, ...(area ? { area } : {}) } : null;
   };
+  // Keyword Planner reports local prices only with enough local data: a thin county's figures (a few
+  // searches, a bid range or none) run far below what a campaign there pays. Then the U.S. prices all
+  // of them; otherwise the U.S. prices only what the county can't.
+  const local = [...new Set([...plain, ...plain.flatMap(fallbacksOf), ...roots])].map((k) => county.get(k)).filter((x): x is KeywordPrice => Boolean(x));
+  const thin = thinCounty(local);
   const prices: Market['prices'] = {};
-  for (const k of [...plain, ...extra, brand]) {
+  for (const k of [...(thin ? [] : plain), ...extra, brand]) {
     const p = priceIn(byKw, k);
     if (p) prices[k] = p;
   }
-  // Keyword Planner often has no local figure for a search, even a costly one, in a smaller county
-  // (it reports local prices only with enough data), and what it does have nearby (the state, a broader
-  // search) runs far below what a campaign there pays. A search with no county price is priced at the
-  // national average instead: one request for what's missing, kept 45 days and shared by every market.
-  const wider: { name: string; code?: number; label: string }[] = [{ name: 'United States', code: 2840, label: 'the US' }];
-  for (const area of wider) {
-    const lacking = plain.filter((k) => !prices[k]);
-    if (!lacking.length) break;
-    const wide = [...new Set(lacking.flatMap((k) => [k, ...fallbacksOf(k), ...headsOf(k)]))].slice(0, 200);
-    const keptHere = await figures(wide, area.name, false, false);
-    const got = lacking.some((k) => !keptHere.has(k)) && lookUp
-      ? await figures(wide, area.name, true, false, area.code).catch((e: Error) => {
-          console.warn(`[brief] ${area.label} prices:`, e.message);
-          if (strict && pricingShort(lacking, keptHere)) throw new PricingUnavailable();
-          return keptHere;
+  const lacking = plain.filter((k) => !prices[k]);
+  if (lacking.length) {
+    const US = 'United States';
+    const wide = [...new Set(lacking.flatMap((k) => [k, ...fallbacksOf(k), ...rootsOf(k)]))].slice(0, 300);
+    const keptUS = await figures(wide, US, false, false);
+    const got = lacking.some((k) => !keptUS.has(k)) && lookUp
+      ? await figures(wide, US, true, false, 2840).catch((e: Error) => {
+          console.warn('[brief] U.S. prices:', e.message);
+          if (strict && pricingShort(lacking, keptUS)) throw new PricingUnavailable();
+          return keptUS;
         })
-      : keptHere;
-    const byArea = new Map([...got].filter((e): e is [string, KeywordPrice] => Boolean(e[1])));
+      : keptUS;
+    const byUS = new Map([...got].filter((e): e is [string, KeywordPrice] => Boolean(e[1])));
     for (const k of lacking) {
-      const p = priceIn(byArea, k, area.label, true);
+      const p = priceIn(byUS, k, 'U.S.');
       if (p) prices[k] = p;
     }
   }
-  // Where the prices are from, for the brief's labels: "Wilson County", or "Wilson County, Tennessee and the US".
+  // Where the prices are from, for the brief's labels.
   const areas = [...new Set(plain.map((k) => (prices[k] ? prices[k].area ?? where.countyName : null)).filter((x): x is string => Boolean(x)))];
   const priceArea = areas.length > 1 ? `${areas.slice(0, -1).join(', ')} and ${areas[areas.length - 1]}` : areas[0] ?? where.countyName;
-  // The basket: the scanned searches and their variants, each group Google prices counted once, by searches.
+  const priceNote = thin && areas.includes('U.S.') ? `${where.countyName}’s search volume is too thin for reliable local auction pricing, so these are U.S. averages.` : null;
+  // The basket: the prices quoted for the scanned searches, each group Google prices counted once, by searches.
   const seen = new Set<string>(), groups: KeywordPrice[] = [];
-  for (const k of [...plain, ...plain.flatMap(variantsOf)]) {
-    const p = byKw.get(k);
+  for (const k of plain) {
+    const p = prices[k];
     if (!p || p.cpc === null || !p.searches) continue;
     const sig = [p.searches, p.cpc, p.lowBid, p.highBid].join('|');
     if (!seen.has(sig)) { seen.add(sig); groups.push(p); }
   }
-  if (!groups.length)
-    for (const k of plain) {
-      const p = prices[k];
-      if (!p || p.cpc === null || !p.searches) continue;
-      const sig = [p.searches, p.cpc, p.lowBid, p.highBid].join('|');
-      if (!seen.has(sig)) { seen.add(sig); groups.push(p); }
-    }
   const total = groups.reduce((a, p) => a + (p.searches ?? 0), 0);
   const w = (f: (p: KeywordPrice) => number | null) => { const ok = groups.filter((p) => f(p) !== null); const t = ok.reduce((a, p) => a + (p.searches ?? 0), 0); return t ? ok.reduce((a, p) => a + (f(p) as number) * (p.searches ?? 0), 0) / t : null; };
   const out: Market = {
@@ -352,6 +415,7 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
     city: geo.city,
     countyName: where.countyName,
     priceArea,
+    priceNote,
     // A town Google Ads doesn't target: its searches are the county's, and say so.
     cityName: geo.cityFromCounty ? where.countyName : where.cityName,
     prices,
@@ -514,12 +578,12 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; str
   const tapCpc = (() => { const t = perSearch.filter((s) => s.searches && s.price?.cpc); const w = t.reduce((acc, s) => acc + (s.searches as number) * s.top3Share, 0); return w ? t.reduce((acc, s) => acc + (s.searches as number) * s.top3Share * (s.price!.cpc as number), 0) / w : null; })();
   const ledger = connected
     ? { kind: 'connected' as const, actions, spend: cpc !== null && actions ? { now: actions.now * cpc, was: actions.was * cpc, cpc, low: market?.basket?.low ?? null, high: market?.basket?.high ?? null, own: a.cpc !== null } : null, pipeline: actions ? { value: actions.now * a.qualified * a.close * a.value, wins: actions.now * a.qualified * a.close } : null }
-    : { kind: 'scan' as const, demand: market ? { searches: perSearch.reduce((acc, s) => acc + (s.searches ?? 0), 0), rows: perSearch.map((s) => ({ kw: s.kw, searches: s.searches })), low: Math.min(...perSearch.map((s) => s.price?.cpc ?? Infinity)), high: Math.max(...perSearch.map((s) => s.price?.cpc ?? -Infinity)) } : null, value: market && tapCpc ? { seen: Math.round(seen), taps: Math.round(seen) * a.tap, cpc: a.cpc ?? Math.round(tapCpc * 100) / 100, monthly: Math.round(seen) * a.tap * (a.cpc ?? Math.round(tapCpc * 100) / 100) } : null };
+    : { kind: 'scan' as const, demand: market ? { searches: perSearch.reduce((acc, s) => acc + (s.searches ?? 0), 0), rows: perSearch.map((s) => ({ kw: s.kw, searches: s.searches })), low: Math.min(...perSearch.map((s) => s.price?.lowBid ?? Infinity)), high: Math.max(...perSearch.map((s) => s.price?.highBid ?? -Infinity)) } : null, value: market && tapCpc ? { seen: Math.round(seen), taps: Math.round(seen) * a.tap, cpc: a.cpc ?? Math.round(tapCpc * 100) / 100, monthly: Math.round(seen) * a.tap * (a.cpc ?? Math.round(tapCpc * 100) / 100) } : null };
 
   // Next moves, ranked by the searches each puts in play a month.
   type Move = { title: string; why: string; inPlay: string; inPlayNote: string; price: string | null; weight: number; kw?: string; type: string };
   const moves: Move[] = [];
-  const cpcText = (k: string) => { const p = priceOf(k); const area = p?.area ?? market?.countyName; return p?.cpc ? `$${p.cpc.toFixed(2)} a click as an ad${area ? ' in ' + area : ''}` : null; };
+  const cpcText = (k: string) => { const p = priceOf(k); const area = p?.area ?? market?.countyName; return p?.cpc ? `$${p.cpc.toFixed(2)} a click as an ad${area === 'U.S.' ? ' (U.S. average)' : area ? ' in ' + area : ''}` : null; };
   for (const s of perSearch) {
     const sr = searches.find((x) => x.kw === s.kw)!;
     const first = sr.first / Math.max(1, sr.points);
@@ -580,7 +644,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; str
     connected, periods, googleHidden: v.google === null,
     headline, searches: searches.map(({ runs, ...s }) => ({ ...s, score: r1(s.score), weighted: r1(s.weighted), afterAds: r1(s.afterAds), runs: runs.length })),
     map, exB, ads, ledger, assumptions: { ...a, sample, base },
-    marketData: market ? { county: market.priceArea ?? market.countyName, countyName: market.countyName, city: market.cityName, at: market.at, basket: market.basket, rows: [...perSearch.map((s) => ({ kw: s.kw, searches: s.searches, cpc: s.price?.cpc ?? null, low: s.price?.lowBid ?? null, high: s.price?.highBid ?? null, via: (s.price as { via?: string } | null)?.via ?? null, area: (s.price as { area?: string } | null)?.area ?? null, top3: s.top3, points: s.points, at: s.at })), (() => { const b = brandSearch(business); const p = market.prices[b]; return { kw: b, brand: true, searches: market.searches[b] ?? null, cpc: p?.cpc ?? null, low: p?.lowBid ?? null, high: p?.highBid ?? null, via: null, top3: null, points: null, at: null }; })()] } : null,
+    marketData: market ? { county: market.priceArea ?? market.countyName, countyName: market.countyName, note: market.priceNote ?? null, city: market.cityName, at: market.at, basket: market.basket, rows: [...perSearch.map((s) => ({ kw: s.kw, searches: s.searches, cpc: s.price?.cpc ?? null, low: s.price?.lowBid ?? null, high: s.price?.highBid ?? null, via: (s.price as { via?: string } | null)?.via ?? null, area: (s.price as { area?: string } | null)?.area ?? null, top3: s.top3, points: s.points, at: s.at })), (() => { const b = brandSearch(business); const p = market.prices[b]; return { kw: b, brand: true, searches: market.searches[b] ?? null, cpc: p?.cpc ?? null, low: p?.lowBid ?? null, high: p?.highBid ?? null, via: null, top3: null, points: null, at: null }; })()] } : null,
     google: connected ? { calls, visits, clicks, directions: actions?.directions ?? null, views: daily?.kind === 'daily' ? { now: n(daily.totals?.views), was: n(daily.before?.views) } : null, websiteClicks: daily?.kind === 'daily' ? { now: n(daily.totals?.websiteClicks), was: n(daily.before?.websiteClicks) } : null, pageVisits: ga?.page ? { now: n(ga.page.recent?.sessions), was: n(ga.page.before?.sessions) } : null, gsc: gsc?.recent ? { impressions: { now: n(gsc.recent.impressions), was: n(gsc.before?.impressions) }, position: { now: gsc.recent.position ?? null, was: gsc.before?.position ?? null } } : null, listingTop: kwRows.map((r) => ({ kw: r.keyword, latest: r.latest, es: Boolean(r.es), branded: branded(r.keyword) })), offPageOne, spanish: { listed: gsc?.listed ?? 0, spanish: gsc?.spanish ?? 0, shown: gsc?.spanishShown ?? 0 }, brandShown: (gsc?.queries ?? []).filter((q) => branded(q.query)).reduce((acc, q) => acc + q.impressions, 0), brandClicks: (gsc?.queries ?? []).filter((q) => branded(q.query)).reduce((acc, q) => acc + q.clicks, 0), totalShown: gsc?.recent?.impressions ?? 0 } : null,
     moves: ranked.map(({ weight, kw, type, ...m }) => m),
     receipts, receiptsTotal: scans.reduce((acc, s) => acc + s.pins.length, 0), scansTotal: scans.length,
