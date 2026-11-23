@@ -27,13 +27,38 @@ async function spend(tx: Tx, me: Me): Promise<BriefSource | 'admin'> {
   if (me.role === 'ADMIN') return 'admin';
   const [sub, user] = await Promise.all([tx.gbpSub.findUnique({ where: { userId: me.id } }), tx.user.findUnique({ where: { id: me.id }, select: { briefBalance: true } })]);
   const src = briefSource({ plan: sub?.briefPlan ?? 0, carry: sub?.briefCarry ?? 0, bought: user?.briefBalance ?? 0, paying: Boolean(sub?.subscriptionId) && PAYING.includes(sub?.status ?? '') });
-  if (!src) throw new InputError('No brief credits left. Buy one, or move to a plan with more brief credits a month.', 402);
+  if (!src) throw new InputError(NO_CREDITS, 402);
   const used =
     src === 'carry' ? await tx.gbpSub.updateMany({ where: { userId: me.id, briefCarry: { gt: 0 } }, data: { briefCarry: { decrement: 1 } } })
     : src === 'plan' ? await tx.gbpSub.updateMany({ where: { userId: me.id, briefPlan: { gt: 0 } }, data: { briefPlan: { decrement: 1 } } })
     : await tx.user.updateMany({ where: { id: me.id, briefBalance: { gt: 0 } }, data: { briefBalance: { decrement: 1 } } });
   if (!used.count) throw new InputError('That brief credit was just used. Try again.', 409);
   return src;
+}
+
+const NO_CREDITS = 'No brief credits left. Buy one, or move to a plan with more brief credits a month.';
+/** A second click on Compile or Update within this long is the same request: no second build, no second credit. */
+const SAME_REQUEST_MS = 2 * 60_000;
+
+/** Before any paid price lookup: an account with no brief credit left stops here (an admin's are free). */
+async function needsCredit(me: Me) {
+  if (me.role !== 'ADMIN' && (await walletOf(me.id)).left < 1) throw new InputError(NO_CREDITS, 402);
+}
+
+/**
+ * One build at a time for a scan or a brief: a second click while the first is building gets a 409
+ * rather than a second price lookup. Lets go when the build ends. If Redis can't be reached the
+ * build goes on; the row lock in the save still keeps it to one credit.
+ */
+async function oneAtATime<T>(key: string, busy: string, run: () => Promise<T>): Promise<T> {
+  const k = 'stakeout:brief:busy:' + key;
+  const got = await redis().set(k, '1', 'EX', 120, 'NX').catch(() => 'OK');
+  if (got !== 'OK') throw new InputError(busy, 409);
+  try {
+    return await run();
+  } finally {
+    await redis().del(k).catch(() => null);
+  }
 }
 
 /** Whether this person sees the live brief with a Compile button (admins) rather than compiling first. */
@@ -88,16 +113,25 @@ export async function compileBrief(scanId: string, me: Me) {
   if (!canCompile(me) && !(await compilesBriefs(me))) throw new InputError('Compiling a brief comes with the new plans.', 403);
   const s = await db.gridScan.findUnique({ where: { id: scanId }, select: { userId: true, targetBusiness: true } });
   if (!s || (s.userId !== me.id && me.role !== 'ADMIN')) throw new InputError('Scan not found.', 404);
-  const v = await visibilityForScan(scanId, me);
-  const kept = await redis().get(assumptionsKey(s.userId, s.targetBusiness)).catch(() => null);
-  const own = kept ? (JSON.parse(kept) as Record<string, unknown>) : null;
-  // Built before any credit is spent: if the market prices can't be had, it stops here (PricingUnavailable) and nothing is used.
-  const brief = await buildBrief(v, { lookUp: true, strict: true, assumptions: own, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(scanId) } });
-  const row = await db.$transaction(async (tx) => {
-    const paidBy = await spend(tx, me);
-    return tx.brief.create({ data: { userId: s.userId, scanId, business: s.targetBusiness, version: brief.version, paidBy, data: JSON.parse(JSON.stringify(brief)), ...(own ? { assumptions: JSON.parse(JSON.stringify(own)) } : {}) } });
+  // No credit, no paid lookup.
+  await needsCredit(me);
+  return oneAtATime('scan:' + scanId, 'This brief is already being compiled. It opens when it’s ready.', async () => {
+    const v = await visibilityForScan(scanId, me);
+    const kept = await redis().get(assumptionsKey(s.userId, s.targetBusiness)).catch(() => null);
+    const own = kept ? (JSON.parse(kept) as Record<string, unknown>) : null;
+    // Built before any credit is spent: if the market prices can't be had, it stops here (PricingUnavailable) and nothing is used.
+    const brief = await buildBrief(v, { lookUp: true, strict: true, assumptions: own, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(scanId) } });
+    // The credit and the brief together, or neither. The scan's row is locked while saving, so two
+    // saves for one scan run one after the other, and the second finds the first's brief.
+    const row = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "GridScan" WHERE id = ${scanId} FOR UPDATE`;
+      const just = await tx.brief.findFirst({ where: { userId: s.userId, scanId, createdAt: { gte: new Date(Date.now() - SAME_REQUEST_MS) } }, orderBy: { createdAt: 'desc' }, select: { id: true } });
+      if (just) return just;
+      const paidBy = await spend(tx, me);
+      return tx.brief.create({ data: { userId: s.userId, scanId, business: s.targetBusiness, version: brief.version, paidBy, data: JSON.parse(JSON.stringify(brief)), ...(own ? { assumptions: JSON.parse(JSON.stringify(own)) } : {}) } });
+    });
+    return { id: row.id };
   });
-  return { id: row.id };
 }
 
 /** The scan an update would rebuild from: the newest finished scan of the same business and search, else the brief's own. */
@@ -135,17 +169,31 @@ export async function refreshBrief(id: string, me: Me, scanId?: unknown) {
     target = s.id;
   } else target = (await newestFor(row))?.id ?? null;
   if (!target) throw new InputError('This brief’s scan is no longer available, so it can’t be updated.', 409);
+  // No credit, no paid lookup.
+  await needsCredit(me);
+  const scan = target;
+  return oneAtATime('brief:' + id, 'This brief is already being updated. Reload in a moment.', () => rebuild(row, me, scan));
+}
+
+async function rebuild(row: Awaited<ReturnType<typeof mine>>, me: Me, target: string) {
+  const id = row.id;
   // The owner's own scans (an admin reads them as an admin).
   const v = await visibilityForScan(target, me);
   const kept = row.assumptions ?? (await redis().get(assumptionsKey(row.userId, row.business)).then((x) => (x ? JSON.parse(x) : null)).catch(() => null));
   // As with compiling: no prices, no update, no credit used.
   const brief = await buildBrief(v, { lookUp: true, strict: true, assumptions: kept, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(target) } });
   const at = new Date().toISOString();
-  await db.$transaction(async (tx) => {
+  // The credit and the update together, or neither; the brief's row is locked while saving, so a
+  // second save of the same update a moment later finds it done and spends nothing.
+  const done = await db.$transaction(async (tx) => {
+    const [cur] = await tx.$queryRaw<{ scan_id: string; data: unknown }[]>`SELECT scan_id, data FROM briefs WHERE id = ${id} FOR UPDATE`;
+    const was = (cur?.data as { updatedAt?: string } | null)?.updatedAt;
+    if (cur && cur.scan_id === target && was && Date.now() - Date.parse(was) < SAME_REQUEST_MS) return was;
     await spend(tx, me);
     await tx.brief.update({ where: { id }, data: { scanId: target, version: brief.version, data: JSON.parse(JSON.stringify({ ...brief, updatedAt: at })) } });
+    return at;
   });
-  return { id, updated: at };
+  return { id, updated: done };
 }
 
 /** A compiled brief by its share link: read-only, and its receipts link only when the scan is shared too. */
