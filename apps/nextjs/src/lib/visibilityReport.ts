@@ -51,7 +51,8 @@ const domainOf = (v: string | null | undefined) =>
 function pointOf(p: Pin) {
   const a = pinAi(p);
   const m = p.proxyMeta as { noLocal?: boolean } | null;
-  const ins = p.insights as { ai?: { sources?: string[]; named?: unknown; presence?: { citedSites?: string[] } } } | null;
+  const ins = p.insights as { ai?: { sources?: string[]; named?: unknown; presence?: { citedSites?: string[] } }; ads?: { name?: unknown; where?: unknown }[] } | null;
+  const tract = (p.census as { tract?: { inc?: unknown; occ?: unknown; nm?: unknown } } | null)?.tract;
   const sources = (a.state === 'parsed' ? (ins?.ai?.presence?.citedSites ?? []) : ((p.aiCitations as string[] | null) ?? ins?.ai?.sources ?? [])).map(domainOf).filter(Boolean);
   const f = a.featured;
   return {
@@ -77,6 +78,15 @@ function pointOf(p: Pin) {
     /** The first three businesses the AI answer named, in its order. */
     aiFirst: p.hasAiOverview && Array.isArray(ins?.ai?.named) ? (ins.ai.named as unknown[]).map(String).filter(Boolean).slice(0, 3) : [],
     sources: [...new Set(sources)].slice(0, 12),
+    /** The ads on the screen: who, and where (local_services, results, finder). */
+    ads: (Array.isArray(ins?.ads) ? ins.ads : []).map((x) => ({ n: String(x.name ?? ''), w: String(x.where ?? '') })).filter((x) => x.n),
+    /** The point's census tract: median household income, households, and its name ("Census Tract 104.01, Polk County"). */
+    inc: typeof tract?.inc === 'number' && tract.inc > 0 ? tract.inc : null,
+    hh: typeof tract?.occ === 'number' && tract.occ >= 0 ? tract.occ : null,
+    tract: typeof tract?.nm === 'string' ? tract.nm : null,
+    /** When the phone searched here, and whether its screen recording is kept. */
+    at: (p as { startedAt?: Date | null }).startedAt ?? null,
+    rec: Boolean(p.videoUrl),
   };
 }
 
@@ -298,6 +308,8 @@ async function searchActivity(userId: string, website: string, page: string | nu
   ]);
   return { periods: { recent: p.recent, before: p.before }, page: url, gsc, ga };
 }
+
+export type VisibilityData = Awaited<ReturnType<typeof build>>;
 
 async function build(main: Report, more: { r: Report; link: string }[], mainLink: string, userId: string | null, brand: { name: string; accent: string | null; logo: string | null } | null, withNumbers = false, shareGoogle: boolean | null = null) {
   const scans = [scanOf(main, mainLink), ...more.map((x) => scanOf(x.r, x.link))].filter((s) => s.pins.length > 0);

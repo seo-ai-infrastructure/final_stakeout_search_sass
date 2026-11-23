@@ -124,16 +124,17 @@ async function ask(path: 'search_volume/live' | 'keywords_for_keywords/live', ta
  * dollars. `complete`: every search that came back empty was asked again on its own and answered
  * (a request refused for the rate limit leaves it empty, and the answer should not be kept).
  */
-export async function keywordPrices(keywords: string[], place: Place, language: 'en' | 'es' = 'en'): Promise<{ results: KeywordPrice[]; cost: number; askedAlone: number; complete: boolean }> {
+export async function keywordPrices(keywords: string[], place: Place, language: 'en' | 'es' = 'en', opts: { alone?: boolean } = {}): Promise<{ results: KeywordPrice[]; cost: number; askedAlone: number; complete: boolean }> {
   if (!pricesConfigured()) throw new InputError('DataForSEO is not set up: DATAFORSEO_LOGIN and DATAFORSEO_PASSWORD on Vercel.', 503);
   if (!keywords.length) return { results: [], cost: 0, askedAlone: 0, complete: true };
   const first = await ask('search_volume/live', { keywords, ...place, language_code: language });
   const got = new Map(first.prices.map((p) => [p.keyword, p]));
   let cost = first.cost;
   const missing = keywords.filter((k) => { const p = got.get(k); return !p || empty(p); });
-  const retry = missing.slice(0, ALONE);
+  // Only the first request when asked to (another lookup in the same minute may need the rest of the 12).
+  const retry = opts.alone === false ? [] : missing.slice(0, ALONE);
   const again = await Promise.allSettled(retry.map((k) => ask('search_volume/live', { keywords: [k], ...place, language_code: language }, true)));
-  let complete = missing.length <= ALONE;
+  let complete = opts.alone === false || missing.length <= ALONE;
   again.forEach((r, i) => {
     if (r.status !== 'fulfilled') { complete = false; return; }
     cost += r.value.cost;

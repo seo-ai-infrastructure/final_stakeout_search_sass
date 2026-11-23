@@ -53,6 +53,7 @@ const pinSelect = {
   aiOverviewText: true,
   aiCitations: true,
   videoUrl: true,
+  startedAt: true,
   proxyMeta: true,
   metaJsonUrl: true,
   dumpsTarUrl: true,
