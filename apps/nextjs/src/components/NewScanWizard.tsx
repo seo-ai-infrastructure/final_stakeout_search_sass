@@ -1052,7 +1052,7 @@ export function NewScanWizard() {
           <section className={styles.section}>
             <span className={styles.sectionLabel}>Capture surface</span>
             <div className={styles.surfaces} role="radiogroup" aria-label="Capture surface">{surfaces.map(({ id, title, sub, live }) => <button key={id} type="button" role="radio" aria-checked={targetType === id} disabled={!live} onClick={() => live && setTargetType(id as TargetType)}>
-              <span className={styles.radioIndicator}>{targetType === id && <span />}</span><span className={styles.surfaceText}><strong>{id === 'mobile_chrome' ? 'Mobile Search' : title}</strong><small>{id === 'mobile_chrome' ? 'Local Pack + AI Overviews' : sub}</small></span><span className={styles.surfaceBadge}>{live ? (id.startsWith('desktop_') ? '2×' : '1×') : 'Soon'}</span>
+              <span className={styles.radioIndicator}>{targetType === id && <span />}</span><span className={styles.surfaceText}><strong>{id === 'mobile_chrome' ? 'Mobile Search' : title}</strong><small>{id === 'mobile_chrome' ? 'Local Pack + AI Overviews' : sub}</small></span>{!live && <span className={styles.surfaceBadge}>Soon</span>}
             </button>)}</div>
             <p className={styles.captureNote}><Smartphone size={13} />{targetType.startsWith('desktop_') ? 'Desktop' : 'Real Android'}<span>·</span>{detectedCity || 'Grid'} GPS<Info size={12}><title>AI Overviews and phone videos are included in supported mobile captures.</title></Info></p>
           </section>
