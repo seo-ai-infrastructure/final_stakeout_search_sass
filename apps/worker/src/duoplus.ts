@@ -1,4 +1,4 @@
-import { phoneUsable, phoneInScope, expiresWithin, adbWhitelist, readPhoneStatus, ADB_RESTART, adbFleetWide, refusedAddresses, stuckOnAdb } from '@stakeout/core/fleetHealth';
+import { phoneUsable, phoneInScope, expiresWithin, adbWhitelist, readPhoneStatus, ADB_RESTART, adbFleetWide, refusedAddresses, stuckOnAdb, easternDayHour, nightlyRestartDue } from '@stakeout/core/fleetHealth';
 import { nudgeAlerts, pushAlert } from '@stakeout/core/alerts';
 import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@stakeout/db';
@@ -703,7 +703,7 @@ export async function restartStuckPhone(imageId: string, why: string, strikesNee
  * Switches a restarted phone back on. A refusal that names our address puts it on the whitelist and
  * tries again; after the last try the admins are emailed to switch it on in the DuoPlus console.
  */
-async function powerBackOn(imageId: string, attempt = 1): Promise<void> {
+async function powerBackOn(imageId: string, attempt = 1, alert = true): Promise<void> {
   const on: any = await duoplusPost('/api/v1/cloudPhone/powerOn', { image_ids: [imageId] }).catch((e) => ({ error: String(e) }));
   const text = JSON.stringify(on?.data ?? on);
   const refused = refusedAddresses(text);
@@ -714,9 +714,10 @@ async function powerBackOn(imageId: string, attempt = 1): Promise<void> {
   console.warn('[duoplus] restart: power-on refused for', imageId, `(try ${attempt} of ${ADB_RESTART.powerOnTries}) ·`, text.slice(0, 240));
   if (refused.length) await ensureAdbWhitelist(true, refused).catch((e) => console.warn('[duoplus] ADB whitelist not updated:', e instanceof Error ? e.message : e));
   if (attempt < ADB_RESTART.powerOnTries) {
-    setTimeout(() => void powerBackOn(imageId, attempt + 1), 30000 * attempt);
+    setTimeout(() => void powerBackOn(imageId, attempt + 1, alert), 30000 * attempt);
     return;
   }
+  if (!alert) return;
   const fresh = await pushAlert('phone-off:' + imageId, {
     subject: `Stakeout: phone ${imageId} is off and could not be switched back on`,
     lines: [
@@ -768,4 +769,68 @@ export async function reopenAdb(imageId: string, why: string): Promise<boolean> 
   const r: any = await duoplusPost('/api/v1/cloudPhone/openAdb', { image_ids: [imageId] }).catch((e) => ({ error: String(e) }));
   console.warn('[duoplus] re-opening ADB on', imageId, '(refused:', why.slice(0, 100) + ') ·', JSON.stringify(r?.data ?? r).slice(0, 200));
   return !r?.error;
+}
+
+
+/**
+ * Every night at PHONE_RESTART_HOUR_ET (default 0: midnight Eastern) each phone that is on is
+ * switched off and on again, so ADB and the phone's services start fresh: phones left on for days
+ * ended up refusing ADB. A phone in the middle of a point is left for the next night; the others
+ * are held (no point can start on them) until they have booted. 15 minutes later, phones that
+ * aren't back are emailed to the admins in one message. PHONE_NIGHTLY_RESTART=false turns it off.
+ */
+let nightlyLook = 0;
+export async function nightlyRestartTick(now = new Date()) {
+  if (process.env.PHONE_NIGHTLY_RESTART === 'false' || !process.env.DUOPLUS_API_KEY) return;
+  if (Date.now() - nightlyLook < 60000) return;
+  nightlyLook = Date.now();
+  const hourEt = Number(process.env.PHONE_RESTART_HOUR_ET ?? 0);
+  if (easternDayHour(now).hour !== hourEt) return; // nothing to read outside the restart hour
+  const r = redis();
+  const day = nightlyRestartDue(now, hourEt, await r.get('stakeout:nightlyrestart:last'));
+  if (!day || !(await r.set('stakeout:nightlyrestart:' + day, '1', 'EX', 2 * 86400, 'NX'))) return;
+  await r.set('stakeout:nightlyrestart:last', day, 'EX', 7 * 86400);
+  // Phones that are on now (a phone switched off on purpose stays off).
+  const on = (await db.devicePool.findMany({ where: { isEnabled: true, offlineAt: null }, select: { imageId: true } })).map((d) => d.imageId).filter((id) => phoneInScope(id));
+  const token = 'nightly-restart:' + day, held: string[] = [], busy: string[] = [];
+  for (const id of on) {
+    // The phone's own lease: while we hold it no point can start on it; a phone mid-point is left alone.
+    if (await r.set('lock:duoplus:' + id, token, 'PX', 10 * 60000, 'NX')) held.push(id);
+    else busy.push(id);
+  }
+  if (!held.length) {
+    console.log('[restart] nightly: no free phone to restart' + (busy.length ? ' (busy: ' + busy.join(', ') + ')' : ''));
+    return;
+  }
+  // Not leased again until they have booted (the lease is let go once they are switched back on).
+  await db.devicePool.updateMany({ where: { imageId: { in: held } }, data: { cooldownUntil: new Date(Date.now() + 6 * 60000) } });
+  const off: any = await duoplusPost('/api/v1/cloudPhone/powerOff', { image_ids: held }).catch((e) => ({ error: String(e) }));
+  console.log('[restart] nightly: switching off', held.length, 'phone(s):', held.join(', ') + (busy.length ? ' · mid-point, left on: ' + busy.join(', ') : ''), '·', JSON.stringify(off?.data ?? off).slice(0, 200));
+  setTimeout(() => {
+    void (async () => {
+      for (const id of held) {
+        await powerBackOn(id, 1, false).catch((e) => console.warn('[restart] power-on failed for', id, '-', String(e)));
+        await new Promise((ok) => setTimeout(ok, 1200)); // DuoPlus allows about one request a second
+      }
+      for (const id of held) if ((await r.get('lock:duoplus:' + id).catch(() => null)) === token) await r.del('lock:duoplus:' + id).catch(() => {});
+    })();
+  }, ADB_RESTART.offForMs + 15000);
+  setTimeout(() => void nightlyCheck(held, busy, day).catch((e) => console.warn('[restart] nightly check failed:', (e as Error).message)), 15 * 60000);
+}
+
+/** 15 minutes after the nightly restart: which phones are back on (the fleet check marks the rest offline). */
+async function nightlyCheck(ids: string[], busy: string[], day: string) {
+  const rows = await db.devicePool.findMany({ where: { imageId: { in: ids } }, select: { imageId: true, offlineAt: true } });
+  const down = rows.filter((d) => d.offlineAt).map((d) => d.imageId);
+  console.log('[restart] nightly check:', ids.length - down.length, 'of', ids.length, 'phone(s) back on' + (down.length ? ' · not back: ' + down.join(', ') : ''));
+  if (!down.length) return;
+  const fresh = await pushAlert('nightly-restart:' + day, {
+    subject: `Stakeout: ${down.length} phone(s) not back after the midnight restart`,
+    lines: [
+      `The nightly restart switched off ${ids.length} phone(s) and switched them back on; 15 minutes later these are still off or not ready: ${down.join(', ')}.` + (busy.length ? ` Left on because they were mid-point: ${busy.join(', ')}.` : ''),
+      'Switch them on in the DuoPlus console. If DuoPlus refused the worker ("not allowed to access"), add the address it names to DUOPLUS_ADB_WHITELIST_EXTRA on the worker.',
+    ],
+    path: '/admin/devices',
+  }, 12 * 3600);
+  if (fresh) await nudgeAlerts();
 }

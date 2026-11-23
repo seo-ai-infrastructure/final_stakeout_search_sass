@@ -21,7 +21,7 @@ import { queuePriority } from '@stakeout/core/speed';
 import { listsForPin, proxyPlace, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
-import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, reopenAdb, restartStuckAtStart, restartStuckPhone, type LeasedDevice } from './duoplus';
+import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, nightlyRestartTick, reopenAdb, restartStuckAtStart, restartStuckPhone, type LeasedDevice } from './duoplus';
 import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
@@ -786,6 +786,8 @@ async function tick() {
       startupRestartsDone = true;
       await restartStuckAtStart().catch((e) => console.warn('[duoplus] start-up restarts skipped:', (e as Error).message));
     }
+    // The midnight restart of every phone (checked once a minute, even while resting).
+    await nightlyRestartTick().catch((e) => console.warn('[restart] nightly skipped:', (e as Error).message));
     if (mayRest(Date.now(), lastBusy, lastFull, IDLE_AFTER_MS, IDLE_EVERY_MS) && Date.now() < nextDue) {
       if (!resting) console.log(`[rest] nothing open for ${Math.round(IDLE_AFTER_MS / 60000)} min: the database is left alone, looked at every ${Math.round(IDLE_EVERY_MS / 60000)} min or on a wake-up call`);
       resting = true;

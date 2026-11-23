@@ -183,3 +183,15 @@ test('ADB refusals from many phones at once are the connection, not the phones: 
   assert.deepEqual(refusedAddresses('DuoPlus rejected /api/v1/cloudPhone/powerOn: Success {"dL0Ue":"The current IP：152.55.180.242 address is not allowed to access"}'), ['152.55.180.242']);
   assert.deepEqual(refusedAddresses('{"success":["dL0Ue"],"fail":[]}'), []);
 });
+
+test('the nightly phone restart runs once, in the midnight hour Eastern, whatever the season', async () => {
+  const { nightlyRestartDue, easternDayHour } = await import('../packages/core/fleetHealth');
+  // 00:20 ET on Nov 24 (EST, UTC-5) is 05:20 UTC.
+  assert.deepEqual(easternDayHour(new Date('2026-11-24T05:20:00Z')), { day: '2026-11-24', hour: 0 });
+  assert.equal(nightlyRestartDue(new Date('2026-11-24T05:20:00Z'), 0, '2026-11-23'), '2026-11-24');
+  assert.equal(nightlyRestartDue(new Date('2026-11-24T05:50:00Z'), 0, '2026-11-24'), null, 'once a day');
+  assert.equal(nightlyRestartDue(new Date('2026-11-24T04:59:00Z'), 0, '2026-11-23'), null, '11:59 PM ET is the day before');
+  assert.equal(nightlyRestartDue(new Date('2026-11-24T06:00:00Z'), 0, '2026-11-23'), null, '1 AM ET is past the hour');
+  // Summer time (EDT, UTC-4): midnight ET is 04:00 UTC.
+  assert.equal(nightlyRestartDue(new Date('2026-07-15T04:10:00Z'), 0, null), '2026-07-15');
+});

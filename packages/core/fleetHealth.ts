@@ -231,3 +231,20 @@ export function stuckOnAdb(phones: { imageId: string; isEnabled: boolean; lastFa
     .filter((d) => !d.lastSuccessAt || d.lastSuccessAt < d.lastFailureAt!)
     .map((d) => d.imageId);
 }
+
+
+/** The Eastern-time day ("2026-11-24") and hour (0-23) of a moment. */
+export function easternDayHour(now: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(now);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return { day: `${get('year')}-${get('month')}-${get('day')}`, hour: Number(get('hour')) % 24 };
+}
+
+/**
+ * The nightly phone restart: the Eastern day to run it for when `now` is within the restart hour
+ * (midnight by default) and it hasn't run that day; otherwise null.
+ */
+export function nightlyRestartDue(now: Date, hourEt: number, lastDoneDay: string | null): string | null {
+  const { day, hour } = easternDayHour(now);
+  return hour === hourEt && lastDoneDay !== day ? day : null;
+}
