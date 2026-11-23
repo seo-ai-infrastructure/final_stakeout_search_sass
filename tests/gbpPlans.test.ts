@@ -114,10 +114,11 @@ test('the subscription follows the listings that are on a plan', () => {
 });
 
 test('account plans: one per account, flat; the listing add-on is one line per listing with 50 sessions and a brief', () => {
-  assert.deepEqual([ACCOUNT_PLANS.P_SCOUT.tiers[0].cents, ACCOUNT_PLANS.P_SCOUT.points, ACCOUNT_PLANS.P_SCOUT.briefs], [4900, 300, 5]);
-  assert.deepEqual([ACCOUNT_PLANS.P_AGENCY.tiers[0].cents, ACCOUNT_PLANS.P_AGENCY.points, ACCOUNT_PLANS.P_AGENCY.briefs], [12900, 1000, 20]);
-  assert.deepEqual([ACCOUNT_PLANS.P_SCALE.tiers[0].cents, ACCOUNT_PLANS.P_SCALE.points, ACCOUNT_PLANS.P_SCALE.briefs], [29900, 3000, 60]);
+  assert.deepEqual([ACCOUNT_PLANS.P_SCOUT.tiers[0].cents, ACCOUNT_PLANS.P_SCOUT.points, ACCOUNT_PLANS.P_SCOUT.briefs], [3900, 300, 1], 'Scout: $39, 300 sessions, 1 brief credit');
+  assert.deepEqual([ACCOUNT_PLANS.P_AGENCY.tiers[0].cents, ACCOUNT_PLANS.P_AGENCY.points, ACCOUNT_PLANS.P_AGENCY.briefs], [12900, 1000, 5], 'Agency: $129, 1,000 sessions, 5 brief credits');
+  assert.deepEqual([ACCOUNT_PLANS.P_SCALE.tiers[0].cents, ACCOUNT_PLANS.P_SCALE.points, ACCOUNT_PLANS.P_SCALE.briefs], [29900, 3000, 20], 'Scale: $299, 3,000 sessions, 20 brief credits');
   assert.deepEqual([PLANS.LISTING.tiers[0].cents, PLANS.LISTING.points, PLANS.LISTING.briefs], [2900, 50, 1]);
+  assert.equal(ACCOUNT_PLANS.P_SCOUT.lookupKey, 'stakeout_plan_scout_v3', 'a new price for $39, never the $49 one');
   assert.equal(isPlan('LISTING'), true, 'the add-on unlocks the listing tools and agents like a listing plan');
   assert.equal(allows('LISTING', 'agent'), true);
   const listings = [{ plan: 'LISTING', status: 'ACTIVE' }, { plan: 'LISTING', status: 'ACTIVE' }];
@@ -128,7 +129,7 @@ test('account plans: one per account, flat; the listing add-on is one line per l
   assert.equal(quantityPlan([], { P_SCOUT: 1 }, undefined, null).empty, true, 'no plan and no listing: nothing left');
   assert.equal(monthlyCents({ P_AGENCY: 1, LISTING: 3 }), 12900 + 3 * 2900);
   assert.equal(seatPoints({ P_AGENCY: 1, LISTING: 3 }), 1150);
-  assert.equal(seatBriefs({ P_AGENCY: 1, LISTING: 3 }), 23);
+  assert.equal(seatBriefs({ P_AGENCY: 1, LISTING: 3 }), 8, 'Agency 5 + 3 add-ons');
   assert.equal(accountPlanOf({ P_SCALE: 1, LISTING: 2 }), 'P_SCALE');
   assert.equal(hasLegacySeats({ P_SCALE: 1, LISTING: 2 }), false);
   assert.equal(hasLegacySeats({ COMMAND: 1 }), true);

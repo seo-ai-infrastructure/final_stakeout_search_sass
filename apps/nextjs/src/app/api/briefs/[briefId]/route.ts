@@ -14,7 +14,7 @@ export async function GET(_: Request, c: C) {
   }
 }
 
-/** POST { assumptions } | { reset: true } | { share: true | false }. */
+/** POST { assumptions } | { reset: true } | { share: true | false } | { refresh: true, scanId? } (one brief credit). */
 export async function POST(req: Request, c: C) {
   try {
     const me = await getAuthenticatedUser();

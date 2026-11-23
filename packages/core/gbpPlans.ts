@@ -85,7 +85,7 @@ export const PLANS: Record<Plan, LineDef> = {
   },
   LISTING: {
     name: 'Listing add-on',
-    blurb: 'One Google listing with the listing tools (safe edits, posts, review alerts and replies, the daily change watchdog, rival gaps) and AI agents, plus 50 phone sessions and 1 brief a month.',
+    blurb: 'One Google listing with the listing tools (safe edits, posts, review alerts and replies, the daily change watchdog, rival gaps) and AI agents, plus 50 phone sessions and 1 brief credit a month.',
     available: true,
     lookupKey: 'stakeout_listing_addon_v1',
     graduated: false,
@@ -109,12 +109,12 @@ export const SCOUT: LineDef = {
 
 /**
  * The account plans (from November 2026, for new accounts; seats stay with those who have them).
- * One per account, flat. Phone sessions roll over for one month; so do the plan's briefs.
+ * One per account, flat. Phone sessions roll over for one month; so do the plan's brief credits.
  */
 export const ACCOUNT_PLANS: Record<AccountPlan, LineDef & { whiteLabel: boolean; bestFor: string }> = {
-  P_SCOUT: { name: 'Scout', blurb: 'For solo consultants closing new retainers.', bestFor: 'Solo consultants closing new retainers', available: true, lookupKey: 'stakeout_plan_scout_v2', graduated: false, tiers: [{ upTo: null, cents: 4900 }], points: 300, briefs: 5, whiteLabel: false },
-  P_AGENCY: { name: 'Agency', blurb: 'For agencies managing 8 to 15 local clients.', bestFor: 'Agencies managing 8 to 15 local clients', available: true, lookupKey: 'stakeout_plan_agency_v2', graduated: false, tiers: [{ upTo: null, cents: 12900 }], points: 1000, briefs: 20, whiteLabel: true },
-  P_SCALE: { name: 'Scale', blurb: 'For multi-location firms, legal groups and roll-ups.', bestFor: 'Multi-location firms, legal groups and roll-ups', available: true, lookupKey: 'stakeout_plan_scale_v2', graduated: false, tiers: [{ upTo: null, cents: 29900 }], points: 3000, briefs: 60, whiteLabel: true },
+  P_SCOUT: { name: 'Scout', blurb: 'For solo consultants closing new retainers.', bestFor: 'Solo consultants closing new retainers', available: true, lookupKey: 'stakeout_plan_scout_v3', graduated: false, tiers: [{ upTo: null, cents: 3900 }], points: 300, briefs: 1, whiteLabel: false },
+  P_AGENCY: { name: 'Agency', blurb: 'For agencies managing 8 to 15 local clients.', bestFor: 'Agencies managing 8 to 15 local clients', available: true, lookupKey: 'stakeout_plan_agency_v2', graduated: false, tiers: [{ upTo: null, cents: 12900 }], points: 1000, briefs: 5, whiteLabel: true },
+  P_SCALE: { name: 'Scale', blurb: 'For multi-location firms, legal groups and roll-ups.', bestFor: 'Multi-location firms, legal groups and roll-ups', available: true, lookupKey: 'stakeout_plan_scale_v2', graduated: false, tiers: [{ upTo: null, cents: 29900 }], points: 3000, briefs: 20, whiteLabel: true },
 };
 /** Cheapest first. */
 export const ACCOUNT_PLAN_ORDER: AccountPlan[] = ['P_SCOUT', 'P_AGENCY', 'P_SCALE'];

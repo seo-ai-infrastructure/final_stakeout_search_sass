@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     // { portal: true }: Stripe's page for the plan's card, invoices and cancelling.
     if (portal === true) return Response.json({ url: await planPortal(u.id, back) });
     if (!item) throw new InputError('That is not available for this account.');
-    const briefs = item.briefs ? ` and ${item.briefs === 1 ? '1 brief' : item.briefs + ' briefs'}` : '';
+    const briefs = item.briefs ? ` and ${item.briefs === 1 ? '1 brief credit' : item.briefs + ' brief credits'}` : '';
     const what = item.credits ? `${item.credits.toLocaleString('en-US')} phone sessions${briefs}${item.validityDays ? `, valid for ${item.validityDays} days` : ''}. 1 phone session = 1 real phone run at 1 grid point.` : item.blurb;
     const session = await stripe<{ id: string; url: string }>(
       '/checkout/sessions',

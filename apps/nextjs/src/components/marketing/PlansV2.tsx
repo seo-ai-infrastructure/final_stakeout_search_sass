@@ -23,7 +23,7 @@ const FEATURED: AccountPlan = 'P_AGENCY';
 const ADDON = LINES.LISTING;
 
 /** What every plan includes, in one pass at every grid point. */
-const EVERY_PLAN = ['Map pack, single-listing takeovers, AI answer cards, ads and a screen recording in one phone session', 'U.S. Census income layer (ACS median household income)', 'Google Business Profile, Search Console and GA4, from the business’s own accounts', 'Scan Now or scheduled, the same one phone session a grid point'];
+const EVERY_PLAN = ['Map pack, single-listing takeovers, AI answer cards, ads and a screen recording in one phone session', 'U.S. Census income layer (ACS median household income)', 'Google Business Profile, Search Console and GA4, from the business’s own accounts'];
 
 /** Just pitching one prospect: the Closer Pack, no subscription. */
 export function CloserCard({ style }: { style?: CSSProperties }) {
@@ -33,7 +33,7 @@ export function CloserCard({ style }: { style?: CSSProperties }) {
         <p style={{ margin: 0, fontFamily: MONO, fontSize: 12, lineHeight: 1.5, letterSpacing: '0.1em', color: ACCENT }}>PITCHING ONE PROSPECT TODAY?</p>
         <p style={{ margin: '6px 0 0', fontWeight: 800, fontSize: 24, lineHeight: 1.3, letterSpacing: '-0.01em' }}>Closer Pack — {usd(CLOSER.cents)} once</p>
         <p style={{ margin: '10px 0 0', fontSize: 15.5, lineHeight: 1.65, color: '#CBD5E1' }}>
-          {n(CLOSER.credits)} phone sessions, enough for two full 5×5 audits on real Android phones, and {CLOSER.briefs === 1 ? 'one revenue brief' : `${CLOSER.briefs} revenue briefs`} priced with live county Google Ads rates. Walk into the pitch with recordings from their own streets and the dollars behind them.
+          {n(CLOSER.credits)} phone sessions, enough for two full 5×5 audits on real Android phones, and {CLOSER.briefs === 1 ? 'one brief credit' : `${CLOSER.briefs} brief credits`} for a revenue brief priced with live county Google Ads rates. Walk into the pitch with recordings from their own streets and the dollars behind them.
         </p>
         <p style={{ margin: '10px 0 0', fontSize: 15, lineHeight: 1.5, fontWeight: 700, color: '#F1F5F9' }}>No subscription. Never expires. Up to {CLOSER_LIMIT} per account.</p>
       </div>
@@ -69,7 +69,7 @@ export function PlanCards({ style }: { style?: CSSProperties }) {
               <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, fontFamily: MONO, letterSpacing: '0.08em', color: '#94A3B8' }}>EACH MONTH</p>
               <p style={{ margin: '6px 0 0', fontSize: 15, lineHeight: 1.5, fontWeight: 700 }}>{n(d.points)} real-phone sessions</p>
               <p style={{ margin: '2px 0 0', fontSize: 14, lineHeight: 1.5, color: '#CBD5E1' }}>{n(Math.floor(d.points / 25))} full 5×5 scans</p>
-              <p style={{ margin: '8px 0 0', fontSize: 15, lineHeight: 1.5, fontWeight: 700 }}>{d.briefs} revenue briefs</p>
+              <p style={{ margin: '8px 0 0', fontSize: 15, lineHeight: 1.5, fontWeight: 700 }}>{d.briefs} brief credit{d.briefs === 1 ? '' : 's'}</p>
               <p style={{ margin: '2px 0 0', fontSize: 14, lineHeight: 1.5, color: '#CBD5E1' }}>County Google Ads rates included</p>
             </div>
             <ul style={{ listStyle: 'none', padding: 0, margin: '20px 0 0', display: 'grid', gap: 10, fontSize: 14.5, lineHeight: 1.5, color: '#CBD5E1' }}>
@@ -114,12 +114,12 @@ export function ExtrasSection() {
     <section id="extras" style={SECTION}>
       <div style={WRAP}>
         <Eyebrow>ON TOP OF ANY PLAN</Eyebrow>
-        <h2 style={H2}>Add listings, sessions and briefs as you need them.</h2>
+        <h2 style={H2}>Add listings, sessions and brief credits as you need them.</h2>
         <div style={{ marginTop: 36, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 360px), 1fr))', gap: 20 }}>
           <Box title="Listing add-on" price={`${usd(ADDON.tiers[0].cents)} / listing / month`}>
             <p style={{ margin: '12px 0 0', fontSize: 15, lineHeight: 1.65, color: '#CBD5E1' }}>For each client Google listing you manage here:</p>
             <ul style={{ listStyle: 'none', padding: 0, margin: '12px 0 0', display: 'grid', gap: 9, fontSize: 14.5, lineHeight: 1.5, color: '#CBD5E1' }}>
-              {['Safe Google Business Profile edits, posts with a content calendar', 'Review alerts and replies, the daily change watchdog, rival gaps', 'AI agents that work on the listing', `${n(ADDON.points)} more phone sessions and ${ADDON.briefs} more revenue brief a month`].map((f) => (
+              {['Safe Google Business Profile edits, posts with a content calendar', 'Review alerts and replies, the daily change watchdog, rival gaps', 'AI agents that work on the listing', `${n(ADDON.points)} more phone sessions and ${ADDON.briefs} more brief credit a month`].map((f) => (
                 <li key={f} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}><Check size={16} top={3} /><span>{f}</span></li>
               ))}
             </ul>
@@ -128,9 +128,9 @@ export function ExtrasSection() {
             <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>{SESSION_PACKS.map((i) => row(i.name, usd(i.cents), i.blurb))}</ul>
             <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.55, color: '#94A3B8' }}>Bought sessions never expire, plan or no plan.</p>
           </Box>
-          <Box title="Revenue briefs" price="Any account">
+          <Box title="Brief credits" price="Any account">
             <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>{BRIEF_PACKS.map((i) => row(i.name, usd(i.cents), i.blurb))}</ul>
-            <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.55, color: '#94A3B8' }}>A brief is compiled once and kept for good. Reopening it, sharing it or changing the close-rate inputs is free.</p>
+            <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.55, color: '#94A3B8' }}>One brief credit compiles a revenue brief, or updates one you compiled with your newest scan under the same link. Opening, sharing or changing the close-rate inputs is free.</p>
           </Box>
         </div>
       </div>
@@ -139,18 +139,17 @@ export function ExtrasSection() {
 }
 
 export const PLANS_FAQ: FaqItem[] = [
-  ['What is a phone session?', 'One real Android phone run at one grid point: the phone’s GPS set there, the search recorded on video, and the page and AI Overview saved. A 3×3 scan is 9 phone sessions, a 5×5 is 25, a 7×7 is 49 and a 9×9 is 81, scheduled or Scan Now. Points you choose to skip, over water or empty land, aren’t charged.'],
-  ['What is a revenue brief?', 'A finished client report built from your scans: the local visibility score, where the business wins and loses on the map, the rivals’ ads above it, and what that visibility is worth at live county Google Ads prices. It is compiled once and kept for good; reopening it, sharing it or changing the close-rate inputs is free.'],
-  ['Do unused sessions and briefs roll over?', 'A plan’s sessions and briefs roll over for one month, and last month’s are used first. Sessions and briefs you buy never expire.'],
-  ['What does the listing add-on add?', `For ${usd(ADDON.tiers[0].cents)} a month per Google listing, on top of any plan: the listing tools (safe edits, posts, review replies, the change watchdog, rival gaps), AI agents that work on the listing, ${n(ADDON.points)} more phone sessions and ${ADDON.briefs} more brief a month.`],
-  ['What is the Closer Pack?', `${usd(CLOSER.cents)} once, no subscription: ${n(CLOSER.credits)} phone sessions (two full 5×5 audits) and ${CLOSER.briefs} revenue brief, which never expire. Up to ${CLOSER_LIMIT} per account.`],
-  ['What’s the difference between Scheduled and Scan Now?', 'Only timing; both use one phone session a grid point. A scheduled scan runs as soon as the phones are free, or at a time you pick at least 2 hours ahead, and finishes within 3 hours of it. Scan Now jumps ahead of every scheduled scan: a 5×5 takes about 15 minutes.'],
+  ['What is a phone session?', 'One real Android phone run at one grid point: the phone’s GPS set there, the search recorded on video, and the page and AI Overview saved. A 3×3 scan is 9 phone sessions, a 5×5 is 25, a 7×7 is 49 and a 9×9 is 81. Points you choose to skip, over water or empty land, aren’t charged.'],
+  ['What is a revenue brief?', 'A finished client report built from your scans: the local visibility score, where the business wins and loses on the map, the rivals’ ads above it, and what that visibility is worth at live county Google Ads prices. A brief credit compiles one, and it is kept as it is: it never recalculates when opened. Spend another brief credit to update it with your newest scan; the share link stays the same. Reopening it, sharing it or changing the close-rate inputs is free.'],
+  ['Do unused sessions and brief credits roll over?', 'A plan’s sessions and brief credits roll over for one month, and last month’s are used first. Sessions and brief credits you buy never expire.'],
+  ['What does the listing add-on add?', `For ${usd(ADDON.tiers[0].cents)} a month per Google listing, on top of any plan: the listing tools (safe edits, posts, review replies, the change watchdog, rival gaps), AI agents that work on the listing, ${n(ADDON.points)} more phone sessions and ${ADDON.briefs} more brief credit a month.`],
+  ['What is the Closer Pack?', `${usd(CLOSER.cents)} once, no subscription: ${n(CLOSER.credits)} phone sessions (two full 5×5 audits) and ${CLOSER.briefs} brief credit, which never expire. Up to ${CLOSER_LIMIT} per account.`],
   ['Can I change or cancel my plan?', 'Any time. A bigger plan charges the difference for the rest of the month straight away; a smaller one takes effect at once, with nothing refunded. A cancelled plan works until the end of the month you paid for.'],
 ];
 
 /** The pricing page with the account plans. */
 export default function PricingPageV2({ live }: { live: boolean }) {
-  const promises = ['No setup or onboarding fees', 'Cancel any time', 'Unused plan sessions and briefs roll over for a month', 'A screen recording at every grid point'];
+  const promises = ['No setup or onboarding fees', 'Cancel any time', 'Unused plan sessions and brief credits roll over for a month', 'A screen recording at every grid point'];
   return (
     <div className="so">
       {live && <OfferBanner live={live} href="#plans" plans />}
@@ -165,7 +164,7 @@ export default function PricingPageV2({ live }: { live: boolean }) {
               Every surface in one run.
             </h1>
             <p style={{ margin: '24px 0 0', fontSize: 19, lineHeight: 1.65, color: '#CBD5E1', maxWidth: 780 }}>
-              Every grid point runs on a real Android phone with its GPS set there. One phone session captures the map results, a single-listing takeover, the AI answer cards, the ads and a screen recording together. Plans include phone sessions and revenue briefs priced with live county Google Ads rates.
+              Every grid point runs on a real Android phone with its GPS set there. One phone session captures the map results, a single-listing takeover, the AI answer cards, the ads and a screen recording together. Plans include phone sessions, and brief credits for revenue briefs priced with live county Google Ads rates.
             </p>
             <ul style={{ listStyle: 'none', padding: 0, margin: '32px 0 0', display: 'flex', flexWrap: 'wrap', gap: '12px 28px', fontSize: 15, lineHeight: 1.5, color: '#CBD5E1' }}>
               {promises.map((p) => (
@@ -177,7 +176,7 @@ export default function PricingPageV2({ live }: { live: boolean }) {
         <section id="plans" style={SECTION}>
           <div style={WRAP}>
             <Eyebrow>MONTHLY PLANS</Eyebrow>
-            <h2 style={H2}>Real-phone sessions and revenue briefs, every month.</h2>
+            <h2 style={H2}>Real-phone sessions and brief credits, every month.</h2>
             <p style={LEAD}>One plan per account. Add the listing add-on for each client Google listing you manage here.</p>
             <PlanCards style={{ marginTop: 36 }} />
             <CloserCard style={{ marginTop: 28 }} />
@@ -205,7 +204,7 @@ export default function PricingPageV2({ live }: { live: boolean }) {
           </div>
         </section>
       </main>
-      <SiteFoot note="Prices in US dollars. Phone sessions and briefs are counted per account." />
+      <SiteFoot note="Prices in US dollars. Phone sessions and brief credits are counted per account." />
     </div>
   );
 }

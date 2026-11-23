@@ -34,7 +34,7 @@ function brackets(line: Line) {
   });
 }
 const from = (line: Line) => usd(LINES[line].tiers[0].cents);
-/** Scan Now 5×5s a seat's phone sessions cover on top of its weekly keywords (a Scan Now 5×5 is 25, like a scheduled one). */
+/** Extra 5×5 audits a seat's phone sessions cover on top of its weekly keywords (25 phone sessions each). */
 const SCAN_NOW_INCLUDED: Partial<Record<Line, number>> = { COMMAND: 2, DOMINATOR: 6 };
 const scheduled5x5 = (line: Line) => (LINES[line].points - (SCAN_NOW_INCLUDED[line] ?? 0) * SCAN_NOW_5X5) / 25;
 
@@ -162,7 +162,7 @@ export function ProfitCalculator({ style }: { style?: React.CSSProperties }) {
             {boosts > 0 && (
               <li style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                 <Check size={16} top={3} />
-                <span>{points(boosts)} Scan Now 5×5{boosts === 1 ? '' : 's'}, ahead of the queue</span>
+                <span>{points(boosts)} extra 5×5 audit{boosts === 1 ? '' : 's'} on top</span>
               </li>
             )}
             {SUITE[line] && (
@@ -193,12 +193,12 @@ const SEAT_CARDS: Seat[] = [
     line: 'SCOUT',
     tagline: 'Light tracking for smaller clients.',
     covers: ['5 keywords every other week on a 5×5', 'or 6 keywords weekly on a 3×3'],
-    features: ['AI Overview and Map Pack tracked together', 'A screen recording at every grid point', 'Census buying-power map', 'Share links your clients open without a login', 'Search Console and Analytics', 'Scan Now any time, at the same price'],
+    features: ['AI Overview and Map Pack tracked together', 'A screen recording at every grid point', 'Census buying-power map', 'Share links your clients open without a login', 'Search Console and Analytics'],
   },
   {
     line: 'COMMAND',
     tagline: 'Weekly tracking plus the Google listing tools.',
-    covers: ['5 keywords weekly on a 5×5', 'or 10 keywords every other week', 'plus 2 Scan Now 5×5s'],
+    covers: ['5 keywords weekly on a 5×5', 'or 10 keywords every other week', 'plus 2 extra 5×5 audits'],
     heading: 'Everything in Scout, plus:',
     features: ['Rival gaps against the businesses above you', 'Safe Google Business Profile editor', 'Google posts with a content calendar (Facebook and LinkedIn coming soon)', 'Review alerts and replies', 'Daily listing watchdog', 'AI agents for the everyday listing work'],
     featured: true,
@@ -206,9 +206,9 @@ const SEAT_CARDS: Seat[] = [
   {
     line: 'DOMINATOR',
     tagline: 'More keywords and bigger grids.',
-    covers: ['10 keywords weekly on a 5×5', 'or 5 weekly on a 7×7, or 6 every other week on a 9×9', 'plus 6 Scan Now 5×5s'],
+    covers: ['10 keywords weekly on a 5×5', 'or 5 weekly on a 7×7, or 6 every other week on a 9×9', 'plus 6 extra 5×5 audits'],
     heading: 'Everything in Command, plus:',
-    features: ['Twice the keywords of Command', 'Room for 7×7 and 9×9 grids across wide service areas', '6 Scan Now 5×5s every month'],
+    features: ['Twice the keywords of Command', 'Room for 7×7 and 9×9 grids across wide service areas', '6 extra 5×5 audits every month'],
   },
 ];
 
@@ -262,7 +262,7 @@ export function SeatCards({ style }: { style?: React.CSSProperties }) {
         })}
       </div>
       <p style={{ margin: '20px 0 0', fontSize: 13.5, lineHeight: 1.6, color: '#94A3B8' }}>
-        A phone session is one real Android phone run at one grid point. A 5×5 scan is 25 phone sessions, a 7×7 is 49, a 9×9 is 81, scheduled or Scan Now. Unused seat sessions roll over for one month.
+        A phone session is one real Android phone run at one grid point. A 5×5 scan is 25 phone sessions, a 7×7 is 49, a 9×9 is 81. Unused seat sessions roll over for one month.
       </p>
     </div>
   );
@@ -295,55 +295,6 @@ export function SeatsSection() {
         <h2 style={H2}>One seat per client. Pick the one each client needs.</h2>
         <p style={LEAD}>Mix them freely: a light client on Scout, your core retainers on Command, the big service areas on Dominator.</p>
         <SeatCards style={{ marginTop: 40 }} />
-      </div>
-    </section>
-  );
-}
-
-function Bullets({ items }: { items: string[] }) {
-  return (
-    <ul style={{ listStyle: 'none', padding: 0, margin: '20px 0 0', display: 'grid', gap: 12, fontSize: 15, lineHeight: 1.55, color: '#CBD5E1' }}>
-      {items.map((t) => (
-        <li key={t} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-          <Check size={16} top={4} />
-          <span>{t}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-export function SpeedsSection() {
-  const chip = { margin: 0, fontFamily: MONO, fontSize: 12, lineHeight: 1.4, borderRadius: 999, padding: '4px 10px' };
-  const icon = { width: 44, height: 44, borderRadius: 12, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
-  return (
-    <section id="speeds" style={SECTION}>
-      <div style={WRAP}>
-        <Eyebrow>TWO SPEEDS</Eyebrow>
-        <h2 style={H2}>On your schedule, or right now. Same price.</h2>
-        <p style={LEAD}>Most agencies set their keywords once and let them run until reporting day. When a prospect is on the call, Scan Now jumps the line. Either way, one grid point is one phone session.</p>
-        <div style={{ marginTop: 36, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 440px), 1fr))', gap: 20 }}>
-          <div style={{ border: LINE, borderRadius: 20, padding: 28, background: '#111823' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px 14px' }}>
-              <span style={{ ...icon, background: 'rgba(16, 185, 129, 0.12)', color: '#34D399' }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
-              </span>
-              <h3 style={{ margin: 0, fontWeight: 800, fontSize: 24, lineHeight: 1.25 }}>Scheduled</h3>
-              <p style={{ ...chip, color: '#34D399', border: '1px solid rgba(16, 185, 129, 0.45)' }}>DEFAULT</p>
-            </div>
-            <Bullets items={['Run it as soon as the phones are free, or pick a day and hour at least 2 hours ahead', 'Results within 3 hours of the time you pick', 'Weekly means 4 runs a month; every other week means 2', 'We flag hours when the business is closed: Google ranks closed businesses lower']} />
-          </div>
-          <div style={{ border: `1px solid ${TONE.accentLine}`, borderRadius: 20, padding: 28, background: '#111927' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px 14px' }}>
-              <span style={{ ...icon, background: TONE.accentSoft, color: ACCENT }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z" /></svg>
-              </span>
-              <h3 style={{ margin: 0, fontWeight: 800, fontSize: 24, lineHeight: 1.25 }}>Scan Now</h3>
-              <p style={{ ...chip, color: ACCENT, border: `1px solid ${TONE.accentLine}` }}>FIRST IN LINE</p>
-            </div>
-            <Bullets items={['Jumps ahead of every scheduled scan', 'A 5×5 in about 15 minutes', 'Same one phone session a grid point', `Prospect audits and your ${usd(WELCOME.cents)} first audit always run this way`]} />
-          </div>
-        </div>
       </div>
     </section>
   );
@@ -400,7 +351,7 @@ type Row = [feature: string, scout: ReactNode, command: ReactNode, dominator: Re
 const ROWS: Row[] = [
   ['Phone sessions a month', points(LINES.SCOUT.points), points(LINES.COMMAND.points), points(LINES.DOMINATOR.points)],
   ['5×5 keywords covered', '5 every other week', '5 weekly', '10 weekly'],
-  ['Scan Now 5×5s included', SCAN_NOW_TEXT(0), SCAN_NOW_TEXT(SCAN_NOW_INCLUDED.COMMAND ?? 0), SCAN_NOW_TEXT(SCAN_NOW_INCLUDED.DOMINATOR ?? 0)],
+  ['Extra 5×5 audits included', SCAN_NOW_TEXT(0), SCAN_NOW_TEXT(SCAN_NOW_INCLUDED.COMMAND ?? 0), SCAN_NOW_TEXT(SCAN_NOW_INCLUDED.DOMINATOR ?? 0)],
   ['AI Overview and Map Pack tracking', true, true, true],
   ['Screen recording at every grid point', true, true, true],
   ['Census buying-power map', true, true, true],
@@ -458,10 +409,9 @@ export function CompareSection() {
 }
 
 export const PRICING_FAQ: FaqItem[] = [
-  ['What is a phone session?', 'One real Android phone run at one grid point: the phone’s GPS set there, the search recorded on video, and the page and AI Overview saved. A 3×3 scan is 9 phone sessions, a 5×5 is 25, a 7×7 is 49 and a 9×9 is 81, scheduled or Scan Now. Points you choose to skip, over water or empty land, aren’t charged.'],
+  ['What is a phone session?', 'One real Android phone run at one grid point: the phone’s GPS set there, the search recorded on video, and the page and AI Overview saved. A 3×3 scan is 9 phone sessions, a 5×5 is 25, a 7×7 is 49 and a 9×9 is 81. Points you choose to skip, over water or empty land, aren’t charged.'],
   ['How does the graduated pricing work?', `Each bracket’s price applies only to the clients inside it. Twelve clients on Command cost 9 × ${usd(LINES.COMMAND.tiers[0].cents)} plus 3 × ${usd(LINES.COMMAND.tiers[1].cents)}: ${usd(lineCents('COMMAND', 12))} a month. Brackets count each seat type on its own.`],
   ['Can I choose when my scans run?', 'Yes. Pick the day and hour for each keyword, even 2 AM. If the business is closed at that hour we’ll tell you, because Google ranks closed businesses lower, so results can look worse than in the daytime. Keep each keyword at the same time every run and the weeks compare fairly.'],
-  ['What’s the difference between Scheduled and Scan Now?', 'Only timing; both use one phone session a grid point. A scheduled scan runs as soon as the phones are free, or at a time you pick at least 2 hours ahead, and finishes within 3 hours of it. Scan Now jumps ahead of every scheduled scan: a 5×5 takes about 15 minutes.'],
   ['What happens to phone sessions I don’t use?', 'Unused seat sessions roll over for one month. Top-up sessions never expire. Prospect audits are valid for 90 days from purchase.'],
   ['Can my clients be on different seats?', 'Yes. Put each client on the seat it needs and move it up or down whenever you like.'],
   ['Is there a setup or onboarding fee?', 'No. You pay for your seats and anything extra you choose to buy, nothing else.'],

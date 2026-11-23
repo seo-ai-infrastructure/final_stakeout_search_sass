@@ -100,14 +100,14 @@ export default function Landing({ live, plans }: { live: boolean; plans?: boolea
             <div id="google-listings">
               <p className="lp-kicker"><CalendarDays size={16} aria-hidden="true" /> Monthly tracking</p>
               <h2 id="lp-plan-title">Keep tracking the clients you manage.</h2>
-              <p>{plans ? 'Plans include real-phone sessions and revenue briefs every month, and unused ones roll over for a month. Add the listing add-on for each client Google listing you manage here.' : <>The included second scan gives you a week to compare. To keep measuring the same neighborhoods, choose a monthly seat for that client. We apply your {auditPrice} to the first month of your first seat.</>}</p>
+              <p>{plans ? 'Plans include real-phone sessions and brief credits for revenue briefs every month, and unused ones roll over for a month. Add the listing add-on for each client Google listing you manage here.' : <>The included second scan gives you a week to compare. To keep measuring the same neighborhoods, choose a monthly seat for that client. We apply your {auditPrice} to the first month of your first seat.</>}</p>
             </div>
             {plans && <div id="watchdog" className="lp-seats">
               {ACCOUNT_PLAN_ORDER.map((p) => (
                 <article key={p} className={'lp-seat' + (p === 'P_AGENCY' ? ' lp-command' : '')}>
                   <h3>{ACCOUNT_PLANS[p].name}</h3>
                   <p className="lp-rate"><strong>{usd(ACCOUNT_PLANS[p].tiers[0].cents)}</strong> / month</p>
-                  <h4>{ACCOUNT_PLANS[p].points.toLocaleString('en-US')} phone sessions · {ACCOUNT_PLANS[p].briefs} briefs</h4>
+                  <h4>{ACCOUNT_PLANS[p].points.toLocaleString('en-US')} phone sessions · {ACCOUNT_PLANS[p].briefs} brief credit{ACCOUNT_PLANS[p].briefs === 1 ? '' : 's'}</h4>
                   <p>{ACCOUNT_PLANS[p].bestFor}.{ACCOUNT_PLANS[p].whiteLabel ? ' Your logo, name and brand color on shared reports.' : ''}</p>
                 </article>
               ))}
@@ -124,7 +124,7 @@ export default function Landing({ live, plans }: { live: boolean; plans?: boolea
             </div>}
             <div className="lp-plan-links">
               <a href={plans ? HREF.plans : HREF.seats} className="lp-secondary">{plans ? 'Choose a plan' : 'Choose a monthly seat'} <Arrow size={16} /></a>
-              <a href={HREF.pricing} className="lp-textlink">{plans ? 'Full pricing, the listing add-on and briefs' : 'Full pricing and volume rates'} <ArrowUpRight size={16} aria-hidden="true" /></a>
+              <a href={HREF.pricing} className="lp-textlink">{plans ? 'Full pricing, the listing add-on and brief credits' : 'Full pricing and volume rates'} <ArrowUpRight size={16} aria-hidden="true" /></a>
             </div>
             {live && <div className="lp-promo"><OfferBanner live={live} href={HREF.pricing} plans={plans} /></div>}
           </div>

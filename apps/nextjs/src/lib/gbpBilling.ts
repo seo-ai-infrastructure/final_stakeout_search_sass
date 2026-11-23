@@ -371,7 +371,7 @@ export async function activate(sessionId: string, userId?: string) {
     const buyer = await db.user.findUnique({ where: { id: owner }, select: { email: true } });
     await pushAlert('gbp-sub:' + sub.id, {
       subject: `${stripeTestMode() ? '[TEST] ' : ''}Stakeout: new subscription, ${dollars(monthlyCents(counts))} a month`,
-      lines: [`${buyer?.email ?? 'An account'} started ${LINE_ORDER.filter((l) => counts[l]).map((l) => `${counts[l]} ${LINES[l].name}`).join(', ')}: ${seatPoints(counts).toLocaleString('en-US')} phone sessions and ${seatBriefs(counts)} briefs a month.`],
+      lines: [`${buyer?.email ?? 'An account'} started ${LINE_ORDER.filter((l) => counts[l]).map((l) => `${counts[l]} ${LINES[l].name}`).join(', ')}: ${seatPoints(counts).toLocaleString('en-US')} phone sessions and ${seatBriefs(counts)} brief credits a month.`],
       path: '/admin/devices',
     }, 60).catch(() => {});
     await flushAlerts().catch(() => {});

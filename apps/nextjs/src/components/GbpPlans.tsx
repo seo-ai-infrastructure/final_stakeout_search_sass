@@ -54,7 +54,7 @@ export function UpgradeCard({ profile, location, name, what, onDone }: { profile
     <div className={card}>
       <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Listing add-on</p>
       <h3 className="mt-1 text-lg font-semibold">{what} comes with the listing add-on</h3>
-      <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. The listing add-on is everything about the Google listing itself, with AI agents, 50 phone sessions and 1 brief a month, for {dollars(LINES.LISTING.tiers[0].cents)} a month per listing on top of your plan:</p>
+      <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. The listing add-on is everything about the Google listing itself, with AI agents, {LINES.LISTING.points} phone sessions and {LINES.LISTING.briefs} brief credit a month, for {dollars(LINES.LISTING.tiers[0].cents)} a month per listing on top of your plan:</p>
       <ul className="mt-3 grid gap-1.5 text-sm text-slate-300 sm:grid-cols-2">
         <li>Calls, directions and searches, straight from Google</li>
         <li>Edit hours, description, services and attributes</li>
@@ -269,7 +269,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Plan</p><p className="mt-1 text-2xl font-bold">{billing?.plan ? ACCOUNT_PLANS[billing.plan].name : 'None yet'}</p><p className="text-xs text-slate-500">{counts.LISTING ? `${counts.LISTING} listing add-on${counts.LISTING === 1 ? '' : 's'}` : 'No listing add-ons'}</p></div>
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Phone sessions a month</p><p className="mt-1 text-2xl font-bold tabular-nums">{(billing?.pointsPerMonth ?? 0).toLocaleString()}</p><p className="text-xs text-slate-500">Unused ones roll over for one month</p></div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Briefs left</p><p className="mt-1 text-2xl font-bold tabular-nums">{billing?.briefs?.left ?? 0}</p><p className="text-xs text-slate-500">{billing?.briefs?.perMonth ? `${billing.briefs.perMonth} a month` : 'None a month'}{billing?.briefs?.bought ? ` · ${billing.briefs.bought} bought` : ''}</p></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Brief credits left</p><p className="mt-1 text-2xl font-bold tabular-nums">{billing?.briefs?.left ?? 0}</p><p className="text-xs text-slate-500">{billing?.briefs?.perMonth ? `${billing.briefs.perMonth} a month` : 'None a month'}{billing?.briefs?.bought ? ` · ${billing.briefs.bought} bought` : ''}</p></div>
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">This month</p><p className="mt-1 text-2xl font-bold tabular-nums">{dollars(billing?.monthlyCents ?? 0)}</p><p className="text-xs text-slate-500">{billing?.sub?.periodEnd ? `Renews ${day(billing.sub.periodEnd)}` : 'Monthly, cancel any time'}</p></div>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -282,7 +282,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
                   <p className="mt-1 text-xs text-slate-500">{d.bestFor}</p>
                   <ul className="mt-3 space-y-1 text-sm text-slate-300">
                     <li>{d.points.toLocaleString()} phone sessions a month ({Math.floor(d.points / 25)} 5×5 scans)</li>
-                    <li>{d.briefs} revenue briefs a month</li>
+                    <li>{d.briefs} brief credit{d.briefs === 1 ? '' : 's'} a month</li>
                     <li>{d.whiteLabel ? 'Your logo, name and brand color on shared reports' : 'Stakeout share links and offline copies'}</li>
                   </ul>
                   <div className="mt-3">
@@ -294,7 +294,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
               );
             })}
           </div>
-          <p className="mt-3 text-xs text-slate-500">Every phone session is one real phone run at one grid point, with the map results, the AI Overview, the ads and a screen recording. Add the listing add-on ({dollars(LINES.LISTING.tiers[0].cents)} a month per Google listing) for the listing tools, AI agents, 50 more phone sessions and 1 more brief a month.{billing?.plan ? ' ' : ''}{billing?.plan && <button type="button" onClick={() => choosePlan(null)} disabled={busy === 'plan'} className="text-slate-400 underline hover:text-rose-300">End my plan</button>}</p>
+          <p className="mt-3 text-xs text-slate-500">Every phone session is one real phone run at one grid point, with the map results, the AI Overview, the ads and a screen recording. Add the listing add-on ({dollars(LINES.LISTING.tiers[0].cents)} a month per Google listing) for the listing tools, AI agents, {LINES.LISTING.points} more phone sessions and {LINES.LISTING.briefs} more brief credit a month.{billing?.plan ? ' ' : ''}{billing?.plan && <button type="button" onClick={() => choosePlan(null)} disabled={busy === 'plan'} className="text-slate-400 underline hover:text-rose-300">End my plan</button>}</p>
         </div>
       )}
       {onSeats && <div className={card}>
@@ -340,7 +340,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           <h2 className="text-lg font-semibold">Google listings</h2>
           {all.length > 8 && <input className="w-56 rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm outline-none focus:border-emerald-500" placeholder="Search listings" value={find} onChange={(e) => setFind(e.target.value)} />}
         </div>
-        <p className="mt-1 text-sm text-slate-400">{addon ? `The listing add-on puts a Google listing to work: edits, posts, review alerts and replies, the change watchdog, rival gaps and AI agents, with 50 phone sessions and 1 brief a month, for ${dollars(LINES.LISTING.tiers[0].cents)} a month per listing on top of your plan.` : 'A listing on Command or Dominator is a client seat with the listing tools: edits, posts, review alerts and replies, the change watchdog, rival gaps and AI agents.'}</p>
+        <p className="mt-1 text-sm text-slate-400">{addon ? `The listing add-on puts a Google listing to work: edits, posts, review alerts and replies, the change watchdog, rival gaps and AI agents, with ${LINES.LISTING.points} phone sessions and ${LINES.LISTING.briefs} brief credit a month, for ${dollars(LINES.LISTING.tiers[0].cents)} a month per listing on top of your plan.` : 'A listing on Command or Dominator is a client seat with the listing tools: edits, posts, review alerts and replies, the change watchdog, rival gaps and AI agents.'}</p>
         {addon && !billing?.plan && all.length > 0 && <p className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">Choose a plan above first: the listing add-on goes on top of it.</p>}
         {all.length === 0 ? <p className="mt-2 text-sm text-slate-400">Connect a Google account below to see its listings here.</p> : (
           <ul className="mt-3 divide-y divide-slate-800 rounded-lg border border-slate-800">

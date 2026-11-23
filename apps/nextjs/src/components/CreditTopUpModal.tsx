@@ -1,5 +1,6 @@
 'use client';
 import { Fragment, useEffect, useState } from 'react';
+import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, nextPlan, type AccountPlan } from '@stakeout/core/gbpPlans';
 
 /** The price list in groups, each under its own heading. */
 const groupOf = (key?: string) => (!key ? '' : key === 'welcome' ? 'welcome' : key === 'closer' ? 'closer' : key.startsWith('sessions-') ? 'sessions' : key.startsWith('briefs-') ? 'briefs' : key.startsWith('prospect') ? 'prospect' : key.startsWith('topup') ? 'topup' : key === 'white-label' ? 'extra' : key === 'admin-test' ? 'test' : 'other');
@@ -9,18 +10,25 @@ const GROUPS: Record<string, string> = {
   topup: 'More phone sessions · for seat holders, never expire',
   closer: 'Closer Pack · no subscription, up to 2 per account',
   sessions: 'Phone sessions · every surface in one run, never expire',
-  briefs: 'Revenue briefs · live county ad prices, yours for good',
+  briefs: 'Brief credits · one compiles a revenue brief or updates one',
   extra: 'Extras',
   test: 'Admin',
   other: 'Other',
 };
 type Item = { key: string; name: string; credits: number; cents: number; blurb: string; briefs?: number; featured?: boolean };
-type AccountPlan = 'P_SCOUT' | 'P_AGENCY' | 'P_SCALE';
-/** When buying sessions costs about as much as moving up a plan: what the next plan adds. */
-const NUDGE: Record<string, { from: AccountPlan; to: string; more: string; adds: string; keys: string[] }> = {
-  P_SCOUT: { from: 'P_SCOUT', to: 'Agency', more: '$80', adds: '700 more phone sessions and 15 more briefs every month, and your logo, name and brand color on shared reports', keys: ['sessions-250', 'sessions-500'] },
-  P_AGENCY: { from: 'P_AGENCY', to: 'Scale', more: '$170', adds: '2,000 more phone sessions and 40 more briefs every month', keys: ['sessions-500'] },
-};
+const usd = (cents: number) => '$' + (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
+const many = (n: number, one: string) => `${n.toLocaleString('en-US')} ${one}${n === 1 ? '' : 's'}`;
+/** When buying sessions costs about as much as moving up a plan (these packs): what the next plan adds, from the plans' own figures. */
+const NUDGE_KEYS: Partial<Record<AccountPlan, string[]>> = { P_SCOUT: ['sessions-250', 'sessions-500'], P_AGENCY: ['sessions-500'] };
+function nudgeFor(plan: AccountPlan, pick: string) {
+  const to = nextPlan(plan);
+  if (!to || !NUDGE_KEYS[plan]?.includes(pick)) return null;
+  const a = ACCOUNT_PLANS[plan], b = ACCOUNT_PLANS[to];
+  const extra = [b.points > a.points ? `${many(b.points - a.points, 'more phone session')}` : '', b.briefs > a.briefs ? `${many(b.briefs - a.briefs, 'more brief credit')}` : ''].filter(Boolean).join(' and ');
+  return { to: b.name, more: usd(b.tiers[0].cents - a.tiers[0].cents), adds: `${extra} every month${b.whiteLabel && !a.whiteLabel ? ', and your logo, name and brand color on shared reports' : ''}` };
+}
+/** The plans in one line: price, sessions and brief credits a month. */
+const PLAN_LINE = ACCOUNT_PLAN_ORDER.map((p) => `${ACCOUNT_PLANS[p].name} ${usd(ACCOUNT_PLANS[p].tiers[0].cents)} (${ACCOUNT_PLANS[p].points.toLocaleString('en-US')} phone sessions, ${many(ACCOUNT_PLANS[p].briefs, 'brief credit')} a month)`).join(', ');
 type Props = {
   isOpen: boolean;
   /** The item to start on, by its price list key, when it is on offer. */
@@ -80,7 +88,7 @@ export function CreditTopUpModal(p: Props) {
   const chosen = items.find((k) => k.key === pick);
   // Sold the account plans: the window speaks of sessions and briefs, and plans rather than seats.
   const plans = items.some((k) => k.key === 'closer' || k.key.startsWith('sessions-') || k.key.startsWith('briefs-'));
-  const nudge = accountPlan && NUDGE[accountPlan]?.keys.includes(pick) ? NUDGE[accountPlan] : null;
+  const nudge = accountPlan ? nudgeFor(accountPlan, pick) : null;
   return (
     // The overlay scrolls: the price list is taller than a small screen.
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75">
@@ -88,22 +96,22 @@ export function CreditTopUpModal(p: Props) {
       <section
         role="dialog"
         aria-modal="true"
-        aria-label={plans ? 'Add phone sessions and briefs' : 'Get phone sessions'}
+        aria-label={plans ? 'Add phone sessions and brief credits' : 'Get phone sessions'}
         className="w-full max-w-md space-y-5 rounded-xl bg-slate-900 p-6"
       >
         <div className="flex justify-between">
-          <h2 className="text-lg font-bold">{plans ? 'Add phone sessions and briefs' : 'Get phone sessions'}</h2>
+          <h2 className="text-lg font-bold">{plans ? 'Add phone sessions and brief credits' : 'Get phone sessions'}</h2>
           <button type="button" onClick={p.onClose} className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Close</button>
         </div>
-        <p>Your balance · {p.currentBalance.toLocaleString()} phone sessions{plans && briefs !== null ? ` · ${briefs} brief${briefs === 1 ? '' : 's'}` : ''}</p>
+        <p>Your balance · {p.currentBalance.toLocaleString()} phone sessions{plans && briefs !== null ? ` · ${briefs} brief credit${briefs === 1 ? '' : 's'}` : ''}</p>
         <p className="text-sm text-slate-400">
-          A phone session is one real phone run at one grid point: a 5×5 scan is 25, Scan Now or scheduled.{' '}
+          A phone session is one real phone run at one grid point: a 5×5 scan is 25.{' '}
           <a href="/pricing" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">Pricing</a>
         </p>
         {/* Until the price list is in, it is not known whether this account is sold plans or seats. */}
         {loaded && <a href="/profiles?tab=plan" className="block rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-100 hover:bg-emerald-500/20">
           {plans
-            ? <><span className="font-semibold">Plans are the best value:</span> Scout $49 (300 phone sessions, 5 briefs a month), Agency $129 (1,000 and 20), Scale $299 (3,000 and 60). Unused plan sessions and briefs roll over for one month. <span className="font-semibold underline">Plan and billing</span></>
+            ? <><span className="font-semibold">Plans are the best value:</span> {PLAN_LINE}. Unused plan sessions and brief credits roll over for one month. <span className="font-semibold underline">Plan and billing</span></>
             : <><span className="font-semibold">Monthly seats are the best value:</span> Scout from $39, Command from $59, Dominator from $99 per client, with 250 to 1,250 phone sessions a month each. <span className="font-semibold underline">Plan and billing</span></>}
         </a>}
         {!loaded ? (

@@ -243,6 +243,7 @@ body{width:auto;max-width:none}
 .status .ask ul{margin-top:18px;border-top:1px solid var(--hair);padding-top:10px;list-style:none}
 .status .ask li{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:14px;border-bottom:1px solid var(--hair2)}
 .status .ask li a{color:var(--ink);font-weight:600}
+.status .ask li button{padding:5px 10px;font-size:12.5px;margin-right:10px;background:#fff;color:var(--ink);border-color:var(--hair)}
 .mast-meta .ver{color:var(--fog);font-size:12px}
 .logo img{height:26px;width:auto;display:block}
 .ledger .cell{min-width:0}
@@ -332,6 +333,10 @@ body{width:auto;max-width:none}
 .state button:focus-visible,.state a:focus-visible{outline:2px solid var(--client);outline-offset:2px}
 .state a{color:var(--ink);font-weight:600}
 .state .note{color:var(--fog);font-size:12.5px}
+.state .refresh{flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;border-top:1px solid var(--hair);padding-top:10px}
+.state .refresh>span{max-width:760px}
+.state .refresh a.btn{font:600 13px var(--sans);border-radius:6px;padding:8px 13px;border:1px solid var(--ink);background:var(--ink);color:#fff;text-decoration:none}
+.state .refresh a.btn.quiet{background:#fff;color:var(--ink);border-color:var(--hair)}
 @media print{.edit,.tabs,.more .btn,.state{display:none}}
 .plate .mapbox{position:absolute;inset:0}
 .plate .receipt{left:auto;right:max(24px,calc((100% - 1200px) / 2))}
@@ -797,12 +802,34 @@ function receipts() {
   $('#rall').textContent = `Show all ${int(D.receiptsTotal)} receipts from ${D.scansTotal} scans`;
   if (D.link.report) $('#rall').href = D.link.report; else $('#rall').hidden = true;
 }
-/** The line under the masthead: a live brief can be compiled; a compiled one says when, and can be shared. */
+/** The line under the masthead: a live brief can be compiled; a compiled one says when, can be updated (one brief credit) and shared. */
 function state() {
   const C = D.compiled, el = $('#statein');
   if (C) {
-    el.innerHTML = `<span><b>Compiled ${esc(dayLong(C.at))}, ${esc(timeEt(C.at))}</b> · scoring version ${esc(D.version)}. ${D.canEdit ? 'It stays as it is; the live brief keeps recalculating.' : ''}</span>` +
-      (D.canEdit ? `<span class="acts"><a href="/reports/brief.html?scan=${encodeURIComponent(C.scan)}">Open the live brief</a><button type="button" id="sharebtn">${C.share ? 'Copy share link' : 'Make a share link'}</button><span class="note" id="sharemsg"></span></span>` : '');
+    const when = `<b>Compiled ${esc(dayLong(C.at))}, ${esc(timeEt(C.at))}</b>` + (C.updated ? ` · <b>updated ${esc(dayLong(C.updated))}, ${esc(timeEt(C.updated))}</b>` : '');
+    el.innerHTML = `<span>${when} · scoring version ${esc(D.version)}. ${D.canEdit ? 'It stays as it is until you update it.' : ''}</span>` +
+      (D.canEdit ? `<span class="acts">${C.admin ? `<a href="/reports/brief.html?scan=${encodeURIComponent(C.scan)}">Open the live brief</a>` : ''}<button type="button" id="refreshbtn" class="quiet">Update brief</button><button type="button" id="sharebtn">${C.share ? 'Copy share link' : 'Make a share link'}</button><span class="note" id="sharemsg"></span></span><div class="refresh" id="refreshbox" hidden></div>` : '');
+    // Updating rebuilds it from the newest scan of its search, under the same link: one brief credit.
+    $('#refreshbtn')?.addEventListener('click', () => {
+      const box = $('#refreshbox'), n = C.next;
+      if (!C.admin && !(C.left > 0)) {
+        box.innerHTML = `<span><b>No brief credits left.</b> Updating a brief uses one.</span><span class="acts"><a class="btn" href="/scans?buy=briefs-1">Buy a brief credit</a><a class="btn quiet" href="/profiles?tab=plan">See plans</a></span>`;
+        box.hidden = false; return;
+      }
+      const from = n ? `your scan for “${esc(n.keyword)}” from ${esc(dayLong(n.at))}` : 'its scan';
+      const same = !n || n.id === C.scan;
+      box.innerHTML = `<span>Rebuild this brief from ${from} with current county Google Ads prices. ${same ? 'There’s no newer scan for this search yet, so the numbers may not change. ' : ''}The share link stays the same, and anyone with it sees the update. <b>${C.admin ? 'Free for admins.' : `Uses 1 brief credit (${C.left} left).`}</b></span>` +
+        `<span class="acts"><button type="button" id="refreshgo">Update brief</button><button type="button" id="refreshno" class="quiet">Cancel</button><span class="note" id="refreshmsg" role="status"></span></span>`;
+      box.hidden = false;
+      $('#refreshno').addEventListener('click', () => { box.hidden = true; });
+      $('#refreshgo').addEventListener('click', async () => {
+        const b = $('#refreshgo'); b.disabled = true; b.textContent = 'Updating…';
+        const r = await fetch(savedUrl(), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh: true }) });
+        const v = await r.json().catch(() => ({}));
+        if (r.ok) { location.reload(); return; }
+        b.disabled = false; b.textContent = 'Update brief'; $('#refreshmsg').textContent = 'Not updated: ' + (v.error || r.status);
+      });
+    });
     $('#sharebtn')?.addEventListener('click', async () => {
       const b = $('#sharebtn'); b.disabled = true;
       const r = await fetch(savedUrl(), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ share: true }) });
@@ -829,23 +856,32 @@ function method() {
   $('#mver').textContent = `Scoring version ${D.version}.`;
 }
 
-/** With the account plans a brief is compiled once and kept: the page asks before using a brief. */
+/** With the account plans a brief is compiled once and kept: the page asks before using a brief credit. */
 function ask(v) {
   const w = v.wallet, left = w.left;
+  const credits = (n) => (n === 1 ? '1 brief credit' : n + ' brief credits');
   const kinds = [w.carry ? `${w.carry} carried from last month` : '', w.plan ? `${w.plan} from this month’s plan` : '', w.bought ? `${w.bought} bought` : ''].filter(Boolean).join(', ');
-  const list = v.compiled.length ? `<ul>${v.compiled.map((c) => `<li><span>${esc(dayLong(c.at))}, ${esc(timeEt(c.at))}${c.thisScan ? '' : ' · another scan'}</span><a href="/reports/brief.html?brief=${encodeURIComponent(c.id)}">Open</a></li>`).join('')}</ul>` : '';
+  // A brief already compiled from another scan of this business can be updated from this one instead, under its own link.
+  const list = v.compiled.length ? `<ul>${v.compiled.map((c) => `<li><span>${esc(dayLong(c.at))}, ${esc(timeEt(c.at))}${c.thisScan ? ' · this scan' : ' · another scan'}</span><span>${!c.thisScan && left > 0 ? `<button type="button" class="askup" data-id="${esc(c.id)}">Update it with this scan</button> ` : ''}<a href="/reports/brief.html?brief=${encodeURIComponent(c.id)}">Open</a></span></li>`).join('')}</ul>` : '';
   status(`<div class="ask"><p class="sec-k">Revenue brief</p><h2>Compile the brief for ${esc(v.business)}</h2>
-    <p>Compiling pulls live county Google Ads prices and locks a permanent brief you can share with the client. Opening it again, sharing it or changing the close-rate inputs later is free.</p>
-    <p><b>${left === 1 ? '1 brief' : left + ' briefs'} left</b>${kinds ? ` (${esc(kinds)})` : ''}.</p>
-    <div class="acts">${left > 0 ? `<button type="button" id="askgo">Compile brief · uses 1</button>` : `<a class="btn" href="/scans?buy=briefs-1">Buy a brief</a><a class="btn quiet" href="/profiles?tab=plan">See plans</a>`}<span class="muted" id="askmsg"></span></div>
-    ${list ? `<p style="margin-top:22px"><b>Already compiled for ${esc(v.business)}</b></p>${list}` : ''}</div>`);
+    <p>Compiling pulls live county Google Ads prices and keeps the brief as it is, to share with the client. Opening it again, sharing it or changing the close-rate inputs is free. Compiling one, or updating one with a newer scan, uses a brief credit.</p>
+    <p><b>${credits(left)} left</b>${kinds ? ` (${esc(kinds)})` : ''}.</p>
+    <div class="acts">${left > 0 ? `<button type="button" id="askgo">Compile brief · 1 brief credit</button>` : `<a class="btn" href="/scans?buy=briefs-1">Buy a brief credit</a><a class="btn quiet" href="/profiles?tab=plan">See plans</a>`}<span class="muted" id="askmsg" role="status"></span></div>
+    ${list ? `<p style="margin-top:22px"><b>Already compiled for ${esc(v.business)}</b>${left > 0 && v.compiled.some((c) => !c.thisScan) ? ' · updating one keeps its share link and uses 1 brief credit' : ''}</p>${list}` : ''}</div>`);
   $('#askgo')?.addEventListener('click', async () => {
     const b = $('#askgo'); b.disabled = true; b.textContent = 'Compiling…';
     const r = await fetch('/api/briefs', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scanId }) });
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.id) { location.href = '/reports/brief.html?brief=' + encodeURIComponent(j.id); return; }
-    b.disabled = false; b.textContent = 'Compile brief · uses 1'; $('#askmsg').textContent = 'Not compiled: ' + (j.error || r.status);
+    b.disabled = false; b.textContent = 'Compile brief · 1 brief credit'; $('#askmsg').textContent = 'Not compiled: ' + (j.error || r.status);
   });
+  document.querySelectorAll('.askup').forEach((b) => b.addEventListener('click', async () => {
+    const id = b.dataset.id; b.disabled = true; b.textContent = 'Updating…';
+    const r = await fetch('/api/briefs/' + encodeURIComponent(id), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ refresh: true, scanId }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) { location.href = '/reports/brief.html?brief=' + encodeURIComponent(id); return; }
+    b.disabled = false; b.textContent = 'Update it with this scan'; $('#askmsg').textContent = 'Not updated: ' + (j.error || r.status);
+  }));
 }
 
 async function load() {

@@ -39,9 +39,9 @@ export const TOPUP: PriceItem = { key: 'topup-100', name: 'Top-up: 100 phone ses
 /**
  * Sold with the account plans (Scout, Agency, Scale): the Closer Pack for a pitch with no
  * subscription (in place of the $5 first audit and the prospect audits), phone sessions for plan
- * holders who run short, and briefs. Bought sessions and briefs never expire.
+ * holders who run short, and brief credits. Bought sessions and brief credits never expire.
  */
-export const CLOSER: PriceItem = { key: 'closer', name: 'Closer Pack', credits: 50, briefs: 1, cents: 1900, blurb: 'No subscription: two full 5×5 audits on real phones and 1 revenue brief priced with live county Google Ads rates. Never expires. Up to 2 per account.' };
+export const CLOSER: PriceItem = { key: 'closer', name: 'Closer Pack', credits: 50, briefs: 1, cents: 1900, blurb: 'No subscription: two full 5×5 audits on real phones and 1 brief credit for a revenue brief priced with live county Google Ads rates. Never expires. Up to 2 per account.' };
 export const CLOSER_LIMIT = 2;
 export const SESSION_PACKS: PriceItem[] = [
   { key: 'sessions-100', name: '100 phone sessions', credits: 100, cents: 2900, blurb: '4 full 5×5 scans ($7.25 a scan). For finishing a client audit today.' },
@@ -49,8 +49,8 @@ export const SESSION_PACKS: PriceItem[] = [
   { key: 'sessions-500', name: '500 phone sessions', credits: 500, cents: 9900, blurb: '20 full 5×5 scans ($4.95 a scan). For multi-keyword or 7×7 prospecting runs.' },
 ];
 export const BRIEF_PACKS: PriceItem[] = [
-  { key: 'briefs-1', name: '1 brief', credits: 0, briefs: 1, cents: 900, blurb: 'Compile one permanent, shareable client revenue brief.' },
-  { key: 'briefs-5', name: '5 briefs', credits: 0, briefs: 5, cents: 3500, blurb: '$7 a brief: 22% off, for prospecting runs and quarterly reviews.' },
+  { key: 'briefs-1', name: '1 brief credit', credits: 0, briefs: 1, cents: 900, blurb: 'Compile a client revenue brief, or update one with a newer scan.' },
+  { key: 'briefs-5', name: '5 brief credits', credits: 0, briefs: 5, cents: 3500, blurb: '$7 a credit: 22% off, for prospecting runs and monthly updates.' },
 ];
 
 /** Reports under the customer's own logo and domain, share links included: free from 10 clients, otherwise once. Set up by hand. */

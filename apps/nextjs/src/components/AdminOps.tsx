@@ -599,7 +599,7 @@ export function AdminOps() {
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-200 sm:col-span-2">
               <input type="checkbox" className="h-4 w-4" checked={form.newPlans} onChange={(e) => setForm({ ...form, newPlans: e.target.checked })} />
-              New plans live for everyone: Scout $49, Agency $129, Scale $299, the $29 listing add-on, briefs, the Closer Pack and the new top-ups on the site and in the app (accounts on seats keep them)
+              New plans live for everyone: Scout, Agency and Scale, the listing add-on, briefs, the Closer Pack and the new top-ups on the site and in the app (accounts on seats keep them)
             </label>
             <label className="flex flex-col gap-1 text-sm text-slate-200 sm:col-span-2">
               Accounts that see the new plans before they go live (emails, comma-separated; admins always do)
