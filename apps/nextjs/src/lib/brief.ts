@@ -5,7 +5,7 @@ import type { VisibilityData as Full } from './visibilityReport';
 /** The visibility report's data; a share link may carry no Google numbers. */
 type VisibilityData = Omit<Full, 'google'> & { google: Full['google'] | null };
 import { SCORING_VERSION, brandSearch, isBranded, matchedChange, paidUnitsAbove, scorePoints, summarize, type Point, type Scored } from './briefScore';
-import { keywordPrices, pricesConfigured, type KeywordPrice } from './keywordPrices';
+import { empty, keywordPrices, pricesConfigured, type KeywordPrice } from './keywordPrices';
 
 /**
  * The local search and revenue brief (/reports/brief.html): the visibility report's data, scored with
@@ -141,7 +141,7 @@ async function figures(keywords: string[], location: string, lookUp: boolean, al
   const answered = new Set(r.answered);
   for (const [i, k] of missing.entries()) {
     const p = r.results[i] ? { ...r.results[i], keyword: k } : null;
-    const has = Boolean(p && (p.cpc !== null || p.searches !== null));
+    const has = Boolean(p && !empty(p));
     got.set(k, has ? p : null);
     // An empty answer is kept only once Google has had its full say on it; otherwise the next owner view asks again.
     if (has || answered.has(k)) await redis().set(keyOf(k), JSON.stringify(has ? p : null), 'EX', KEEP_S).catch(() => null);
@@ -155,8 +155,14 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   const brand = brandSearch(v.business);
   const priced = [...new Set([...plain, ...plain.flatMap(variantsOf), ...extra, ...extra.flatMap(variantsOf), brand])].slice(0, 60);
   const counted = [...new Set([...plain, brand])];
-  const county = await figures(priced, where.county, lookUp, true);
-  const city = where.city ? await figures(counted, where.city, lookUp, false).catch(() => null) : null;
+  // Markets priced before figures were kept per search sit under one key for the whole set; use it while it lasts.
+  const kept = async () => { const v = await redis().get('stakeout:brief:market:v1:' + createHash('sha256').update(JSON.stringify([where.county, where.city, priced, counted])).digest('hex').slice(0, 32)).catch(() => null); return v ? (JSON.parse(v) as Market) : null; };
+  const cached = await figures(priced, where.county, false, true);
+  if (cached.size < priced.length) { const old = await kept(); if (old) return old; }
+  const county = cached.size < priced.length && lookUp
+    ? await figures(priced, where.county, true, true).catch((e: Error) => { console.warn('[brief] county prices:', e.message); return cached; })
+    : cached;
+  const city = where.city ? await figures(counted, where.city, lookUp, false).catch((e: Error) => { console.warn('[brief] city searches:', e.message); return figures(counted, where.city!, false, false); }) : null;
   if (![...county.values()].some(Boolean)) return null;
   const byKw = new Map([...county].filter((e): e is [string, KeywordPrice] => Boolean(e[1])));
   const prices: Market['prices'] = {};
