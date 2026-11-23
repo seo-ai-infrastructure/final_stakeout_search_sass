@@ -6,7 +6,7 @@ import { AdminRuns } from './AdminRuns';
 
 type OpenScan = { id: string; keyword: string; targetBusiness: string; targetType: string; gridSize: number; status: string; totalPins: number; completedPins: number; failedPins: number; createdAt: string; owner: string };
 type Brand = { domain: string; userId: string; name: string; hasLogo: boolean };
-type Account = { id: string; email: string; role: string; credits: number; briefs: number; confirmed: boolean; createdAt: string; scans: number; onboarding: 'exempt' | 'paid' | 'waived' | 'no' };
+type Account = { id: string; email: string; role: string; credits: number; briefs: number; confirmed: boolean; createdAt: string; scans: number };
 
 type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
@@ -117,7 +117,6 @@ export function AdminOps() {
 
   // A new account's sign-in details are never hidden: while they are on screen the panel stays open.
   const accountsShown = accountsOpen || created !== null || brandForm !== null || brandNote !== null;
-  const awaiting = users.filter((u) => u.role === 'AGENCY' && u.onboarding === 'no').length;
 
   return (
     <div className="mb-6 space-y-6">
@@ -303,7 +302,6 @@ export function AdminOps() {
           >
             <span>
               Accounts ({users.length})
-              {awaiting > 0 && <span className="ml-2 font-normal text-amber-300">{awaiting} not yet onboarded</span>}
             </span>
             <span className="flex items-center gap-2 text-xs font-normal text-slate-400">
               {accountsShown ? 'Hide' : 'Show'}
@@ -321,7 +319,6 @@ export function AdminOps() {
               <tr>
                 <th className="py-2 pr-4 font-medium">Email</th>
                 <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 pr-4 font-medium">Onboarding</th>
                 <th className="py-2 pr-4 font-medium">Sessions</th>
                 <th className="py-2 pr-4 font-medium" title="Given or bought brief credits; a plan's own are on its Plan page">Brief credits</th>
                 <th className="py-2 pr-4 font-medium">Scans</th>
@@ -342,31 +339,6 @@ export function AdminOps() {
                     <span className={u.role === 'BLOCKED' ? 'text-rose-300' : u.role === 'ADMIN' ? 'text-emerald-300' : 'text-slate-300'}>
                       {u.role === 'BLOCKED' ? 'Blocked' : u.role === 'ADMIN' ? 'Admin' : u.role === 'SYSTEM' ? 'System' : u.confirmed ? 'Active' : 'Email not confirmed'}
                     </span>
-                  </td>
-                  <td className="py-2 pr-4">
-                    {u.role === 'SYSTEM' ? (
-                      <span className="text-slate-500">—</span>
-                    ) : (
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className={u.onboarding === 'no' ? 'text-amber-300' : 'text-slate-300'}>
-                          {u.onboarding === 'paid' ? 'Paid' : u.onboarding === 'waived' ? 'Waived' : u.onboarding === 'exempt' ? 'Not required' : 'Not yet'}
-                        </span>
-                        {(u.onboarding === 'no' || u.onboarding === 'waived') && (
-                          <button
-                            type="button"
-                            disabled={busy !== ''}
-                            className={btn + ' border border-slate-600 py-1 text-slate-200 hover:bg-slate-800'}
-                            onClick={() =>
-                              run('onb:' + u.id, { action: 'set_onboarded', userId: u.id, on: u.onboarding === 'no' }, (d) =>
-                                d.on ? `${d.email} is marked as onboarded (onboarding is no longer offered to them).` : `${d.email} is offered onboarding again (it is optional).`,
-                              )
-                            }
-                          >
-                            {u.onboarding === 'no' ? 'Mark onboarded' : 'Undo'}
-                          </button>
-                        )}
-                      </span>
-                    )}
                   </td>
                   <td className="py-2 pr-4 text-slate-200">{u.credits}</td>
                   <td className="py-2 pr-4 text-slate-200">{u.briefs}</td>

@@ -1,28 +1,10 @@
 import { db } from '@stakeout/db';
 import { stripe, stripeTestMode } from './stripe';
 import { InputError } from '@stakeout/core/grid';
-import { CLOSER, ONBOARDING, WELCOME, WHITE_LABEL_ITEM, itemByKey, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
+import { CLOSER, WELCOME, WHITE_LABEL_ITEM, itemByKey, itemsFor, paymentNotice, type PriceItem } from './pricing';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
 import { accountPlanNow, clientSeatCount } from './gbpBilling';
 import { getSettings, newPlansFor } from '@stakeout/core/settings';
-
-/** Accounts created before this pricing took effect, and admins, go straight to the plans. */
-const PRICING_START = new Date('2026-11-12T00:00:00Z');
-/** A zero-credit ledger entry an admin adds to waive onboarding (paid another way, or a guest). */
-export const ONBOARDING_WAIVED = 'ONBOARDING_WAIVED';
-
-/** Whether each account has onboarding behind it, and why. One query per source, for any number of accounts. */
-export async function onboardingOf(users: { id: string; role: string; createdAt: Date }[]): Promise<Map<string, Onboarding>> {
-  const ids = users.map((u) => u.id);
-  const [paid, waived] = await Promise.all([
-    db.paymentOrder.findMany({ where: { userId: { in: ids }, credits: ONBOARDING.credits, captureId: { not: null } }, select: { userId: true } }),
-    db.creditLedger.findMany({ where: { userId: { in: ids }, reason: ONBOARDING_WAIVED }, select: { userId: true } }),
-  ]);
-  const paidIds = new Set(paid.map((x) => x.userId)), waivedIds = new Set(waived.map((x) => x.userId));
-  return new Map(
-    users.map((u) => [u.id, onboardingStatus({ paid: paidIds.has(u.id), waived: waivedIds.has(u.id), admin: u.role === 'ADMIN', beforePricing: u.createdAt < PRICING_START })] as [string, Onboarding]),
-  );
-}
 
 /**
  * What this account can buy once now: the first audit before its first purchase, prospect audits,

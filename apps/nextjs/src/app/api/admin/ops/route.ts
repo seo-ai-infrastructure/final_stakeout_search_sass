@@ -7,7 +7,6 @@ import { redis } from '@stakeout/core/redis';
 import { getSettings, saveSettings } from '@stakeout/core/settings';
 import { getAuthenticatedUser, hashPassword } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
-import { ONBOARDING_WAIVED, onboardingOf } from '@/lib/billing';
 import { sendPasswordLink } from '@/lib/passwordLinks';
 import { BrandError, listBrands, removeBrand, saveBrand } from '@stakeout/core/brands';
 import { cleanDomain } from '@stakeout/core/brandHost';
@@ -61,7 +60,6 @@ export async function GET() {
         select: { id: true, email: true, role: true, creditBalance: true, briefBalance: true, emailVerifiedAt: true, createdAt: true, _count: { select: { scans: true } } },
       }),
     ]);
-    const onboarding = await onboardingOf(users);
     const settings = await getSettings(true);
     const r = redis();
     const day = (offset: number) => new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
@@ -110,7 +108,7 @@ export async function GET() {
       captchas: { today: Number(capToday ?? 0), yesterday: Number(capYesterday ?? 0) },
       scans: scans.map((s) => ({ ...s, owner: s.user.email, user: undefined })),
       brands: await listBrands(true).catch(() => []),
-      users: users.map((u) => ({ id: u.id, email: u.email, role: u.role, credits: u.creditBalance, briefs: u.briefBalance, confirmed: Boolean(u.emailVerifiedAt), createdAt: u.createdAt, scans: u._count.scans, onboarding: onboarding.get(u.id) ?? 'no' })),
+      users: users.map((u) => ({ id: u.id, email: u.email, role: u.role, credits: u.creditBalance, briefs: u.briefBalance, confirmed: Boolean(u.emailVerifiedAt), createdAt: u.createdAt, scans: u._count.scans})),
     });
   } catch (e) {
     return errorResponse(e);
@@ -220,15 +218,6 @@ export async function POST(req: Request) {
       if (!domain) throw new InputError('No such domain.');
       await removeBrand(domain);
       return Response.json({ domain });
-    }
-
-    if (b.action === 'set_onboarded') {
-      const u = await db.user.findUnique({ where: { id: String(b.userId) }, select: { id: true, email: true } });
-      if (!u) throw new InputError('No such account.');
-      // A zero-credit ledger entry: no schema change, and a dated record of the waiver.
-      if (b.on) await db.creditLedger.upsert({ where: { externalEventId: 'onboarding-waived:' + u.id }, update: {}, create: { userId: u.id, amount: 0, reason: ONBOARDING_WAIVED, externalEventId: 'onboarding-waived:' + u.id } });
-      else await db.creditLedger.deleteMany({ where: { userId: u.id, reason: ONBOARDING_WAIVED } });
-      return Response.json({ email: u.email, on: Boolean(b.on) });
     }
 
     if (b.action === 'password_link') {

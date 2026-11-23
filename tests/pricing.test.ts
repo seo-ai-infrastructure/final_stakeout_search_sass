@@ -77,16 +77,6 @@ test('the $1 payment test is for admins only; the payment alert says who paid an
   assert.equal(paymentNotice({ ...base, credits: 1000, cents: 99700, sandbox: false }).subject, 'Payment: Onboarding, $997, a@b.com');
 });
 
-test('onboarding status (sold until November 2026): paid beats waived beats exempt', async () => {
-  const { onboardingStatus } = await import('../apps/nextjs/src/lib/pricing');
-  const a = { paid: false, waived: false, admin: false, beforePricing: false };
-  assert.equal(onboardingStatus(a), 'no');
-  assert.equal(onboardingStatus({ ...a, waived: true }), 'waived');
-  assert.equal(onboardingStatus({ ...a, paid: true, waived: true }), 'paid');
-  assert.equal(onboardingStatus({ ...a, admin: true }), 'exempt');
-  assert.equal(onboardingStatus({ ...a, beforePricing: true }), 'exempt');
-});
-
 test('AI Overview tracking is part of every Chrome scan, whatever is sent; Maps scans have none', async () => {
   const { parseSpec } = await import('../packages/core/grid');
   const base = { targetBusiness: 'Acme Plumbing', keyword: 'plumber', centerLat: 28.04, centerLng: -81.95, gridSize: 3, spacingKm: 1.60934, scheduleType: 'once' };

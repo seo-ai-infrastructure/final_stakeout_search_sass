@@ -168,14 +168,5 @@ export const usd = (cents: number) => '$' + (cents / 100).toLocaleString('en-US'
 /** How many 5×5 scans a number of phone sessions covers (25 each, AI Overview tracking included). */
 export const scans5x5 = (credits: number) => Math.floor(credits / 25);
 
-export type Onboarding = 'exempt' | 'paid' | 'waived' | 'no';
-/**
- * Where an account stands on onboarding (sold until November 2026). Paid beats waived beats
- * exempt, so the admin list shows the strongest reason.
- */
-export function onboardingStatus(a: { paid: boolean; waived: boolean; admin: boolean; beforePricing: boolean }): Onboarding {
-  return a.paid ? 'paid' : a.waived ? 'waived' : a.admin || a.beforePricing ? 'exempt' : 'no';
-}
-
 /** A real report anyone can open: the business plus the highest-income neighborhoods around it (Lakeland, FL). */
 export const DEMO_REPORT_URL = '/share/daa01a387187cc2ecc1baaf0f6ff095416e0099a8f997a9e';
