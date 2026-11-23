@@ -45,7 +45,7 @@ export async function GET(_: Request, c: C) {
     // An admin reading someone else's scan is told whose it is, so the page can say so.
     const owner = me.role === 'ADMIN' ? await db.gridScan.findUnique({ where: { id }, select: { userId: true, user: { select: { email: true } } } }) : null;
     if (owner && owner.userId !== me.id) return Response.json({ ...data, viewingFor: owner.user.email });
-    return Response.json({ ...data, shareGoogle: await shareGoogleOn(id), bridge: await bridgeFor(id, me).catch(() => null) });
+    return Response.json({ ...data, shareGoogle: await shareGoogleOn(id), bridge: await bridgeFor(id, me).catch(() => null), ...(me.role === 'ADMIN' ? { rerunFree: true } : {}) });
   } catch (e) {
     return errorResponse(e);
   }
@@ -66,13 +66,19 @@ export async function POST(req: Request, c: C) {
       if (!open) throw new InputError('This scan is not running.', 400);
       return Response.json({ stopped: await stopScan(id, 'CANCELLED: stopped by the user') });
     }
-    const s = await db.gridScan.findFirst({ where: { id, userId } });
-    if (!s) throw new InputError('Scan unavailable.', 404);
+    // Re-run failed points: the owner at the usual price; an admin re-runs any scan's failed points at
+    // no charge (quality control after a fault on our side): the owner keeps what they gave back.
     if (action === 'rerun') {
-      const rerun = await requestRerun(id, userId, Array.isArray(pinIds) ? pinIds.filter((x: unknown) => typeof x === 'string') : undefined);
+      const scan = await db.gridScan.findFirst({ where: { id, ...(me.role === 'ADMIN' ? {} : { userId }) }, select: { userId: true } });
+      if (!scan) throw new InputError('Scan unavailable.', 404);
+      const free = me.role === 'ADMIN';
+      const rerun = await requestRerun(id, scan.userId, Array.isArray(pinIds) ? pinIds.filter((x: unknown) => typeof x === 'string') : undefined, { free });
+      if (free) console.log('[rerun] admin', userId, 're-ran', rerun.points, 'point(s) of scan', id, 'at no charge');
       await wakeWorker('re-run');
       return Response.json(rerun);
     }
+    const s = await db.gridScan.findFirst({ where: { id, userId } });
+    if (!s) throw new InputError('Scan unavailable.', 404);
     if (action === 'share') {
       // Chosen when the link is made: whether its visibility report carries Google's numbers.
       if (typeof google === 'boolean') await setShareGoogle(id, google);

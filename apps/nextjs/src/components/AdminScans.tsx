@@ -45,7 +45,10 @@ export default function AdminScans() {
     [query, setQuery] = useState(''),
     [open, setOpen] = useState<string | null>(null),
     [error, setError] = useState(''),
-    [loaded, setLoaded] = useState(false);
+    [loaded, setLoaded] = useState(false),
+    [rerunning, setRerunning] = useState<string | null>(null),
+    [notes, setNotes] = useState<Record<string, string>>({}),
+    [reload, setReload] = useState(0);
   usePolling(
     () =>
       fetch('/api/admin/scans?days=' + days, { cache: 'no-store' })
@@ -58,8 +61,29 @@ export default function AdminScans() {
         })
         .catch((e) => setError((e as Error).message)),
     30000,
-    [days],
+    [days, reload],
   );
+
+  /**
+   * Quality control after a fault on our side: runs a scan's failed points again (not ones a person
+   * stopped) at no charge. The account keeps the sessions those points gave back.
+   */
+  async function rerunFree(s: Scan) {
+    const pinIds = real(s).map((f) => f.id);
+    if (!pinIds.length) return;
+    setRerunning(s.id);
+    try {
+      const r = await fetch('/api/scans/' + s.id, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'rerun', pinIds }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Could not re-run the failed points.');
+      setNotes((n) => ({ ...n, [s.id]: `Re-running ${d.points === 1 ? '1 point' : `${d.points} points`} at no charge` }));
+      setReload((k) => k + 1);
+    } catch (e) {
+      setNotes((n) => ({ ...n, [s.id]: (e as Error).message }));
+    } finally {
+      setRerunning(null);
+    }
+  }
 
   const real = (s: Scan) => s.failed.filter((f) => !deliberate(f.error));
   const shown = useMemo(() => {
@@ -84,7 +108,7 @@ export default function AdminScans() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">All scans</h1>
-          <p className="text-sm text-slate-400">Every account&apos;s scans, for quality control. Open one to see its report and recordings.</p>
+          <p className="text-sm text-slate-400">Every account&apos;s scans, for quality control. Open one to see its report and recordings, or re-run its failed points at no charge.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Account, business, keyword, city" aria-label="Search scans" className="w-64 rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5" />
@@ -157,7 +181,19 @@ export default function AdminScans() {
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-slate-300">{s.completedAt ? minutes(s.dispatchedAt ?? s.createdAt, s.completedAt) + ' min' : ''}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
+                      {r.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => rerunFree(s)}
+                          disabled={rerunning === s.id}
+                          title="Runs the failed points again at no charge: the account keeps the sessions they gave back."
+                          className="mr-4 font-semibold text-amber-300 hover:underline disabled:opacity-50"
+                        >
+                          {rerunning === s.id ? 'Starting…' : `Re-run ${r.length} free`}
+                        </button>
+                      )}
                       <Link href={'/scans/' + s.id} className="font-semibold text-emerald-400 hover:underline">Open</Link>
+                      {notes[s.id] && <span className="block text-xs font-normal text-slate-400">{notes[s.id]}</span>}
                     </td>
                   </tr>
                   {open === s.id && (

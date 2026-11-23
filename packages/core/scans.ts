@@ -143,7 +143,8 @@ export async function settlePin(
       });
       const failed = 'error' in result;
       // A failed point gives back what it cost (in a mixed network, mobile and home-internet points differ).
-      const refund = !failed
+      // A point re-run at no charge kept its first refund, so failing again gives nothing back twice.
+      const refund = !failed || pin.isRefunded
         ? 0
         : pin.scan.network === 'mix'
           ? pointPrice(pin.scan, await tx.gridPin.findMany({ where: { scanId: pin.scanId }, select: { rowIdx: true, colIdx: true } }))(pin)
@@ -154,7 +155,7 @@ export async function settlePin(
           ? {
               status: 'FAILED',
               lastError: result.error.slice(0, 200),
-              isRefunded: refund > 0,
+              isRefunded: refund > 0 || pin.isRefunded,
             }
           : { ...result.data, status: 'COMPLETED' },
       });
@@ -313,10 +314,12 @@ export { RERUN_MARKER } from './rerun';
 
 /**
  * Puts a scan's failed points (or the chosen ones) back in line. Points that had been refunded are
- * charged the normal price again, and refunded automatically if the re-run fails too. The scan
+ * charged the normal price again, and refunded automatically if the re-run fails too. With `free`
+ * (an admin re-running a customer's scan after a fault on our side) nothing is charged and each
+ * point keeps its first refund, so a point that fails again is not refunded twice. The scan
  * reopens, and the worker queues the points ahead of waiting ones within seconds.
  */
-export async function requestRerun(scanId: string, userId: string, pinIds?: string[]) {
+export async function requestRerun(scanId: string, userId: string, pinIds?: string[], opts: { free?: boolean } = {}) {
   return db.$transaction(
     async (tx) => {
       const scan = await tx.gridScan.findFirst({
@@ -334,7 +337,7 @@ export async function requestRerun(scanId: string, userId: string, pinIds?: stri
         scan.network === 'mix'
           ? pointPrice(scan, await tx.gridPin.findMany({ where: { scanId }, select: { rowIdx: true, colIdx: true } }))
           : () => rerunCharge(points, scan.creditsCharged, scan.totalPins).perPoint;
-      const credits = points.filter((p) => p.isRefunded).reduce((n, p) => n + price(p), 0);
+      const credits = opts.free ? 0 : points.filter((p) => p.isRefunded).reduce((n, p) => n + price(p), 0);
       if (credits > 0) {
         const paid = await tx.user.updateMany({
           where: { id: userId, creditBalance: { gte: credits } },
@@ -342,11 +345,11 @@ export async function requestRerun(scanId: string, userId: string, pinIds?: stri
         });
         if (!paid.count)
           throw new InputError(
-            `Re-running ${points.length === 1 ? 'this point' : `${points.length} points`} needs ${credits} credits.`,
+            `Re-running ${points.length === 1 ? 'this point' : `${points.length} points`} needs ${credits} phone session${credits === 1 ? '' : 's'}.`,
             402,
           );
       }
-      for (const p of points.filter((x) => x.isRefunded)) {
+      for (const p of opts.free ? [] : points.filter((x) => x.isRefunded)) {
         // One ledger row per point and reason: earlier refunds and re-runs keep numbered names.
         const n = (await tx.creditLedger.count({ where: { pinId: p.id, reason: { startsWith: 'PIN_RETRY' } } })) + 1;
         await tx.creditLedger.updateMany({ where: { pinId: p.id, reason: 'PIN_REFUND' }, data: { reason: `PIN_REFUND_${n}` } });
@@ -354,7 +357,7 @@ export async function requestRerun(scanId: string, userId: string, pinIds?: stri
       }
       await tx.gridPin.updateMany({
         where: { id: { in: points.map((p) => p.id) }, status: 'FAILED' },
-        data: { status: 'PENDING', lastError: RERUN_MARKER, isRefunded: false },
+        data: { status: 'PENDING', lastError: RERUN_MARKER, ...(opts.free ? {} : { isRefunded: false }) },
       });
       // A point that failed for want of a working proxy moves to another ISP of the mix.
       for (const p of points) {
@@ -365,7 +368,7 @@ export async function requestRerun(scanId: string, userId: string, pinIds?: stri
         where: { id: scanId },
         data: { failedPins: { decrement: points.length }, creditsRefunded: { decrement: credits }, status: 'RUNNING', completedAt: null },
       });
-      return { points: points.length, credits };
+      return { points: points.length, credits, free: Boolean(opts.free) };
     },
     { timeout: 20000 },
   );

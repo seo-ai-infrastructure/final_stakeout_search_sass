@@ -179,6 +179,8 @@ export type GridScanData = {
   brand?: { name: string; accent: string | null; logo: string | null } | null;
   /** Set when an admin is reading another account's scan: that account's email. */
   viewingFor?: string;
+  /** Set for an admin: re-running failed points costs nothing (quality control). */
+  rerunFree?: boolean;
   /** For the owner: whether the share link's visibility report carries Google's numbers. */
   shareGoogle?: boolean;
   /** For the owner of a finished 5×5 scan of a business with no paid listing: the points it was weak on. */
@@ -647,7 +649,7 @@ export function GeoGridDashboard({
       setError((e as Error).message);
     }
   }
-  /** Re-runs failed points (all of them, or the ones given): charged per point, refunded if they fail again. */
+  /** Re-runs failed points (all of them, or the ones given): charged per point, refunded if they fail again; free when an admin re-runs them. */
   async function rerun(pinIds?: string[]) {
     setRerunBusy(true);
     setRerunNote('');
@@ -660,7 +662,7 @@ export function GeoGridDashboard({
       const d = await r.json();
       if (!r.ok) throw Error(d.error);
       setRerunNote(
-        `Re-running ${d.points === 1 ? '1 point' : `${d.points} points`}${d.credits ? ` (${d.credits} phone session${d.credits === 1 ? '' : 's'}, refunded if it fails again)` : ''}. They run next on the first free phone.`,
+        `Re-running ${d.points === 1 ? '1 point' : `${d.points} points`}${d.free ? ' at no charge' : d.credits ? ` (${d.credits} phone session${d.credits === 1 ? '' : 's'}, refunded if it fails again)` : ''}. They run next on the first free phone.`,
       );
       setReloadKey((k) => k + 1);
     } catch (e) {
@@ -710,7 +712,7 @@ export function GeoGridDashboard({
     <div className="mx-auto max-w-screen-2xl space-y-5 p-5">
       {scan.viewingFor && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-950/30 px-4 py-2 text-sm text-amber-200">
-          Quality-control view: this scan belongs to {scan.viewingFor}. You can read it and stop it; re-runs, sharing and schedules stay with the owner.{' '}
+          Quality-control view: this scan belongs to {scan.viewingFor}. You can read it, stop it and re-run its failed points at no charge to them; sharing and schedules stay with the owner.{' '}
           <a href="/admin/scans" className="underline">All scans</a>
         </div>
       )}
@@ -833,7 +835,11 @@ export function GeoGridDashboard({
             className="rounded-lg border border-emerald-500/60 px-3 py-1 font-semibold text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-50"
           >
             {rerunBusy ? 'Starting…' : `Re-run ${scan.failedPins === 1 ? 'the failed point' : `${scan.failedPins} failed points`}`}
-            {scan.creditsCharged && scan.totalPins ? ` (${(scan.creditsCharged / scan.totalPins) * scan.failedPins} credits)` : ''}
+            {scan.viewingFor || scan.rerunFree
+              ? ' at no charge'
+              : scan.creditsCharged && scan.totalPins
+                ? ((n: number) => ` (${n} phone session${n === 1 ? '' : 's'})`)((scan.creditsCharged / scan.totalPins) * scan.failedPins)
+                : ''}
           </button>
         )}
         {rerunNote && <p className="text-xs text-slate-300">{rerunNote}</p>}
