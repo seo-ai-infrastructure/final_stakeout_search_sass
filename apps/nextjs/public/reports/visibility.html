@@ -408,7 +408,9 @@ if (!DATA) {
   throw new Error('no report data');
 }
 
-const me = (name) => String(name).trim().toLowerCase() === String(DATA.business).trim().toLowerCase();
+// Google writes a name with different apostrophes, punctuation and case ("Stuart’s Plumbing", "Stuarts plumbing"): one key for all of them.
+const nameKey = (name) => String(name).toLowerCase().normalize('NFKD').replace(/[\u2018\u2019\u02bc`´']/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+const me = (name) => nameKey(name) === nameKey(DATA.business);
 const isOwnSite = (d) => Boolean(DATA.website) && (d === DATA.website || d.endsWith('.' + DATA.website));
 
 function readPin(x) {
@@ -670,9 +672,11 @@ function competitors() {
   // AI view: the first three businesses each answer named. Map view: the first three local results, where the page had them.
   const listOf = (p) => (ai ? (p.aiFirst && p.aiFirst.length ? p.aiFirst : !p.pack ? p.first : []) : p.pack ? p.first : []);
   const counted = s.pins.filter((p) => listOf(p).length);
-  counted.forEach((p) => listOf(p).forEach((n) => count.set(n, (count.get(n) || 0) + 1)));
-  const rows = [...count].sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const mine = [...count].find(([n]) => me(n));
+  // One row per firm however Google spelled it, and once per point; the first spelling seen is shown.
+  const shown = new Map();
+  counted.forEach((p) => new Set(listOf(p).map((n) => { const k = nameKey(n); if (!shown.has(k)) shown.set(k, n); return k; })).forEach((k) => count.set(k, (count.get(k) || 0) + 1)));
+  const rows = [...count].map(([k, c]) => [shown.get(k), c]).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const mine = [...count].map(([k, c]) => [shown.get(k), c]).find(([n]) => me(n));
   if (!rows.some(([n]) => me(n)) && mine) rows.push(mine);
   const max = Math.max(1, ...rows.map((r) => r[1]));
   $('#compsub').textContent = (ai ? 'Firms among the first three the AI answer named' : 'Firms in the first three local results (map pack or single panel)') + `, at ${counted.length} of ${s.pins.length} points in this scan.`;
@@ -1146,6 +1150,17 @@ function google() {
   const g = DATA.google || {};
   const N = g.numbers || null;
   const L = N && N.listing, S = N && N.search && (N.search.gsc || N.search.ga) ? N.search : null;
+  // A client's copy (a share link, or a saved offline copy) shows Google's numbers where there are
+  // some, and leaves out what isn't connected: "not connected" and setup notes are for the owner.
+  const client = Boolean(shareId || window.__REPORT_DATA__);
+  const searchNumbers = Boolean(S && ((S.gsc && S.gsc.recent) || (S.ga && (S.ga.page || S.ga.recent))));
+  if (client && !L && !searchNumbers) {
+    $('#google').hidden = true;
+    document.querySelector('a[href="#google"]')?.remove();
+    return;
+  }
+  if (client && !L) $('#gprofilecard').style.display = 'none';
+  if (client && !searchNumbers) $('#gsearchcard').style.display = 'none';
   const empty = (el, head, body) => {
     el.classList.add('empty');
     el.innerHTML = gcard(head, '', body);
