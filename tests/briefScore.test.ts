@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { brandSearch, isBranded, matchedChange, paidUnitsAbove, scorePoints, summarize, weights, type Point } from '../apps/nextjs/src/lib/briefScore';
+import { brandSearch, domainStem, isBranded, matchedChange, paidUnitsAbove, sameBusiness, scorePoints, summarize, weights, type Point } from '../apps/nextjs/src/lib/briefScore';
 import { scorePin } from '../apps/nextjs/src/lib/scoringV2';
 
 const pt = (x: Partial<Point>): Point => ({ r: 0, c: 0, lat: 28, lng: -82, area: 'Lakeland', rank: null, pack: true, oneBox: null, aiShown: false, old: false, state: 'none', featured: null, named: false, listing: null, website: null, first: [], aiFirst: [], ...x });
@@ -25,7 +25,15 @@ test('an unreadable AI answer adds nothing; an earlier reading counts as named o
   assert.equal(unread.score, parsedAbsent.score, 'unreadable = read and absent');
   assert.equal(Math.round(unread.score), 55);
   assert.ok(legacyNamed.score > legacyNot.score);
-  assert.equal(Math.round(legacyNamed.score * 10) / 10, 64.9); // 0.55 × 100 + 0.45 × 22
+  assert.equal(Math.round(legacyNamed.score * 10) / 10, 60.4); // 0.55 × 100 + 0.45 × 12
+});
+
+test('a bare mention in the AI answer never outscores a card (2.2.0)', () => {
+  const ai = (x: Record<string, unknown>) => scorePin({ r: 0, c: 0, pack: false, rank: null, aiShown: true, state: 'parsed', ...x }).baseScore!;
+  const named = ai({ named: true });
+  assert.equal(named, 12);
+  for (const card of [1, 2, 3, 4, 5, 6, 7, 8, 9, 12]) assert.ok(ai({ featured: { card } }) >= named, `card ${card} >= named`);
+  assert.equal(ai({ named: true, website: 'confirmed' }), 22, 'named + cited website');
 });
 
 test('ads above: a Local Services Ads block once, each sponsored result once, map-result ads not at all', () => {
@@ -66,4 +74,24 @@ test('branded searches and the brand search itself', () => {
   assert.equal(isBranded('emergency plumber near me', "Stuart's Plumbing"), false);
   assert.equal(isBranded('broderick law firm', 'Brandon J. Broderick, Personal Injury Attorney at Law'), true);
   assert.equal(isBranded('personal injury lawyer', 'Brandon J. Broderick, Personal Injury Attorney at Law'), false);
+});
+
+test('branded searches from the name and website alone, leaving out places and trade words', () => {
+  const stuart = { website: 'stuartsplumbing.com', places: ['Lakeland', 'Florida', 'Auburndale', 'Polk'] };
+  const brod = { website: 'https://www.brandonjbroderick.com/personal-injury/', places: ['Huntington', 'New York', 'Northport', 'Suffolk'] };
+  assert.equal(domainStem('https://www.brandonjbroderick.com/personal-injury/'), 'brandonjbroderick');
+  assert.equal(domainStem('smithlaw.co.uk'), 'smithlaw');
+  assert.equal(isBranded('stuart plumbing', "Stuart's Plumbing", stuart), true, 'possessive or not');
+  assert.equal(isBranded('stuartsplumbing.com', "Stuart's Plumbing", stuart), true, 'the website itself');
+  assert.equal(isBranded('brandonjbroderick', 'Brandon J. Broderick, Personal Injury Attorney at Law', brod), true);
+  assert.equal(isBranded('broderick law', 'Brandon J. Broderick, Personal Injury Attorney at Law', brod), true);
+  assert.equal(isBranded('car accident lawyer huntington', 'Brandon J. Broderick, Personal Injury Attorney at Law', brod), false);
+  // A business named for its town and trade: the town and its website say nothing about the brand.
+  const town = { website: 'lakelandplumbing.com', places: ['Lakeland', 'Florida'] };
+  assert.equal(isBranded('plumber lakeland', 'Lakeland Plumbing Co', town), false);
+  assert.equal(isBranded('lakeland plumbing', 'Lakeland Plumbing Co', town), false);
+  assert.equal(isBranded('best plumber near me', 'Best Plumbing', { website: 'bestplumbing.com' }), false);
+  // Names the AI answer or the map results give
+  assert.equal(sameBusiness('Stuart Plumbing', "Stuart's Plumbing"), true);
+  assert.equal(sameBusiness('Richard C Fox Plumbing', "Stuart's Plumbing"), false);
 });

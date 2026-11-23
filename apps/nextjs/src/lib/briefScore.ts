@@ -100,15 +100,57 @@ export function matchedChange(current: Scored[], earlier: Scored[][]) {
   return { change: (mean(pairs.map((x) => x.now)) as number) - (mean(pairs.map((x) => x.was)) as number), points: pairs.length, map, runs: earlier.length };
 }
 
-const TRADE = new Set(['plumbing', 'plumber', 'plumbers', 'law', 'lawyer', 'lawyers', 'attorney', 'attorneys', 'firm', 'office', 'offices', 'group', 'services', 'service', 'company', 'llc', 'inc', 'pllc', 'pc', 'co', 'the', 'and', 'of', 'at', 'personal', 'injury', 'heating', 'cooling', 'air', 'roofing', 'dental', 'clinic', 'center', 'home', 'repair', 'pros', 'experts']);
+/** Trade and firm words: in a name they say what the business does, not who it is. */
+const TRADE = new Set(['plumbing', 'plumber', 'plumbers', 'law', 'lawyer', 'lawyers', 'attorney', 'attorneys', 'firm', 'office', 'offices', 'group', 'services', 'service', 'company', 'llc', 'inc', 'pllc', 'pc', 'co', 'the', 'and', 'of', 'at', 'personal', 'injury', 'heating', 'cooling', 'air', 'roofing', 'dental', 'clinic', 'center', 'home', 'repair', 'pros', 'experts',
+  'legal', 'accident', 'accidents', 'trial', 'lawyers', 'counsel', 'hvac', 'conditioning', 'electric', 'electrical', 'electrician', 'electricians', 'roofer', 'roofers', 'dentist', 'dentistry', 'orthodontics', 'chiropractic', 'chiropractor', 'medical', 'health', 'wellness', 'landscaping', 'lawn', 'pest', 'control', 'cleaning', 'cleaners', 'carpet', 'painting', 'painters', 'construction', 'contractor', 'contractors', 'remodeling', 'restoration', 'water', 'damage', 'garage', 'door', 'doors', 'locksmith', 'towing', 'moving', 'movers', 'storage', 'insurance', 'realty', 'real', 'estate', 'homes', 'salon', 'auto', 'body', 'shop', 'glass', 'tree', 'pool', 'pools', 'solar', 'appliance', 'flooring', 'kitchen', 'bath', 'cabinets', 'concrete', 'paving', 'fence', 'fencing', 'gutters', 'windows', 'siding', 'insulation', 'septic', 'drain', 'drains', 'sewer', 'rooter', 'mechanical', 'heater', 'heaters', 'veterinary', 'animal', 'hospital', 'pharmacy']);
+/** Words people add to a search that say nothing about which business they mean. */
+const MODIFIERS = new Set(['best', 'near', 'nearby', 'emergency', 'local', 'cheap', 'affordable', 'rated', 'open', 'today', 'hour', 'hours', 'same', 'free', 'estimate', 'estimates', 'repairs', 'install', 'installation', 'replacement', 'cost', 'costs', 'price', 'prices', 'pricing', 'quote', 'quotes', 'review', 'reviews', 'number', 'phone', 'call', 'contact', 'licensed', 'certified', 'professional', 'professionals', 'reliable', 'trusted', 'quality', 'express', 'fast', 'quick', 'family', 'owned', 'city', 'county', 'area', 'north', 'south', 'east', 'west', 'central', 'american', 'national', 'united', 'premier', 'elite', 'choice', 'solutions', 'systems', 'associates', 'partners', 'corp', 'corporation', 'companies']);
 const tokens = (v: string) => v.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+/** Plurals and possessives alike: "stuarts" and "stuart" are one word. */
+const stem = (t: string) => (t.length > 4 && t.endsWith('s') && !t.endsWith('ss') ? t.slice(0, -1) : t);
 
 /** The business's own name as people search it: "Stuart's Plumbing" → "stuarts plumbing"; "Brandon J. Broderick, Personal Injury…" → "brandon j broderick". */
 export const brandSearch = (business: string) => tokens(business.split(',')[0]).join(' ');
 
-/** A search naming the business: it holds one of the name's distinctive words (5). */
-export function isBranded(keyword: string, business: string) {
-  const own = tokens(business.split(',')[0]).filter((t) => t.length >= 4 && !TRADE.has(t));
-  const kw = new Set(tokens(keyword));
-  return own.some((t) => kw.has(t));
+/** What tells a branded search apart: the business's website, and the places around it (a town's name in a business name isn't a brand). */
+export type BrandHints = { website?: string | null; places?: string[] };
+const placeWords = (places: string[] = []) => new Set(places.flatMap(tokens).flatMap((t) => [t, stem(t)]));
+const generic = (t: string, places: Set<string>) => [t, stem(t)].some((x) => TRADE.has(x) || MODIFIERS.has(x) || places.has(x));
+
+/** The website's own name: "https://www.stuartsplumbing.com/x" → "stuartsplumbing". */
+export function domainStem(website: string | null | undefined) {
+  const host = String(website ?? '').toLowerCase().trim().replace(/^[a-z]+:\/\//, '').split(/[/?#]/)[0].replace(/:\d+$/, '').replace(/^www\./, '');
+  const parts = host.split('.').filter(Boolean);
+  if (parts.length < 2) return null;
+  const at = parts.length >= 3 && parts[parts.length - 1].length === 2 && parts[parts.length - 2].length <= 3 ? parts.length - 3 : parts.length - 2;
+  const name = parts[at].replace(/[^a-z0-9]/g, '');
+  return name.length >= 4 ? name : null;
+}
+
+/** The words of the business's name that set it apart: not trade words, search words or places. */
+export function brandTokens(business: string, hints: BrandHints = {}) {
+  const places = placeWords(hints.places);
+  return [...new Set(tokens(business.split(',')[0]).filter((t) => t.length >= 4 && !generic(t, places)).map(stem))];
+}
+
+/**
+ * A search naming the business (5), worked out from its name and website with no setting at scan time:
+ * one of the name's distinctive words ("broderick law", "stuart plumbing"), or the website's own name
+ * ("stuartsplumbing"), unless that name is only trade, search and place words ("lakelandplumbing").
+ */
+export function isBranded(keyword: string, business: string, hints: BrandHints = {}) {
+  const kw = tokens(keyword).map(stem);
+  if (brandTokens(business, hints).some((t) => kw.includes(t))) return true;
+  const site = domainStem(hints.website);
+  if (!site) return false;
+  let rest = site;
+  for (const w of [...TRADE, ...MODIFIERS, ...placeWords(hints.places)].filter((x) => x.length >= 4).sort((a, b) => b.length - a.length)) rest = rest.split(w).join('');
+  return rest.length >= 4 && keyword.toLowerCase().replace(/[^a-z0-9]/g, '').includes(site);
+}
+
+/** The same business, by the name the AI answer or the map results give it. */
+export function sameBusiness(name: string, business: string) {
+  const own = tokens(business.split(',')[0]).filter((t) => t.length >= 4 && !TRADE.has(t)).map(stem);
+  const nm = new Set(tokens(name).map(stem));
+  return own.some((t) => nm.has(t)) || tokens(name).join(' ') === tokens(business).join(' ');
 }

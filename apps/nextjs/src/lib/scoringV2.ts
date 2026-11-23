@@ -14,7 +14,7 @@
  *  - Section 4: Two-Tier Commercial Attribution, PMRV Benchmark, & Stage-Aligned Unit Economics
  */
 
-export const MODEL_VERSION = '2.1.0' as const;
+export const MODEL_VERSION = '2.2.0' as const;
 export const MAX_MATCH_DISTANCE_METERS = 150;
 
 export type OneBoxState = 'won' | 'other' | null;
@@ -327,6 +327,9 @@ const PACK_RANK_UTILITY: Record<number, number> = {
   10: 4,
 };
 
+/** The business named in the AI answer's text, with no card of its own. */
+export const NAMED_IN_TEXT = 12;
+
 const AI_CARD_UTILITY: Record<number, number> = {
   1: 100,
   2: 75,
@@ -467,7 +470,8 @@ export function scorePin(pin: StakeoutPin, options?: ScorePinOptions): PinScoreR
       cardVal = card <= 3 && pin.featured?.afterMore ? Math.max(Math.round(0.45 * rawCard), AI_CARD_UTILITY[4]) : rawCard;
     }
 
-    const namedVal = pin.named ? 22 : 0;
+    // A bare mention in the answer's text, with no card: 12, so every card (#1–#9+, 100 down to 12) ties or beats it (2.2.0).
+    const namedVal = pin.named ? NAMED_IN_TEXT : 0;
     R = Math.max(inlineVal, cardVal, namedVal);
 
     if (R > 0) {

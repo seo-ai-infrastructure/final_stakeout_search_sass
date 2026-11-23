@@ -4,7 +4,7 @@ import type { VisibilityData as Full } from './visibilityReport';
 
 /** The visibility report's data; a share link may carry no Google numbers. */
 type VisibilityData = Omit<Full, 'google'> & { google: Full['google'] | null };
-import { SCORING_VERSION, brandSearch, isBranded, matchedChange, paidUnitsAbove, scorePoints, summarize, type Point, type Scored } from './briefScore';
+import { SCORING_VERSION, brandSearch, isBranded, matchedChange, sameBusiness, type BrandHints, paidUnitsAbove, scorePoints, summarize, type Point, type Scored } from './briefScore';
 import { empty, keywordPrices, pricesConfigured, type KeywordPrice } from './keywordPrices';
 
 /**
@@ -12,11 +12,13 @@ import { empty, keywordPrices, pricesConfigured, type KeywordPrice } from './key
  * the v2 engine (briefScore.ts), summed up for an owner or a board. Two cases share one page: with the
  * business's Google accounts connected, verified calls and visits are priced at local ad rates; without
  * them, the market's own search counts and prices stand in, and every estimate says so.
- * Local prices come from DataForSEO's Google Ads data (kept 14 days; a share link never pays for a lookup).
+ * Local prices come from DataForSEO's Google Ads data: one request a place, each search's figures kept 45 days
+ * for every business there (a share link never pays for a lookup).
  */
 
 const DAY = 86400000;
-const KEEP_S = 14 * 86400;
+/** Google Ads figures are 12-month averages refreshed monthly: each search's are kept 45 days per place, for every business there. */
+const PRICE_KEEP_S = 45 * 86400;
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 const r1 = (x: number | null | undefined) => (typeof x === 'number' && Number.isFinite(x) ? Math.round(x * 10) / 10 : null);
 const words = (v: string) => v.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -60,10 +62,10 @@ const hasLsa = (p: Point) => (p.ads ?? []).some((a) => a.w === 'local_services')
 function aiFirstOf(p: Point, business: string): boolean | null {
   if (!p.aiShown) return null;
   if (p.state === 'parsed') return Boolean(p.featured?.inline || p.featured?.card === 1);
-  if (p.aiFirst?.length) return isBranded(p.aiFirst[0], business) || words(p.aiFirst[0]) === words(business);
+  if (p.aiFirst?.length) return sameBusiness(p.aiFirst[0], business) || words(p.aiFirst[0]) === words(business);
   return null;
 }
-const mine = (name: string, business: string) => isBranded(name, business) || words(name) === words(business);
+const mine = (name: string, business: string) => sameBusiness(name, business) || words(name) === words(business);
 
 type Split = { axis: 'rows' | 'columns'; a: { label: string; points: number; score: number }; b: { label: string; points: number; score: number }; cut: number };
 /** The two halves of the grid that differ most (rows north and south, or columns west and east). */
@@ -126,6 +128,16 @@ function variantsOf(kw: string) {
   return [...out].filter((k) => k.split(' ').length <= 10);
 }
 
+/** Singular ↔ plural of the searched-for word: "plumber near me" ↔ "plumbers near me". */
+function pluralOf(kw: string) {
+  const m = /^(.*?)([a-z]+)( near me)?$/.exec(kw);
+  if (!m || m[2].endsWith('ing') || m[2].length < 4) return kw;
+  const w = m[2], t = w.endsWith('ss') ? w : w.endsWith('s') ? w.slice(0, -1) : w + 's';
+  return m[1] + t + (m[3] ?? '');
+}
+/** Where a withheld search's figures may sit in the same request: its variants, singular or plural. */
+const fallbacksOf = (kw: string) => [...new Set([...variantsOf(kw), ...[kw, ...variantsOf(kw)].map(pluralOf)])].filter((k) => k !== kw && k.split(' ').length <= 10);
+
 type Market = { county: string | null; city: string | null; countyName: string | null; cityName: string | null; prices: Record<string, KeywordPrice & { via?: string }>; searches: Record<string, number | null>; basket: { cpc: number; low: number | null; high: number | null; searches: number } | null; at: string };
 
 /** Google Ads figures for searches in one place, each kept 14 days on its own, so any set of searches (a share link's too) reuses them. */
@@ -144,7 +156,7 @@ async function figures(keywords: string[], location: string, lookUp: boolean, al
     const has = Boolean(p && !empty(p));
     got.set(k, has ? p : null);
     // An empty answer is kept only once Google has had its full say on it; otherwise the next owner view asks again.
-    if (has || answered.has(k)) await redis().set(keyOf(k), JSON.stringify(has ? p : null), 'EX', KEEP_S).catch(() => null);
+    if (has || answered.has(k)) await redis().set(keyOf(k), JSON.stringify(has ? p : null), 'EX', PRICE_KEEP_S).catch(() => null);
   }
   return got;
 }
@@ -153,14 +165,16 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   const where = placesOf(market, pins);
   if (!where.county || !pricesConfigured()) return null;
   const brand = brandSearch(v.business);
-  const priced = [...new Set([...plain, ...plain.flatMap(variantsOf), ...extra, ...extra.flatMap(variantsOf), brand])].slice(0, 60);
+  // One request a place: the scanned searches, the brand, Search Console's near misses, and the forms Google may file a withheld search under.
+  const priced = [...new Set([...plain, brand, ...extra, ...plain.flatMap(fallbacksOf), ...extra.flatMap(fallbacksOf)])].slice(0, 200);
   const counted = [...new Set([...plain, brand])];
   // Markets priced before figures were kept per search sit under one key for the whole set; use it while it lasts.
-  const kept = async () => { const v = await redis().get('stakeout:brief:market:v1:' + createHash('sha256').update(JSON.stringify([where.county, where.city, priced, counted])).digest('hex').slice(0, 32)).catch(() => null); return v ? (JSON.parse(v) as Market) : null; };
+  const before = [...new Set([...plain, ...plain.flatMap(variantsOf), ...extra, ...extra.flatMap(variantsOf), brand])].slice(0, 60);
+  const kept = async () => { const v = await redis().get('stakeout:brief:market:v1:' + createHash('sha256').update(JSON.stringify([where.county, where.city, before, counted])).digest('hex').slice(0, 32)).catch(() => null); return v ? (JSON.parse(v) as Market) : null; };
   const cached = await figures(priced, where.county, false, true);
   if (cached.size < priced.length) { const old = await kept(); if (old) return old; }
   const county = cached.size < priced.length && lookUp
-    ? await figures(priced, where.county, true, true).catch((e: Error) => { console.warn('[brief] county prices:', e.message); return cached; })
+    ? await figures(priced, where.county, true, false).catch((e: Error) => { console.warn('[brief] county prices:', e.message); return cached; })
     : cached;
   const city = where.city ? await figures(counted, where.city, lookUp, false).catch((e: Error) => { console.warn('[brief] city searches:', e.message); return figures(counted, where.city!, false, false); }) : null;
   if (![...county.values()].some(Boolean)) return null;
@@ -170,7 +184,7 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
     const own = byKw.get(k);
     if (own && own.cpc !== null) prices[k] = own;
     else {
-      const alt = variantsOf(k).map((x) => byKw.get(x)).find((x) => x && x.cpc !== null);
+      const alt = fallbacksOf(k).map((x) => byKw.get(x)).find((x) => x && x.cpc !== null);
       if (alt) prices[k] = { ...alt, keyword: k, via: alt.keyword };
     }
   }
@@ -199,6 +213,15 @@ const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 /** The brief, from the visibility report's data. `lookUp`: may pay for a price lookup (never on a share link). */
 export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; assumptions: unknown; link: { report: string } }) {
   const business = v.business, short = shortName(business);
+  // Branded searches are told apart from the name and website, leaving out the places the scans cover.
+  const listingAt = (v.google?.numbers as null | { listing?: { city?: string | null; region?: string | null } | null } | undefined)?.listing;
+  const [mCity, mState] = (v.market ?? '').split(',').map((x) => x.trim());
+  const hints: BrandHints = {
+    website: v.website,
+    places: [...new Set([mCity, STATES[(mState ?? '').toUpperCase()] ?? '', listingAt?.city ?? '', listingAt?.region ?? '', STATES[(listingAt?.region ?? '').toUpperCase()] ?? '',
+      ...v.scans.flatMap((sc) => (sc.pins as unknown as Point[]).flatMap((p) => [p.area ?? '', /,\s*([^,]+?) (County|Parish|Borough)\s*$/i.exec(p.tract ?? '')?.[1] ?? '']))].filter(Boolean))],
+  };
+  const branded = (kw: string) => isBranded(kw, business, hints);
   const scans = v.scans.map((s) => ({ ...s, at: new Date(s.at as unknown as string).toISOString(), pins: scorePoints(s.pins as unknown as Point[]) })).sort((a, b) => b.at.localeCompare(a.at));
   const byKw = new Map<string, typeof scans>();
   for (const s of scans) byKw.set(words(s.kw), [...(byKw.get(words(s.kw)) ?? []), s]);
@@ -210,7 +233,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
     // Why there's no change yet: no earlier scan of these points, or earlier answers read the older way on a page with no map results.
     const legacy = [latest.pins, ...earlier.map((r) => r.pins)].flat().some((p) => p.reading === 'named') && !latest.pins.some((p) => p.pack);
     return {
-      kw: latest.kw, scan: latest.id, at: latest.at, branded: isBranded(latest.kw, business), size: latest.size, km: latest.km,
+      kw: latest.kw, scan: latest.id, at: latest.at, branded: branded(latest.kw), size: latest.size, km: latest.km,
       score: sum.score, weighted: sum.weighted, afterAds: sum.afterAds, points: sum.points,
       top3: latest.pins.filter(inTop3).length, first: latest.pins.filter(isFirst).length,
       change, changeWhy: change ? null : earlier.length && legacy ? ('legacy' as const) : ('first' as const),
@@ -232,7 +255,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
 
   // Exhibit A: the largest recent scan of a search that doesn't name the business.
   const newest = Date.parse(scans[0]?.at ?? new Date().toISOString());
-  const pool = scans.filter((s) => !isBranded(s.kw, business) && newest - Date.parse(s.at) <= 14 * DAY);
+  const pool = scans.filter((s) => !branded(s.kw) && newest - Date.parse(s.at) <= 14 * DAY);
   const ms = [...(pool.length ? pool : scans)].sort((a, b) => b.pins.length - a.pins.length || b.at.localeCompare(a.at))[0];
   const mapPins = ms.pins;
   const lsaPts = mapPins.filter(hasLsa).length;
@@ -308,7 +331,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
   const connected = Boolean(calls || visits || clicks);
   const actions = connected ? { now: (calls?.now ?? 0) + (visits?.now ?? 0) + (clicks?.now ?? 0), was: (calls?.was ?? 0) + (visits?.was ?? 0) + (clicks?.was ?? 0), calls, visits, clicks, directions: daily?.kind === 'daily' ? { now: n(daily.totals?.directions), was: n(daily.before?.directions) } : null } : null;
   const periods = (g?.search as { periods?: unknown } | null)?.periods ?? (g?.listing as { periods?: unknown } | null)?.periods ?? null;
-  const offPageOne = (gsc?.queries ?? []).filter((q) => q.position !== null && q.position > 8 && q.position <= 20 && !isBranded(q.query, business)).sort((a, b) => b.impressions - a.impressions).slice(0, 3);
+  const offPageOne = (gsc?.queries ?? []).filter((q) => q.position !== null && q.position > 8 && q.position <= 20 && !branded(q.query)).sort((a, b) => b.impressions - a.impressions).slice(0, 3);
 
   // Local prices and searches.
   const plainKws = [...new Set(plain.map((s) => words(s.kw)))];
@@ -397,7 +420,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
     headline, searches: searches.map(({ runs, ...s }) => ({ ...s, score: r1(s.score), weighted: r1(s.weighted), afterAds: r1(s.afterAds), runs: runs.length })),
     map, exB, ads, ledger, assumptions: { ...a, sample, base },
     marketData: market ? { county: market.countyName, city: market.cityName, at: market.at, basket: market.basket, rows: [...perSearch.map((s) => ({ kw: s.kw, searches: s.searches, cpc: s.price?.cpc ?? null, low: s.price?.lowBid ?? null, high: s.price?.highBid ?? null, via: (s.price as { via?: string } | null)?.via ?? null, top3: s.top3, points: s.points, at: s.at })), (() => { const b = brandSearch(business); const p = market.prices[b]; return { kw: b, brand: true, searches: market.searches[b] ?? null, cpc: p?.cpc ?? null, low: p?.lowBid ?? null, high: p?.highBid ?? null, via: null, top3: null, points: null, at: null }; })()] } : null,
-    google: connected ? { calls, visits, clicks, directions: actions?.directions ?? null, views: daily?.kind === 'daily' ? { now: n(daily.totals?.views), was: n(daily.before?.views) } : null, websiteClicks: daily?.kind === 'daily' ? { now: n(daily.totals?.websiteClicks), was: n(daily.before?.websiteClicks) } : null, pageVisits: ga?.page ? { now: n(ga.page.recent?.sessions), was: n(ga.page.before?.sessions) } : null, gsc: gsc?.recent ? { impressions: { now: n(gsc.recent.impressions), was: n(gsc.before?.impressions) }, position: { now: gsc.recent.position ?? null, was: gsc.before?.position ?? null } } : null, listingTop: kwRows.map((r) => ({ kw: r.keyword, latest: r.latest, es: Boolean(r.es), branded: isBranded(r.keyword, business) })), offPageOne, spanish: { listed: gsc?.listed ?? 0, spanish: gsc?.spanish ?? 0, shown: gsc?.spanishShown ?? 0 }, brandShown: (gsc?.queries ?? []).filter((q) => isBranded(q.query, business)).reduce((acc, q) => acc + q.impressions, 0), brandClicks: (gsc?.queries ?? []).filter((q) => isBranded(q.query, business)).reduce((acc, q) => acc + q.clicks, 0), totalShown: gsc?.recent?.impressions ?? 0 } : null,
+    google: connected ? { calls, visits, clicks, directions: actions?.directions ?? null, views: daily?.kind === 'daily' ? { now: n(daily.totals?.views), was: n(daily.before?.views) } : null, websiteClicks: daily?.kind === 'daily' ? { now: n(daily.totals?.websiteClicks), was: n(daily.before?.websiteClicks) } : null, pageVisits: ga?.page ? { now: n(ga.page.recent?.sessions), was: n(ga.page.before?.sessions) } : null, gsc: gsc?.recent ? { impressions: { now: n(gsc.recent.impressions), was: n(gsc.before?.impressions) }, position: { now: gsc.recent.position ?? null, was: gsc.before?.position ?? null } } : null, listingTop: kwRows.map((r) => ({ kw: r.keyword, latest: r.latest, es: Boolean(r.es), branded: branded(r.keyword) })), offPageOne, spanish: { listed: gsc?.listed ?? 0, spanish: gsc?.spanish ?? 0, shown: gsc?.spanishShown ?? 0 }, brandShown: (gsc?.queries ?? []).filter((q) => branded(q.query)).reduce((acc, q) => acc + q.impressions, 0), brandClicks: (gsc?.queries ?? []).filter((q) => branded(q.query)).reduce((acc, q) => acc + q.clicks, 0), totalShown: gsc?.recent?.impressions ?? 0 } : null,
     moves: ranked.map(({ weight, kw, type, ...m }) => m),
     receipts, receiptsTotal: scans.reduce((acc, s) => acc + s.pins.length, 0), scansTotal: scans.length,
     measured: { points: scans.reduce((acc, s) => acc + s.pins.length, 0), scans: scans.length, searches: searches.length, from: scans[scans.length - 1]?.at ?? null, to: scans[0]?.at ?? null },
