@@ -51,8 +51,9 @@ export async function POST(req: Request) {
       const [queries, devices, catalog] = await Promise.all([ask(gscRequest(range.recent, { device: 'MOBILE', page: at }, 'query', 1000)), ask(gscRequest(range.recent, { page: at }, 'device', 10)), catalogFor(u)]);
       const pos = (r: GscRow) => (typeof r.position === 'number' ? round1(r.position) : null);
       const flagged = lowMobileCtr((queries.rows ?? []).map((r) => ({ query: r.keys?.[0] ?? '', clicks: r.clicks ?? 0, impressions: r.impressions ?? 0, position: pos(r) })), new URL(website).hostname, text(b.brand) ?? '');
-      // What the scan would cost this account: nothing more when it has the credits, otherwise its cheapest pack.
-      const pack = catalog.find((i) => i.key === 'welcome') ?? catalog.find((i) => i.key === 'pack-25');
+      // What the scan would cost this account: nothing more when it has the sessions, otherwise the cheapest
+      // item that covers a 5×5 (the first audit with seats; the Closer Pack or a session pack with the plans).
+      const pack = catalog.filter((i) => i.credits >= 25).sort((a, b) => a.cents - b.cents)[0];
       return NextResponse.json({
         source: 'gsc-mobile', ...flagged,
         device: deviceFlag((devices.rows ?? []).map((r) => ({ device: r.keys?.[0] ?? '', impressions: r.impressions ?? 0, position: pos(r) }))),

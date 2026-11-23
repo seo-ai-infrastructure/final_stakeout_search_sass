@@ -50,13 +50,13 @@ function Wordmark({ size }: { size: number }) {
   );
 }
 
-/** The bar above the header: Black Friday while it lasts, then the $5 first audit. */
+/** The bar above the header: Black Friday while it lasts, then the way in (the Closer Pack with the plans, the $5 first audit before them). */
 export function OfferBanner({ live, href, plans }: { live: boolean; href: string; plans?: boolean }) {
   return (
     <a href={href} style={{ display: 'block', background: '#1A0F08', borderBottom: '1px solid rgba(255, 85, 0, 0.35)', color: '#FFD9C2', textAlign: 'center', padding: '11px clamp(16px, 2vw, 24px)', fontSize: 14, lineHeight: 1.5, fontWeight: 500 }}>
       {live ? (
         <>
-          <span style={{ color: ACCENT, fontWeight: 700 }}>{PROMO.name}:</span> start your first {plans ? 'plan' : 'seat'} by {PROMO.endsText} and get {BONUS_POINTS} bonus phone sessions free, {['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'][BONUS_AUDITS] || BONUS_AUDITS} 5×5 audits’ worth. Your first 5×5 audit is {usd(WELCOME.cents)} →
+          <span style={{ color: ACCENT, fontWeight: 700 }}>{PROMO.name}:</span> start your first {plans ? 'plan' : 'seat'} by {PROMO.endsText} and get {BONUS_POINTS} bonus phone sessions free, {['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'][BONUS_AUDITS] || BONUS_AUDITS} 5×5 audits’ worth{plans ? ' →' : <>. Your first 5×5 audit is {usd(WELCOME.cents)} →</>}
         </>
       ) : (
         <>

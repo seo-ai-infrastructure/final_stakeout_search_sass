@@ -19,6 +19,8 @@ export const offerQuery = (query: string, businessName: string) => new URLSearch
 export default function ScanOffer({ query, businessName, why, onClose }: { query: string; businessName: string; why: string; onClose: () => void }) {
   const [balance, setBalance] = useState<number | null>(null);
   const [items, setItems] = useState<Item[] | null>(null);
+  // False when checkout is not set up or the price list did not load.
+  const [ready, setReady] = useState(true);
   const [pick, setPick] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -29,12 +31,14 @@ export default function ScanOffer({ query, businessName, why, onClose }: { query
     fetch('/api/billing/checkout').then((r) => r.json()).then((d) => {
       if (!live) return;
       const all: Item[] = d.packs ?? [];
-      // A first purchase gets the first audit; after that, one or five prospect audits, or a top-up.
+      // What covers the scan. With seats: the first audit alone before a first purchase, then prospect
+      // audits or a top-up. With the plans: the Closer Pack (twice per account) and phone-session packs.
       const welcome = all.find((i) => i.key === 'welcome');
-      const list = welcome ? [welcome] : all.filter((i) => i.key === 'prospect-1' || i.key === 'prospect-5' || i.key === 'topup-100');
+      const list = welcome ? [welcome] : all.filter((i) => ['closer', 'sessions-100', 'sessions-250', 'sessions-500', 'prospect-1', 'prospect-5', 'topup-100'].includes(i.key));
+      setReady(d.ready !== false);
       setItems(d.ready === false ? [] : list);
       setPick(list[0]?.key ?? '');
-    }).catch(() => { if (live) setItems([]); });
+    }).catch(() => { if (live) { setReady(false); setItems([]); } });
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', esc);
     return () => { live = false; window.removeEventListener('keydown', esc); };
@@ -77,8 +81,13 @@ export default function ScanOffer({ query, businessName, why, onClose }: { query
             <p className="text-sm text-slate-400">You have {balance.toLocaleString()} phone sessions; this scan takes {POINTS}.</p>
             <a href={'/new-scan?' + q} className="rounded-xl bg-emerald-400 px-4 py-3 text-center text-[15px] font-extrabold text-slate-950 hover:bg-emerald-300">Set up the scan</a>
           </>
-        ) : items.length === 0 ? (
+        ) : items.length === 0 && !ready ? (
           <p className="text-sm text-slate-400">Checkout is being set up. Email sass@stakeoutsearch.com and we will sort it out.</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            You have {balance.toLocaleString()} phone session{balance === 1 ? '' : 's'}; this scan takes {POINTS}.{' '}
+            <a href="/profiles?tab=plan" className="font-semibold text-emerald-300 underline">Choose a plan</a> for phone sessions every month.
+          </p>
         ) : (
           <>
             <p className="text-sm text-slate-400">You have {balance.toLocaleString()} phone session{balance === 1 ? '' : 's'}; this scan takes {POINTS}.</p>
@@ -86,7 +95,7 @@ export default function ScanOffer({ query, businessName, why, onClose }: { query
               {items.map((i) => (
                 <label key={i.key} className={'flex cursor-pointer items-center gap-3 rounded-lg border p-3 ' + (pick === i.key ? 'border-emerald-400 bg-emerald-500/10' : 'border-slate-700 hover:bg-slate-800')}>
                   <input type="radio" name="offer-pack" checked={pick === i.key} onChange={() => setPick(i.key)} />
-                  <span className="min-w-0 flex-1"><span className="block font-semibold text-slate-100">{i.name}</span><span className="block text-xs text-slate-400">{i.credits} phone sessions{i.key === 'welcome' ? ' · your first purchase, once' : i.credits > POINTS ? ` · this scan and ${Math.floor(i.credits / POINTS) - 1} more like it` : ' · this scan'}</span></span>
+                  <span className="min-w-0 flex-1"><span className="block font-semibold text-slate-100">{i.name}</span><span className="block text-xs text-slate-400">{i.credits} phone sessions{i.key === 'closer' ? ' and 1 brief credit' : ''}{i.key === 'welcome' ? ' · your first purchase, once' : i.credits > POINTS ? ` · this scan and ${Math.floor(i.credits / POINTS) - 1} more like it` : ' · this scan'}</span></span>
                   <span className="shrink-0 font-bold text-slate-100">{usd(i.cents)}</span>
                 </label>
               ))}

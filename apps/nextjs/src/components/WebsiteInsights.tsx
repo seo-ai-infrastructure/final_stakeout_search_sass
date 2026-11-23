@@ -90,7 +90,7 @@ export function LockedListingCard({ onUpgrade, connected }: { onUpgrade: () => v
       <p className="mt-0.5 text-xs text-slate-500">Your listing on Google Maps and Search. Two ways to start:</p>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/5 p-4">
-          <button type="button" onClick={scan} className="w-full rounded-lg bg-emerald-400 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-300">See who is beating you on Google Maps · {first === false ? '25 credits ($9)' : '$5 first scan (25 credits)'}</button>
+          <button type="button" onClick={scan} className="w-full rounded-lg bg-emerald-400 px-4 py-3 text-sm font-extrabold text-slate-950 hover:bg-emerald-300">See who is beating you on Google Maps · {first ? '$5 first scan, 25 phone sessions' : '25 phone sessions'}</button>
           <p className="mt-2 text-xs text-slate-400">A 5×5 grid of real phones around your business, each one running your most-shown search in Google and recording the screen: the map pack, the AI Overview, and where you are.</p>
         </div>
         <div className="rounded-lg border border-slate-700 p-4">
