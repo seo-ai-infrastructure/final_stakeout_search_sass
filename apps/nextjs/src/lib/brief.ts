@@ -400,14 +400,17 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   const areas = [...new Set(plain.map((k) => (prices[k] ? prices[k].area ?? where.countyName : null)).filter((x): x is string => Boolean(x)))];
   const priceArea = areas.length > 1 ? `${areas.slice(0, -1).join(', ')} and ${areas[areas.length - 1]}` : areas[0] ?? where.countyName;
   const priceNote = thin && areas.includes('U.S.') ? `${where.countyName}’s search volume is too thin for reliable local auction pricing, so these are U.S. averages.` : null;
-  // The basket: the prices quoted for the scanned searches, each group Google prices counted once, by searches.
+  // The basket. Priced locally: the scanned searches and their variants in the county, each group
+  // Google prices counted once, by searches (quotable prices only). Priced at U.S. averages, or when the
+  // county has none: the prices quoted for the scanned searches.
   const seen = new Set<string>(), groups: KeywordPrice[] = [];
-  for (const k of plain) {
-    const p = prices[k];
-    if (!p || p.cpc === null || !p.searches) continue;
+  const take = (p: KeywordPrice | null | undefined) => {
+    if (!p || p.cpc === null || !p.searches) return;
     const sig = [p.searches, p.cpc, p.lowBid, p.highBid].join('|');
     if (!seen.has(sig)) { seen.add(sig); groups.push(p); }
-  }
+  };
+  if (!thin) for (const k of [...plain, ...plain.flatMap(variantsOf)]) take(quotable(byKw.get(k)));
+  if (!groups.length) for (const k of plain) take(prices[k]);
   const total = groups.reduce((a, p) => a + (p.searches ?? 0), 0);
   const w = (f: (p: KeywordPrice) => number | null) => { const ok = groups.filter((p) => f(p) !== null); const t = ok.reduce((a, p) => a + (p.searches ?? 0), 0); return t ? ok.reduce((a, p) => a + (f(p) as number) * (p.searches ?? 0), 0) / t : null; };
   const out: Market = {
