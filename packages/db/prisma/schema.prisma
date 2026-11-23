@@ -556,6 +556,30 @@ model Kept {
 
 /// A white-label service an agency ordered for one of its clients (citations, local traffic),
 /// fulfilled by hand. Statuses: awaiting_payment, intake_submitted, live, completed, paused.
+/// A compiled revenue brief: the brief as it stood when compiled, so everyone who opens it reads the same numbers.
+model Brief {
+  id          String   @id @default(cuid())
+  /// The account that compiled it (the scan's owner).
+  userId      String   @map("user_id")
+  /// The scan it was opened from.
+  scanId      String   @map("scan_id")
+  business    String
+  /// The scoring version it was built with.
+  version     String
+  /// The brief as built: numbers, words and the local prices, shown as they are.
+  data        Json
+  /// The firm's own inputs for the modeled figures, changed after compiling (free).
+  assumptions Json?
+  /// Its share link, once one is made.
+  shareToken  String?  @unique @map("share_token")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, createdAt])
+  @@index([scanId])
+  @@map("briefs")
+}
+
 model ServiceOrder {
   id             String   @id
   /// The account that ordered it.

@@ -312,7 +312,17 @@ body{width:auto;max-width:none}
   .bars .row{grid-template-columns:minmax(0,1fr) 72px 24px;gap:10px}
   .mast .wrap{height:auto;padding:14px 0;gap:12px;flex-wrap:wrap}
 }
-@media print{.edit,.tabs,.more .btn{display:none}}
+.state{border-bottom:1px solid var(--hair);background:#f7f8f9}
+.state .wrap{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 20px;padding:11px 0;font-size:13.5px;line-height:1.45;color:var(--graphite)}
+.state b{color:var(--ink);font-weight:600}
+.state .acts{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.state button{font:600 13px var(--sans);border-radius:6px;padding:8px 13px;cursor:pointer;border:1px solid var(--ink);background:var(--ink);color:#fff}
+.state button.quiet{background:#fff;color:var(--ink);border-color:var(--hair)}
+.state button:disabled{opacity:.6;cursor:default}
+.state button:focus-visible,.state a:focus-visible{outline:2px solid var(--client);outline-offset:2px}
+.state a{color:var(--ink);font-weight:600}
+.state .note{color:var(--fog);font-size:12.5px}
+@media print{.edit,.tabs,.more .btn,.state{display:none}}
 .plate .mapbox{position:absolute;inset:0}
 .plate .receipt{left:auto;right:max(24px,calc((100% - 1200px) / 2))}
 .plate .band{right:auto;width:162px;left:max(16px,calc((100% - 1200px) / 2 - 64px))}
@@ -324,6 +334,7 @@ body{width:auto;max-width:none}
   <div class="logo" id="logo"><span class="mark"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></div>
   <div class="mast-meta"><b>Local search and revenue brief</b><br><span id="mastdate"></span><br><span class="ver" id="ver"></span></div>
 </div></header>
+<div class="state" id="state" hidden><div class="wrap" id="statein"></div></div>
 <div class="status" id="status">Loading the brief…</div>
 <main id="brief" hidden>
 <section class="title wrap"><p class="client" id="client"></p><h1 id="h1"></h1><p class="dek" id="dek"></p></section>
@@ -393,6 +404,11 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const qs = new URLSearchParams(location.search);
 const scanId = qs.get('scan'), shareId = qs.get('share');
+// A compiled brief: by its id for the owner (?brief=), or by its share link (?b=).
+const briefId = qs.get('brief'), briefToken = qs.get('b');
+const savedUrl = () => '/api/briefs/' + encodeURIComponent(briefId);
+/** Where this brief's inputs are saved: the compiled brief itself, or the business's inputs on a live brief. */
+const inputsUrl = () => (briefId ? savedUrl() : '/api/scans/' + encodeURIComponent(scanId) + '/brief');
 const ET = { timeZone: 'America/New_York' };
 const dayLong = (iso) => new Date(iso).toLocaleDateString('en-US', { ...ET, month: 'long', day: 'numeric', year: 'numeric' });
 const dayMd = (iso) => new Date(iso).toLocaleDateString('en-US', { ...ET, month: 'long', day: 'numeric' });
@@ -523,12 +539,12 @@ function openPop() {
   const close = () => { pop.remove(); $('#editbtn')?.focus(); };
   $('#popcancel').onclick = () => { D.assumptions = before; modeled(); close(); };
   $('#popreset').onclick = async () => {
-    await fetch('/api/scans/' + encodeURIComponent(scanId) + '/brief', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reset: true }) });
+    await fetch(inputsUrl(), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reset: true }) });
     D.assumptions = { ...D.assumptions.base, sample: true, base: D.assumptions.base }; modeled(); close();
   };
   $('#popsave').onclick = async () => {
     const next = read();
-    const r = await fetch('/api/scans/' + encodeURIComponent(scanId) + '/brief', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assumptions: next }) });
+    const r = await fetch(inputsUrl(), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assumptions: next }) });
     const v = await r.json().catch(() => ({}));
     if (!r.ok) { $('#popmsg').textContent = 'Not saved: ' + (v.error || r.status); return; }
     D.assumptions = { ...v.assumptions, sample: false, base: D.assumptions.base }; modeled(); close();
@@ -769,17 +785,46 @@ function receipts() {
   $('#rsub').textContent = `“${cap(D.map.kw)}”, ${dayLong(D.map.at)}, ${timeEt(D.map.at)}.`;
   $('#rcpts').innerHTML = D.receipts.map((r) => `<tr><td class="pt">${esc(r.point)}</td><td class="c-area">${esc(r.area || '')}</td><td class="c-saw">${esc(r.saw)}</td><td class="c-ads" data-l="Ads on the page">${esc(r.ads)}</td><td class="r" style="font-weight:600">${one(r.score)}</td><td class="${r.rec ? 'rec' : 'muted'}">${r.rec ? 'Recording' : 'No recording'}</td></tr>`).join('');
   $('#rall').textContent = `Show all ${int(D.receiptsTotal)} receipts from ${D.scansTotal} scans`;
-  $('#rall').href = D.link.report;
+  if (D.link.report) $('#rall').href = D.link.report; else $('#rall').hidden = true;
+}
+/** The line under the masthead: a live brief can be compiled; a compiled one says when, and can be shared. */
+function state() {
+  const C = D.compiled, el = $('#statein');
+  if (C) {
+    el.innerHTML = `<span><b>Compiled ${esc(dayLong(C.at))}, ${esc(timeEt(C.at))}</b> · scoring version ${esc(D.version)}. ${D.canEdit ? 'It stays as it is; the live brief keeps recalculating.' : ''}</span>` +
+      (D.canEdit ? `<span class="acts"><a href="/reports/brief.html?scan=${encodeURIComponent(C.scan)}">Open the live brief</a><button type="button" id="sharebtn">${C.share ? 'Copy share link' : 'Make a share link'}</button><span class="note" id="sharemsg"></span></span>` : '');
+    $('#sharebtn')?.addEventListener('click', async () => {
+      const b = $('#sharebtn'); b.disabled = true;
+      const r = await fetch(savedUrl(), { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ share: true }) });
+      const v = await r.json().catch(() => ({}));
+      b.disabled = false;
+      if (!r.ok || !v.share) { $('#sharemsg').textContent = 'No link: ' + (v.error || r.status); return; }
+      D.compiled.share = v.share; b.textContent = 'Copy share link';
+      const url = location.origin + v.share;
+      try { await navigator.clipboard.writeText(url); $('#sharemsg').textContent = 'Link copied. Anyone with it can read this brief.'; } catch { $('#sharemsg').textContent = url; }
+    });
+  } else if (D.canCompile && scanId) {
+    el.innerHTML = `<span><b>Live brief.</b> It recalculates every time it opens. Compile it to keep this version and share it.</span><span class="acts"><button type="button" id="compilebtn">Compile brief</button><span class="note" id="compilemsg"></span></span>`;
+    $('#compilebtn').addEventListener('click', async () => {
+      const b = $('#compilebtn'); b.disabled = true; b.textContent = 'Compiling…';
+      const r = await fetch('/api/briefs', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scanId }) });
+      const v = await r.json().catch(() => ({}));
+      if (r.ok && v.id) { location.href = '/reports/brief.html?brief=' + encodeURIComponent(v.id); return; }
+      b.disabled = false; b.textContent = 'Compile brief'; $('#compilemsg').textContent = 'Not compiled: ' + (v.error || r.status);
+    });
+  } else return;
+  $('#state').hidden = false;
 }
 function method() {
   $('#mver').textContent = `Scoring version ${D.version}.`;
 }
 
 async function load() {
-  if (!scanId && !shareId) return status('<b>No scan chosen.</b> Open this brief from a scan in Stakeout.');
+  if (!scanId && !shareId && !briefId && !briefToken) return status('<b>No scan chosen.</b> Open this brief from a scan in Stakeout.');
   const slow = setTimeout(() => { if (!$('#status').hidden) $('#status').innerHTML = 'Loading the brief… The first time, this looks up the area’s Google Ads prices, which can take up to half a minute.'; }, 5000);
   try {
-    const r = await fetch(shareId ? '/api/share/' + encodeURIComponent(shareId) + '/brief' : '/api/scans/' + encodeURIComponent(scanId) + '/brief', { credentials: 'same-origin', cache: 'no-store' });
+    const url = briefToken ? '/api/share/briefs/' + encodeURIComponent(briefToken) : briefId ? savedUrl() : shareId ? '/api/share/' + encodeURIComponent(shareId) + '/brief' : '/api/scans/' + encodeURIComponent(scanId) + '/brief';
+    const r = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
     if (r.status === 401) return status('<b>Sign in to Stakeout</b> to see this brief. <a href="/login?next=' + encodeURIComponent(location.pathname + location.search) + '">Sign in</a>');
     const v = await r.json().catch(() => null);
     if (!r.ok || !v) return status('<b>This brief isn’t available.</b> ' + esc(v?.error || ''));
@@ -790,7 +835,7 @@ async function load() {
     clearTimeout(slow);
   }
   $('#status').hidden = true; $('#brief').hidden = false;
-  title(); ledger(); exhibitA(); exhibitB(); exhibitC(); exhibitD(); moves(); receipts(); method();
+  title(); ledger(); exhibitA(); exhibitB(); exhibitC(); exhibitD(); moves(); receipts(); method(); state();
 }
 load();
 

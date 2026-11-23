@@ -5,6 +5,7 @@ import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { visibilityForScan } from '@/lib/visibilityReport';
 import { assumptionsKey, buildBrief, cleanAssumptions, defaultsFor } from '@/lib/brief';
+import { canCompile } from '@/lib/briefStore';
 
 export const maxDuration = 60;
 type C = { params: Promise<{ scanId: string }> };
@@ -18,7 +19,7 @@ async function ownerOf(id: string, me: { id: string; role: string }) {
 /**
  * The local search and revenue brief (/reports/brief.html?scan=…) for someone signed in: the scan,
  * the business's other scans, its Google numbers when connected, and local prices (a first view may
- * pay for a lookup; kept 14 days).
+ * pay for a lookup; kept 45 days per place and search). It recalculates on every open; compiling keeps a copy.
  */
 export async function GET(_: Request, c: C) {
   try {
@@ -28,7 +29,7 @@ export async function GET(_: Request, c: C) {
     const v = await visibilityForScan(id, me);
     const kept = await redis().get(assumptionsKey(s.userId, s.targetBusiness)).catch(() => null);
     const brief = await buildBrief(v, { lookUp: true, assumptions: kept ? JSON.parse(kept) : null, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(id) } });
-    return Response.json({ ...brief, canEdit: true }, { headers: { 'Cache-Control': 'private, no-store' } });
+    return Response.json({ ...brief, canEdit: true, canCompile: canCompile(me) }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (e) {
     return errorResponse(e);
   }
