@@ -106,8 +106,8 @@ const adsAt = (p: Point) => {
 };
 
 /** County and city as DataForSEO names them, from the grid's census tracts and the market ("Lakeland, FL"). */
-function placesOf(v: VisibilityData, pins: Point[]) {
-  const [city, st] = (v.market ?? '').split(',').map((x) => x.trim());
+function placesOf(market: string | null, pins: Point[]) {
+  const [city, st] = (market ?? '').split(',').map((x) => x.trim());
   const state = STATES[(st ?? '').toUpperCase()];
   const counties = pins.map((p) => /,\s*([^,]+ (County|Parish|Borough))\s*$/i.exec(p.tract ?? '')?.[1]).filter((x): x is string => Boolean(x));
   const county = counties.sort((a, b) => counties.filter((x) => x === b).length - counties.filter((x) => x === a).length)[0];
@@ -128,11 +128,11 @@ function variantsOf(kw: string) {
 
 type Market = { county: string | null; city: string | null; countyName: string | null; cityName: string | null; prices: Record<string, KeywordPrice & { via?: string }>; searches: Record<string, number | null>; basket: { cpc: number; low: number | null; high: number | null; searches: number } | null; at: string };
 
-async function marketFor(v: VisibilityData, plain: string[], extra: string[], pins: Point[], lookUp: boolean): Promise<Market | null> {
-  const where = placesOf(v, pins);
+async function marketFor(v: VisibilityData, market: string | null, plain: string[], extra: string[], pins: Point[], lookUp: boolean): Promise<Market | null> {
+  const where = placesOf(market, pins);
   if (!where.county || !pricesConfigured()) return null;
   const brand = brandSearch(v.business);
-  const priced = [...new Set([...plain, ...plain.flatMap(variantsOf), ...extra, brand])].slice(0, 60);
+  const priced = [...new Set([...plain, ...plain.flatMap(variantsOf), ...extra, ...extra.flatMap(variantsOf), brand])].slice(0, 60);
   const counted = [...new Set([...plain, brand])];
   const key = 'stakeout:brief:market:v1:' + createHash('sha256').update(JSON.stringify([where.county, where.city, priced, counted])).digest('hex').slice(0, 32);
   const kept = await redis().get(key).catch(() => null);
@@ -226,7 +226,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
     split: split ? { axis: split.axis, cut: split.cut, a: { ...split.a, score: r1(split.a.score) }, b: { ...split.b, score: r1(split.b.score) } } : null,
     receipt: pick ? {
       r: pick.r, c: pick.c, area: pick.area, at: (pick as { at?: string | null }).at ?? ms.at, score: r1(pick.score), afterAds: r1(pick.afterAds),
-      saw: sawAt(pick, business), ads: adsAt(pick), aiFirst: pick.aiFirst ?? [], first: pick.first ?? [], you: (pick.aiFirst ?? []).map((x) => mine(x, business)),
+      saw: sawAt(pick, business), ads: adsAt(pick), aiFirst: pick.aiFirst ?? [], first: pick.first ?? [], you: (pick.aiFirst ?? []).map((x) => mine(x, business)), youMap: (pick.first ?? []).map((x) => mine(x, business)),
       listingLinks: pick.state === 'parsed' && pick.listing && typeof pick.listing === 'object' ? (pick.listing.links ?? null) : null,
       inc: pick.inc ?? null, hh: pick.hh ?? null, rec: Boolean((pick as { rec?: boolean }).rec),
     } : null,
@@ -285,7 +285,10 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
 
   // Local prices and searches.
   const plainKws = [...new Set(plain.map((s) => words(s.kw)))];
-  const market = await marketFor(v, plainKws, offPageOne.map((q) => words(q.query)), mapPins, opts.lookUp).catch(() => null);
+  // The market: the listing's own city when Google says it, else the city at the grid's centre.
+  const lc = g?.listing as { city?: string | null; region?: string | null } | null | undefined;
+  const place = lc?.city && lc?.region ? `${lc.city}, ${lc.region}` : v.market;
+  const market = await marketFor(v, place, plainKws, offPageOne.map((q) => words(q.query)), mapPins, opts.lookUp).catch(() => null);
   const priceOf = (k: string) => market?.prices[words(k)] ?? null;
 
   // Assumptions: the client's own, else the sample inputs.
@@ -313,7 +316,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
       const pins = sr.runs[0].pins;
       const places = [1, 2, 3].map((k) => ({ k, n: pins.filter((p) => p.rank === k && p.oneBox !== 'won').length + (k === 1 ? pins.filter((p) => p.oneBox === 'won').length : 0) })).filter((x) => x.n);
       const nf = pins.filter((p) => p.pack && !p.rank && p.oneBox !== 'won').length;
-      moves.push({ type: 'first', kw: s.kw, title: `Get ${short} to first for “${s.kw}”`, why: `${short} came ${places.map((x) => `${ordinal(x.k)} at ${x.n}`).join(', ') || 'below third everywhere'} of ${sr.points} points${nf ? `, and wasn’t found at ${nf}` : ''}.`, inPlay: s.searches.toLocaleString('en-US'), inPlayNote: `searches a month${market?.cityName ? ' from ' + market.cityName : ''}`, price: cpcText(s.kw), weight: s.searches * (1 - first) });
+      moves.push({ type: 'first', kw: s.kw, title: `Get ${short} to first for “${s.kw}”`, why: `Of ${sr.points} points, ${short} came ${places.map((x) => `${ordinal(x.k)} at ${x.n}`).join(' and ') || 'below third at every one'}${nf ? `, and wasn’t found at ${nf}` : ''}.${places.some((x) => x.k === 1) ? '' : ' It never came first.'}`, inPlay: s.searches.toLocaleString('en-US'), inPlayNote: `searches a month${market?.cityName ? ' from ' + market.cityName : ''}`, price: cpcText(s.kw), weight: s.searches * (1 - first) });
     }
   }
   if (rivalPanels.length >= Math.max(3, 0.2 * mapPins.length) && split) {
@@ -344,7 +347,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
   const firstMove = moves.filter((m) => m.type === 'first').sort((x, y) => y.weight - x.weight)[0];
   if (weakest && plain.length > 1 && firstMove?.kw !== weakest.kw) {
     const vol = market?.searches[words(weakest.kw)] ?? null;
-    moves.push({ type: 'weakest', kw: weakest.kw, title: `Lift ${short} for “${weakest.kw}”`, why: `It’s ${short}’s weakest search, at ${r1(weakest.score)} of 100: first at ${weakest.first} of ${weakest.points} points.`.replace('’’s', '’'), inPlay: vol ? vol.toLocaleString('en-US') : `${weakest.points} points`, inPlayNote: vol ? `searches a month${market?.cityName ? ' from ' + market.cityName : ''}, Exhibit D` : 'scanned points', price: cpcText(weakest.kw), weight: vol ?? 10 });
+    moves.push({ type: 'weakest', kw: weakest.kw, title: `Lift ${short} for “${weakest.kw}”`, why: `It’s ${/[’']s$/.test(short) ? short : short + '’s'} weakest search, at ${r1(weakest.score)} of 100: first at ${weakest.first} of ${weakest.points} points.`, inPlay: vol ? vol.toLocaleString('en-US') : `${weakest.points} points`, inPlayNote: vol ? `searches a month${market?.cityName ? ' from ' + market.cityName : ''}, Exhibit D` : 'scanned points', price: cpcText(weakest.kw), weight: vol ?? 10 });
   }
   const ranked: Move[] = [];
   // One move of each kind (the biggest "get to first" only), ranked by what each puts in play.
@@ -358,7 +361,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
   return {
     version: SCORING_VERSION,
     built: new Date().toISOString(),
-    business, short, website: v.website, market: v.market, brand: v.brand, mapStyle: v.map, link: opts.link,
+    business, short, website: v.website, market: place, brand: v.brand, mapStyle: v.map, link: opts.link,
     connected, periods,
     headline, searches: searches.map(({ runs, ...s }) => ({ ...s, score: r1(s.score), weighted: r1(s.weighted), afterAds: r1(s.afterAds), runs: runs.length })),
     map, exB, ads, ledger, assumptions: { ...a, sample, base },

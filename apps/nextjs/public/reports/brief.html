@@ -290,7 +290,7 @@ body{width:auto;max-width:none}
 @media print{.edit,.tabs,.more .btn{display:none}}
 .plate .mapbox{position:absolute;inset:0}
 .plate .receipt{left:auto;right:max(24px,calc((100% - 1200px) / 2))}
-.plate .band{right:auto;left:max(16px,calc((100% - 1200px) / 2 - 40px))}
+.plate .band{right:auto;width:162px;left:max(16px,calc((100% - 1200px) / 2 - 64px))}
 @media (max-width:1100px){.plate .mapbox{position:relative;inset:auto}}
 </style>
 </head>
@@ -380,6 +380,7 @@ const money2 = (v) => '$' + Number(v).toFixed(2);
 const pct = (v) => Math.round(v * 100) + '%';
 const cap = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
 const poss = (s) => (/[’']s$/.test(s) ? s : s + '’s');
+const word = (n) => (n >= 0 && n <= 9 ? ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'][n] : String(n));
 const half = (label) => String(label).replace(/ \d.*$/, '').toLowerCase();
 const chg = (now, was, unit = '') => (now === was ? `same as the ${unit || 'period'} before` : `${now > was ? '▲' : '▼'} ${int(Math.abs(now - was))} from ${int(was)}`);
 let D = null;
@@ -548,7 +549,7 @@ function exhibitA() {
     $('#receipt').innerHTML = `<div class="where"><b>${esc(R.area || 'This point')}</b><span>Point R${R.r + 1}·C${R.c + 1}</span></div>
       <p class="when">Searched ${esc(dayLong(R.at))} at ${esc(timeEt(R.at))}, on a real phone at this point</p>
       <div class="score"><b>${Math.round(R.score)}</b><span>${esc(R.saw)}${R.ads !== 'None' ? `, below ${esc(R.ads.replace(/^(\d+) /, '$1 '))}` : ', and no ads'}</span></div>
-      ${R.aiFirst.length ? `<h4>Google’s AI answer, first three named</h4><ol>${R.aiFirst.map((n, i) => `<li class="${R.you[i] ? 'you' : ''}"><i>${i + 1}</i><span>${esc(n)}${R.you[i] ? '<span class="y">You</span>' : ''}</span></li>`).join('')}</ol>` : R.first.length ? `<h4>The map results, first three</h4><ol>${R.first.map((n, i) => `<li><i>${i + 1}</i><span>${esc(n)}</span></li>`).join('')}</ol>` : ''}
+      ${R.aiFirst.length ? `<h4>Google’s AI answer, first three named</h4><ol>${R.aiFirst.map((n, i) => `<li class="${R.you[i] ? 'you' : ''}"><i>${i + 1}</i><span>${esc(n)}${R.you[i] ? '<span class="y">You</span>' : ''}</span></li>`).join('')}</ol>` : R.first.length ? `<h4>The map results, first three</h4><ol>${R.first.map((n, i) => `<li class="${R.youMap?.[i] ? 'you' : ''}"><i>${i + 1}</i><span>${esc(n)}${R.youMap?.[i] ? '<span class="y">You</span>' : ''}</span></li>`).join('')}</ol>` : ''}
       <div class="facts">${R.listingLinks ? `<span>Google listing cited<em>${R.listingLinks} links</em></span>` : ''}${R.inc ? `<span>Median household income<em>${money(R.inc)}</em></span>` : ''}${R.hh !== null ? `<span>Households in the tract<em>${int(R.hh)}</em></span>` : ''}</div>
       ${R.rec ? '<p class="rec">Screen recording on file</p>' : ''}`;
     void youIdx;
@@ -657,15 +658,15 @@ function exhibitB() {
   if (!B) { $('#exb').hidden = true; return; }
   const rows = [B.ai && ['Named first in Google’s AI answer', B.ai, B.counts.ai], B.map && ['First in the map results, or their single listing', B.map, B.counts.map]].filter(Boolean);
   const [lead, grids, counts] = rows[0];
-  const last = counts[counts.length - 1], prev = counts.slice(0, -1), dates = grids.slice(0, -1).map((g) => dayMd(g.at));
-  const same = prev.every((x) => x === prev[0]);
-  const dl = (ds) => [...new Set(ds)].reduce((a, d, i, l) => a + (i ? (i === l.length - 1 ? ' and ' : ', ') : '') + d, '');
-  const tail = same ? (last === prev[0] ? `the same as on ${dl(dates)}` : `${last > prev[0] ? 'up' : 'down'} from ${prev[0]} on ${dl(dates)}`) : `against ${prev.map((c, i) => `${c} on ${dates[i]}`).join(', ')}`;
+  const last = counts[counts.length - 1], prev = counts.slice(0, -1);
+  const lo = Math.min(...prev), hi = Math.max(...prev), runs = prev.length === 1 ? 'the run before' : `the ${word(prev.length)} runs before`;
+  const tail = lo === hi ? (last === lo ? `the same as in ${runs}` : `${last > lo ? 'up' : 'down'} from ${lo} in ${runs}`) : last > hi ? `up from ${lo} to ${hi} in ${runs}` : last < lo ? `down from ${lo} to ${hi} in ${runs}` : `against ${lo} to ${hi} in ${runs}`;
   $('#bh2').textContent = `On the same ${B.points} points, ${rows[0] === rows.find((r) => r[0].startsWith('Named')) ? `Google’s AI answer named ${D.short} first` : `${D.short} came first in the map results`} at ${last} on ${dayMd(grids[grids.length - 1].at)}, ${tail}`;
   void lead;
   const W = B.width;
   $('#mgrid').style.gridTemplateColumns = `minmax(0,1fr) repeat(${grids.length},${Math.max(76, W * 16 + 44)}px)`;
-  $('#mgrid').innerHTML = '<span></span>' + grids.map((g) => `<span class="hd">${esc(dayShort(g.at))}</span>`).join('') + rows.map(([label, gs]) => `<span class="lab">${esc(label)}</span>` + gs.map((g) => `<span class="mg"><span class="g" style="grid-template-columns:repeat(${W},13px)">${[...g.cells].map((v) => `<i class="${v === '1' ? 'on' : v === 'u' ? 'u' : v === 'x' ? 'x' : ''}"></i>`).join('')}</span><b>${[...g.cells].filter((v) => v === '1').length}</b></span>`).join('')).join('');
+  const dup = new Set(grids.map((g) => dayShort(g.at))).size < grids.length;
+  $('#mgrid').innerHTML = '<span></span>' + grids.map((g) => `<span class="hd">${esc(dayShort(g.at))}${dup ? `<br><span class="muted" style="font-weight:400">${esc(timeEt(g.at).replace(' ET', ''))}</span>` : ''}</span>`).join('') + rows.map(([label, gs]) => `<span class="lab">${esc(label)}</span>` + gs.map((g) => `<span class="mg"><span class="g" style="grid-template-columns:repeat(${W},13px)">${[...g.cells].map((v) => `<i class="${v === '1' ? 'on' : v === 'u' ? 'u' : v === 'x' ? 'x' : ''}"></i>`).join('')}</span><b>${[...g.cells].filter((v) => v === '1').length}</b></span>`).join('')).join('');
   const mixed = D.map && grids.length;
   $('#bsrc').innerHTML = `<b>Source:</b> the same ${B.points} points on ${grids.map((g) => `${dayMd(g.at)} (${timeEt(g.at)})`).join(', ')}.${mixed ? ' Answers read card by card count card 1; earlier readings count the first business named.' : ''}`;
 }
@@ -715,7 +716,7 @@ function exhibitD() {
   const plain = rows.filter((r) => !r.brand);
   const total = plain.reduce((a, r) => a + (r.searches ?? 0), 0);
   const cpcs = plain.map((r) => r.cpc).filter((x) => x !== null);
-  $('#dh2').textContent = md ? `${md.city || 'The city'} makes ${plain.length === 1 ? 'this search' : `these ${plain.length} searches`} ${int(total)} times a month.${cpcs.length ? ` Advertisers pay ${money2(Math.min(...cpcs))}${Math.max(...cpcs) > Math.min(...cpcs) ? ' to ' + money2(Math.max(...cpcs)) : ''} a click for ${plain.length === 1 ? 'it' : 'them'}.` : ''}` : `What ${D.short} is missing until its Google accounts are connected`;
+  $('#dh2').textContent = md ? `${md.city || 'The city'} makes ${plain.length === 1 ? 'this search' : `these ${word(plain.length)} searches`} ${int(total)} times a month.${cpcs.length ? ` Advertisers pay ${money2(Math.min(...cpcs))}${Math.max(...cpcs) > Math.min(...cpcs) ? ' to ' + money2(Math.max(...cpcs)) : ''} a click for ${plain.length === 1 ? 'it' : 'them'}.` : ''}` : `What ${D.short} is missing until its Google accounts are connected`;
   $('#dsub').textContent = md ? `Google Ads figures, 12-month averages: searches from ${md.city || 'the city'}, cost per click across ${md.county}. ${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.` : `${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.`;
   $('#dbody').innerHTML = (md ? `<div class="tscroll"><table class="tbl mkt"><thead><tr><th>Search</th><th class="r" style="width:170px">Searches a month, ${esc(md.city || 'the city')}</th><th class="r" style="width:170px">Cost per click, ${esc(md.county)}</th><th class="r" style="width:190px">Top-of-page bids</th><th class="r" style="width:190px">${esc(D.short)} in the top three</th></tr></thead><tbody>` +
     rows.map((r) => `<tr class="${r.brand ? 'brand' : ''}"><td>${esc(r.kw)}${r.brand ? '<span>Searches naming the business</span>' : r.via ? `<span>Priced as “${esc(r.via)}”: Google withholds this exact search</span>` : ''}</td><td class="r">${r.searches === null ? 'Not reported' : int(r.searches)}</td><td class="r">${r.cpc === null ? 'Not reported' : money2(r.cpc)}</td><td class="r">${r.low !== null && r.high !== null ? `${money2(r.low)} to ${money2(r.high)}` : 'Not reported'}</td><td class="r">${r.brand ? 'Not scanned' : `${r.top3} of ${r.points} points<span>${esc(dayMd(r.at))}</span>`}</td></tr>`).join('') + '</tbody></table></div>' : '') +
