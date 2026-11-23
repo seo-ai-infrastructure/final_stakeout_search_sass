@@ -12,6 +12,7 @@ import GbpAgents from '@/components/GbpAgents';
 import GbpOverview from '@/components/GbpOverview';
 import GbpAllCalendar from '@/components/GbpAllCalendar';
 import WebsiteInsights, { Lock, LockedListingCard } from '@/components/WebsiteInsights';
+import { ACCOUNT_PLANS } from '@stakeout/core/gbpPlans';
 import {
   DAYS, DESCRIPTION_MAX, RED_COOLDOWN_DAYS, addressOf, descriptionWarnings, openingOf, serviceAreasOf, diff, highScrutiny, problemWith, redBlock, siteOf, specialOf, upcomingHolidays, worst,
   type AddressForm, type DayHours, type SpecialDay, type FieldChange, type GbpChange, type GbpLocation, type Tier,
@@ -165,8 +166,16 @@ export default function GbpEditor({ addon = false }: { addon?: boolean } = {}) {
       // Back from paying for the AI agents add-on, or for listings.
       const forAgents = q.get('tab') === 'agents';
       go(forAgents ? 'agents' : 'plan');
-      api<{ on: boolean }>('/api/billing/gbp', { confirm: paid })
-        .then(() => { setNotice(forAgents ? 'Payment received. The AI agents add-on is on: make a key below.' : 'Payment received. Your seats are on.'); readProfiles(); })
+      api<{ on: boolean; plan?: string | null; pointsPerMonth?: number; briefs?: { perMonth?: number } }>('/api/billing/gbp', { confirm: paid })
+        .then((r) => {
+          // An account plan (Scout, Agency, Scale) says what the month brings, listing add-ons included.
+          const name = r.plan ? (ACCOUNT_PLANS as Record<string, { name: string }>)[r.plan]?.name : undefined;
+          const briefs = r.briefs?.perMonth ?? 0;
+          setNotice(forAgents ? 'Payment received. The AI agents add-on is on: make a key below.'
+            : name ? `Payment received. Your ${name} plan is on: ${(r.pointsPerMonth ?? 0).toLocaleString('en-US')} phone sessions and ${briefs} brief credit${briefs === 1 ? '' : 's'} a month.`
+            : 'Payment received. Your seats are on.');
+          readProfiles();
+        })
         .catch(() => setNotice('Payment is still going through. Your listings switch on as soon as it does; reload in a minute.'));
     }
     if (r || g || paid) window.history.replaceState(null, '', window.location.pathname);

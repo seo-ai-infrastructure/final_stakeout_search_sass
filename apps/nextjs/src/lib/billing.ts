@@ -1,7 +1,7 @@
 import { db } from '@stakeout/db';
 import { stripe, stripeTestMode } from './stripe';
 import { InputError } from '@stakeout/core/grid';
-import { CLOSER, WELCOME, WHITE_LABEL_ITEM, itemByKey, itemsFor, paymentNotice, type PriceItem } from './pricing';
+import { CLOSER, CLOSER_LIMIT, WELCOME, WHITE_LABEL_ITEM, itemByKey, itemsFor, paymentNotice, type PriceItem } from './pricing';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
 import { accountPlanNow, clientSeatCount } from './gbpBilling';
 import { getSettings, newPlansFor } from '@stakeout/core/settings';
@@ -65,6 +65,21 @@ type Session = {
   payment_intent?: string | { id: string } | null;
 };
 
+/** A Closer Pack paid past the per-account limit: the claim stops and the payment goes back. */
+class PastLimit extends Error {}
+
+/**
+ * Sends a payment straight back and closes its order without adding anything. Asking twice refunds
+ * once (Stripe's idempotency key), and only the call that closes the order tells the admins.
+ */
+async function sendBack(purchase: { id: string; userId: string; credits: number; item: string | null }, paid: { intent: string; payment: string; card: string | null; cents: number }) {
+  if (paid.intent) await stripe('/refunds', 'POST', { payment_intent: paid.intent, reason: 'duplicate' }, 'refund-' + paid.intent);
+  const closed = await db.paymentOrder.updateMany({ where: { id: purchase.id, captureId: null }, data: { captureId: paid.payment, cardFingerprint: paid.card, refundedAt: new Date() } });
+  const user = await db.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
+  if (closed.count) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: paid.cents, balance: user.creditBalance, orderId: purchase.id, captureId: paid.payment, item: purchase.item, refunded: true });
+  return { ...user, credits: 0, briefs: 0, item: purchase.item, fresh: false, refunded: true as const };
+}
+
 /**
  * Records a paid checkout, once: the points go on the account and the admins are told. Called when
  * the buyer comes back from Stripe and again by Stripe's webhook; whichever is first counts. The
@@ -100,18 +115,22 @@ export async function fulfill(sessionId: string) {
       where: { item: WELCOME.key, captureId: { not: null }, refundedAt: null, id: { not: sessionId }, OR: [{ userId: purchase.userId }, ...(card ? [{ cardFingerprint: card }] : [])] },
       select: { id: true },
     });
-    if (had) {
-      // The money goes back first (asking twice refunds once), then the order is closed without points.
-      if (intent) await stripe('/refunds', 'POST', { payment_intent: intent, reason: 'duplicate' }, 'refund-' + intent);
-      const closed = await db.paymentOrder.updateMany({ where: { id: sessionId, captureId: null }, data: { captureId: payment, cardFingerprint: card, refundedAt: new Date() } });
-      const user = await db.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
-      if (closed.count) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: paidCents, balance: user.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item, refunded: true });
-      return { ...user, credits: 0, fresh: false, refunded: true as const };
-    }
+    if (had) return sendBack(purchase, { intent, payment, card, cents: paidCents });
   }
-  if (purchase.refundedAt) return { ...(await db.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } })), credits: 0, fresh: false, refunded: true as const };
+  if (purchase.refundedAt) return { ...(await db.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } })), credits: 0, briefs: 0, item: purchase.item, fresh: false, refunded: true as const };
   let fresh = false;
+  // Briefs bought (packs, the Closer Pack's one): on the account for good.
+  const briefs = itemByKey(purchase.item)?.briefs ?? 0;
   const result = await db.$transaction(async (tx) => {
+    if (purchase.item === CLOSER.key) {
+      // Two per account. The price list stops offering it at two, but checkouts opened before then can
+      // still be paid: the account's row is held so two paid at once cannot both count as the second,
+      // and one past the limit goes back (below). An order already recorded is never undone here.
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${purchase.userId} FOR UPDATE`;
+      const mine = await tx.paymentOrder.findUnique({ where: { id: sessionId }, select: { captureId: true } });
+      const had = await tx.paymentOrder.count({ where: { userId: purchase.userId, item: CLOSER.key, captureId: { not: null }, refundedAt: null, id: { not: sessionId } } });
+      if (mine?.captureId === null && had >= CLOSER_LIMIT) throw new PastLimit();
+    }
     const claimed = await tx.paymentOrder.updateMany({ where: { id: sessionId, captureId: null }, data: { captureId: payment, ...(card ? { cardFingerprint: card } : {}) } });
     if (claimed.count) {
       fresh = true;
@@ -120,13 +139,15 @@ export async function fulfill(sessionId: string) {
         await tx.creditLedger.create({ data: { userId: purchase.userId, amount: purchase.credits, reason: 'STRIPE_TOPUP', externalEventId: 'stripe:' + payment } });
         await tx.user.update({ where: { id: purchase.userId }, data: { creditBalance: { increment: purchase.credits } } });
       }
-      // Briefs bought (packs, the Closer Pack's one): on the account for good.
-      const briefs = itemByKey(purchase.item)?.briefs ?? 0;
       if (briefs > 0) await tx.user.update({ where: { id: purchase.userId }, data: { briefBalance: { increment: briefs } } });
     }
     return tx.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
+  }).catch((e) => {
+    if (e instanceof PastLimit) return null;
+    throw e;
   });
+  if (result === null) return sendBack(purchase, { intent, payment, card, cents: paidCents });
   // Only the first time this payment is recorded: the browser and Stripe's webhook both report it.
   if (fresh) await alertPayment({ userId: purchase.userId, credits: purchase.credits, cents: paidCents, balance: result.creditBalance, orderId: sessionId, captureId: payment, item: purchase.item });
-  return { ...result, credits: purchase.credits, fresh, refunded: false as const };
+  return { ...result, credits: purchase.credits, briefs, item: purchase.item, fresh, refunded: false as const };
 }

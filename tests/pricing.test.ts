@@ -179,3 +179,23 @@ test('pricing: with the account plans, the Closer Pack (twice at most), sessions
   // The old catalog is untouched until the switch.
   assert.deepEqual(keys({ firstPurchase: true }).slice(0, 1), ['welcome']);
 });
+
+test('the Closer Pack past the limit: refunded, with the reason for the buyer and the admins', async () => {
+  const { CLOSER, CLOSER_LIMIT, paidMessage, paymentNotice } = await import('../apps/nextjs/src/lib/pricing');
+  const base = { buyer: 'a@b.com', balance: 50, orderId: 'cs_test', captureId: 'pi_test', sandbox: false };
+  const back = paymentNotice({ ...base, credits: CLOSER.credits, cents: CLOSER.cents, item: CLOSER.key, refunded: true });
+  assert.equal(back.subject, 'Refunded: Closer Pack past the limit, a@b.com');
+  assert.match(back.lines[0], /paid \$19 for a Closer Pack, but this account already has 2, .* refunded and nothing was added/);
+  assert.match(paymentNotice({ ...base, credits: 25, cents: 500, item: 'welcome', refunded: true }).subject, /^Refunded: second first audit/);
+  assert.equal(paidMessage({ refunded: true, item: CLOSER.key }), `The Closer Pack is limited to ${CLOSER_LIMIT} per account, and this account already has ${CLOSER_LIMIT}. Your payment was refunded in full; nothing was added.`);
+  assert.match(paidMessage({ refunded: true, item: 'welcome' }), /^The first audit is one per account and per card/);
+});
+
+test('what a buyer reads back from Stripe names what was added', async () => {
+  const { paidMessage } = await import('../apps/nextjs/src/lib/pricing');
+  assert.equal(paidMessage({ item: 'closer', credits: 50, briefs: 1 }), 'Payment received: 50 phone sessions and 1 brief credit added.');
+  assert.equal(paidMessage({ item: 'briefs-5', credits: 0, briefs: 5 }), 'Payment received: 5 brief credits added.', 'not the white-label message');
+  assert.equal(paidMessage({ item: 'sessions-250', credits: 250, briefs: 0 }), 'Payment received: 250 phone sessions added.');
+  assert.equal(paidMessage({ item: 'white-label', credits: 0, briefs: 0 }), 'Payment received. We will email you to set up your white label.');
+  assert.equal(paidMessage({ plan: 'Growth', credits: 1600 }), 'You are on the Growth plan: 1,600 phone sessions added, and the same every month until you cancel.');
+});

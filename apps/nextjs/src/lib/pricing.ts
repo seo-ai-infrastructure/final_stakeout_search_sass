@@ -146,10 +146,28 @@ export function itemsFor(state: { admin?: boolean; /** Has never paid for anythi
   return state.admin ? [...items, ADMIN_TEST] : items;
 }
 
+/**
+ * What the buyer reads on coming back from Stripe after a one-time purchase (or an older credit plan):
+ * what was added, or why the payment went back.
+ */
+export function paidMessage(d: { refunded?: boolean; item?: string | null; plan?: string | null; credits?: number; briefs?: number }): string {
+  if (d.refunded)
+    return d.item === CLOSER.key
+      ? `The Closer Pack is limited to ${CLOSER_LIMIT} per account, and this account already has ${CLOSER_LIMIT}. Your payment was refunded in full; nothing was added.`
+      : 'The first audit is one per account and per card, and this one has already been used. Your payment was refunded in full; no phone sessions were added.';
+  const credits = Number(d.credits) || 0, briefs = Number(d.briefs) || 0;
+  if (d.plan) return `You are on the ${d.plan} plan: ${credits.toLocaleString('en-US')} phone sessions added, and the same every month until you cancel.`;
+  const got = [credits ? `${credits.toLocaleString('en-US')} phone sessions` : '', briefs ? `${briefs} brief credit${briefs === 1 ? '' : 's'}` : ''].filter(Boolean);
+  return got.length ? `Payment received: ${got.join(' and ')} added.` : 'Payment received. We will email you to set up your white label.';
+}
+
 /** The email an admin gets when a payment is recorded: who paid, for what, and what to do next. */
 export function paymentNotice(p: { buyer: string; credits: number; cents: number; balance: number; orderId: string; captureId: string; sandbox: boolean; item?: string | null; /** Paid for a second first audit: refunded, no points. */ refunded?: boolean }) {
   const item = itemOf(p);
-  if (p.refunded) return { subject: `${p.sandbox ? '[Test] ' : ''}Refunded: second first audit, ${p.buyer}`, lines: [`${p.buyer} paid ${usd(p.cents)} for the first audit, but this account or this card has already had one. The payment was refunded and no phone sessions were added.`, `Stripe checkout ${p.orderId}, payment ${p.captureId}.`] };
+  if (p.refunded)
+    return p.item === CLOSER.key
+      ? { subject: `${p.sandbox ? '[Test] ' : ''}Refunded: Closer Pack past the limit, ${p.buyer}`, lines: [`${p.buyer} paid ${usd(p.cents)} for a Closer Pack, but this account already has ${CLOSER_LIMIT}, the most one account can buy. The payment was refunded and nothing was added.`, `Stripe checkout ${p.orderId}, payment ${p.captureId}.`] }
+      : { subject: `${p.sandbox ? '[Test] ' : ''}Refunded: second first audit, ${p.buyer}`, lines: [`${p.buyer} paid ${usd(p.cents)} for the first audit, but this account or this card has already had one. The payment was refunded and no phone sessions were added.`, `Stripe checkout ${p.orderId}, payment ${p.captureId}.`] };
   const name = item?.name ?? p.credits + ' phone sessions';
   const what = p.credits ? ` (${p.credits.toLocaleString('en-US')} phone sessions). Their balance is now ${p.balance.toLocaleString('en-US')}.` : '.';
   const lines = [
