@@ -182,7 +182,7 @@ export type GridScanData = {
   /** For the owner: whether the share link's visibility report carries Google's numbers. */
   shareGoogle?: boolean;
   /** For the owner of a finished 5×5 scan of a business with no paid listing: the points it was weak on. */
-  bridge?: { weak: number; total: number; why: 'rank' | 'ai'; business: string; monthly: string } | null;
+  bridge?: { weak: number; total: number; why: 'rank' | 'ai'; business: string; monthly: string; addon?: boolean } | null;
   id: string;
   targetBusiness: string;
   /** The business's own website (a bare domain), when it was given. */
@@ -718,7 +718,7 @@ export function GeoGridDashboard({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/5 px-4 py-3">
           <p className="min-w-0 flex-1 text-sm text-slate-200">
             <span className="font-semibold text-slate-50">{scan.bridge.business} {scan.bridge.why === 'rank' ? 'missed the top 3' : 'was left out of the AI Overview'} on {scan.bridge.weak} of {scan.bridge.total} points.</span>{' '}
-            <span className="text-slate-400">Put its Google listing on a Command seat ({scan.bridge.monthly} a month) for Business Profile insights, the gaps against the competitors above it, and scheduled posts.</span>
+            <span className="text-slate-400">{scan.bridge.addon ? `Add the listing add-on for its Google listing (${scan.bridge.monthly} a month) for Business Profile insights, the gaps against the competitors above it, scheduled posts and AI agents.` : `Put its Google listing on a Command seat (${scan.bridge.monthly} a month) for Business Profile insights, the gaps against the competitors above it, and scheduled posts.`}</span>
           </p>
           <a href="/profiles?tab=listing" className="whitespace-nowrap rounded-lg bg-emerald-500 px-3.5 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-400">Manage this listing · {scan.bridge.monthly}/mo</a>
         </div>

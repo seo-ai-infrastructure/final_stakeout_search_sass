@@ -16,7 +16,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { TurnstileWidget } from '@/components/TurnstileWidget';
-import { usd, WELCOME } from '@/lib/pricing';
+import { CLOSER, usd, WELCOME } from '@/lib/pricing';
 const verifyNotice: Record<string, string> = {
   expired: 'That link has expired or was already used. Sign in to request a new one.',
   error: 'We couldn’t confirm that link. Try again from the latest email.',
@@ -36,6 +36,9 @@ function LoginFormContent() {
     signups && searchParams.get('mode') === 'register' ? 'register' : 'login',
   );
   const auditSignup = signups && mode === 'register' && nextPath === '/new-scan?buy=welcome';
+  // From the Closer Pack button on the site.
+  const closerSignup = signups && mode === 'register' && nextPath === '/new-scan?buy=closer';
+  const offerSignup = auditSignup || closerSignup;
   useEffect(() => {
     fetch('/api/auth/config', { cache: 'no-store' })
       .then((r) => r.json())
@@ -93,13 +96,15 @@ function LoginFormContent() {
             <Crosshair className="h-7 w-7 stroke-[2.5]" />
           </div>
         </div>
-        <h1 className={`mt-4 text-center text-2xl font-extrabold tracking-tight text-white${auditSignup ? '' : ' uppercase'}`}>
-          {auditSignup ? `Create an account for your ${usd(WELCOME.cents)} audit` : 'Stakeout Observatory'}
+        <h1 className={`mt-4 text-center text-2xl font-extrabold tracking-tight text-white${offerSignup ? '' : ' uppercase'}`}>
+          {closerSignup ? `Create an account for your ${usd(CLOSER.cents)} Closer Pack` : auditSignup ? `Create an account for your ${usd(WELCOME.cents)} audit` : 'Stakeout Observatory'}
         </h1>
-        <p className={auditSignup ? 'mt-2 text-center text-sm leading-6 text-slate-300' : 'mt-1 text-center text-xs text-slate-400'}>
-          {auditSignup
-            ? 'See one local search from 25 locations. Get a phone recording at each point and a second scan seven days later.'
-            : 'Device-Observed Mobile Search & AI GeoGrid Intelligence'}
+        <p className={offerSignup ? 'mt-2 text-center text-sm leading-6 text-slate-300' : 'mt-1 text-center text-xs text-slate-400'}>
+          {closerSignup
+            ? 'Two full 5×5 audits on real phones, with a recording at every point, and a revenue brief for your pitch.'
+            : auditSignup
+              ? 'See one local search from 25 locations. Get a phone recording at each point and a second scan seven days later.'
+              : 'Device-Observed Mobile Search & AI GeoGrid Intelligence'}
         </p>
       </div>
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -141,10 +146,12 @@ function LoginFormContent() {
             </button>
           </div>
           {mode === 'register' && (
-            <div className={`mb-5 flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/25${auditSignup ? ' p-3 text-sm leading-5' : ''}`}>
+            <div className={`mb-5 flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-950/25${offerSignup ? ' p-3 text-sm leading-5' : ''}`}>
               <Coins className="h-4 w-4 shrink-0 text-emerald-400" />
               <span>
-                {auditSignup
+                {closerSignup
+                  ? 'Next, review the Closer Pack and continue to checkout.'
+                  : auditSignup
                   ? 'Next, review your first audit and continue to checkout.'
                   : <>Confirm your email after signing up to <strong>activate your account</strong>.</>}
               </span>
@@ -237,13 +244,17 @@ function LoginFormContent() {
                 </>
               ) : (
                 <>
-                  {auditSignup ? 'Create account and continue' : 'Create account'}
+                  {offerSignup ? 'Create account and continue' : 'Create account'}
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}
             </button>
           </form>
-          {auditSignup ? (
+          {closerSignup ? (
+            <p className="mt-4 text-center text-xs leading-5 text-slate-300">
+              Pay {usd(CLOSER.cents)} once. No subscription, and the phone sessions and brief never expire.
+            </p>
+          ) : auditSignup ? (
             <p className="mt-4 text-center text-xs leading-5 text-slate-300">
               Pay {usd(WELCOME.cents)} once. If you start a monthly plan, we’ll take {usd(WELCOME.cents)} off your first month.
             </p>

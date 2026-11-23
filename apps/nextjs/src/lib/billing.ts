@@ -1,9 +1,10 @@
 import { db } from '@stakeout/db';
 import { stripe, stripeTestMode } from './stripe';
 import { InputError } from '@stakeout/core/grid';
-import { ONBOARDING, WELCOME, WHITE_LABEL_ITEM, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
+import { CLOSER, ONBOARDING, WELCOME, WHITE_LABEL_ITEM, itemByKey, itemsFor, onboardingStatus, paymentNotice, type Onboarding, type PriceItem } from './pricing';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
-import { clientSeatCount } from './gbpBilling';
+import { accountPlanNow, clientSeatCount } from './gbpBilling';
+import { getSettings, newPlansFor } from '@stakeout/core/settings';
 
 /** Accounts created before this pricing took effect, and admins, go straight to the plans. */
 const PRICING_START = new Date('2026-11-12T00:00:00Z');
@@ -27,12 +28,22 @@ export async function onboardingOf(users: { id: string; role: string; createdAt:
  * What this account can buy once now: the first audit before its first purchase, prospect audits,
  * a top-up while it holds a seat, and the white-label setup below 10 seats. Prices live in lib/pricing.ts.
  */
-export async function catalogFor(user: { id: string; role: string; createdAt: Date }): Promise<PriceItem[]> {
-  const [paid, seats] = await Promise.all([
+export async function catalogFor(user: { id: string; role: string; createdAt: Date; email?: string }): Promise<PriceItem[]> {
+  const [paid, seats, plan, settings] = await Promise.all([
     db.paymentOrder.findMany({ where: { userId: user.id, captureId: { not: null }, refundedAt: null }, select: { item: true } }),
     clientSeatCount(user.id),
+    accountPlanNow(user.id),
+    getSettings(),
   ]);
-  return itemsFor({ admin: user.role === 'ADMIN', firstPurchase: paid.length === 0 && seats === 0, seats, whiteLabel: paid.some((o) => o.item === WHITE_LABEL_ITEM.key) });
+  return itemsFor({
+    admin: user.role === 'ADMIN',
+    firstPurchase: paid.length === 0 && seats === 0,
+    seats,
+    whiteLabel: paid.some((o) => o.item === WHITE_LABEL_ITEM.key),
+    newPlans: newPlansFor(user, settings),
+    plan: Boolean(plan),
+    closers: paid.filter((o) => o.item === CLOSER.key).length,
+  });
 }
 
 /**
@@ -127,6 +138,9 @@ export async function fulfill(sessionId: string) {
         await tx.creditLedger.create({ data: { userId: purchase.userId, amount: purchase.credits, reason: 'STRIPE_TOPUP', externalEventId: 'stripe:' + payment } });
         await tx.user.update({ where: { id: purchase.userId }, data: { creditBalance: { increment: purchase.credits } } });
       }
+      // Briefs bought (packs, the Closer Pack's one): on the account for good.
+      const briefs = itemByKey(purchase.item)?.briefs ?? 0;
+      if (briefs > 0) await tx.user.update({ where: { id: purchase.userId }, data: { briefBalance: { increment: briefs } } });
     }
     return tx.user.findUniqueOrThrow({ where: { id: purchase.userId }, select: { creditBalance: true } });
   });

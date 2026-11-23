@@ -19,7 +19,7 @@ const dayName = (ymd: string) => new Date(ymd + 'T12:00:00').toLocaleDateString(
  * and the listings that have nothing coming up. Writing happens on a listing's own Posts tab, which
  * `onOpen` goes to.
  */
-export default function GbpAllCalendar({ profiles, admin, onOpen }: { profiles: Profile[]; admin: boolean; onOpen: Open }) {
+export default function GbpAllCalendar({ profiles, admin, addon = false, onOpen }: { profiles: Profile[]; admin: boolean; addon?: boolean; onOpen: Open }) {
   const today = localDay(new Date());
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [problem, setProblem] = useState('');
@@ -66,7 +66,7 @@ export default function GbpAllCalendar({ profiles, admin, onOpen }: { profiles: 
   if (!listings.length)
     return (
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-        <p className="font-semibold">The content calendar covers listings on a Command or Dominator seat.</p>
+        <p className="font-semibold">{addon ? 'The content calendar covers listings with the listing add-on.' : 'The content calendar covers listings on a Command or Dominator seat.'}</p>
         <p className="mt-1 text-sm text-slate-400">Put a listing on a plan to schedule its Google posts and see them here alongside your other listings.</p>
       </div>
     );

@@ -1,7 +1,8 @@
 import { ArrowUpRight, MapPin, Radio, CalendarDays } from 'lucide-react';
 import { LINES, type Line } from '@stakeout/core/gbpPlans';
 import { DEMO, scanStats, shareReportUrl } from '@/lib/demo-real-scans';
-import { WELCOME, usd } from '@/lib/pricing';
+import { CLOSER, WELCOME, usd } from '@/lib/pricing';
+import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER } from '@stakeout/core/gbpPlans';
 import { Arrow, OfferBanner, SiteFoot, SiteNav } from './SiteKit';
 import { HREF } from './links';
 import './site.css';
@@ -12,8 +13,10 @@ const result = scanStats(scan);
 const report = shareReportUrl(scan);
 const auditPrice = usd(WELCOME.cents);
 
-function AuditLink() {
-  return <a className="lp-primary so-btn" href={HREF.firstAudit}>Run my {auditPrice} audit <Arrow size={17} /></a>;
+function AuditLink({ plans }: { plans?: boolean }) {
+  return plans
+    ? <a className="lp-primary so-btn" href={HREF.closer}>Get the Closer Pack · {usd(CLOSER.cents)} <Arrow size={17} /></a>
+    : <a className="lp-primary so-btn" href={HREF.firstAudit}>Run my {auditPrice} audit <Arrow size={17} /></a>;
 }
 
 const seats: { key: Line; benefit: string; detail: string }[] = [
@@ -22,10 +25,10 @@ const seats: { key: Line; benefit: string; detail: string }[] = [
   { key: 'DOMINATOR', benefit: 'Cover more keywords or a larger area', detail: 'Get the Command listing tools, more scheduled coverage, and three on-demand 5×5 audits each month.' },
 ];
 
-export default function Landing({ live }: { live: boolean }) {
+export default function Landing({ live, plans }: { live: boolean; plans?: boolean }) {
   return (
     <div id="top" className="so lp">
-      <SiteNav page="home" />
+      <SiteNav page="home" plans={plans} />
       <main>
         <section className="lp-hero" aria-labelledby="lp-title">
           <div className="lp-wrap lp-hero-layout">
@@ -34,10 +37,10 @@ export default function Landing({ live }: { live: boolean }) {
               <h1 id="lp-title">Show clients where Google <em>recommends them.</em></h1>
               <p className="lp-lead">Track the local pack and AI Overviews on real Android phones. When a client asks “What shows up on my side of town?” open their pin and play the search.</p>
               <div className="lp-actions">
-                <AuditLink />
+                <AuditLink plans={plans} />
                 <a className="lp-secondary" href={report}>View sample report <ArrowUpRight size={16} aria-hidden="true" /></a>
               </div>
-              <p className="lp-terms">One keyword. 25 locations. A second scan in 7 days.<br />Your {auditPrice} goes toward your first month if you choose a plan.</p>
+              <p className="lp-terms">{plans ? <>Two full 5×5 audits on real phones and a revenue brief.<br />No subscription. Never expires.</> : <>One keyword. 25 locations. A second scan in 7 days.<br />Your {auditPrice} goes toward your first month if you choose a plan.</>}</p>
             </div>
             <figure id="real-vs-reported" className="lp-mapcard">
               <figcaption className="lp-maphead">
@@ -97,9 +100,19 @@ export default function Landing({ live }: { live: boolean }) {
             <div id="google-listings">
               <p className="lp-kicker"><CalendarDays size={16} aria-hidden="true" /> Monthly tracking</p>
               <h2 id="lp-plan-title">Keep tracking the clients you manage.</h2>
-              <p>The included second scan gives you a week to compare. To keep measuring the same neighborhoods, choose a monthly seat for that client. We apply your {auditPrice} to the first month of your first seat.</p>
+              <p>{plans ? 'Plans include real-phone sessions and revenue briefs every month, and unused ones roll over for a month. Add the listing add-on for each client Google listing you manage here.' : <>The included second scan gives you a week to compare. To keep measuring the same neighborhoods, choose a monthly seat for that client. We apply your {auditPrice} to the first month of your first seat.</>}</p>
             </div>
-            <div id="watchdog" className="lp-seats">
+            {plans && <div id="watchdog" className="lp-seats">
+              {ACCOUNT_PLAN_ORDER.map((p) => (
+                <article key={p} className={'lp-seat' + (p === 'P_AGENCY' ? ' lp-command' : '')}>
+                  <h3>{ACCOUNT_PLANS[p].name}</h3>
+                  <p className="lp-rate"><strong>{usd(ACCOUNT_PLANS[p].tiers[0].cents)}</strong> / month</p>
+                  <h4>{ACCOUNT_PLANS[p].points.toLocaleString('en-US')} phone sessions · {ACCOUNT_PLANS[p].briefs} briefs</h4>
+                  <p>{ACCOUNT_PLANS[p].bestFor}.{ACCOUNT_PLANS[p].whiteLabel ? ' Your logo, name and brand color on shared reports.' : ''}</p>
+                </article>
+              ))}
+            </div>}
+            {!plans && <div id="watchdog" className="lp-seats">
               {seats.map(({ key, benefit, detail }) => (
                 <article key={key} className={'lp-seat' + (key === 'COMMAND' ? ' lp-command' : '')}>
                   <h3>{LINES[key].name}</h3>
@@ -108,20 +121,20 @@ export default function Landing({ live }: { live: boolean }) {
                   <p>{detail}</p>
                 </article>
               ))}
-            </div>
+            </div>}
             <div className="lp-plan-links">
-              <a href={HREF.seats} className="lp-secondary">Choose a monthly seat <Arrow size={16} /></a>
-              <a href={HREF.pricing} className="lp-textlink">Full pricing and volume rates <ArrowUpRight size={16} aria-hidden="true" /></a>
+              <a href={plans ? HREF.plans : HREF.seats} className="lp-secondary">{plans ? 'Choose a plan' : 'Choose a monthly seat'} <Arrow size={16} /></a>
+              <a href={HREF.pricing} className="lp-textlink">{plans ? 'Full pricing, the listing add-on and briefs' : 'Full pricing and volume rates'} <ArrowUpRight size={16} aria-hidden="true" /></a>
             </div>
-            {live && <div className="lp-promo"><OfferBanner live={live} href={HREF.pricing} /></div>}
+            {live && <div className="lp-promo"><OfferBanner live={live} href={HREF.pricing} plans={plans} /></div>}
           </div>
         </section>
 
         <section id="start" className="lp-close">
           <div className="lp-wrap">
-            <div><p className="lp-kicker">Your first audit</p><h2>Which client will you check first?</h2>
+            <div><p className="lp-kicker">{plans ? 'Your first pitch' : 'Your first audit'}</p><h2>Which client will you check first?</h2>
             <p>Pick one business and the local search that matters most to them.</p></div>
-            <AuditLink />
+            <AuditLink plans={plans} />
           </div>
         </section>
       </main>

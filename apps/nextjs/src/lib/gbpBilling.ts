@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { pushAlert } from '@stakeout/core/alerts';
-import { AGENT_ADDON, LINES, LINE_ORDER, PLANS, addonOn, clientSeats, dollars, isPlan, monthlyCents, planNow, quantityPlan, seatGrant, seatPoints, settlePending, stripeTiers, type Line, type Plan } from '@stakeout/core/gbpPlans';
+import { ACCOUNT_PLANS, AGENT_ADDON, LINES, LINE_ORDER, PLANS, accountPlanOf, addonOn, clientSeats, dollars, hasLegacySeats, isAccountPlan, isPlan, monthlyCents, planNow, quantityPlan, seatBriefs, seatGrant, seatPoints, settlePending, stripeTiers, type AccountPlan, type Line, type Plan } from '@stakeout/core/gbpPlans';
+import { briefGrant, briefsLeft } from '@stakeout/core/briefWallet';
+import { getSettings, newPlansFor } from '@stakeout/core/settings';
 import { PACK_REASONS, endPlan, renewPlan, topUpPlan } from '@stakeout/core/creditPlan';
 import { stripe, stripeTestMode } from '@/lib/stripe';
 import { postproxy } from '@/lib/postproxy';
@@ -56,8 +58,13 @@ async function prices(lines: Line[]): Promise<Partial<Record<Line, string>>> {
           tiers_mode: LINES[l].graduated ? 'graduated' : 'volume',
           tiers: stripeTiers(l),
           lookup_key: LINES[l].lookupKey,
-          metadata: { points_per_seat: String(LINES[l].points) },
-          product_data: { name: `Stakeout Search · ${LINES[l].name} seat`, unit_label: 'client' },
+          metadata: { points_per_seat: String(LINES[l].points), briefs_per_month: String(LINES[l].briefs ?? 0) },
+          // What the customer reads on Stripe's pages and invoices: a plan per account, the add-on per listing, a seat per client.
+          product_data: isAccountPlan(l)
+            ? { name: `Stakeout Search · ${LINES[l].name} plan`, unit_label: 'account' }
+            : l === 'LISTING'
+              ? { name: 'Stakeout Search · Listing add-on', unit_label: 'listing' }
+              : { name: `Stakeout Search · ${LINES[l].name} seat`, unit_label: 'client' },
         },
         'price-' + LINES[l].lookupKey,
       )
@@ -92,6 +99,7 @@ export async function applySub(s: Sub, userId?: string) {
     updatedAt: new Date(),
     agentAddon: !ended && items.some(isAddon),
     scoutSeats: ended ? 0 : seatsOn(items).SCOUT ?? 0,
+    accountPlan: ended ? null : accountPlanOf(seatsOn(items)),
   };
   await db.gbpSub.upsert({ where: { userId: owner }, create: { userId: owner, ...data }, update: data });
   if (ended) await db.gbpPlan.deleteMany({ where: { userId: owner } });
@@ -103,11 +111,12 @@ export async function applySub(s: Sub, userId?: string) {
  * off it, so seats added back later are charged and given their points again; seats put back that
  * the month had already paid for (no charge) are covered again without new points.
  */
-async function followSeats(userId: string, monthly: number, grew: boolean) {
-  const row = await db.gbpSub.findUnique({ where: { userId }, select: { grantedPoints: true } });
+async function followSeats(userId: string, monthly: number, grew: boolean, briefs = 0) {
+  const row = await db.gbpSub.findUnique({ where: { userId }, select: { grantedPoints: true, grantedBriefs: true } });
   if (!row) return;
   const granted = grew ? Math.max(row.grantedPoints, monthly) : Math.min(row.grantedPoints, monthly);
-  if (granted !== row.grantedPoints) await db.gbpSub.update({ where: { userId }, data: { grantedPoints: granted } });
+  const gb = grew ? Math.max(row.grantedBriefs, briefs) : Math.min(row.grantedBriefs, briefs);
+  if (granted !== row.grantedPoints || gb !== row.grantedBriefs) await db.gbpSub.update({ where: { userId }, data: { grantedPoints: granted, grantedBriefs: gb } });
 }
 
 /**
@@ -117,17 +126,17 @@ async function followSeats(userId: string, monthly: number, grew: boolean) {
  * a confirmation), the answer is `{ pay }`, the page where they finish it, and the seats are not on
  * the subscription yet. A card refused outright is thrown.
  */
-async function syncStripe(userId: string, charge: boolean, scout?: number): Promise<{ pay?: string | null }> {
+async function syncStripe(userId: string, charge: boolean, scout?: number, account?: AccountPlan | null): Promise<{ pay?: string | null }> {
   const mine = await db.gbpSub.findUnique({ where: { userId } });
   if (!mine?.subscriptionId) return {};
   const [s, rows] = await Promise.all([readSub(mine.subscriptionId), db.gbpPlan.findMany({ where: { userId }, select: { plan: true, status: true } })]);
   const items = s.items?.data ?? [];
-  const q = quantityPlan(rows, seatsOn(items), scout);
+  const q = quantityPlan(rows, seatsOn(items), scout, account);
   if (q.empty && items.some(isAddon)) {
     // No seat left, but the add-on stays: the subscription carries on with it alone.
     const seats = items.filter((i) => lineOfItem(i) && (i.quantity ?? 0) > 0).map((i) => ({ id: i.id, quantity: 0 }));
     if (seats.length || s.cancel_at_period_end) await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { ...(seats.length ? { items: seats } : {}), cancel_at_period_end: false, proration_behavior: 'none' }, randomUUID()), userId);
-    await followSeats(userId, 0, false);
+    await followSeats(userId, 0, false, 0);
     return {};
   }
   if (q.empty) {
@@ -147,7 +156,7 @@ async function syncStripe(userId: string, charge: boolean, scout?: number): Prom
   const bill = charge && q.grows;
   if (!bill) {
     await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { items: change, cancel_at_period_end: false, proration_behavior: 'none' }, randomUUID()), userId);
-    await followSeats(userId, seatPoints(q.want), q.grows);
+    await followSeats(userId, seatPoints(q.want), q.grows, seatBriefs(q.want));
     return {};
   }
   // A change that waits on its payment may only carry the seats and how they are charged, so a
@@ -205,7 +214,7 @@ async function checkout(u: { id: string; email: string }, mine: { customerId: st
       client_reference_id: u.id,
       ...(mine?.customerId ? { customer: mine.customerId } : { customer_email: u.email }),
       metadata: meta,
-      subscription_data: { metadata: meta, description: 'Stakeout Search seats' },
+      subscription_data: { metadata: meta, description: lines.some((l) => isAccountPlan(l)) ? 'Stakeout Search plan' : 'Stakeout Search seats' },
       line_items: lines.map((l) => ({ price: price[l], quantity: seats[l] })),
       success_url: origin + back + join + 'plan={CHECKOUT_SESSION_ID}',
       cancel_url: origin + back + join + 'plan=cancelled',
@@ -225,6 +234,7 @@ export async function addListings(u: { id: string; email: string; role: string }
   if (u.role === 'ADMIN') throw new InputError('Admin accounts have every listing unlocked.');
   if (!picks.length || picks.length > 200) throw new InputError('Pick the listings to switch on.');
   for (const p of picks) if (!isPlan(p.plan) || !PLANS[p.plan].available) throw new InputError('That seat is not on sale.');
+  await sellable(u, picks.map((p) => p.plan));
   const names = new Map<string, Map<string, string>>();
   for (const p of picks) {
     if (!names.has(p.profile)) names.set(p.profile, await listingNames(u.id, p.profile));
@@ -264,7 +274,7 @@ export async function addListings(u: { id: string; email: string; role: string }
     return { done: true };
   }
   const count = (plan: Plan) => picks.filter((p) => p.plan === plan).length;
-  return checkout(u, mine, { DOMINATOR: count('DOMINATOR'), COMMAND: count('COMMAND'), SCOUT: mine?.scoutSeats ?? 0 }, origin, '/profiles?tab=plan');
+  return checkout(u, mine, { DOMINATOR: count('DOMINATOR'), COMMAND: count('COMMAND'), LISTING: count('LISTING'), SCOUT: mine?.scoutSeats ?? 0, ...(isAccountPlan(mine?.accountPlan) ? { [mine.accountPlan]: 1 } : {}) }, origin, '/profiles?tab=plan');
 }
 
 /**
@@ -275,6 +285,7 @@ export async function addListings(u: { id: string; email: string; role: string }
 export async function setScoutSeats(u: { id: string; email: string; role: string }, seats: number, origin: string): Promise<{ url?: string; done?: boolean; pay?: string | null }> {
   if (u.role === 'ADMIN') throw new InputError('Admin accounts do not need seats.');
   if (!Number.isInteger(seats) || seats < 0 || seats > 500) throw new InputError('Choose between 0 and 500 Scout seats.');
+  if (seats > 0) await sellable(u, ['SCOUT']);
   const mine = await db.gbpSub.findUnique({ where: { userId: u.id } });
   if (mine?.subscriptionId) {
     const r = await syncStripe(u.id, true, seats);
@@ -282,6 +293,62 @@ export async function setScoutSeats(u: { id: string; email: string; role: string
   }
   if (!seats) return { done: true };
   return checkout(u, mine, { SCOUT: seats }, origin, '/profiles?tab=plan');
+}
+
+/**
+ * What an account may buy. With the account plans: the plans and the listing add-on (which needs a
+ * plan), and seats only where the account already has some. Before them: the seats.
+ */
+async function seatsOf(userId: string) {
+  const [mine, rows] = await Promise.all([db.gbpSub.findUnique({ where: { userId } }), db.gbpPlan.findMany({ where: { userId, status: { in: ['ACTIVE', 'ENDING'] } }, select: { plan: true } })]);
+  const n = (p: string) => rows.filter((r) => r.plan === p).length;
+  return { mine, legacy: hasLegacySeats({ SCOUT: mine?.subscriptionId ? mine.scoutSeats : 0, COMMAND: n('COMMAND'), DOMINATOR: n('DOMINATOR'), MANAGE: n('MANAGE'), AGENT: n('AGENT') }) };
+}
+
+/** Whether a listing is put to work with the listing add-on for this account (the account plans, and no seats from before them). */
+export async function sellsAddon(u: { id: string; email?: string; role: string }): Promise<boolean> {
+  if (u.role === 'ADMIN') return false;
+  const settings = await getSettings();
+  if (!newPlansFor(u, settings)) return false;
+  return !(await seatsOf(u.id)).legacy;
+}
+
+async function sellable(u: { id: string; email?: string; role: string }, lines: Line[]) {
+  const settings = await getSettings();
+  const { mine, legacy } = await seatsOf(u.id);
+  if (!newPlansFor(u, settings)) {
+    if (lines.some((l) => l === 'LISTING' || isAccountPlan(l))) throw new InputError('That plan is not on sale yet.');
+    return;
+  }
+  if (lines.some((l) => !isAccountPlan(l) && l !== 'LISTING') && !legacy) throw new InputError('Seats are no longer sold: choose Scout, Agency or Scale, and the listing add-on for each Google listing.');
+  if (lines.includes('LISTING') && !(mine?.subscriptionId && isAccountPlan(mine.accountPlan))) throw new InputError('Choose a plan first: the listing add-on goes on top of Scout, Agency or Scale.');
+}
+
+/**
+ * Puts the account on Scout, Agency or Scale, or changes which (null takes it off: the plan runs to
+ * the end of the month already paid for). With a subscription running the change is made on it: an
+ * upgrade charges the rest of the month now, a downgrade takes effect at once with no refund. Without
+ * one, the answer is Stripe's checkout page.
+ */
+export async function setAccountPlan(u: { id: string; email: string; role: string }, plan: AccountPlan | null, origin: string): Promise<{ url?: string; done?: boolean; pay?: string | null }> {
+  if (u.role === 'ADMIN') throw new InputError('Admin accounts do not need a plan.');
+  if (plan !== null && !isAccountPlan(plan)) throw new InputError('Unknown plan.');
+  if (plan) await sellable(u, [plan]);
+  const mine = await db.gbpSub.findUnique({ where: { userId: u.id } });
+  if (mine?.subscriptionId) {
+    if (plan === null && (await db.gbpPlan.count({ where: { userId: u.id, plan: 'LISTING', status: 'ACTIVE' } }))) throw new InputError('Take the listing add-ons off first: they go on top of a plan.');
+    const grows = plan !== null && (!isAccountPlan(mine.accountPlan) || ACCOUNT_PLANS[plan].tiers[0].cents > ACCOUNT_PLANS[mine.accountPlan].tiers[0].cents);
+    const r = await syncStripe(u.id, grows, undefined, plan);
+    return r.pay !== undefined ? { pay: r.pay } : { done: true };
+  }
+  if (!plan) return { done: true };
+  return checkout(u, mine, { [plan]: 1 }, origin, '/profiles?tab=plan');
+}
+
+/** The account plan an account pays for now (a failed card keeps it while Stripe retries), or null. */
+export async function accountPlanNow(userId: string): Promise<AccountPlan | null> {
+  const mine = await db.gbpSub.findUnique({ where: { userId }, select: { accountPlan: true, status: true, subscriptionId: true } });
+  return mine?.subscriptionId && isAccountPlan(mine.accountPlan) && ['active', 'trialing', 'past_due'].includes(mine.status) ? mine.accountPlan : null;
 }
 
 /**
@@ -303,8 +370,8 @@ export async function activate(sessionId: string, userId?: string) {
     const counts = seatsOn(sub.items?.data ?? []);
     const buyer = await db.user.findUnique({ where: { id: owner }, select: { email: true } });
     await pushAlert('gbp-sub:' + sub.id, {
-      subject: `${stripeTestMode() ? '[TEST] ' : ''}Stakeout: new seat subscription, ${dollars(monthlyCents(counts))} a month`,
-      lines: [`${buyer?.email ?? 'An account'} started ${LINE_ORDER.filter((l) => counts[l]).map((l) => `${counts[l]} ${LINES[l].name}`).join(', ')}: ${seatPoints(counts).toLocaleString('en-US')} points a month.`],
+      subject: `${stripeTestMode() ? '[TEST] ' : ''}Stakeout: new subscription, ${dollars(monthlyCents(counts))} a month`,
+      lines: [`${buyer?.email ?? 'An account'} started ${LINE_ORDER.filter((l) => counts[l]).map((l) => `${counts[l]} ${LINES[l].name}`).join(', ')}: ${seatPoints(counts).toLocaleString('en-US')} phone sessions and ${seatBriefs(counts)} briefs a month.`],
       path: '/admin/devices',
     }, 60).catch(() => {});
     await flushAlerts().catch(() => {});
@@ -327,6 +394,7 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
   const ended = ENDED.has(s.status);
   const invoice = invoiceId ? await stripe<Invoice>('/invoices/' + encodeURIComponent(invoiceId)).catch(() => null) : typeof s.latest_invoice === 'object' ? s.latest_invoice : null;
   const monthly = ended ? 0 : seatPoints(seatsOn(s.items?.data ?? []));
+  const monthlyBriefs = ended ? 0 : seatBriefs(seatsOn(s.items?.data ?? []));
   const { start, end } = periodOf(s);
   let added = 0;
   await db.$transaction(async (tx) => {
@@ -340,6 +408,8 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
       : 0;
     const state = { balance: user.creditBalance, bucket: row.bucket, packFloor: row.packFloor, bought };
     if (ended) {
+      // The plan's briefs end with it (bought ones stay on the account).
+      if (row.briefPlan || row.briefCarry || row.grantedBriefs) await tx.gbpSub.update({ where: { userId }, data: { briefPlan: 0, briefCarry: 0, grantedBriefs: 0 } });
       if (row.bucket === 0) return;
       const e = endPlan(state);
       if (e.lapse > 0) await tx.creditLedger.create({ data: { userId, amount: -e.lapse, reason: 'SEAT_POINTS_ENDED', externalEventId: 'seats-ended:' + s.id } });
@@ -355,6 +425,9 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
     const share = end > start ? (end - paidAt) / (end - start) : 1;
     const g = seatGrant(invoice.billing_reason, monthly, row.grantedPoints, share);
     if (!g) return;
+    // The plan's briefs: a new month brings them and carries last month's unused ones over once.
+    const b = briefGrant(invoice.billing_reason, monthlyBriefs, { plan: row.briefPlan, carry: row.briefCarry, granted: row.grantedBriefs });
+    if (b) await tx.gbpSub.update({ where: { userId }, data: { briefPlan: b.plan, briefCarry: b.carry, grantedBriefs: b.granted } });
     // Black Friday: a first seat started before the offer ends brings 5 prospect audits, once per
     // account. Added first, as points of the account's own, never the seats'.
     if (g.points > 0 && promoLive(paidAt * 1000) && !(await tx.creditLedger.findUnique({ where: { externalEventId: 'bonus-pack:' + userId } }))) {
@@ -501,14 +574,27 @@ export async function billingSummary(userId: string) {
   await db.gbpPlan.deleteMany({ where: { userId, status: 'ENDING', endsAt: { lte: now } } });
   const [rows, mine] = await Promise.all([db.gbpPlan.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } }), db.gbpSub.findUnique({ where: { userId } })]);
   const active = rows.filter((r) => r.status === 'ACTIVE');
+  const plan = mine?.subscriptionId && isAccountPlan(mine.accountPlan) ? mine.accountPlan : null;
   const counts: Record<Line, number> = {
     DOMINATOR: active.filter((r) => r.plan === 'DOMINATOR').length,
     COMMAND: active.filter((r) => r.plan === 'COMMAND').length,
     SCOUT: mine?.subscriptionId ? mine.scoutSeats : 0,
     MANAGE: active.filter((r) => r.plan === 'MANAGE').length,
     AGENT: active.filter((r) => r.plan === 'AGENT').length,
+    LISTING: active.filter((r) => r.plan === 'LISTING').length,
+    P_SCOUT: plan === 'P_SCOUT' ? 1 : 0,
+    P_AGENCY: plan === 'P_AGENCY' ? 1 : 0,
+    P_SCALE: plan === 'P_SCALE' ? 1 : 0,
   };
+  const [user, settings] = await Promise.all([db.user.findUnique({ where: { id: userId }, select: { email: true, role: true, briefBalance: true } }), getSettings()]);
+  const paying = Boolean(mine?.subscriptionId) && ['active', 'trialing', 'past_due'].includes(mine?.status ?? '');
   return {
+    /** Sold the account plans (Scout, Agency, Scale) rather than seats. */
+    newPlans: user ? newPlansFor(user, settings) : false,
+    /** Still on seats sold before the account plans. */
+    legacy: hasLegacySeats(counts),
+    plan,
+    briefs: { plan: paying ? mine?.briefPlan ?? 0 : 0, carry: paying ? mine?.briefCarry ?? 0 : 0, bought: user?.briefBalance ?? 0, left: briefsLeft({ plan: mine?.briefPlan ?? 0, carry: mine?.briefCarry ?? 0, bought: user?.briefBalance ?? 0, paying }), perMonth: seatBriefs(counts) },
     listings: rows.map((r) => ({ location: r.locationId, profile: r.profileId, title: r.title, plan: r.plan, status: r.status, endsAt: r.endsAt?.toISOString() ?? null, on: planNow(r, mine?.status, now) !== null })),
     sub: mine ? { status: mine.status, periodEnd: mine.periodEnd?.toISOString() ?? null, running: Boolean(mine.subscriptionId) } : null,
     counts,

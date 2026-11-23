@@ -11,7 +11,7 @@ type Account = { id: string; email: string; role: string; credits: number; confi
 type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
   at: string;
-  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number; mobileCreditsPerPoint?: number; mobileForCustomers?: boolean; aiFlagsForCustomers?: boolean; pageOneShareForCustomers?: boolean };
+  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number; mobileCreditsPerPoint?: number; mobileForCustomers?: boolean; aiFlagsForCustomers?: boolean; pageOneShareForCustomers?: boolean; newPlansLive?: boolean; newPlansPreview?: string[] };
   system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[]; mobileData?: boolean; mobileProvider?: string | null; mobileLogin?: string | null; mobileTraffic?: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null } | null; mobileTrafficLow?: boolean; trafficHours?: { hour: string; residentialBytes: number | null; mobileBytes: number | null; points: number; bytesPerPoint: number | null }[] } | null;
   capacity: {
     completed24h: number; completedLastHour: number; started24h: number; timedPoints: number; medianSeconds: number | null; perPhoneHour: number | null;
@@ -77,7 +77,7 @@ export function AdminOps() {
   const [credit, setCredit] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
-  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string; mobileCredits: string; mobileCustomers: boolean; aiFlags: boolean; pageOne: boolean } | null>(null);
+  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string; mobileCredits: string; mobileCustomers: boolean; aiFlags: boolean; pageOne: boolean; newPlans: boolean; preview: string } | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch('/api/admin/ops', { cache: 'no-store' }).catch(() => null);
@@ -89,7 +89,7 @@ export function AdminOps() {
     if (d.settings && d.capacity) {
       setOps(d);
       // The form is filled once, so a refresh never overwrites what is being typed.
-      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 1), mobileCustomers: Boolean(d.settings.mobileForCustomers), aiFlags: Boolean(d.settings.aiFlagsForCustomers), pageOne: Boolean(d.settings.pageOneShareForCustomers) });
+      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 1), mobileCustomers: Boolean(d.settings.mobileForCustomers), aiFlags: Boolean(d.settings.aiFlagsForCustomers), pageOne: Boolean(d.settings.pageOneShareForCustomers), newPlans: Boolean(d.settings.newPlansLive), preview: (d.settings.newPlansPreview ?? []).join(', ') });
     }
   }, []);
   usePolling(load, 15000);
@@ -597,12 +597,23 @@ export function AdminOps() {
               <input type="checkbox" className="h-4 w-4" checked={form.pageOne} onChange={(e) => setForm({ ...form, pageOne: e.target.checked })} />
               Customers&rsquo; Share of local search counts page one: the map pack&rsquo;s top 3 or an upfront AI Overview spot at any point, over the points with local results (admins always see it)
             </label>
+            <label className="flex items-center gap-2 text-sm text-slate-200 sm:col-span-2">
+              <input type="checkbox" className="h-4 w-4" checked={form.newPlans} onChange={(e) => setForm({ ...form, newPlans: e.target.checked })} />
+              New plans live for everyone: Scout $49, Agency $129, Scale $299, the $29 listing add-on, briefs, the Closer Pack and the new top-ups on the site and in the app (accounts on seats keep them)
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-slate-200 sm:col-span-2">
+              Accounts that see the new plans before they go live (emails, comma-separated; admins always do)
+              <input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm" value={form.preview} onChange={(e) => setForm({ ...form, preview: e.target.value })} placeholder="test@youragency.com" />
+              <span className="text-xs text-slate-400">
+                Before launch, see the new pricing page at <a className="text-sky-300 underline" href="/pricing/preview" target="_blank" rel="noreferrer">/pricing/preview</a> (admins and these accounts only).
+              </span>
+            </label>
           </div>
           <button
             type="button"
             disabled={busy !== ''}
             className={btn + ' mt-4 bg-emerald-500 text-slate-950 hover:bg-emerald-400'}
-            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups, powerSave: form.powerSave, idleOffMinutes: Number(form.idleOff), mobileCreditsPerPoint: Number(form.mobileCredits), mobileForCustomers: form.mobileCustomers, aiFlagsForCustomers: form.aiFlags, pageOneShareForCustomers: form.pageOne } }, () => 'Settings saved.')}
+            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups, powerSave: form.powerSave, idleOffMinutes: Number(form.idleOff), mobileCreditsPerPoint: Number(form.mobileCredits), mobileForCustomers: form.mobileCustomers, aiFlagsForCustomers: form.aiFlags, pageOneShareForCustomers: form.pageOne, newPlansLive: form.newPlans, newPlansPreview: form.preview } }, () => 'Settings saved.')}
           >
             {busy === 'settings' ? 'Saving…' : 'Save settings'}
           </button>

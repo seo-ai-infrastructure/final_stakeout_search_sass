@@ -16,7 +16,7 @@ async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> 
 }
 
 /** AI agents: the address of the MCP server, the keys an agent signs in with, and what an agent can do. */
-export default function GbpAgents({ admin }: { admin: boolean }) {
+export default function GbpAgents({ admin, addon = false }: { admin: boolean; addon?: boolean }) {
   const [keys, setKeys] = useState<Key[] | null>(null);
   const [name, setName] = useState('');
   const [fresh, setFresh] = useState<{ key: string; name: string } | null>(null);
@@ -95,7 +95,7 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
         <div className="rounded-xl border border-emerald-500/50 bg-emerald-500/5 p-5">
           <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Two ways to switch it on</p>
           <h2 className="mt-1 text-lg font-semibold">Included with Command and Dominator</h2>
-          <p className="mt-2 text-sm text-slate-300">Put any Google listing on a Command seat and agent access comes with it at no extra cost: your agent can then do the everyday work on that listing (posts, review replies, hours, descriptions, services and attributes) as well as run scans and read Search Console and Analytics. <a href="/profiles?tab=plan" className="font-semibold text-emerald-300 underline">Put a listing on Command</a></p>
+          <p className="mt-2 text-sm text-slate-300">{addon ? 'Add the listing add-on to any Google listing' : 'Put any Google listing on a Command seat'} and agent access comes with it at no extra cost: your agent can then do the everyday work on that listing (posts, review replies, hours, descriptions, services and attributes) as well as run scans and read Search Console and Analytics. <a href="/profiles?tab=plan" className="font-semibold text-emerald-300 underline">{addon ? 'Add the listing add-on' : 'Put a listing on Command'}</a></p>
           <p className="mt-3 text-sm text-slate-400">No listing to manage? The add-on gives your agent your scans, Search Console and Analytics for {dollars(AGENT_ADDON.cents)} a month.</p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button type="button" onClick={buy} disabled={busy || bill.ready === false} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{busy ? 'Working…' : `Add AI agents · ${dollars(AGENT_ADDON.cents)} a month`}</button>
@@ -105,7 +105,7 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
           {bill.ready === false && <p className="mt-2 text-xs text-amber-300">Checkout is being set up. Email sass@stakeoutsearch.com and we will sort it out.</p>}
         </div>
       )}
-      {!admin && listed && !bill?.addon?.on && <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">Agent access is included with your listings on Command and Dominator. Make a key below.</p>}
+      {!admin && listed && !bill?.addon?.on && <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{addon ? 'Agent access is included with your listings that have the listing add-on.' : 'Agent access is included with your listings on Command and Dominator.'} Make a key below.</p>}
       {!admin && bill?.addon?.on && listed && <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">Agent access now comes with your listings on Command and Dominator, so you no longer need the add-on. Take it off below to stop paying for it.</p>}
       {!admin && bill?.addon?.on && <p className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200"><span>The AI agents add-on is on: {dollars(AGENT_ADDON.cents)} a month.</span><button type="button" onClick={drop} disabled={busy} className="text-xs text-slate-300 hover:text-rose-300">Take it off</button></p>}
 

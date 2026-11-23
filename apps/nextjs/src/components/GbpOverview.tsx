@@ -92,7 +92,7 @@ export default function GbpOverview({ profiles, admin, picked, onOpen }: { profi
                     <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
                       {/* Several listings share a name: the last digits of the id tell them apart. */}
                       <span className="font-mono">…{r.id.split('/')[3]?.slice(-5)}</span>
-                      {!admin && <span className={'rounded-full border px-1.5 py-px ' + (r.plan ? 'border-emerald-500/40 text-emerald-300' : 'border-slate-700 text-slate-500')}>{r.plan === 'DOMINATOR' ? 'Dominator' : r.plan === 'COMMAND' ? 'Command' : r.plan === 'AGENT' ? 'Agent' : r.plan ? 'Manage' : 'Free'}</span>}
+                      {!admin && <span className={'rounded-full border px-1.5 py-px ' + (r.plan ? 'border-emerald-500/40 text-emerald-300' : 'border-slate-700 text-slate-500')}>{r.plan === 'DOMINATOR' ? 'Dominator' : r.plan === 'COMMAND' ? 'Command' : r.plan === 'AGENT' ? 'Agent' : r.plan === 'LISTING' ? 'Add-on' : r.plan ? 'Manage' : 'Free'}</span>}
                       {admin && r.customer && <span className="rounded-full border border-sky-500/40 px-1.5 py-px text-sky-300">customer</span>}
                       {quiet(r) && <span className="rounded-full border border-amber-500/40 px-1.5 py-px text-amber-300" title="Its actions per 100 views are under half the rate across all listings">seen, not acted on</span>}
                     </span>

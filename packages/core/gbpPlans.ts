@@ -15,9 +15,11 @@
  * Connecting a Google account is free, and so is reading: every connected listing gets Search insights.
  * Manage (per listing, priced by volume, no points) is retired: Command replaced it. Agent was never sold.
  */
-export type Plan = 'COMMAND' | 'DOMINATOR' | 'MANAGE' | 'AGENT';
-/** A priced line on the monthly subscription: a listing plan, or Scout seats. */
-export type Line = Plan | 'SCOUT';
+export type Plan = 'COMMAND' | 'DOMINATOR' | 'MANAGE' | 'AGENT' | 'LISTING';
+/** The account plans sold from November 2026: one per account, priced per account, not per client. */
+export type AccountPlan = 'P_SCOUT' | 'P_AGENCY' | 'P_SCALE';
+/** A priced line on the monthly subscription: an account plan, a listing plan, or (before the account plans) Scout seats. */
+export type Line = Plan | 'SCOUT' | AccountPlan;
 /** What a request needs: 'free' to read, 'manage' to change a listing, 'agent' to let an AI agent do it. */
 export type Need = 'free' | 'manage' | 'agent';
 export type Tier = { upTo: number | null; cents: number };
@@ -29,8 +31,10 @@ export type LineDef = {
   /** Each bracket's price for the clients inside it; otherwise the whole count at its bracket's price. */
   graduated: boolean;
   tiers: Tier[];
-  /** Points a seat adds to the account's pool every paid month. */
+  /** Phone sessions a seat adds to the account's pool every paid month. */
   points: number;
+  /** Briefs it adds every paid month (they roll over for one month, see briefWallet). */
+  briefs: number;
 };
 
 /** What one Scan Now 5×5 costs: 25 grid points, one phone session each. */
@@ -45,6 +49,7 @@ export const PLANS: Record<Plan, LineDef> = {
     graduated: true,
     tiers: [{ upTo: 9, cents: 5900 }, { upTo: 24, cents: 4900 }, { upTo: 99, cents: 3900 }, { upTo: null, cents: 2900 }],
     points: 550,
+  briefs: 0,
   },
   DOMINATOR: {
     name: 'Dominator',
@@ -54,6 +59,7 @@ export const PLANS: Record<Plan, LineDef> = {
     graduated: true,
     tiers: [{ upTo: 9, cents: 9900 }, { upTo: 24, cents: 8500 }, { upTo: 99, cents: 6900 }, { upTo: null, cents: 5500 }],
     points: 1250,
+  briefs: 0,
   },
   MANAGE: {
     name: 'Manage',
@@ -64,6 +70,7 @@ export const PLANS: Record<Plan, LineDef> = {
     graduated: false,
     tiers: [{ upTo: 9, cents: 2900 }, { upTo: 24, cents: 2200 }, { upTo: 99, cents: 1600 }, { upTo: null, cents: 1200 }],
     points: 0,
+    briefs: 0,
   },
   AGENT: {
     name: 'Agent',
@@ -74,6 +81,17 @@ export const PLANS: Record<Plan, LineDef> = {
     graduated: false,
     tiers: [{ upTo: 9, cents: 5900 }, { upTo: 24, cents: 4500 }, { upTo: 99, cents: 3300 }, { upTo: null, cents: 2500 }],
     points: 0,
+    briefs: 0,
+  },
+  LISTING: {
+    name: 'Listing add-on',
+    blurb: 'One Google listing with the listing tools (safe edits, posts, review alerts and replies, the daily change watchdog, rival gaps) and AI agents, plus 50 phone sessions and 1 brief a month.',
+    available: true,
+    lookupKey: 'stakeout_listing_addon_v1',
+    graduated: false,
+    tiers: [{ upTo: null, cents: 2900 }],
+    points: 50,
+    briefs: 1,
   },
 };
 
@@ -86,11 +104,29 @@ export const SCOUT: LineDef = {
   graduated: true,
   tiers: [{ upTo: 9, cents: 3900 }, { upTo: 24, cents: 3200 }, { upTo: 99, cents: 2600 }, { upTo: null, cents: 1900 }],
   points: 250,
+  briefs: 0,
 };
 
-export const LINES: Record<Line, LineDef> = { ...PLANS, SCOUT };
+/**
+ * The account plans (from November 2026, for new accounts; seats stay with those who have them).
+ * One per account, flat. Phone sessions roll over for one month; so do the plan's briefs.
+ */
+export const ACCOUNT_PLANS: Record<AccountPlan, LineDef & { whiteLabel: boolean; bestFor: string }> = {
+  P_SCOUT: { name: 'Scout', blurb: 'For solo consultants closing new retainers.', bestFor: 'Solo consultants closing new retainers', available: true, lookupKey: 'stakeout_plan_scout_v2', graduated: false, tiers: [{ upTo: null, cents: 4900 }], points: 300, briefs: 5, whiteLabel: false },
+  P_AGENCY: { name: 'Agency', blurb: 'For agencies managing 8 to 15 local clients.', bestFor: 'Agencies managing 8 to 15 local clients', available: true, lookupKey: 'stakeout_plan_agency_v2', graduated: false, tiers: [{ upTo: null, cents: 12900 }], points: 1000, briefs: 20, whiteLabel: true },
+  P_SCALE: { name: 'Scale', blurb: 'For multi-location firms, legal groups and roll-ups.', bestFor: 'Multi-location firms, legal groups and roll-ups', available: true, lookupKey: 'stakeout_plan_scale_v2', graduated: false, tiers: [{ upTo: null, cents: 29900 }], points: 3000, briefs: 60, whiteLabel: true },
+};
+/** Cheapest first. */
+export const ACCOUNT_PLAN_ORDER: AccountPlan[] = ['P_SCOUT', 'P_AGENCY', 'P_SCALE'];
+export const isAccountPlan = (v: unknown): v is AccountPlan => v === 'P_SCOUT' || v === 'P_AGENCY' || v === 'P_SCALE';
+/** The next plan up, for the nudge when buying sessions costs about as much as upgrading. */
+export const nextPlan = (p: AccountPlan | null): AccountPlan | null => (p === 'P_SCOUT' ? 'P_AGENCY' : p === 'P_AGENCY' ? 'P_SCALE' : null);
+
+export const LINES: Record<Line, LineDef> = { ...PLANS, SCOUT, ...ACCOUNT_PLANS };
 /** The order lines appear in, at checkout and on the subscription. */
-export const LINE_ORDER: Line[] = ['DOMINATOR', 'COMMAND', 'SCOUT', 'MANAGE', 'AGENT'];
+export const LINE_ORDER: Line[] = ['P_SCALE', 'P_AGENCY', 'P_SCOUT', 'LISTING', 'DOMINATOR', 'COMMAND', 'SCOUT', 'MANAGE', 'AGENT'];
+/** The seats sold before the account plans: kept for the accounts that have them. */
+export const LEGACY_LINES: Line[] = ['DOMINATOR', 'COMMAND', 'SCOUT', 'MANAGE', 'AGENT'];
 /** The seats on sale, most capable first. */
 export const SEATS: Line[] = ['DOMINATOR', 'COMMAND', 'SCOUT'];
 
@@ -100,8 +136,8 @@ export const SEATS: Line[] = ['DOMINATOR', 'COMMAND', 'SCOUT'];
  */
 export const AGENT_ADDON = { name: 'AI agents', cents: 4700, lookupKey: 'stakeout_agent_addon_v1' };
 
-export const isPlan = (v: unknown): v is Plan => v === 'COMMAND' || v === 'DOMINATOR' || v === 'MANAGE' || v === 'AGENT';
-export const isLine = (v: unknown): v is Line => v === 'SCOUT' || isPlan(v);
+export const isPlan = (v: unknown): v is Plan => v === 'COMMAND' || v === 'DOMINATOR' || v === 'MANAGE' || v === 'AGENT' || v === 'LISTING';
+export const isLine = (v: unknown): v is Line => v === 'SCOUT' || isPlan(v) || isAccountPlan(v);
 
 /** The price of the `count`th client a month: its bracket's price (on a volume line, every client's). */
 export function unitCents(line: Line, count: number): number {
@@ -133,8 +169,14 @@ export const addedCents = (line: Line, have: number, more = 1) => lineCents(line
 /** Seats that count as clients (white-label is free from 10). */
 export const clientSeats = (counts: Partial<Record<Line, number>>) => SEATS.reduce((n, l) => n + Math.max(0, counts[l] ?? 0), 0);
 
-/** Points a month for these seats. */
+/** Phone sessions a month for these seats. */
 export const seatPoints = (counts: Partial<Record<Line, number>>) => LINE_ORDER.reduce((n, l) => n + Math.max(0, counts[l] ?? 0) * LINES[l].points, 0);
+/** Briefs a month for these lines (an account plan's, plus one for each listing add-on). */
+export const seatBriefs = (counts: Partial<Record<Line, number>>) => LINE_ORDER.reduce((n, l) => n + Math.max(0, counts[l] ?? 0) * LINES[l].briefs, 0);
+/** The account plan on a subscription, from its lines. */
+export const accountPlanOf = (counts: Partial<Record<Line, number>>): AccountPlan | null => ACCOUNT_PLAN_ORDER.slice().reverse().find((l) => (counts[l] ?? 0) > 0) ?? null;
+/** Whether these lines hold any seat sold before the account plans. */
+export const hasLegacySeats = (counts: Partial<Record<Line, number>>) => LEGACY_LINES.some((l) => (counts[l] ?? 0) > 0);
 
 /** The brackets as Stripe takes them for a tiered monthly price. */
 export const stripeTiers = (line: Line) => LINES[line].tiers.map((t) => ({ up_to: t.upTo ?? 'inf', unit_amount: t.cents }));
@@ -168,15 +210,17 @@ export const addonOn = (sub: { agentAddon?: boolean | null; status?: string | nu
 
 /** What to tell someone whose listing is not on the plan a feature needs. */
 export const upgradeMessage = (need: Need) =>
-  need === 'agent' ? 'An agent can work on a listing once it is on a Command or Dominator seat.' : 'This listing is on the free plan. Put it on a Command seat to edit it, post to it, answer its reviews and watch it for changes.';
+  need === 'agent' ? 'An agent can work on a listing once the listing is on a paid plan. Choose one on the Plan tab of Google profiles.' : 'This listing is on the free plan. Put it on a paid plan on the Plan tab of Google profiles to edit it, post to it, answer its reviews and watch it for changes.';
 
 /**
  * What a subscription should hold, against what it holds now: one seat per listing on each plan,
- * and `scout` Scout seats (left as they are when not given). Whether the change adds seats
+ * `scout` Scout seats and the `account` plan (each left as it is when not given). Whether the change adds seats
  * (charged now) or only takes some away (no refund; listings keep working until the month ends).
  */
-export function quantityPlan(rows: { plan: string; status: string }[], current: Partial<Record<Line, number>>, scout?: number) {
-  const want: Record<Line, number> = { DOMINATOR: 0, COMMAND: 0, MANAGE: 0, AGENT: 0, SCOUT: Math.max(0, Math.floor(scout ?? current.SCOUT ?? 0)) };
+export function quantityPlan(rows: { plan: string; status: string }[], current: Partial<Record<Line, number>>, scout?: number, account?: AccountPlan | null) {
+  // The account plan: the one asked for (null takes it off), or the one on the subscription now.
+  const plan = account === undefined ? accountPlanOf(current) : account;
+  const want: Record<Line, number> = { DOMINATOR: 0, COMMAND: 0, MANAGE: 0, AGENT: 0, LISTING: 0, SCOUT: Math.max(0, Math.floor(scout ?? current.SCOUT ?? 0)), P_SCOUT: plan === 'P_SCOUT' ? 1 : 0, P_AGENCY: plan === 'P_AGENCY' ? 1 : 0, P_SCALE: plan === 'P_SCALE' ? 1 : 0 };
   for (const r of rows) if (r.status === 'ACTIVE' && isPlan(r.plan)) want[r.plan]++;
   const grows = LINE_ORDER.some((l) => want[l] > (current[l] ?? 0));
   const same = LINE_ORDER.every((l) => want[l] === (current[l] ?? 0));

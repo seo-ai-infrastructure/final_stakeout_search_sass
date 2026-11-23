@@ -4,10 +4,10 @@ import { cleanSettings, creditsPerPoint, defaultSettings, mergeSettings, ispAllo
 
 test('settings: defaults come from the environment, stored values win, bad stored values are ignored', () => {
   const base = defaultSettings({});
-  assert.deepEqual(base, { searchGapSeconds: 120, ispExclude: ['Tillman Fiberco'], signupsOpen: false, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 1, mobileForCustomers: false, aiFlagsForCustomers: false, pageOneShareForCustomers: false });
+  assert.deepEqual(base, { searchGapSeconds: 120, ispExclude: ['Tillman Fiberco'], signupsOpen: false, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 1, mobileForCustomers: false, aiFlagsForCustomers: false, pageOneShareForCustomers: false, newPlansLive: false, newPlansPreview: [], newPlansLiveAt: null });
   assert.equal(defaultSettings({ SEARCH_GAP_SECONDS: '45', SIGNUPS_OPEN: 'true' }).searchGapSeconds, 45);
   const merged = mergeSettings({ searchGapSeconds: '45', signupsOpen: 'true', ispExclude: '["A","B"]', costPerPointUsd: '"oops"', unknown: '1' }, base);
-  assert.deepEqual(merged, { searchGapSeconds: 45, ispExclude: ['A', 'B'], signupsOpen: true, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 1, mobileForCustomers: false, aiFlagsForCustomers: false, pageOneShareForCustomers: false });
+  assert.deepEqual(merged, { searchGapSeconds: 45, ispExclude: ['A', 'B'], signupsOpen: true, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 1, mobileForCustomers: false, aiFlagsForCustomers: false, pageOneShareForCustomers: false, newPlansLive: false, newPlansPreview: [], newPlansLiveAt: null });
 });
 
 test('settings: what an admin types is checked', () => {
@@ -61,4 +61,15 @@ test('bringing the Redis copy and the lasting copy together', () => {
   assert.deepEqual(partial.toRestore.map((r) => r.key).sort(), ['powerSave', 'searchGapSeconds']);
   // Both the same: nothing to do.
   assert.deepEqual(reconcile({ a: '1' }, [{ key: 'a', value: '1' }]).toRestore, []);
+});
+
+test('new plans: admins and preview accounts see them before launch, everyone after', async () => {
+  const { newPlansFor, cleanSettings } = await import('../packages/core/settings');
+  const off = { newPlansLive: false, newPlansPreview: ['test@agency.com'] };
+  assert.equal(newPlansFor({ email: 'a@b.com', role: 'AGENCY' }, off), false);
+  assert.equal(newPlansFor({ email: 'Test@Agency.com', role: 'AGENCY' }, off), true);
+  assert.equal(newPlansFor({ email: 'a@b.com', role: 'ADMIN' }, off), true);
+  assert.equal(newPlansFor({ email: 'a@b.com', role: 'AGENCY' }, { ...off, newPlansLive: true }), true);
+  assert.deepEqual(cleanSettings({ newPlansPreview: 'One@x.com, two@y.org' }), { newPlansPreview: ['one@x.com', 'two@y.org'] });
+  assert.throws(() => cleanSettings({ newPlansPreview: 'not an email' }), /account emails/);
 });

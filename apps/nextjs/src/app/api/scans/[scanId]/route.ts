@@ -10,7 +10,8 @@ import { getAuthenticatedUser, readScope } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { InputError, scheduleCron } from '@stakeout/core/grid';
 import { scanBridge } from '@stakeout/core/upgradeTriggers';
-import { dollars, unitCents } from '@stakeout/core/gbpPlans';
+import { LINES, dollars, unitCents } from '@stakeout/core/gbpPlans';
+import { sellsAddon } from '@/lib/gbpBilling';
 import { gbpOpen, paidLocations } from '@/lib/gbpAccess';
 import { requestRerun, stopScan } from '@stakeout/core/scans';
 import { deleteScanFiles } from '@stakeout/core/r2';
@@ -18,7 +19,7 @@ import { removeStakeoutSchedule } from '@stakeout/core/scheduleHelper';
 type C = { params: Promise<{ scanId: string }> };
 
 /**
- * For a customer's own finished 5×5 scan of a business that has no listing on a Command seat: how
+ * For a customer's own finished 5×5 scan of a business that has no listing on a paid plan: how
  * many points it missed the top three on, so the page can point at what would move them.
  */
 async function bridgeFor(id: string, me: { id: string; role: string; email?: string }) {
@@ -33,7 +34,8 @@ async function bridgeFor(id: string, me: { id: string; role: string; email?: str
   const paid = await paidLocations(me.id);
   const plans = paid.size ? await db.gbpPlan.findMany({ where: { userId: me.id, locationId: { in: [...paid.keys()] } }, select: { title: true } }) : [];
   if (plans.some((p) => (p.title ?? '').trim().toLowerCase() === name)) return null;
-  return { ...found, business: scan.targetBusiness, monthly: dollars(unitCents('COMMAND', 1)) };
+  const addon = await sellsAddon(me).catch(() => false);
+  return { ...found, business: scan.targetBusiness, addon, monthly: dollars(addon ? LINES.LISTING.tiers[0].cents : unitCents('COMMAND', 1)) };
 }
 export async function GET(_: Request, c: C) {
   try {

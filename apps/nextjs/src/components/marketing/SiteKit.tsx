@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from 'react';
 import { HREF } from './links';
 export { HREF } from './links';
-import { BONUS_POINTS, PROMO, WELCOME, usd } from '@/lib/pricing';
+import { BONUS_POINTS, CLOSER, PROMO, WELCOME, usd } from '@/lib/pricing';
 
 /** The pieces the home and pricing pages share: colors, links, icons, the header, the footer and the offer bar. */
 
@@ -51,16 +51,18 @@ function Wordmark({ size }: { size: number }) {
 }
 
 /** The bar above the header: Black Friday while it lasts, then the $5 first audit. */
-export function OfferBanner({ live, href }: { live: boolean; href: string }) {
+export function OfferBanner({ live, href, plans }: { live: boolean; href: string; plans?: boolean }) {
   return (
     <a href={href} style={{ display: 'block', background: '#1A0F08', borderBottom: '1px solid rgba(255, 85, 0, 0.35)', color: '#FFD9C2', textAlign: 'center', padding: '11px clamp(16px, 2vw, 24px)', fontSize: 14, lineHeight: 1.5, fontWeight: 500 }}>
       {live ? (
         <>
-          <span style={{ color: ACCENT, fontWeight: 700 }}>{PROMO.name}:</span> start your first seat by {PROMO.endsText} and get {BONUS_POINTS} bonus phone sessions free, {['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'][BONUS_AUDITS] || BONUS_AUDITS} 5×5 audits’ worth. Your first 5×5 audit is {usd(WELCOME.cents)} →
+          <span style={{ color: ACCENT, fontWeight: 700 }}>{PROMO.name}:</span> start your first {plans ? 'plan' : 'seat'} by {PROMO.endsText} and get {BONUS_POINTS} bonus phone sessions free, {['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'][BONUS_AUDITS] || BONUS_AUDITS} 5×5 audits’ worth. Your first 5×5 audit is {usd(WELCOME.cents)} →
         </>
       ) : (
         <>
-          <span style={{ color: ACCENT, fontWeight: 700 }}>First 5×5 real-device audit: {usd(WELCOME.cents)}.</span> It comes off your first month on any seat →
+          {plans
+            ? <><span style={{ color: ACCENT, fontWeight: 700 }}>Closer Pack: {usd(CLOSER.cents)}.</span> Two full 5×5 audits and a revenue brief, no subscription →</>
+            : <><span style={{ color: ACCENT, fontWeight: 700 }}>First 5×5 real-device audit: {usd(WELCOME.cents)}.</span> It comes off your first month on any seat →</>}
         </>
       )}
     </a>
@@ -76,7 +78,7 @@ const NAV: [string, string][] = [
 const ctaSmall = { display: 'inline-flex', alignItems: 'center', minHeight: 44, boxSizing: 'border-box', background: ACCENT, color: '#0B1017', fontWeight: 700, padding: '10px 18px', borderRadius: 10, fontSize: 14, lineHeight: 1.3, whiteSpace: 'nowrap' } as const;
 
 /** The sticky header. On the home page its links scroll; elsewhere they lead to the home page. */
-export function SiteNav({ page }: { page: 'home' | 'pricing' }) {
+export function SiteNav({ page, plans }: { page: 'home' | 'pricing'; plans?: boolean }) {
   const [open, setOpen] = useState(false);
   const home = page === 'home';
   const links = NAV.map(([id, label]) => ({
@@ -101,9 +103,11 @@ export function SiteNav({ page }: { page: 'home' | 'pricing' }) {
         </nav>
         <div className="so-wide" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <a href={HREF.login} style={{ padding: '13px 14px', fontSize: 14, lineHeight: 1.4, color: '#CBD5E1' }}>Log in</a>
-          <a className="so-btn" href={HREF.firstAudit} style={ctaSmall}>Run my {usd(WELCOME.cents)} audit</a>
+          <a className="so-btn" href={plans ? HREF.closer : HREF.firstAudit} style={ctaSmall}>{plans ? `Closer Pack · ${usd(CLOSER.cents)}` : `Run my ${usd(WELCOME.cents)} audit`}</a>
         </div>
-        {home && <a className="lp-mobile-audit so-btn" href={HREF.firstAudit} aria-label={'Run my ' + usd(WELCOME.cents) + ' audit'}>{usd(WELCOME.cents)} audit</a>}
+        {home && (plans
+          ? <a className="lp-mobile-audit so-btn" href={HREF.closer} aria-label={'Closer Pack, ' + usd(CLOSER.cents)}>{usd(CLOSER.cents)} pack</a>
+          : <a className="lp-mobile-audit so-btn" href={HREF.firstAudit} aria-label={'Run my ' + usd(WELCOME.cents) + ' audit'}>{usd(WELCOME.cents)} audit</a>)}
         <button
           type="button"
           className="so-burger"
@@ -132,7 +136,7 @@ export function SiteNav({ page }: { page: 'home' | 'pricing' }) {
             <a href={HREF.login} style={{ display: 'block', padding: '12px 0', color: '#CBD5E1' }}>Log in</a>
           </li>
         </ul>
-        <a className="so-btn" href={HREF.firstAudit} style={{ ...ctaSmall, marginTop: 10, width: '100%', justifyContent: 'center', minHeight: 48, fontSize: 16 }}>Run my {usd(WELCOME.cents)} audit</a>
+        <a className="so-btn" href={plans ? HREF.closer : HREF.firstAudit} style={{ ...ctaSmall, marginTop: 10, width: '100%', justifyContent: 'center', minHeight: 48, fontSize: 16 }}>{plans ? `Get the Closer Pack · ${usd(CLOSER.cents)}` : `Run my ${usd(WELCOME.cents)} audit`}</a>
       </nav>
     </header>
   );

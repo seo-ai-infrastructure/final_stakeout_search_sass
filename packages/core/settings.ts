@@ -35,6 +35,16 @@ type Settings = {
    * 3, and the AI Overview only where there was no pack, over every point. Admins always see the new one.
    */
   pageOneShareForCustomers: boolean;
+  /**
+   * Whether the account plans (Scout, Agency, Scale, the listing add-on, briefs, the Closer Pack and
+   * the new top-ups) are sold to everyone (NEW_PLANS_LIVE). Off: only admins and the accounts in
+   * newPlansPreview see them, so a real purchase can be tried before launch.
+   */
+  newPlansLive: boolean;
+  /** Emails of accounts that see the account plans before launch (NEW_PLANS_PREVIEW). */
+  newPlansPreview: string[];
+  /** When the plans were switched on for everyone (set by itself), for the Terms' date. */
+  newPlansLiveAt: string | null;
 };
 
 const KEY = 'stakeout:settings';
@@ -52,6 +62,9 @@ export const defaultSettings = (env: Record<string, string | undefined> = proces
   mobileForCustomers: env.MOBILE_FOR_CUSTOMERS === 'true',
   aiFlagsForCustomers: env.AI_FLAGS_FOR_CUSTOMERS === 'true',
   pageOneShareForCustomers: env.PAGE_ONE_SHARE_FOR_CUSTOMERS === 'true',
+  newPlansLive: env.NEW_PLANS_LIVE === 'true',
+  newPlansPreview: names(env.NEW_PLANS_PREVIEW ?? '').map((x) => x.toLowerCase()),
+  newPlansLiveAt: env.NEW_PLANS_LIVE_AT || null,
 });
 
 /** Checks values an admin typed; throws a message they can read. Only the given keys are returned. */
@@ -103,8 +116,27 @@ export function cleanSettings(input: Record<string, unknown>): Partial<Settings>
     if (typeof input.pageOneShareForCustomers !== 'boolean') throw new Error('The page-one share for customers must be on or off.');
     out.pageOneShareForCustomers = input.pageOneShareForCustomers;
   }
+  if ('newPlansLive' in input) {
+    if (typeof input.newPlansLive !== 'boolean') throw new Error('The new plans must be on or off.');
+    out.newPlansLive = input.newPlansLive;
+  }
+  if ('newPlansLiveAt' in input) {
+    const v = input.newPlansLiveAt;
+    if (v !== null && (typeof v !== 'string' || Number.isNaN(Date.parse(v)))) throw new Error('The plans’ launch date must be a date.');
+    out.newPlansLiveAt = v as string | null;
+  }
+  if ('newPlansPreview' in input) {
+    const list = Array.isArray(input.newPlansPreview) ? input.newPlansPreview.map(String) : names(String(input.newPlansPreview ?? ''));
+    const clean = [...new Set(list.map((x) => x.trim().toLowerCase()).filter(Boolean))];
+    if (clean.length > 50 || clean.some((x) => x.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x))) throw new Error('List up to 50 account emails, separated by commas.');
+    out.newPlansPreview = clean;
+  }
   return out;
 }
+
+/** Whether this account buys the account plans (Scout, Agency, Scale) rather than the seats sold before them. */
+export const newPlansFor = (u: { email?: string | null; role?: string | null }, s: Pick<Settings, 'newPlansLive' | 'newPlansPreview'>) =>
+  u.role === 'ADMIN' || s.newPlansLive || s.newPlansPreview.includes(String(u.email ?? '').toLowerCase());
 
 /** Credits one point of a scan costs: 1 on home internet, the mobile price on mobile data. */
 export const creditsPerPoint = (network: string | null | undefined, s: Pick<Settings, 'mobileCreditsPerPoint'>) =>
@@ -137,6 +169,8 @@ export async function getSettings(fresh = false): Promise<Settings> {
 
 export async function saveSettings(input: Record<string, unknown>): Promise<Settings> {
   const clean = cleanSettings(input);
+  // The day the plans go live for everyone is kept, for the Terms.
+  if (clean.newPlansLive === true && !(await getSettings(true)).newPlansLive) clean.newPlansLiveAt = new Date().toISOString();
   await kept.set(Object.fromEntries(Object.entries(clean).map(([k, v]) => [k, JSON.stringify(v)])));
   return getSettings(true);
 }

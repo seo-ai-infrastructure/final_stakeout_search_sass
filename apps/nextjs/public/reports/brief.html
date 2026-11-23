@@ -233,6 +233,16 @@ body{width:auto;max-width:none}
 .wrap{width:min(1200px,calc(100% - 48px))}
 .status{width:min(1200px,calc(100% - 48px));margin:80px auto;font-size:16px;color:var(--graphite)}
 .status b{color:var(--ink)}
+.status .ask{max-width:680px;border:1px solid var(--hair);border-radius:10px;padding:28px 30px;background:#fff}
+.status .ask h2{font:600 26px/1.25 var(--serif);color:var(--ink);margin:6px 0 12px}
+.status .ask p{font-size:15px;line-height:1.6;margin-top:10px}
+.status .ask .acts{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px}
+.status .ask button,.status .ask a.btn{font:600 14px var(--sans);border-radius:7px;padding:10px 16px;cursor:pointer;border:1px solid var(--ink);background:var(--ink);color:#fff;text-decoration:none}
+.status .ask a.quiet{background:#fff;color:var(--ink);border-color:var(--hair)}
+.status .ask button:disabled{opacity:.6;cursor:default}
+.status .ask ul{margin-top:18px;border-top:1px solid var(--hair);padding-top:10px;list-style:none}
+.status .ask li{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:14px;border-bottom:1px solid var(--hair2)}
+.status .ask li a{color:var(--ink);font-weight:600}
 .mast-meta .ver{color:var(--fog);font-size:12px}
 .logo img{height:26px;width:auto;display:block}
 .ledger .cell{min-width:0}
@@ -819,6 +829,25 @@ function method() {
   $('#mver').textContent = `Scoring version ${D.version}.`;
 }
 
+/** With the account plans a brief is compiled once and kept: the page asks before using a brief. */
+function ask(v) {
+  const w = v.wallet, left = w.left;
+  const kinds = [w.carry ? `${w.carry} carried from last month` : '', w.plan ? `${w.plan} from this month’s plan` : '', w.bought ? `${w.bought} bought` : ''].filter(Boolean).join(', ');
+  const list = v.compiled.length ? `<ul>${v.compiled.map((c) => `<li><span>${esc(dayLong(c.at))}, ${esc(timeEt(c.at))}${c.thisScan ? '' : ' · another scan'}</span><a href="/reports/brief.html?brief=${encodeURIComponent(c.id)}">Open</a></li>`).join('')}</ul>` : '';
+  status(`<div class="ask"><p class="sec-k">Revenue brief</p><h2>Compile the brief for ${esc(v.business)}</h2>
+    <p>Compiling pulls live county Google Ads prices and locks a permanent brief you can share with the client. Opening it again, sharing it or changing the close-rate inputs later is free.</p>
+    <p><b>${left === 1 ? '1 brief' : left + ' briefs'} left</b>${kinds ? ` (${esc(kinds)})` : ''}.</p>
+    <div class="acts">${left > 0 ? `<button type="button" id="askgo">Compile brief · uses 1</button>` : `<a class="btn" href="/scans?buy=briefs-1">Buy a brief</a><a class="btn quiet" href="/profiles?tab=plan">See plans</a>`}<span class="muted" id="askmsg"></span></div>
+    ${list ? `<p style="margin-top:22px"><b>Already compiled for ${esc(v.business)}</b></p>${list}` : ''}</div>`);
+  $('#askgo')?.addEventListener('click', async () => {
+    const b = $('#askgo'); b.disabled = true; b.textContent = 'Compiling…';
+    const r = await fetch('/api/briefs', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ scanId }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.id) { location.href = '/reports/brief.html?brief=' + encodeURIComponent(j.id); return; }
+    b.disabled = false; b.textContent = 'Compile brief · uses 1'; $('#askmsg').textContent = 'Not compiled: ' + (j.error || r.status);
+  });
+}
+
 async function load() {
   if (!scanId && !shareId && !briefId && !briefToken) return status('<b>No scan chosen.</b> Open this brief from a scan in Stakeout.');
   const slow = setTimeout(() => { if (!$('#status').hidden) $('#status').innerHTML = 'Loading the brief… The first time, this looks up the area’s Google Ads prices, which can take up to half a minute.'; }, 5000);
@@ -828,6 +857,7 @@ async function load() {
     if (r.status === 401) return status('<b>Sign in to Stakeout</b> to see this brief. <a href="/login?next=' + encodeURIComponent(location.pathname + location.search) + '">Sign in</a>');
     const v = await r.json().catch(() => null);
     if (!r.ok || !v) return status('<b>This brief isn’t available.</b> ' + esc(v?.error || ''));
+    if (v.needsCompile) { clearTimeout(slow); return ask(v); }
     D = v;
   } catch (e) {
     return status('<b>This brief didn’t load.</b> Check the connection and reload.');

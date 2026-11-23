@@ -113,7 +113,9 @@ function CategoryPicker({ profile, location, region, onPick, disabled }: { profi
   );
 }
 
-export default function GbpEditor() {
+export default function GbpEditor({ addon = false }: { addon?: boolean } = {}) {
+  // What puts a listing to work for this account: the listing add-on with the account plans, a Command seat before them.
+  const unlocksWith = addon ? 'the listing add-on' : 'a Command seat';
   const [profiles, setProfiles] = useState<Profile[] | null>(null);
   const [ready, setReady] = useState(true);
   const [pick, setPick] = useState<{ profile: string; location: string } | null>(null);
@@ -299,7 +301,7 @@ export default function GbpEditor() {
     <div className="mx-auto max-w-5xl space-y-5 px-5 py-6 text-slate-200">
       <div>
         <h1 className="text-2xl font-bold">Connected Accounts</h1>
-        <p className="mt-1 text-sm text-slate-400">{admin ? 'Each client’s Google Business Profile: how it is doing in search, its edits, posts and reviews.' : 'Your website’s Search Console and Analytics, free. Your Google listing’s numbers, edits, posts, reviews and change watchdog on a Command seat.'}</p>
+        <p className="mt-1 text-sm text-slate-400">{admin ? 'Each client’s Google Business Profile: how it is doing in search, its edits, posts and reviews.' : `Your website’s Search Console and Analytics, free. Your Google listing’s numbers, edits, posts, reviews and change watchdog with ${unlocksWith}.`}</p>
       </div>
 
       {!ready && !admin && <div className={card}><p className="font-semibold">Connecting Google accounts is being set up.</p><p className="mt-1 text-sm text-slate-400">Email sass@stakeoutsearch.com and we will tell you the moment it is ready.</p></div>}
@@ -327,7 +329,7 @@ export default function GbpEditor() {
       {ready && tab === 'listing' && !admin && profiles !== null && profiles.length === 0 && (
         <div className={card}>
           <h2 className="flex items-center gap-2 text-lg font-semibold"><Lock /> Google Business Profile</h2>
-          <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. Your Google listing is where a Command seat comes in:</p>
+          <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. Your Google listing is where {unlocksWith} comes in:</p>
           <ul className="mt-3 grid gap-1.5 text-sm text-slate-300 sm:grid-cols-2">
             <li><span className="text-emerald-400">Insights:</span> calls, direction requests and website clicks from the listing, day by day</li>
             <li><span className="text-emerald-400">Searches:</span> what people typed to find you, and which are rising</li>
@@ -343,11 +345,11 @@ export default function GbpEditor() {
         </div>
       )}
       {ready && tab === 'listing' && !admin && profiles !== null && profiles.length > 0 && !anyPaid && daysLeft !== null && (
-        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">Your Business Profile is connected. Put a listing on a Command seat to see its numbers and work on it. {minutesLeft !== null && minutesLeft <= 120 ? (minutesLeft > 0 ? `With no listing on a plan, the connection is removed in about ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'}; connecting again takes a minute.` : 'With no listing on a plan, the connection is about to be removed.') : daysLeft > 0 ? `With no listing on a plan, the connection is removed in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : 'With no listing on a plan, the connection is removed today.'}</p>
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">Your Business Profile is connected. {addon ? 'Add the listing add-on to a listing' : 'Put a listing on a Command seat'} to see its numbers and work on it. {minutesLeft !== null && minutesLeft <= 120 ? (minutesLeft > 0 ? `With no listing on a plan, the connection is removed in about ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'}; connecting again takes a minute.` : 'With no listing on a plan, the connection is about to be removed.') : daysLeft > 0 ? `With no listing on a plan, the connection is removed in ${daysLeft} day${daysLeft === 1 ? '' : 's'}.` : 'With no listing on a plan, the connection is removed today.'}</p>
       )}
       {picking && ready && !admin && profiles !== null && <GbpPicker profiles={profiles} onClose={() => setPicking(false)} onDone={(n) => { setPicking(false); setNotice(n); readProfiles(); }} />}
-      {ready && tab === 'agents' && profiles !== null && <GbpAgents admin={admin} />}
-      {ready && tab === 'calendar' && profiles !== null && <GbpAllCalendar profiles={profiles} admin={admin} onOpen={(p) => { setPick(p); setChoosing(false); setView('posts'); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
+      {ready && tab === 'agents' && profiles !== null && <GbpAgents admin={admin} addon={addon} />}
+      {ready && tab === 'calendar' && profiles !== null && <GbpAllCalendar profiles={profiles} admin={admin} addon={addon} onOpen={(p) => { setPick(p); setChoosing(false); setView('posts'); setTab('listing'); window.scrollTo({ top: 0 }); }} />}
       {ready && tab === 'reviews' && admin && alerts && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-900 px-4 py-3 text-sm">
           <span className="text-slate-300">{alerts.on ? `Instant alerts are on: a review of ${alerts.maxStars} star${alerts.maxStars === 1 ? '' : 's'} or fewer is emailed within the hour it is left.` : `Instant alerts are off. Turn them on to be emailed when a review of ${alerts.maxStars} stars or fewer arrives.`}</span>
@@ -356,7 +358,7 @@ export default function GbpEditor() {
       )}
       {ready && tab === 'plan' && !admin && profiles !== null && <GbpPlans profiles={profiles} accounts={accounts} onChanged={readProfiles} />}
       {ready && tab === 'changes' && !admin && profiles !== null && !profiles.some((p) => p.locations.some((l) => l.plan !== null)) && (
-        <div className={card}><p className="font-semibold">The change watchdog runs on listings on a Command or Dominator seat.</p><p className="mt-1 text-sm text-slate-400">Every day it reads each listing and tells you when a name, phone, website, hours or category changed without an edit from here, so you can keep it or put it back.</p><button type="button" onClick={() => setTab('plan')} className="mt-3 rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500">See plans</button></div>
+        <div className={card}><p className="font-semibold">{addon ? 'The change watchdog runs on listings with the listing add-on.' : 'The change watchdog runs on listings on a Command or Dominator seat.'}</p><p className="mt-1 text-sm text-slate-400">Every day it reads each listing and tells you when a name, phone, website, hours or category changed without an edit from here, so you can keep it or put it back.</p><button type="button" onClick={() => setTab('plan')} className="mt-3 rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500">See plans</button></div>
       )}
       {ready && tab === 'reviews' && admin && profiles !== null && profiles.length > 0 && (
         <GbpReviews profiles={profiles} only={pick} onOpenListing={(p) => { setPick(p); setChoosing(false); setTab('listing'); window.scrollTo({ top: 0 }); }} />
@@ -385,9 +387,9 @@ export default function GbpEditor() {
         <>
           <div className={card}>
             <h2 className="text-lg font-semibold">{openName} {!choosing && <button type="button" onClick={() => { setChoosing(true); window.scrollTo({ top: 0 }); }} className="ml-2 align-middle text-xs font-normal text-sky-400 hover:underline">Change listing</button>}</h2>
-            <p className="mt-0.5 text-xs text-slate-500">On the free plan: its numbers and tools come with a Command seat.</p>
+            <p className="mt-0.5 text-xs text-slate-500">On the free plan: its numbers and tools come with {unlocksWith}.</p>
           </div>
-          <UpgradeCard profile={pick.profile} location={pick.location} name={openName} what="Everything about this listing" onDone={() => { readProfiles(); setNotice('This listing is on a Command seat.'); }} />
+          <UpgradeCard profile={pick.profile} location={pick.location} name={openName} what="Everything about this listing" onDone={() => { readProfiles(); setNotice(addon ? 'This listing has the listing add-on now.' : 'This listing is on a Command seat.'); }} />
         </>
       )}
 
@@ -408,7 +410,7 @@ export default function GbpEditor() {
           </div>
 
           {view === 'insights' && <SearchInsights profile={pick.profile} location={pick.location} businessName={live.title ?? ''} place={[live.storefrontAddress?.locality, live.storefrontAddress?.administrativeArea].filter(Boolean).join(' ')} website={live.websiteUri ?? ''} onOpen={paidListing ? (what) => setView(what) : undefined} />}
-          {view !== 'insights' && !paidListing && <UpgradeCard profile={pick.profile} location={pick.location} name={live.title ?? 'this listing'} what={view === 'edit' ? 'Editing' : view === 'posts' ? 'Posting' : 'Reviews'} onDone={() => { readProfiles(); setNotice('This listing is on a Command seat.'); }} />}
+          {view !== 'insights' && !paidListing && <UpgradeCard profile={pick.profile} location={pick.location} name={live.title ?? 'this listing'} what={view === 'edit' ? 'Editing' : view === 'posts' ? 'Posting' : 'Reviews'} onDone={() => { readProfiles(); setNotice(addon ? 'This listing has the listing add-on now.' : 'This listing is on a Command seat.'); }} />}
           {view === 'posts' && paidListing && <GbpPosts profile={pick.profile} location={pick.location} name={live.title ?? openName} />}
           {view === 'reviews' && paidListing && profiles && <GbpReviews key={pick.location} profiles={profiles} only={pick} oneListing={!admin} onOpenListing={(p) => { setPick(p); setView('insights'); }} />}
 

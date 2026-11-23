@@ -171,3 +171,21 @@ test('pricing: the old credit plan an account was on comes from what it paid for
   assert.equal(itemKeyOf({ item: null, credits: 1000 }), 'onboarding');
   assert.equal(itemKeyOf({ item: 'welcome', credits: 25 }), 'welcome');
 });
+
+test('pricing: with the account plans, the Closer Pack (twice at most), sessions for plan holders and briefs for anyone', async () => {
+  const { CLOSER, CLOSER_LIMIT, SESSION_PACKS, BRIEF_PACKS, itemByKey } = await import('../apps/nextjs/src/lib/pricing');
+  const keys = (s: Parameters<typeof itemsFor>[0]) => itemsFor(s).map((i) => i.key);
+  assert.deepEqual([CLOSER.key, CLOSER.cents, CLOSER.credits, CLOSER.briefs, CLOSER_LIMIT], ['closer', 1900, 50, 1, 2], '$19: two 5×5 audits and a brief, two per account');
+  assert.deepEqual(SESSION_PACKS.map((p) => [p.key, p.credits, p.cents]), [['sessions-100', 100, 2900], ['sessions-250', 250, 5900], ['sessions-500', 500, 9900]]);
+  assert.deepEqual(BRIEF_PACKS.map((p) => [p.key, p.briefs, p.cents, p.credits]), [['briefs-1', 1, 900, 0], ['briefs-5', 5, 3500, 0]]);
+  // A new account: no $5 audit and no prospect audits any more.
+  assert.deepEqual(keys({ newPlans: true, firstPurchase: true }), ['closer', 'briefs-1', 'briefs-5']);
+  assert.deepEqual(keys({ newPlans: true, closers: 1 }), ['closer', 'briefs-1', 'briefs-5'], 'a second Closer Pack');
+  assert.deepEqual(keys({ newPlans: true, closers: 2 }), ['briefs-1', 'briefs-5'], 'never a third');
+  assert.deepEqual(keys({ newPlans: true, plan: true, closers: 2 }), ['sessions-100', 'sessions-250', 'sessions-500', 'briefs-1', 'briefs-5'], 'a plan holder tops up with the session packs');
+  assert.deepEqual(keys({ newPlans: true, seats: 3, closers: 2 }), ['topup-100', 'briefs-1', 'briefs-5'], 'an account on seats keeps its own top-up');
+  assert.equal(itemsFor({ newPlans: true, admin: true }).at(-1)?.key, 'admin-test');
+  for (const k of ['closer', 'sessions-250', 'briefs-5']) assert.ok(itemByKey(k), 'a paid order finds its item: ' + k);
+  // The old catalog is untouched until the switch.
+  assert.deepEqual(keys({ firstPurchase: true }).slice(0, 1), ['welcome']);
+});

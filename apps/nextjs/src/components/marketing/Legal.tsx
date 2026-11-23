@@ -15,7 +15,7 @@ const supportMail = <a href={'mailto:' + SUPPORT}>{SUPPORT}</a>;
 const box = 'rounded-xl border border-[#1b2431] bg-[#0c1118] p-5';
 const Code = ({ children }: { children: React.ReactNode }) => <code className="mk-mono rounded bg-white/10 px-1.5 py-0.5 text-[13px] text-white">{children}</code>;
 
-function Page({ badge, title, lead, sections }: { badge: string; title: string; lead: string; sections: Section[] }) {
+function Page({ badge, title, lead, sections, updated = LEGAL_UPDATED }: { badge: string; title: string; lead: string; sections: Section[]; updated?: string }) {
   return (
     <div className="mk min-h-screen">
       <SiteHeader />
@@ -25,8 +25,8 @@ function Page({ badge, title, lead, sections }: { badge: string; title: string; 
           <h1 className="mk-display mt-4 text-4xl font-bold sm:text-5xl">{title}</h1>
           <p className="mt-4 max-w-3xl text-lg leading-relaxed text-[#9aa7b8]">{lead}</p>
           <p className="mk-mono mt-6 flex flex-wrap gap-x-6 gap-y-1 text-[12px] text-[#9aa7b8]">
-            <span><b className="text-[#eef2f7]">Effective date:</b> {LEGAL_UPDATED}</span>
-            <span><b className="text-[#eef2f7]">Last updated:</b> {LEGAL_UPDATED}</span>
+            <span><b className="text-[#eef2f7]">Effective date:</b> {updated}</span>
+            <span><b className="text-[#eef2f7]">Last updated:</b> {updated}</span>
             <span><b className="text-[#eef2f7]">Entity:</b> {ENTITY} d/b/a Stakeout Search</span>
           </p>
         </div>
@@ -263,9 +263,10 @@ export function PrivacyPolicy() {
   );
 }
 
-export function TermsOfService() {
+export function TermsOfService({ plans = false, plansFrom = null }: { plans?: boolean; plansFrom?: string | null } = {}) {
   return (
     <Page
+      updated={plans && plansFrom ? plansFrom : LEGAL_UPDATED}
       badge="Master SaaS & service agreement"
       title="Terms of Service"
       lead="The legal terms governing your access to Stakeout Search software, phone sessions and seats, white-label telemetry reports, third-party integrations and optional fulfillment services."
@@ -310,14 +311,29 @@ export function TermsOfService() {
                 <h3>A. Phone sessions & automatic failed-point refunds</h3>
                 <p className="mt-2 text-sm">A phone session is one real phone run at one grid point. Every scan uses one phone session per grid point, per keyword, whether it is scheduled or run with Scan Now, which runs ahead of scheduled scans. The cost is shown before launch. If an individual point fails location verification, network routing or screen capture integrity checks, Stakeout Search automatically refunds that point’s phone session to your balance.</p>
               </div>
-              <div className={box}>
-                <h3>B. Seats (monthly subscriptions)</h3>
-                <p className="mt-2 text-sm">Scout, Command and Dominator seats are monthly subscriptions billed per client through our payment processor (Stripe), at the graduated prices shown on the pricing page: each bracket’s price applies only to the clients inside it. Seats renew automatically each month until cancelled. Each paid month adds the seats’ phone sessions to your balance; seats added during a month are charged for the rest of that month at once and add their phone sessions in the same proportion. Unused seat sessions roll over for one month and then lapse, and when a subscription ends its unused seat sessions lapse. Removing a seat takes effect without a refund; a Google listing taken off a seat keeps its tools until the end of the month already paid for. You can cancel at any time from the billing portal, and the subscription then ends with the month already paid for. Billing questions: {supportMail}.</p>
-              </div>
-              <div className={box}>
-                <h3>C. One-time purchases</h3>
-                <p className="mt-2 text-sm">The first 5×5 audit is one per account and one per card; its price comes off the first month of your first seat, and it is run again once, free, about seven days later. Prospect audits and promotional phone sessions (such as the Black Friday bonus) are valid for 90 days from purchase or grant, after which any of them left unused lapse. Top-up sessions never expire while your account is open. Sessions bought in packs or plans before seats were introduced keep the terms they were sold under. The white-label setup is a one-time fee, waived from 10 client seats.</p>
-              </div>
+              {plans ? (
+                <>
+                  <div className={box}>
+                    <h3>B. Plans and the listing add-on (monthly subscriptions)</h3>
+                    <p className="mt-2 text-sm">Scout, Agency and Scale are monthly plans billed per account through our payment processor (Stripe), at the prices shown on the pricing page{plansFrom ? `, from ${plansFrom}` : ''}. Plans renew automatically each month until cancelled. Each paid month adds the plan’s phone sessions and revenue briefs to your account. The listing add-on is billed per Google listing on top of a plan and adds that listing’s tools, AI agent access, 50 phone sessions and 1 revenue brief a month. Unused plan sessions and briefs roll over for one month and then lapse, and they lapse when a subscription ends. Moving to a bigger plan charges the difference for the rest of the month at once; a smaller plan, or removing an add-on, takes effect at once without a refund. You can cancel at any time from the billing portal, and the subscription then ends with the month already paid for. Accounts holding Scout, Command or Dominator seats bought before the plans keep them on the terms they were sold under. Billing questions: {supportMail}.</p>
+                  </div>
+                  <div className={box}>
+                    <h3>C. One-time purchases and briefs</h3>
+                    <p className="mt-2 text-sm">The Closer Pack (at most two per account), phone-session top-ups and brief packs are one-time purchases; the sessions and briefs they add never expire while your account is open. Compiling a revenue brief uses one brief: last month’s unused plan briefs first, then this month’s, then bought ones. A compiled brief is kept for as long as your account is open, and reopening it, sharing it or changing its modeled inputs uses nothing. Its numbers are those of the day it was compiled. Purchases made before the plans (first audits, prospect audits, phone-session packs) keep the terms they were sold under.</p>
+                  </div>
+                </>
+              ) : (
+                <>
+                <div className={box}>
+                  <h3>B. Seats (monthly subscriptions)</h3>
+                  <p className="mt-2 text-sm">Scout, Command and Dominator seats are monthly subscriptions billed per client through our payment processor (Stripe), at the graduated prices shown on the pricing page: each bracket’s price applies only to the clients inside it. Seats renew automatically each month until cancelled. Each paid month adds the seats’ phone sessions to your balance; seats added during a month are charged for the rest of that month at once and add their phone sessions in the same proportion. Unused seat sessions roll over for one month and then lapse, and when a subscription ends its unused seat sessions lapse. Removing a seat takes effect without a refund; a Google listing taken off a seat keeps its tools until the end of the month already paid for. You can cancel at any time from the billing portal, and the subscription then ends with the month already paid for. Billing questions: {supportMail}.</p>
+                </div>
+                <div className={box}>
+                  <h3>C. One-time purchases</h3>
+                  <p className="mt-2 text-sm">The first 5×5 audit is one per account and one per card; its price comes off the first month of your first seat, and it is run again once, free, about seven days later. Prospect audits and promotional phone sessions (such as the Black Friday bonus) are valid for 90 days from purchase or grant, after which any of them left unused lapse. Top-up sessions never expire while your account is open. Sessions bought in packs or plans before seats were introduced keep the terms they were sold under. The white-label setup is a one-time fee, waived from 10 client seats.</p>
+                </div>
+                </>
+              )}
               <div className={box}>
                 <h3>D. Refund & chargeback policy</h3>
                 <p className="mt-2 text-sm">Because Stakeout Search incurs immediate device, network, storage and manual labor costs upon execution, <b>payments for completed scans, purchased phone sessions, seats for a month already started and in-progress manual fulfillment orders are non-refundable</b> except where required by law. Initiating an improper payment chargeback without first contacting support to resolve a billing error will result in immediate account suspension and revocation of public share links.</p>

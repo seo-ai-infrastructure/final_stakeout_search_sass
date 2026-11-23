@@ -7,7 +7,7 @@
  * is 25 phone sessions. (`credits` on an item is its phone sessions: the name is kept because orders
  * and the ledger store it under that name. Customers never see the word.)
  */
-export type PriceItem = { key: string; name: string; credits: number; cents: number; blurb: string; /** Points that run out this many days after purchase. */ validityDays?: number };
+export type PriceItem = { key: string; name: string; credits: number; cents: number; blurb: string; /** Points that run out this many days after purchase. */ validityDays?: number; /** Briefs it adds (they never expire). */ briefs?: number; featured?: boolean };
 
 /** One Scan Now 5×5: 25 grid points, one phone session each. */
 export const SCAN_NOW_5X5_POINTS = 25;
@@ -35,6 +35,23 @@ export const PROSPECT_PACKS: (PriceItem & { audits: number; saves: number; featu
 
 /** For seat holders who run short: priced above every seat's rate, so a bigger seat is always the better deal. Never expires. */
 export const TOPUP: PriceItem = { key: 'topup-100', name: 'Top-up: 100 phone sessions', credits: 100, cents: 2500, blurb: 'For seat holders who run short. Never expires.' };
+
+/**
+ * Sold with the account plans (Scout, Agency, Scale): the Closer Pack for a pitch with no
+ * subscription (in place of the $5 first audit and the prospect audits), phone sessions for plan
+ * holders who run short, and briefs. Bought sessions and briefs never expire.
+ */
+export const CLOSER: PriceItem = { key: 'closer', name: 'Closer Pack', credits: 50, briefs: 1, cents: 1900, blurb: 'No subscription: two full 5×5 audits on real phones and 1 revenue brief priced with live county Google Ads rates. Never expires. Up to 2 per account.' };
+export const CLOSER_LIMIT = 2;
+export const SESSION_PACKS: PriceItem[] = [
+  { key: 'sessions-100', name: '100 phone sessions', credits: 100, cents: 2900, blurb: '4 full 5×5 scans ($7.25 a scan). For finishing a client audit today.' },
+  { key: 'sessions-250', name: '250 phone sessions', credits: 250, cents: 5900, featured: true, blurb: '10 full 5×5 scans ($5.90 a scan). Covers two 5-keyword territory audits.' },
+  { key: 'sessions-500', name: '500 phone sessions', credits: 500, cents: 9900, blurb: '20 full 5×5 scans ($4.95 a scan). For multi-keyword or 7×7 prospecting runs.' },
+];
+export const BRIEF_PACKS: PriceItem[] = [
+  { key: 'briefs-1', name: '1 brief', credits: 0, briefs: 1, cents: 900, blurb: 'Compile one permanent, shareable client revenue brief.' },
+  { key: 'briefs-5', name: '5 briefs', credits: 0, briefs: 5, cents: 3500, blurb: '$7 a brief: 22% off, for prospecting runs and quarterly reviews.' },
+];
 
 /** Reports under the customer's own logo and domain, share links included: free from 10 clients, otherwise once. Set up by hand. */
 export const WHITE_LABEL = { cents: 9700, freeFrom: 10 };
@@ -80,7 +97,9 @@ export const TOPUPS: (PriceItem & { plan: string })[] = [
 /** The welcome pack as sold before the seats: 25 credits. */
 const WELCOME_25: PriceItem = { ...WELCOME, key: 'welcome', credits: 25 };
 
-export const ALL_ITEMS: PriceItem[] = [WELCOME, ...PROSPECT_PACKS, TOPUP, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS];
+export const ALL_ITEMS: PriceItem[] = [WELCOME, ...PROSPECT_PACKS, TOPUP, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS, CLOSER, ...SESSION_PACKS, ...BRIEF_PACKS];
+/** The item a key names, for what a paid order brings. */
+export const itemByKey = (key: string | null | undefined) => ALL_ITEMS.find((i) => i.key === key);
 
 /**
  * What a recorded purchase was. Purchases made before items were recorded by key are told apart by
@@ -108,8 +127,16 @@ export function currentPlan(paid: { item?: string | null; credits: number; creat
  * always, a top-up while it holds a seat, and the white-label setup while it has fewer than 10
  * client seats and has not bought it. An admin also gets the $1 payment test.
  */
-export function itemsFor(state: { admin?: boolean; /** Has never paid for anything. */ firstPurchase?: boolean; /** Client seats (Scout, Command and Dominator) now. */ seats?: number; /** The white-label setup is already paid for. */ whiteLabel?: boolean }): PriceItem[] {
+export function itemsFor(state: { admin?: boolean; /** Has never paid for anything. */ firstPurchase?: boolean; /** Client seats (Scout, Command and Dominator) now. */ seats?: number; /** The white-label setup is already paid for. */ whiteLabel?: boolean; /** Sold the account plans rather than seats. */ newPlans?: boolean; /** On an account plan (Scout, Agency or Scale) now. */ plan?: boolean; /** Closer Packs already bought. */ closers?: number }): PriceItem[] {
   const seats = state.seats ?? 0;
+  if (state.newPlans) {
+    // With the account plans: the Closer Pack (twice at most), sessions for a plan holder, briefs for anyone.
+    // An account still on seats keeps its own top-up price.
+    const plan = state.plan || seats > 0;
+    const sessions = seats > 0 && !state.plan ? [TOPUP] : plan ? SESSION_PACKS : [];
+    const out = [...((state.closers ?? 0) < CLOSER_LIMIT ? [CLOSER] : []), ...sessions, ...BRIEF_PACKS];
+    return state.admin ? [...out, ADMIN_TEST] : out;
+  }
   const items: PriceItem[] = [
     ...(state.firstPurchase ? [WELCOME] : []),
     ...PROSPECT_PACKS,

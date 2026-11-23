@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PLANS, SCOUT, SCAN_NOW_5X5, addedCents, allows, clientSeats, dollars, isLine, isPlan, lineCents, monthlyCents, planNow, quantityPlan, seatGrant, seatPoints, stripeTiers, unitCents, settlePending, tierNudge } from '../packages/core/gbpPlans';
+import { ACCOUNT_PLANS, accountPlanOf, hasLegacySeats, nextPlan, seatBriefs, PLANS, SCOUT, SCAN_NOW_5X5, addedCents, allows, clientSeats, dollars, isLine, isPlan, lineCents, monthlyCents, planNow, quantityPlan, seatGrant, seatPoints, stripeTiers, unitCents, settlePending, tierNudge } from '../packages/core/gbpPlans';
 
 test('one listing costs less the more listings an account pays for', () => {
   assert.equal(unitCents('MANAGE', 1), 2900);
@@ -99,18 +99,41 @@ test('free reads, Manage changes, a paid listing lets an agent in', () => {
 
 test('the subscription follows the listings that are on a plan', () => {
   const rows = [{ plan: 'MANAGE', status: 'ACTIVE' }, { plan: 'MANAGE', status: 'ACTIVE' }, { plan: 'MANAGE', status: 'ENDING' }, { plan: 'AGENT', status: 'PENDING' }];
-  assert.deepEqual(quantityPlan(rows, { MANAGE: 1 }), { want: { DOMINATOR: 0, COMMAND: 0, MANAGE: 2, AGENT: 0, SCOUT: 0 }, grows: true, same: false, empty: false });
+  assert.deepEqual(quantityPlan(rows, { MANAGE: 1 }), { want: { DOMINATOR: 0, COMMAND: 0, MANAGE: 2, AGENT: 0, SCOUT: 0, LISTING: 0, P_SCOUT: 0, P_AGENCY: 0, P_SCALE: 0 }, grows: true, same: false, empty: false });
   assert.equal(quantityPlan(rows, { MANAGE: 3 }).grows, false);
   assert.equal(quantityPlan(rows, { MANAGE: 2 }).same, true);
   assert.equal(quantityPlan([{ plan: 'MANAGE', status: 'ENDING' }], { MANAGE: 1 }).empty, true);
   // Scout seats stay as they are unless a new number is given.
   const cmd = [{ plan: 'COMMAND', status: 'ACTIVE' }, { plan: 'DOMINATOR', status: 'ACTIVE' }];
-  assert.deepEqual(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }).want, { DOMINATOR: 1, COMMAND: 1, MANAGE: 0, AGENT: 0, SCOUT: 4 });
+  assert.deepEqual(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }).want, { DOMINATOR: 1, COMMAND: 1, MANAGE: 0, AGENT: 0, SCOUT: 4, LISTING: 0, P_SCOUT: 0, P_AGENCY: 0, P_SCALE: 0 });
   assert.equal(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }).same, true);
   assert.equal(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }, 6).grows, true);
   assert.equal(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }, 2).grows, false);
   assert.equal(quantityPlan([], { SCOUT: 4 }, 0).empty, true);
   assert.equal(quantityPlan([], {}, 3).empty, false, 'Scout seats alone are a subscription');
+});
+
+test('account plans: one per account, flat; the listing add-on is one line per listing with 50 sessions and a brief', () => {
+  assert.deepEqual([ACCOUNT_PLANS.P_SCOUT.tiers[0].cents, ACCOUNT_PLANS.P_SCOUT.points, ACCOUNT_PLANS.P_SCOUT.briefs], [4900, 300, 5]);
+  assert.deepEqual([ACCOUNT_PLANS.P_AGENCY.tiers[0].cents, ACCOUNT_PLANS.P_AGENCY.points, ACCOUNT_PLANS.P_AGENCY.briefs], [12900, 1000, 20]);
+  assert.deepEqual([ACCOUNT_PLANS.P_SCALE.tiers[0].cents, ACCOUNT_PLANS.P_SCALE.points, ACCOUNT_PLANS.P_SCALE.briefs], [29900, 3000, 60]);
+  assert.deepEqual([PLANS.LISTING.tiers[0].cents, PLANS.LISTING.points, PLANS.LISTING.briefs], [2900, 50, 1]);
+  assert.equal(isPlan('LISTING'), true, 'the add-on unlocks the listing tools and agents like a listing plan');
+  assert.equal(allows('LISTING', 'agent'), true);
+  const listings = [{ plan: 'LISTING', status: 'ACTIVE' }, { plan: 'LISTING', status: 'ACTIVE' }];
+  const q = quantityPlan(listings, { P_AGENCY: 1, LISTING: 1 });
+  assert.deepEqual([q.want.P_AGENCY, q.want.LISTING, q.want.P_SCOUT, q.grows], [1, 2, 0, true], 'the plan stays; a second listing is added');
+  const up = quantityPlan(listings, { P_AGENCY: 1, LISTING: 2 }, undefined, 'P_SCALE');
+  assert.deepEqual([up.want.P_AGENCY, up.want.P_SCALE, up.grows], [0, 1, true], 'switching plans swaps the line');
+  assert.equal(quantityPlan([], { P_SCOUT: 1 }, undefined, null).empty, true, 'no plan and no listing: nothing left');
+  assert.equal(monthlyCents({ P_AGENCY: 1, LISTING: 3 }), 12900 + 3 * 2900);
+  assert.equal(seatPoints({ P_AGENCY: 1, LISTING: 3 }), 1150);
+  assert.equal(seatBriefs({ P_AGENCY: 1, LISTING: 3 }), 23);
+  assert.equal(accountPlanOf({ P_SCALE: 1, LISTING: 2 }), 'P_SCALE');
+  assert.equal(hasLegacySeats({ P_SCALE: 1, LISTING: 2 }), false);
+  assert.equal(hasLegacySeats({ COMMAND: 1 }), true);
+  assert.equal(nextPlan('P_SCOUT'), 'P_AGENCY');
+  assert.equal(nextPlan('P_SCALE'), null);
 });
 
 import { PLAYBOOKS, TOOLS, WRITES, annotationsOf, playbookText, rpcAnswer, toolCall } from '../packages/core/agentTools';

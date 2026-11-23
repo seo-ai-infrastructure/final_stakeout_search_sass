@@ -8,6 +8,10 @@ export const HREF = {
   firstAudit: signUp('/new-scan?buy=welcome'),
   /** Seats are bought on the Plan and billing page. */
   seats: signUp('/profiles?tab=plan'),
+  /** The Closer Pack: the price list opens on it after signing up, on the new-scan page where its audits are run. */
+  closer: signUp('/new-scan?buy=closer'),
+  /** A plan (Scout, Agency, Scale) is chosen on the Plan and billing page. */
+  plans: signUp('/profiles?tab=plan'),
   /** A prospect audit pack, by its price list key. */
   prospects: (key: string) => signUp('/scans?buy=' + key),
   login: '/login',

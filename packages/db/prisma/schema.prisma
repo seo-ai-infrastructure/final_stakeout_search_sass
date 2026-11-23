@@ -17,6 +17,8 @@ model User {
   passwordHash  String?
   role          String         @default("AGENCY")
   creditBalance Int            @default(0)
+  /// Briefs bought (packs, the Closer Pack): they never expire. A plan's briefs are on GbpSub.
+  briefBalance  Int            @default(0)
   emailVerifiedAt DateTime?
   scans         GridScan[]
   ledger        CreditLedger[]
@@ -429,6 +431,13 @@ model GbpSub {
   grantAt        DateTime?
   /// Monthly points this month's paid invoices have already covered.
   grantedPoints  Int       @default(0) @map("grantedSeats")
+  /// The plan's briefs left this month, and last month's still unused (they roll over for one month).
+  briefPlan      Int       @default(0)
+  briefCarry     Int       @default(0)
+  /// Monthly briefs this month's paid invoices have already covered.
+  grantedBriefs  Int       @default(0)
+  /// The account plan on the subscription (P_SCOUT, P_AGENCY, P_SCALE), if any.
+  accountPlan    String?
 }
 
 /// A monthly credit plan as a subscription. `bucket`: the plan credits held right after the last
@@ -572,6 +581,8 @@ model Brief {
   assumptions Json?
   /// Its share link, once one is made.
   shareToken  String?  @unique @map("share_token")
+  /// What paid for it: carry (last month's plan brief), plan, bought, or admin.
+  paidBy      String   @default("admin") @map("paid_by")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

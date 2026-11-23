@@ -6,6 +6,8 @@ import { errorResponse } from '@/lib/api';
 import { catalogFor } from '@/lib/billing';
 import { stripe, stripeConfigured } from '@/lib/stripe';
 import { activePlan, planPortal, settleIfDue } from '@/lib/creditSub';
+import { accountPlanNow } from '@/lib/gbpBilling';
+import { walletOf } from '@/lib/briefStore';
 
 /** What this account can buy, and whether checkout is switched on. */
 export async function GET() {
@@ -13,7 +15,8 @@ export async function GET() {
     const u = await getAuthenticatedUser();
     await settleIfDue(u.id);
     const plan = await activePlan(u.id);
-    return Response.json({ packs: await catalogFor(u), ready: stripeConfigured(), plan: plan ? { ...plan, periodEnd: plan.periodEnd?.toISOString() ?? null } : null });
+    const [accountPlan, wallet] = await Promise.all([accountPlanNow(u.id), walletOf(u.id)]);
+    return Response.json({ packs: await catalogFor(u), ready: stripeConfigured(), plan: plan ? { ...plan, periodEnd: plan.periodEnd?.toISOString() ?? null } : null, accountPlan, briefs: wallet.left });
   } catch (e) {
     return errorResponse(e);
   }
@@ -39,7 +42,8 @@ export async function POST(req: Request) {
     // { portal: true }: Stripe's page for the plan's card, invoices and cancelling.
     if (portal === true) return Response.json({ url: await planPortal(u.id, back) });
     if (!item) throw new InputError('That is not available for this account.');
-    const what = item.credits ? `${item.credits.toLocaleString('en-US')} phone sessions${item.validityDays ? `, valid for ${item.validityDays} days` : ''}. 1 phone session = 1 real phone run at 1 grid point.` : item.blurb;
+    const briefs = item.briefs ? ` and ${item.briefs === 1 ? '1 brief' : item.briefs + ' briefs'}` : '';
+    const what = item.credits ? `${item.credits.toLocaleString('en-US')} phone sessions${briefs}${item.validityDays ? `, valid for ${item.validityDays} days` : ''}. 1 phone session = 1 real phone run at 1 grid point.` : item.blurb;
     const session = await stripe<{ id: string; url: string }>(
       '/checkout/sessions',
       'POST',

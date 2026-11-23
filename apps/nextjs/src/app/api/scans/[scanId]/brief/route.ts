@@ -5,7 +5,7 @@ import { getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { visibilityForScan } from '@/lib/visibilityReport';
 import { assumptionsKey, buildBrief, cleanAssumptions, defaultsFor } from '@/lib/brief';
-import { canCompile } from '@/lib/briefStore';
+import { canCompile, compilePrompt, compilesBriefs } from '@/lib/briefStore';
 
 export const maxDuration = 60;
 type C = { params: Promise<{ scanId: string }> };
@@ -26,6 +26,8 @@ export async function GET(_: Request, c: C) {
     const id = (await c.params).scanId;
     const me = await getAuthenticatedUser();
     const s = await ownerOf(id, me);
+    // With the account plans a brief is compiled, not read live: the page asks first.
+    if (await compilesBriefs(me)) return Response.json(await compilePrompt(id, me), { headers: { 'Cache-Control': 'private, no-store' } });
     const v = await visibilityForScan(id, me);
     const kept = await redis().get(assumptionsKey(s.userId, s.targetBusiness)).catch(() => null);
     const brief = await buildBrief(v, { lookUp: true, assumptions: kept ? JSON.parse(kept) : null, link: { report: '/reports/visibility.html?scan=' + encodeURIComponent(id) } });
