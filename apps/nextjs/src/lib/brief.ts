@@ -146,10 +146,12 @@ type Market = { county: string | null; city: string | null; countyName: string |
  * search (not the account), so any business's brief in that place, and any share link, reuses them.
  * A lookup is one paid request for every search not yet kept.
  */
+const priceKey = (location: string, k: string) => 'stakeout:brief:kw:v1:' + createHash('sha256').update(location + '|' + k).digest('hex').slice(0, 32);
+
 async function figures(keywords: string[], location: string, lookUp: boolean, alone: boolean) {
   const got = new Map<string, KeywordPrice | null>();
   if (!keywords.length) return got;
-  const keyOf = (k: string) => 'stakeout:brief:kw:v1:' + createHash('sha256').update(location + '|' + k).digest('hex').slice(0, 32);
+  const keyOf = (k: string) => priceKey(location, k);
   const kept = await redis().mget(...keywords.map(keyOf)).catch(() => keywords.map(() => null));
   keywords.forEach((k, i) => { const v = kept[i]; if (v) got.set(k, JSON.parse(v) as KeywordPrice | null); });
   const missing = keywords.filter((k) => !got.has(k));
@@ -185,6 +187,21 @@ export const pricingShort = (need: string[], kept: Map<string, unknown>) => need
  * `strict` (compiling or updating, which spend a brief credit): a failed lookup that leaves the
  * scanned searches or the brand unanswered throws PricingUnavailable instead of going on without.
  */
+/**
+ * A market priced before figures were kept per search: keep its figures per search too (free), so a
+ * share link, which never looks anything up, and any other set of searches in the place reuse them.
+ * Only a search's own price (not one borrowed from a variant), and only city counts Google gave;
+ * never over a figure looked up since.
+ */
+async function splitOld(old: Market, where: { county: string | null; city: string | null }) {
+  const keep: [string, string][] = [];
+  if (where.county) for (const [k, p] of Object.entries(old.prices ?? {})) if (p && !p.via) keep.push([priceKey(where.county, k), JSON.stringify({ ...p, keyword: k })]);
+  if (where.city)
+    for (const [k, n] of Object.entries(old.searches ?? {}))
+      if (typeof n === 'number') keep.push([priceKey(where.city, k), JSON.stringify({ keyword: k, spell: null, searches: n, cpc: null, lowBid: null, highBid: null, competition: null, competitionIndex: null, months: [], alone: false } satisfies KeywordPrice)]);
+  await Promise.all(keep.map(([key, v]) => redis().set(key, v, 'EX', PRICE_KEEP_S, 'NX')));
+}
+
 async function marketFor(v: VisibilityData, market: string | null, plain: string[], extra: string[], pins: Point[], lookUp: boolean, strict = false): Promise<Market | null> {
   const where = placesOf(market, pins);
   if (!where.county) return null;
@@ -197,7 +214,13 @@ async function marketFor(v: VisibilityData, market: string | null, plain: string
   const before = [...new Set([...plain, ...plain.flatMap(variantsOf), ...extra, ...extra.flatMap(variantsOf), brand])].slice(0, 60);
   const kept = async () => { const v = await redis().get('stakeout:brief:market:v1:' + createHash('sha256').update(JSON.stringify([where.county, where.city, before, counted])).digest('hex').slice(0, 32)).catch(() => null); return v ? (JSON.parse(v) as Market) : null; };
   const cached = await figures(priced, where.county, false, true);
-  if (cached.size < priced.length) { const old = await kept(); if (old) return old; }
+  if (cached.size < priced.length) {
+    const old = await kept();
+    if (old) {
+      await splitOld(old, where).catch(() => null);
+      return old;
+    }
+  }
   const county = cached.size < priced.length && lookUp
     ? await figures(priced, where.county, true, false).catch((e: Error) => {
         console.warn('[brief] county prices:', e.message);
