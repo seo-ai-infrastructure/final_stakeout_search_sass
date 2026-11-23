@@ -304,6 +304,11 @@ body{width:auto;max-width:none}
   .rc td.pt{grid-row:1;grid-column:1}.rc td.c-area{grid-row:1;grid-column:2;color:var(--graphite)}.rc td.r{grid-row:1;grid-column:3}
   .rc td.c-saw,.rc td.c-ads{grid-column:1/-1}
   .rc td:last-child{grid-column:1/-1;font-size:12.5px}
+  .mt,.mt tbody{display:block}
+  .mt thead{display:none}
+  .mt tr{display:block;padding:12px 0;border-bottom:1px solid var(--hair2)}
+  .mt td,.mt th{display:block;padding:0;border:0;width:auto !important}
+  .mt tbody td:first-child,.mt tbody th:first-child{font-weight:600;color:var(--ink);margin-bottom:4px}
   .bars .row{grid-template-columns:minmax(0,1fr) 72px 24px;gap:10px}
   .mast .wrap{height:auto;padding:14px 0;gap:12px;flex-wrap:wrap}
 }
@@ -442,7 +447,7 @@ function ledger() {
   let c2, c3, c4, g2, g3, g4;
   if (L.kind === 'connected') {
     const x = L.actions;
-    g2 = 'Measured'; g3 = md?.county ? `Priced at ${md.county} ad rates` : 'Priced at local ad rates'; g4 = 'Modeled from ' + (a.sample ? 'sample inputs' : 'the firm’s inputs');
+    g2 = 'Measured'; g3 = md?.county ? `Priced at ${md.county} ad rates` : 'Priced at local ad rates'; g4 = 'Modeled from sample inputs';
     c2 = `<div class="cell"><div class="k">Verified actions from Google</div><div class="fig tn">${int(x.now)}</div><div class="chg ${x.now >= x.was ? 'up' : 'dn'}">${chg(x.now, x.was, '28 days')}, the 28 days before</div>
       <div class="ln">${x.calls ? `<b class="tn">${int(x.calls.now)}</b> calls from the listing<br>` : ''}${x.visits ? `<b class="tn">${int(x.visits.now)}</b> site visits from the listing’s link<br>` : ''}${x.clicks ? `<b class="tn">${int(x.clicks.now)}</b> clicks from Google Search` : ''}</div>
       ${x.directions ? `<div class="ft">${int(x.directions.now)} direction requests shown, not counted</div>` : ''}</div>`;
@@ -452,7 +457,7 @@ function ledger() {
     c4 = `<div class="cell est" id="c4"></div>`;
   } else {
     const f = D.map.first;
-    g2 = 'Measured on phones'; g3 = 'From Google Ads'; g4 = 'Modeled from ' + (a.sample ? 'sample inputs' : 'the business’s inputs');
+    g2 = 'Measured on phones'; g3 = 'From Google Ads'; g4 = 'Modeled from sample inputs';
     c2 = `<div class="cell"><div class="k">First on Google</div><div class="fig tn">${f.total}<small>of ${D.map.points} points</small></div><div class="chg" style="color:var(--graphite)">${esc(cap(D.map.kw))}, ${esc(dayShort(D.map.at))}</div>
       <div class="ln">${f.panel ? `<b class="tn">${f.panel}</b> as the single listing in the map results<br>` : ''}<b class="tn">${f.pack}</b> at the top of the map results${D.map.aiPoints ? `<br><b class="tn">${f.ai}</b> named first in Google’s AI answer` : ''}</div>
       ${f.rivals ? `<div class="ft">A rival held the single listing at ${f.rivals} points</div>` : ''}</div>`;
@@ -471,11 +476,14 @@ function modeled() {
   const L = D.ledger, a = D.assumptions, el = $('#c4');
   if (!el) return;
   const edit = D.canEdit ? `<br><button class="edit" type="button" id="editbtn">Edit assumptions</button>` : '';
+  const law = /lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')), who = law ? 'firm' : 'business';
+  const g4 = $('#ledger .grp.e');
+  if (g4) g4.textContent = 'Modeled from ' + (a.sample ? 'sample inputs' : `the ${who}’s inputs`);
   if (L.kind === 'connected') {
     const n = L.actions.now, value = n * a.qualified * a.close * a.value, wins = n * a.qualified * a.close;
     el.innerHTML = `<div class="k">${/lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')) ? 'Case pipeline' : 'Job pipeline'}</div><div class="fig tn">${money(value)}</div><div class="chg" style="color:var(--graphite)">${(Math.round(wins * 100) / 100).toLocaleString('en-US')} ${/lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')) ? 'signed cases' : 'booked jobs'}</div>
       <div class="ln">${int(n)} actions × ${pct(a.qualified)} qualified × ${pct(a.close)} ${/lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')) ? 'signed' : 'booked'} × ${money(a.value)} average ${/lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')) ? 'fee' : 'job'}</div>
-      <div class="ft">${a.sample ? 'Sample inputs. The firm sets its own intake rate, sign rate and fee.' : 'The firm’s own inputs.'}${edit}</div>`;
+      <div class="ft">${a.sample ? (law ? 'Sample inputs. The firm sets its own intake rate, sign rate and fee.' : 'Sample inputs. The business sets its own lead rate, booking rate and job value.') : `The ${who}’s own inputs.`}${edit}</div>`;
     if (L.spend && a.cpc) { $('#spend').textContent = money(L.actions.now * a.cpc); $('#spendcpc').textContent = money2(a.cpc); }
   } else if (L.value) {
     const v = L.value, cpc = a.cpc ?? v.cpc, monthly = v.seen * a.tap * cpc;
