@@ -161,13 +161,13 @@ export default function GbpAgents({ admin }: { admin: boolean }) {
       {open && budget && <div className={card}>
         <h2 className="text-lg font-semibold">Limits on what an agent does by itself</h2>
         <ul className="mt-3 space-y-2 text-sm text-slate-300">
-          <li><span className="font-semibold text-slate-100">Scans.</span> An agent’s scan is a 5×5 grid (50 points on Scan Now, 25 scheduled) unless it asks for a larger one by name, and all of its scans together stop at the monthly limit below. Scans you start yourself do not count.</li>
+          <li><span className="font-semibold text-slate-100">Scans.</span> An agent’s scan is a 5×5 grid (25 phone sessions) unless it asks for a larger one by name, and all of its scans together stop at the monthly limit below. Scans you start yourself do not count.</li>
           <li><span className="font-semibold text-slate-100">Low-rated reviews.</span> A reply to a review of 3 stars or fewer is never sent by an agent. It waits as a draft in your review inbox for you to read and send.</li>
           <li><span className="font-semibold text-slate-100">Changes someone else made.</span> An agent can keep or undo a change to a description or to hours. A change to a name, category, phone, website or address is left for you.</li>
           <li><span className="font-semibold text-slate-100">Services.</span> An agent adds, edits or removes the services it names. The rest of the list is never touched.</li>
         </ul>
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <label htmlFor="agent-cap" className="text-sm text-slate-300">Points agents may spend on scans a month</label>
+          <label htmlFor="agent-cap" className="text-sm text-slate-300">Phone sessions agents may spend on scans a month</label>
           <input id="agent-cap" type="number" min={0} max={20000} step={25} inputMode="numeric" value={cap} onChange={(e) => setCap(e.target.value)} className="w-28 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-500" />
           <button type="button" onClick={saveCap} disabled={busy || cap === '' || Number(cap) === budget.cap} className={btn}>{copied === 'cap' ? 'Saved' : 'Save'}</button>
           <span className="text-xs text-slate-500">{budget.used} used so far this month · {budget.left} left · 0 stops agent scans</span>

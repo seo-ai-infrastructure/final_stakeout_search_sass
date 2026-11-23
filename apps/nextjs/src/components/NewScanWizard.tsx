@@ -64,9 +64,9 @@ export function NewScanWizard() {
   const [scheduleType, setScheduleType] = useState<'once' | 'daily' | 'weekly'>(
     'once',
   );
-  // Scan Now (first in line, 2 points a grid point) or scheduled (1 point) at a day and hour, once or repeating.
+  // Scan Now (first in line) or scheduled at a day and hour, once or repeating: one phone session a grid point either way.
   const [speed, setSpeed] = useState<'now' | 'scheduled'>('now');
-  // Seat holders start on Scheduled (half the points); a first audit or a prospect audit starts on Scan Now.
+  // Seat holders start on Scheduled; a first audit or a prospect audit starts on Scan Now.
   const speedPicked = useRef(false);
   const [repeat, setRepeat] = useState<'once' | 'weekly' | 'biweekly'>('weekly');
   const [runDate, setRunDate] = useState(() => { const d = new Date(Date.now() + 86400000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
@@ -425,15 +425,16 @@ export function NewScanWizard() {
   const creditSummary = useMemo(() => {
     const totalPins = shape === 'wealth' ? previewPoints.filter((p) => !p.skipped).length : gridSize * gridSize - allSkipped.length;
     const isDesktop = targetType.startsWith('desktop_');
-    const mobilePrice = mobileData?.creditsPerPoint ?? 2;
+    const mobilePrice = mobileData?.creditsPerPoint ?? 1;
     // Mobile points cost the mobile price, residential ones 1. In a mix the points alternate like a
     // checkerboard (the same rule the server charges by, with the same rows for placed points).
     const kept = shape === 'wealth'
       ? placedLayout(previewPoints.filter((p) => !p.skipped), OFFERED_GRID_SIZES).cells
       : previewPoints.filter((p) => !p.skipped && !p.out).map((p) => { const [r, c] = p.key.split('_').map(Number); return { rowIdx: r, colIdx: c }; });
     const mobilePins = network === 'residential' ? 0 : kept.filter((p) => pinNetwork(network, p.rowIdx, p.colIdx) === 'mobile').length;
-    const totalCost = isDesktop ? totalPins * 2 : totalPins - mobilePins + mobilePins * mobilePrice;
-    const costPerPin = isDesktop ? 2 : network === 'mobile' ? mobilePrice : 1;
+    // One phone session a pin, across the board (a mobile-data point at the admin setting's price, 1 by default).
+    const totalCost = isDesktop ? totalPins : totalPins - mobilePins + mobilePins * mobilePrice;
+    const costPerPin = isDesktop ? 1 : network === 'mobile' ? mobilePrice : 1;
     const spanMiles = ((gridSize - 1) * spacingKm * 0.621371).toFixed(1);
     return {
       totalPins,
@@ -860,7 +861,7 @@ export function NewScanWizard() {
         repeat: speed === 'scheduled' && when === 'pick' && repeat !== 'once',
         scheduled: speed === 'scheduled' && when === 'pick' ? runWhen : undefined,
         asap: speed === 'scheduled' && when === 'asap',
-        summary: `${creditSummary.totalPins} grid points × ${runKeywords.length} keyword${runKeywords.length > 1 ? 's' : ''}${speed === 'now' ? ' × 2 (Scan Now)' : ''} · ${cost} points used`,
+        summary: `${creditSummary.totalPins} grid points × ${runKeywords.length} keyword${runKeywords.length > 1 ? 's' : ''} · ${cost.toLocaleString()} phone session${cost === 1 ? '' : 's'} used`,
       });
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -870,8 +871,8 @@ export function NewScanWizard() {
   const runKeywords = scanKeywords(picked, keyword);
   const shownKeywords = [...new Set([...keywordList, ...picked])];
   const points = creditSummary.totalPins;
-  // Scan Now costs 2 points a grid point; a scheduled scan 1.
-  const speedX = speed === 'now' ? 2 : 1;
+  // Scan Now and scheduled scans cost the same: one phone session a grid point.
+  const speedX = 1;
   const businessTz = stateTimezone(detectedState || 'FL');
   const runWhen = (() => { const [y, m, d] = runDate.split('-').map(Number); const [h, mi] = runTime.split(':').map(Number); const dt = new Date(y, (m || 1) - 1, d || 1, h || 0, mi || 0); return `${dt.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} at ${dt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} (${businessTz.replace('America/', '').replace('_', ' ')} time)`; })();
   const runDay = Number(runDate.slice(8, 10)) || 1;
@@ -1045,7 +1046,7 @@ export function NewScanWizard() {
               <textarea id="ns-keywords" placeholder="Paste keywords, one per line…" rows={1} value={keyword} onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); addKeyword(); } }} />
             </div>
             <div className={styles.keywordHelper}><span title="Commas, semicolons and new lines split keywords. Duplicate entries count once.">Comma or new line · duplicates removed</span><button type="button" onClick={addKeyword} disabled={!keyword.trim()} title="Add the pasted keywords to the list (Ctrl+Enter)">Apply</button></div>
-            {runKeywords.length > 10 && <p className={styles.hint}>Large batch: {runKeywords.length} scans · {totalCost.toLocaleString()} points.</p>}
+            {runKeywords.length > 10 && <p className={styles.hint}>Large batch: {runKeywords.length} scans · {totalCost.toLocaleString()} phone sessions.</p>}
           </section>
 
           <section className={styles.section}>
@@ -1060,7 +1061,7 @@ export function NewScanWizard() {
             <button type="button" aria-expanded={moreOptions} aria-controls="ns-more-options" onClick={() => setMoreOptions((value) => !value)} className={styles.moreToggle}><span><SlidersHorizontal size={14} />More options</span><span>{speed === 'now' ? 'Priority' : when === 'asap' ? 'Standard' : repeat === 'once' ? 'Scheduled' : repeat === 'weekly' ? 'Weekly' : 'Biweekly'}<ChevronDown size={14} /></span></button>
             {moreOptions && <div id="ns-more-options" className={styles.moreBody}>
               <fieldset><legend>Schedule</legend>
-                <div className={styles.segmented} role="group" aria-label="Run priority"><button type="button" aria-pressed={speed === 'scheduled'} onClick={() => { speedPicked.current = true; setSpeed('scheduled'); }}>Scheduled · 1×</button><button type="button" aria-pressed={speed === 'now'} onClick={() => { speedPicked.current = true; setSpeed('now'); }}>Scan Now · 2×</button></div>
+                <div className={styles.segmented} role="group" aria-label="Run priority"><button type="button" aria-pressed={speed === 'scheduled'} onClick={() => { speedPicked.current = true; setSpeed('scheduled'); }}>Scheduled</button><button type="button" aria-pressed={speed === 'now'} onClick={() => { speedPicked.current = true; setSpeed('now'); }}>Scan Now</button></div>
                 {speed === 'scheduled' ? <>
                   <div className={styles.segmented} role="group" aria-label="When the scheduled scan runs"><button type="button" aria-pressed={when === 'asap'} onClick={() => setWhen('asap')}>When available</button><button type="button" aria-pressed={when === 'pick'} onClick={() => setWhen('pick')}>Choose a time</button></div>
                   {when === 'pick' ? <>
@@ -1068,7 +1069,7 @@ export function NewScanWizard() {
                     <label className={styles.stackLabel}>Repeat<select id="run-repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as 'once' | 'weekly' | 'biweekly')}><option value="once">Just once</option><option value="weekly">Weekly · 4 runs per month</option><option value="biweekly">Every other week · 2 per month</option></select></label>
                     <p className={styles.hint}>{runWhen}. {repeatNote} Choose at least 2 hours ahead; results within 3 hours of that time.</p>
                   </> : <p className={styles.hint}>Starts when phones are available, behind priority scans.</p>}
-                </> : <p className={styles.hint}>First in line. Uses twice the points of a scheduled scan.</p>}
+                </> : <p className={styles.hint}>First in line, at the same one phone session a grid point.</p>}
                 {scheduleProblem && <p className={styles.errorText}>{scheduleProblem}</p>}
               </fieldset>
               {mobileData && <fieldset><legend>Network</legend><div className={styles.networkOptions} role="radiogroup" aria-label="Network">{(['residential', 'mobile', 'mix'] as const).map((id) => <button key={id} type="button" role="radio" aria-checked={network === id} disabled={id !== 'residential' && !mobileData.ready} onClick={() => setNetwork(id)}><span>{NETWORK_LABELS[id]}</span><small>{id === 'residential' ? '1' : id === 'mobile' ? mobileData.creditsPerPoint : `1–${mobileData.creditsPerPoint}`} / pin</small></button>)}</div>{!mobileData.ready && <p className={styles.hint}>Mobile network currently unavailable.</p>}</fieldset>}
@@ -1080,8 +1081,8 @@ export function NewScanWizard() {
         </div>
 
         <footer className={styles.dockFooter}>
-          <div className={styles.estimateHeading}><span className={styles.mono}>{points} pins × {runKeywords.length} {runKeywords.length === 1 ? 'keyword' : 'keywords'}{speedX > 1 ? ' × 2' : ''}</span><strong title={`${creditSummary.totalCost.toLocaleString()} base points per keyword${speedX > 1 ? ', doubled for Scan Now' : ''}. AI Overview tracking is included.`}>{(runKeywords.length ? totalCost : 0).toLocaleString()} <span>points</span></strong></div>
-          <div className={styles.estimateMeta}><button type="button" className={styles.priorityLink} onClick={() => setMoreOptions(true)} title="Change timing and priority in More options">{speed === 'now' ? 'Scan Now · 2×' : 'Scheduled · 1×'}</button>{creditsLeft >= 0 ? <span title="Balance after this scan">{(runKeywords.length ? creditsLeft : creditBalance).toLocaleString()} left</span> : <button type="button" onClick={() => setIsTopUpOpen(true)}>{(-creditsLeft).toLocaleString()} short · Top up</button>}{eta && runKeywords.length > 0 && <span title="Estimate based on available phone models; queue time varies."><Clock3 size={12} />{eta}</span>}</div>
+          <div className={styles.estimateHeading}><span className={styles.mono}>{points} pins × {runKeywords.length} {runKeywords.length === 1 ? 'keyword' : 'keywords'}</span><strong title={`One phone session a pin: ${creditSummary.totalCost.toLocaleString()} per keyword. AI Overview tracking is included.`}>{(runKeywords.length ? totalCost : 0).toLocaleString()} <span>phone sessions</span></strong></div>
+          <div className={styles.estimateMeta}><button type="button" className={styles.priorityLink} onClick={() => setMoreOptions(true)} title="Change timing and priority in More options">{speed === 'now' ? 'Scan Now' : 'Scheduled'}</button>{creditsLeft >= 0 ? <span title="Balance after this scan">{(runKeywords.length ? creditsLeft : creditBalance).toLocaleString()} left</span> : <button type="button" onClick={() => setIsTopUpOpen(true)}>{(-creditsLeft).toLocaleString()} short · Top up</button>}{eta && runKeywords.length > 0 && <span title="Estimate based on available phone models; queue time varies."><Clock3 size={12} />{eta}</span>}</div>
           {blockedWhy && <p className={styles.launchHint} role="status">{blockedWhy.replace(/^Step \d: /, '')}</p>}
           <div className={styles.launchActions}><button type="button" className={styles.saveButton} onClick={saveBusiness} disabled={!targetBusiness.trim()} title={businessId ? 'Update this saved business setup' : 'Save this business and its scan settings'}><Save size={15} />Save</button><button type="submit" className={styles.launchButton} disabled={isSubmitting || Boolean(blockedWhy) || Boolean(scheduleProblem)}>{isSubmitting ? <><Loader2 size={15} className="animate-spin" />Starting…</> : creditsLeft < 0 ? 'Get points to run' : speed === 'scheduled' && when === 'pick' ? 'Schedule scan' : 'Launch scan'}</button></div>
           {saveMsg && <p role="status" className={styles.hint}>{saveMsg}</p>}

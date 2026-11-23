@@ -27,7 +27,7 @@ export async function createScan(
     free?: boolean;
     /** A repeating scan's own schedule (see fixedCron and schedulePlan), in place of the usual hour. */
     cron?: string;
-    /** Scan Now (first in line, 2 points a grid point) or scheduled (1 point, behind Scan Now). Scan Now when not given. */
+    /** Scan Now (first in line) or scheduled (behind Scan Now), one phone session a grid point either way. Scan Now when not given. */
     speed?: Speed;
     /** A scheduled scan waits until then. */
     runAt?: Date;
@@ -48,9 +48,8 @@ export async function createScan(
     // The grid's centre point; a grid with skipped points still has it (it can never be skipped).
     mid = (s.gridSize - 1) / 2,
     middle = pins.find((p) => p.rowIdx === mid && p.colIdx === mid) ?? pins[Math.floor((pins.length - 1) / 2)];
-  // One credit per grid point, or the mobile-data price per point on a mobile scan (an admin
-  // setting, 2 by default). AI Overview tracking is part of every Chrome scan, not an add-on.
-  // Scan Now costs twice the scheduled price: it jumps ahead of every scheduled scan.
+  // One phone session per grid point, Scan Now or scheduled; a mobile-data point costs the admin
+  // setting's price (1 by default). AI Overview tracking is part of every Chrome scan, not an add-on.
   const speed: Speed = opts?.speed === 'scheduled' ? 'scheduled' : 'now';
   const base = s.network === 'residential' ? pins.length : scanCost(s.network, pins, creditsPerPoint('mobile', await getSettings()));
   const cost = lead || opts?.free ? 0 : base * speedFactor(speed);
@@ -92,7 +91,7 @@ export async function createScan(
             data: { creditBalance: { decrement: cost } },
           });
           if (debit.count !== 1)
-            throw new InputError('Not enough points for this scan.', 402);
+            throw new InputError('Not enough phone sessions for this scan.', 402);
           await tx.creditLedger.create({
             data: {
               userId,

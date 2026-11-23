@@ -251,7 +251,7 @@ function LoginFormContent() {
             <div className="mt-6 flex items-center justify-between border-t border-slate-800 pt-4 text-[11px]">
               <span className="flex items-center gap-1">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                Isolated Credit Ledger
+                Isolated Billing Ledger
               </span>
               <span className="flex items-center gap-1">
                 <Sparkles className="h-3.5 w-3.5 text-purple-400" />

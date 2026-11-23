@@ -660,7 +660,7 @@ export function GeoGridDashboard({
       const d = await r.json();
       if (!r.ok) throw Error(d.error);
       setRerunNote(
-        `Re-running ${d.points === 1 ? '1 point' : `${d.points} points`}${d.credits ? ` (${d.credits} credits, refunded if it fails again)` : ''}. They run next on the first free phone.`,
+        `Re-running ${d.points === 1 ? '1 point' : `${d.points} points`}${d.credits ? ` (${d.credits} phone session${d.credits === 1 ? '' : 's'}, refunded if it fails again)` : ''}. They run next on the first free phone.`,
       );
       setReloadKey((k) => k + 1);
     } catch (e) {

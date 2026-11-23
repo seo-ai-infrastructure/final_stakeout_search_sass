@@ -121,7 +121,7 @@ export async function DELETE(_: Request, c: C) {
       me = await getAuthenticatedUser();
     const s = await db.gridScan.findFirst({ where: { id, ...(me.role === 'ADMIN' ? {} : { userId: me.id }) }, select: { id: true, status: true, scheduleType: true } });
     if (!s) throw new InputError('Scan unavailable.', 404);
-    if (['QUEUED', 'RUNNING', 'AWAITING_EMAIL', 'SCHEDULED'].includes(s.status)) throw new InputError(s.status === 'SCHEDULED' ? 'This scan is scheduled. Cancel it first (its points come back), then delete it.' : 'This scan is still running. Stop it first, then delete it.', 409);
+    if (['QUEUED', 'RUNNING', 'AWAITING_EMAIL', 'SCHEDULED'].includes(s.status)) throw new InputError(s.status === 'SCHEDULED' ? 'This scan is scheduled. Cancel it first (its phone sessions come back), then delete it.' : 'This scan is still running. Stop it first, then delete it.', 409);
     if (s.scheduleType !== 'once') {
       await removeStakeoutSchedule(id).catch((e) => console.warn('[delete] schedule not removed:', (e as Error).message));
     }

@@ -70,13 +70,13 @@ export default function ScanList() {
     else setError('Schedule update failed.');
   }
   async function cancel(s: Run) {
-    if (!window.confirm(`Cancel this scheduled scan?\n\n“${s.keyword}” · ${s.client}\n\nIts points come back to your balance.${s.scheduleType !== 'once' ? ' The repeats it would have started are cancelled too.' : ''}`)) return;
+    if (!window.confirm(`Cancel this scheduled scan?\n\n“${s.keyword}” · ${s.client}\n\nIts phone sessions come back to your balance.${s.scheduleType !== 'once' ? ' The repeats it would have started are cancelled too.' : ''}`)) return;
     const r = await fetch('/api/scans/' + s.id, { method: 'POST', body: JSON.stringify({ action: 'stop' }) });
     if (!r.ok) return setError((await r.json().catch(() => ({}))).error || 'That scan could not be cancelled.');
     await load();
   }
   async function remove(s: Run) {
-    if (!window.confirm(`Delete this scan for good?\n\n“${s.keyword}” · ${s.client}\n\nIts report, videos and evidence are removed and cannot be brought back.${s.scheduleType !== 'once' ? ' Its repeat schedule ends too.' : ''} Points are not affected.`)) return;
+    if (!window.confirm(`Delete this scan for good?\n\n“${s.keyword}” · ${s.client}\n\nIts report, videos and evidence are removed and cannot be brought back.${s.scheduleType !== 'once' ? ' Its repeat schedule ends too.' : ''} Phone sessions are not affected.`)) return;
     const r = await fetch('/api/scans/' + s.id, { method: 'DELETE' });
     if (!r.ok) return setError((await r.json().catch(() => ({}))).error || 'That scan could not be deleted.');
     await load();
@@ -218,7 +218,7 @@ export default function ScanList() {
               <table className="w-full min-w-[760px] text-left text-sm">
                 <thead>
                   <tr className="text-xs text-slate-400">
-                    {[current ? 'Keyword' : 'Client / keyword', 'Started', 'Progress', 'SoLV', 'Points', 'Repeats', 'Report'].map((h) => (
+                    {[current ? 'Keyword' : 'Client / keyword', 'Started', 'Progress', 'SoLV', 'Sessions', 'Repeats', 'Report'].map((h) => (
                       <th key={h} className="px-4 py-2.5 font-semibold">{h}</th>
                     ))}
                   </tr>

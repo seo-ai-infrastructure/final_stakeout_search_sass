@@ -6,7 +6,7 @@ const groupOf = (key?: string) => (!key ? '' : key === 'welcome' ? 'welcome' : k
 const GROUPS: Record<string, string> = {
   welcome: 'Your first audit · one time',
   prospect: 'Prospect audits · no subscription, valid 90 days',
-  topup: 'More points · for seat holders, never expire',
+  topup: 'More phone sessions · for seat holders, never expire',
   extra: 'Extras',
   test: 'Admin',
   other: 'Other',
@@ -70,20 +70,20 @@ export function CreditTopUpModal(p: Props) {
       <section
         role="dialog"
         aria-modal="true"
-        aria-label="Get points"
+        aria-label="Get phone sessions"
         className="w-full max-w-md space-y-5 rounded-xl bg-slate-900 p-6"
       >
         <div className="flex justify-between">
-          <h2 className="text-lg font-bold">Get points</h2>
+          <h2 className="text-lg font-bold">Get phone sessions</h2>
           <button type="button" onClick={p.onClose} className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-800">Close</button>
         </div>
-        <p>Your balance · {p.currentBalance.toLocaleString()} points</p>
+        <p>Your balance · {p.currentBalance.toLocaleString()} phone sessions</p>
         <p className="text-sm text-slate-400">
-          A point is one real phone run at one grid point: a scheduled 5×5 is 25 points, a Scan Now 5×5 is 50.{' '}
+          A phone session is one real phone run at one grid point: a 5×5 scan is 25, Scan Now or scheduled.{' '}
           <a href="/pricing" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">Pricing</a>
         </p>
         <a href="/profiles?tab=plan" className="block rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-100 hover:bg-emerald-500/20">
-          <span className="font-semibold">Monthly seats are the best value:</span> Scout from $39, Command from $59, Dominator from $99 per client, with 250 to 1,250 points a month each. <span className="font-semibold underline">Plan and billing</span>
+          <span className="font-semibold">Monthly seats are the best value:</span> Scout from $39, Command from $59, Dominator from $99 per client, with 250 to 1,250 phone sessions a month each. <span className="font-semibold underline">Plan and billing</span>
         </a>
         {ready && items.length > 0 ? (
           <>
@@ -102,7 +102,7 @@ export function CreditTopUpModal(p: Props) {
                       <span className="font-semibold">{k.name}</span>
                       <span className="shrink-0 font-bold">USD {(k.cents / 100).toFixed(2)}</span>
                     </span>
-                    <span className="block text-sm text-slate-400">{k.blurb}{k.credits ? ` ${k.credits.toLocaleString()} points.` : ''}</span>
+                    <span className="block text-sm text-slate-400">{k.blurb}{k.credits ? ` ${k.credits.toLocaleString()} phone sessions.` : ''}</span>
                   </span>
                 </label>
                 </Fragment>

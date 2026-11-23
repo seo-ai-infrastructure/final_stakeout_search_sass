@@ -264,13 +264,13 @@ export async function runTool(user: ActingUser, name: string, args: Record<strin
       const runs = call.body?.scheduleType === 'daily' ? 31 : call.body?.scheduleType === 'weekly' ? 5 : 1;
       if (runs > 1) {
         const budget = await agentBudget(user.id);
-        if (size * size * runs > budget.cap) throw new InputError(`A ${size}×${size} scan every ${runs === 31 ? 'day' : 'week'} costs about ${size * size * runs} credits a month, more than the ${budget.cap} this account’s agents may spend. Choose a smaller grid or a weekly scan, or a person can raise the limit on the Connected Accounts page, under AI agents.`, 402);
+        if (size * size * runs > budget.cap) throw new InputError(`A ${size}×${size} scan every ${runs === 31 ? 'day' : 'week'} uses about ${size * size * runs} phone sessions a month, more than the ${budget.cap} this account’s agents may spend. Choose a smaller grid or a weekly scan, or a person can raise the limit on the Connected Accounts page, under AI agents.`, 402);
       }
       const back = await reserveAgentCredits(user.id, size * size);
       try {
         const made = await invoke<{ scanId: string; creditsCharged: number }>('scan-create', 'POST', { body: call.body });
         const b = await agentBudget(user.id).catch(() => null);
-        return { ...made, ...(runs > 1 ? { repeats: 'This scan runs now and then on its schedule. Each later run is charged to the account’s credits as it starts, and the schedule pauses itself if they run out. set_scan_schedule pauses it.' } : {}), ...(b ? { agentCreditsLeftThisMonth: b.left } : {}) };
+        return { ...made, ...(runs > 1 ? { repeats: 'This scan runs now and then on its schedule. Each later run uses the account’s phone sessions as it starts, and the schedule pauses itself if they run out. set_scan_schedule pauses it.' } : {}), ...(b ? { agentCreditsLeftThisMonth: b.left } : {}) };
       } catch (e) {
         await back();
         throw e;

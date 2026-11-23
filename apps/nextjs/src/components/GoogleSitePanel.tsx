@@ -93,7 +93,7 @@ function SearchConsole({ website, host, businessName, dates, wholeSite, onUnlock
     window.addEventListener('stakeout:scan-offer', open);
     return () => window.removeEventListener('stakeout:scan-offer', open);
   }, []);
-  const price = phones ? ((phones.balance ?? 0) >= 25 ? '25 credits' : phones.packCents ? '$' + phones.packCents / 100 : '') : '';
+  const price = phones ? ((phones.balance ?? 0) >= 25 ? '25 phone sessions' : phones.packCents ? '$' + phones.packCents / 100 : '') : '';
   const whyOf = (r: Phones['rows'][number]) => (phones?.fallback
     ? `On phones over the last 28 days your page was shown ${fmt(r.impressions)} times for this search${r.position !== null ? `, around position ${r.position}` : ''}.`
     : `On phones over the last 28 days your page was shown ${fmt(r.impressions)} times for this search, around position ${r.position}, and clicked ${r.ctr}% of the time. A page that high usually gets more: something above it is taking the clicks.`);

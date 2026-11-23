@@ -45,9 +45,9 @@ test('Scout, Command and Dominator are priced per client on graduated brackets',
 });
 
 test('points: each seat adds its points every paid month, and seats added mid-month their share', () => {
-  assert.equal(SCAN_NOW_5X5, 50);
-  assert.equal(PLANS.COMMAND.points, 550, '500 plus one Scan Now 5×5');
-  assert.equal(PLANS.DOMINATOR.points, 1250, '1,100 plus three Scan Now 5×5s');
+  assert.equal(SCAN_NOW_5X5, 25, 'one phone session a pin, Scan Now or scheduled');
+  assert.equal(PLANS.COMMAND.points, 550, '5 keywords weekly on a 5×5 plus two Scan Now 5×5s');
+  assert.equal(PLANS.DOMINATOR.points, 1250, '1,100 plus six Scan Now 5×5s');
   assert.equal(SCOUT.points, 250);
   assert.equal(seatPoints({ SCOUT: 2, COMMAND: 3, DOMINATOR: 1, MANAGE: 4 }), 500 + 1650 + 1250);
   assert.equal(clientSeats({ SCOUT: 2, COMMAND: 3, DOMINATOR: 1, MANAGE: 4 }), 6);

@@ -22,7 +22,7 @@ export async function sendVerification(user: { id: string; email: string }) {
     user.email,
     'Confirm your Stakeout email',
     welcomeCredits() > 0
-      ? 'Confirm this address to activate your agency account and receive ' + welcomeCredits() + ' starter credits.'
+      ? 'Confirm this address to activate your agency account and receive ' + welcomeCredits() + ' starter phone sessions.'
       : 'Confirm this address to activate your agency account.',
     'Confirm email',
     appUrl('/api/auth/verify?token=' + token),

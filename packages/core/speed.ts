@@ -1,9 +1,10 @@
 /**
  * The two ways a scan can run.
- *   Scan Now   jumps ahead of every scheduled scan and costs 2 points a grid point.
- *   Scheduled  costs 1 point a grid point and runs either as soon as possible (right away when the
+ *   Scan Now   jumps ahead of every scheduled scan.
+ *   Scheduled  runs either as soon as possible (right away when the
  *              phones are free, otherwise at the end of the line, behind Scan Now) or at the day and
  *              hour the customer picks, at least SCHEDULE_LEAD_MS ahead.
+ * Both cost one phone session a grid point: one pin is one session, across the board.
  * A repeating scheduled scan runs on fixed days of the month, so every month has the same number of
  * runs: weekly is 4 runs (the d, d+7, d+14 and d+21 of the month), every other week is 2 (d and d+14).
  */
@@ -18,8 +19,8 @@ export const SCHEDULE_LEAD_MS = 2 * 3600000;
 const LEAD_GRACE_MS = 10 * 60000;
 export const asRepeat = (v: unknown): Repeat => (v === 'weekly' || v === 'biweekly' ? v : 'once');
 
-/** Points a grid point costs at this speed, on top of its network's price. */
-export const speedFactor = (speed: string | null | undefined) => (speed === 'scheduled' ? 1 : 2);
+/** Phone sessions a grid point costs at this speed: one, Scan Now or scheduled (Scan Now was 2 until 22 Nov 2026). */
+export const speedFactor = (_speed: string | null | undefined) => 1;
 
 /** BullMQ priority for a scan's points: none (first in line) for Scan Now, behind it when scheduled. */
 export const queuePriority = (speed: string | null | undefined) => (speed === 'scheduled' ? 10 : undefined);

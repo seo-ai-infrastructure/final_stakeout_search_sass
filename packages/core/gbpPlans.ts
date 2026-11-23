@@ -4,13 +4,14 @@
  * Three seats, each priced per client per month on graduated brackets: a bracket's price applies
  * only to the clients inside it (the first 9 at the first price, the 10th to the 24th at the next,
  * and so on), so adding a client never makes the month cheaper.
- *   Scout      seats bought by number: 250 points a month each.
- *   Command    one Google listing switched on is one seat: 500 points plus one Scan Now 5×5 (550
- *              points a month), and the listing tools (edits, posts, reviews, the change watchdog,
- *              rival gaps) and AI agents.
- *   Dominator  a listing on Dominator: everything in Command, with 1,100 points plus three Scan Now
- *              5×5s (1,250 points a month).
- * A point is one real phone run at one grid point. Scheduled scans use 1 point a point, Scan Now 2.
+ *   Scout      seats bought by number: 250 phone sessions a month each.
+ *   Command    one Google listing switched on is one seat: 550 phone sessions a month (5 keywords
+ *              weekly on a 5×5 plus two Scan Now 5×5s), and the listing tools (edits, posts,
+ *              reviews, the change watchdog, rival gaps) and AI agents.
+ *   Dominator  a listing on Dominator: everything in Command, with 1,250 phone sessions a month
+ *              (10 keywords weekly on a 5×5 plus six Scan Now 5×5s).
+ * A phone session is one real phone run at one grid point, Scan Now or scheduled: one pin, one session.
+ * (`points` below is the same count: the name is kept because balances and the ledger store it.)
  * Connecting a Google account is free, and so is reading: every connected listing gets Search insights.
  * Manage (per listing, priced by volume, no points) is retired: Command replaced it. Agent was never sold.
  */
@@ -32,8 +33,8 @@ export type LineDef = {
   points: number;
 };
 
-/** What one Scan Now 5×5 costs: 25 grid points at twice the scheduled price. */
-export const SCAN_NOW_5X5 = 50;
+/** What one Scan Now 5×5 costs: 25 grid points, one phone session each. */
+export const SCAN_NOW_5X5 = 25;
 
 export const PLANS: Record<Plan, LineDef> = {
   COMMAND: {
@@ -43,16 +44,16 @@ export const PLANS: Record<Plan, LineDef> = {
     lookupKey: 'stakeout_command_seat_v1',
     graduated: true,
     tiers: [{ upTo: 9, cents: 5900 }, { upTo: 24, cents: 4900 }, { upTo: 99, cents: 3900 }, { upTo: null, cents: 2900 }],
-    points: 500 + SCAN_NOW_5X5,
+    points: 550,
   },
   DOMINATOR: {
     name: 'Dominator',
-    blurb: 'Everything in Command, with room for 10 weekly keywords or bigger grids, and three Scan Now 5×5s a month.',
+    blurb: 'Everything in Command, with room for 10 weekly keywords or bigger grids, and six Scan Now 5×5s a month.',
     available: true,
     lookupKey: 'stakeout_dominator_seat_v1',
     graduated: true,
     tiers: [{ upTo: 9, cents: 9900 }, { upTo: 24, cents: 8500 }, { upTo: 99, cents: 6900 }, { upTo: null, cents: 5500 }],
-    points: 1100 + 3 * SCAN_NOW_5X5,
+    points: 1250,
   },
   MANAGE: {
     name: 'Manage',

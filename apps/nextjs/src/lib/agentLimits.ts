@@ -17,7 +17,7 @@ export async function agentBudget(user: string): Promise<{ cap: number; used: nu
 
 export async function setAgentCap(user: string, credits: unknown): Promise<void> {
   const n = Math.round(Number(credits));
-  if (credits === null || credits === '' || !Number.isFinite(n) || n < 0 || n > MAX_AGENT_CREDITS) throw new InputError('Give a number of credits between 0 and ' + MAX_AGENT_CREDITS + '.');
+  if (credits === null || credits === '' || !Number.isFinite(n) || n < 0 || n > MAX_AGENT_CREDITS) throw new InputError('Give a number of phone sessions between 0 and ' + MAX_AGENT_CREDITS + '.');
   await db.agentLimit.upsert({ where: { userId: user }, update: { monthlyCredits: n, updatedAt: new Date() }, create: { userId: user, monthlyCredits: n } });
 }
 
@@ -35,7 +35,7 @@ export async function reserveAgentCredits(user: string, credits: number): Promis
     RETURNING "used"`;
   if (!rows.length) {
     const b = await agentBudget(user);
-    throw new InputError(`This scan costs ${credits} credits, and this account’s agents have ${b.left} of their ${b.cap} left for ${b.month}. A person can raise the limit on the Connected Accounts page, under AI agents.`, 402);
+    throw new InputError(`This scan uses ${credits} phone sessions, and this account’s agents have ${b.left} of their ${b.cap} left for ${b.month}. A person can raise the limit on the Connected Accounts page, under AI agents.`, 402);
   }
   return async () => { await db.$executeRaw`UPDATE "AgentLimit" SET "used" = GREATEST(0, "used" - ${credits}) WHERE "userId" = ${user} AND "month" = ${m}`.catch(() => {}); };
 }

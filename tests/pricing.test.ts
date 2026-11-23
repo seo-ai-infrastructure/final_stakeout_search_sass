@@ -4,12 +4,12 @@ import { ALL_ITEMS, BONUS_POINTS, PROMO, PROSPECT_PACKS, TOPUP, WELCOME, WHITE_L
 import { LINES, lineCents } from '../packages/core/gbpPlans';
 
 test('pricing: the agreed one-time prices, and every item identifiable by its key', () => {
-  assert.deepEqual([WELCOME.key, WELCOME.cents, WELCOME.credits], ['welcome', 500, 50], 'one Scan Now 5×5 for $5');
-  assert.deepEqual(PROSPECT_PACKS.map((p) => [p.key, p.audits, p.cents, p.credits, p.saves, p.validityDays]), [['prospect-1', 1, 1500, 50, 0, 90], ['prospect-5', 5, 4900, 250, 2600, 90], ['prospect-12', 12, 9900, 600, 8100, 90]]);
+  assert.deepEqual([WELCOME.key, WELCOME.cents, WELCOME.credits], ['welcome', 500, 25], 'one Scan Now 5×5 for $5');
+  assert.deepEqual(PROSPECT_PACKS.map((p) => [p.key, p.audits, p.cents, p.credits, p.saves, p.validityDays]), [['prospect-1', 1, 1500, 25, 0, 90], ['prospect-5', 5, 4900, 125, 2600, 90], ['prospect-12', 12, 9900, 300, 8100, 90]]);
   for (const p of PROSPECT_PACKS) assert.equal(p.saves, p.audits * PROSPECT_PACKS[0].cents - p.cents, 'the saving the page shows: ' + p.key);
   assert.deepEqual([TOPUP.key, TOPUP.cents, TOPUP.credits], ['topup-100', 2500, 100]);
   assert.deepEqual([WHITE_LABEL.cents, WHITE_LABEL.freeFrom], [9700, 10]);
-  assert.equal(BONUS_POINTS, 250, 'five Scan Now 5×5 audits');
+  assert.equal(BONUS_POINTS, 250, '250 bonus phone sessions: ten 5×5 audits');
   assert.equal(new Set(ALL_ITEMS.map((i) => i.key)).size, ALL_ITEMS.length, 'checkout tells items apart by key');
   // A top-up costs more a point than any seat at its first price, so a bigger seat is always the better deal.
   for (const line of ['SCOUT', 'COMMAND', 'DOMINATOR'] as const) assert.ok(perCredit(TOPUP) > LINES[line].tiers[0].cents / 100 / LINES[line].points, line);
@@ -67,7 +67,7 @@ test('the $1 payment test is for admins only; the payment alert says who paid an
   const base = { buyer: 'a@b.com', balance: 300, orderId: 'O1', captureId: 'C1' };
   const five = paymentNotice({ ...base, credits: 250, cents: 4900, sandbox: false, item: 'prospect-5' });
   assert.equal(five.subject, 'Payment: 5 prospect audits, $49, a@b.com');
-  assert.match(five.lines[0], /a@b\.com paid \$49 for 5 prospect audits \(250 points\)\. Their balance is now 300\./);
+  assert.match(five.lines[0], /a@b\.com paid \$49 for 5 prospect audits \(250 phone sessions\)\. Their balance is now 300\./);
   assert.ok(!five.lines.some((l) => /TEST payment/.test(l)));
   const wl = paymentNotice({ ...base, credits: 0, cents: 9700, sandbox: true, item: 'white-label' });
   assert.equal(wl.subject, '[Test] Payment: White-label setup, $97, a@b.com');

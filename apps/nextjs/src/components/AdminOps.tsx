@@ -89,7 +89,7 @@ export function AdminOps() {
     if (d.settings && d.capacity) {
       setOps(d);
       // The form is filled once, so a refresh never overwrites what is being typed.
-      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 2), mobileCustomers: Boolean(d.settings.mobileForCustomers), aiFlags: Boolean(d.settings.aiFlagsForCustomers), pageOne: Boolean(d.settings.pageOneShareForCustomers) });
+      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 1), mobileCustomers: Boolean(d.settings.mobileForCustomers), aiFlags: Boolean(d.settings.aiFlagsForCustomers), pageOne: Boolean(d.settings.pageOneShareForCustomers) });
     }
   }, []);
   usePolling(load, 15000);
@@ -217,7 +217,7 @@ export function AdminOps() {
                   'Mobile data',
                   ops.system?.mobileData ? (ops.system.mobileProvider === 'decodo' ? 'Decodo mobile' : 'VoidMob') : 'Off',
                   ops.system?.mobileData
-                    ? `${ops.settings.mobileCreditsPerPoint ?? 2} credits a point · ${ops.settings.mobileForCustomers ? 'customers can choose it' : 'admins only'}${ops.system.mobileTraffic ? ' · ' + gb(ops.system.mobileTraffic.leftBytes) + ' left' : ''}${ops.system.mobileLogin ? ' · login: ' + ops.system.mobileLogin : ''}`
+                    ? `${ops.settings.mobileCreditsPerPoint ?? 1} phone sessions a point · ${ops.settings.mobileForCustomers ? 'customers can choose it' : 'admins only'}${ops.system.mobileTraffic ? ' · ' + gb(ops.system.mobileTraffic.leftBytes) + ' left' : ''}${ops.system.mobileLogin ? ' · login: ' + ops.system.mobileLogin : ''}`
                     : 'set VOIDMOB_API_KEY and VOIDMOB_PROXY_ID on the worker',
                 ],
                 ['Proxy-Seller traffic today', gb(ops.system?.traffic?.todayBytes), ops.system?.traffic ? `${gb(ops.system.traffic.leftBytes)} left of ${gb(ops.system.traffic.limitBytes)}${ops.system.traffic.expires ? ' · expires ' + ops.system.traffic.expires : ''}` : 'not reported by the worker yet'],
@@ -243,8 +243,8 @@ export function AdminOps() {
       <AdminRuns />
 
       <section className={card}>
-        <h2 className="text-sm font-bold text-white">Add credits</h2>
-        <p className="mt-1 text-xs text-slate-400">Writes the ledger entry and the balance together. A negative amount removes credits.</p>
+        <h2 className="text-sm font-bold text-white">Add phone sessions</h2>
+        <p className="mt-1 text-xs text-slate-400">Writes the ledger entry and the balance together. A negative amount removes phone sessions.</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input className={input + ' w-64'} list="admin-accounts" placeholder="account email" value={credit.email} onChange={(e) => setCredit({ ...credit, email: e.target.value })} />
           <datalist id="admin-accounts">
@@ -252,14 +252,14 @@ export function AdminOps() {
               <option key={u.id} value={u.email} />
             ))}
           </datalist>
-          <input className={input + ' w-28'} type="number" placeholder="credits" value={credit.amount} onChange={(e) => setCredit({ ...credit, amount: e.target.value })} />
+          <input className={input + ' w-28'} type="number" placeholder="sessions" value={credit.amount} onChange={(e) => setCredit({ ...credit, amount: e.target.value })} />
           <input className={input + ' w-64'} maxLength={80} placeholder="note (optional)" value={credit.note} onChange={(e) => setCredit({ ...credit, note: e.target.value })} />
           <button
             type="button"
             disabled={busy !== '' || !credit.email || !credit.amount}
             className={btn + ' bg-emerald-500 text-slate-950 hover:bg-emerald-400'}
             onClick={async () => {
-              const ok = await run('credits', { action: 'add_credits', email: credit.email, amount: Number(credit.amount), note: credit.note }, (d) => `${d.email} now has ${d.balance} credits.`);
+              const ok = await run('credits', { action: 'add_credits', email: credit.email, amount: Number(credit.amount), note: credit.note }, (d) => `${d.email} now has ${d.balance} phone sessions.`);
               if (ok) setCredit({ email: '', amount: '', note: '' });
             }}
           >
@@ -298,7 +298,7 @@ export function AdminOps() {
                 <th className="py-2 pr-4 font-medium">Email</th>
                 <th className="py-2 pr-4 font-medium">Status</th>
                 <th className="py-2 pr-4 font-medium">Onboarding</th>
-                <th className="py-2 pr-4 font-medium">Credits</th>
+                <th className="py-2 pr-4 font-medium">Sessions</th>
                 <th className="py-2 pr-4 font-medium">Scans</th>
                 <th className="py-2 pr-4 font-medium">Joined</th>
                 <th className="py-2" />
@@ -495,7 +495,7 @@ export function AdminOps() {
           >
             {busy === 'invite' ? 'Creating…' : 'Create account'}
           </button>
-          <span className="text-xs text-slate-500">Works while sign-ups are closed. The account starts with 0 credits.</span>
+          <span className="text-xs text-slate-500">Works while sign-ups are closed. The account starts with 0 phone sessions.</span>
         </div>
         {created && (
           <div role="alert" className="mt-3 rounded-lg border border-amber-400/60 bg-amber-400/10 p-4">
@@ -582,7 +582,7 @@ export function AdminOps() {
               while you work on a phone by hand in DuoPlus.
             </p>
             <label className="text-xs text-slate-400">
-              Mobile Network: credits per point (Residential is 1)
+              Mobile Network: phone sessions per point (Residential is 1)
               <input className={input + ' mt-1 block w-full'} type="number" min={1} max={10} value={form.mobileCredits} onChange={(e) => setForm({ ...form, mobileCredits: e.target.value })} />
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-200">

@@ -4,10 +4,10 @@ import { SCHEDULE_LEAD_MS, asSpeed, monthlyText, queuePriority, runDays, schedul
 import { scheduleText } from '../packages/core/grid';
 import { pointPrice } from '../packages/core/network';
 
-test('Scan Now costs twice a scheduled scan and goes first', () => {
-  assert.equal(speedFactor('now'), 2);
+test('Scan Now and scheduled scans cost the same, one phone session a pin; Scan Now goes first', () => {
+  assert.equal(speedFactor('now'), 1);
   assert.equal(speedFactor('scheduled'), 1);
-  assert.equal(speedFactor(undefined), 2, 'a scan that says nothing runs now');
+  assert.equal(speedFactor(undefined), 1, 'a scan that says nothing runs now, at the same price');
   assert.equal(asSpeed('scheduled'), 'scheduled');
   assert.equal(asSpeed('later'), 'now');
   assert.equal(queuePriority('now'), undefined, 'no priority is first in line in BullMQ');

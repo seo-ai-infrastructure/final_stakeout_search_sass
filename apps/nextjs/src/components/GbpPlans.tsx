@@ -51,7 +51,7 @@ export function UpgradeCard({ profile, location, name, what, onDone }: { profile
     <div className={card}>
       <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Command seat</p>
       <h3 className="mt-1 text-lg font-semibold">{what} comes with a Command seat</h3>
-      <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. A Command seat is everything about the Google listing itself, plus 550 points a month for its scans:</p>
+      <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. A Command seat is everything about the Google listing itself, plus 550 phone sessions a month for its scans:</p>
       <ul className="mt-3 grid gap-1.5 text-sm text-slate-300 sm:grid-cols-2">
         <li>Calls, directions and searches, straight from Google</li>
         <li>Edit hours, description, services and attributes</li>
@@ -131,7 +131,7 @@ export function GbpPicker({ profiles, onClose, onDone }: { profiles: Profile[]; 
               <div role="group" aria-label="Seat for the ticked listings" className="inline-flex overflow-hidden rounded-lg border border-slate-700 text-sm">
                 {LISTING_SEATS.map((p) => <button key={p} type="button" aria-pressed={plan === p} onClick={() => setPlan(p)} className={'px-3 py-2 ' + (plan === p ? 'bg-slate-700 font-semibold text-white' : 'text-slate-400 hover:text-slate-200')}>{LINES[p].name} · {dollars(LINES[p].tiers[0].cents)}</button>)}
               </div>
-              <p className="text-sm text-slate-400">{LINES[plan].blurb} {LINES[plan].points.toLocaleString()} points a month per listing.</p>
+              <p className="text-sm text-slate-400">{LINES[plan].blurb} {LINES[plan].points.toLocaleString()} phone sessions a month per listing.</p>
               {all.length > 1 && (
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" className="h-4 w-4 accent-emerald-500" checked={allOn} onChange={(e) => setPicked((s) => { const n = new Set(s); for (const l of shown) { if (e.target.checked) n.add(l.id); else n.delete(l.id); } return n; })} /> Select all{find.trim() ? ' shown' : ''}</label>
@@ -198,7 +198,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
   });
   const saveScout = () => run('scout', async () => {
     const n = Math.max(0, Math.min(500, Math.round(scoutWant)));
-    if (n < counts.SCOUT && !window.confirm(`Go down to ${n} Scout seat${n === 1 ? '' : 's'}? The change is immediate and nothing is refunded; the points already added this month stay.`)) return;
+    if (n < counts.SCOUT && !window.confirm(`Go down to ${n} Scout seat${n === 1 ? '' : 's'}? The change is immediate and nothing is refunded; the phone sessions already added this month stay.`)) return;
     const r = await call<Billing & { url?: string; pay?: string | null }>('/api/billing/gbp', 'POST', { scout: n });
     if (r.url) { window.location.assign(r.url); return; }
     if (r.pay !== undefined) { setBilling(r); setPayLink(r.pay ?? ''); return; }
@@ -226,7 +226,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
         </div>
         <div className="mt-3 grid gap-3 sm:grid-cols-3">
           <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Client seats</p><p className="mt-1 text-2xl font-bold tabular-nums">{billing?.seats ?? 0}</p><p className="text-xs text-slate-500">{billing?.seats ? SEATS.filter((l) => counts[l]).map(seatLabel).join(' · ') : 'None yet'}</p></div>
-          <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Points a month</p><p className="mt-1 text-2xl font-bold tabular-nums">{(billing?.pointsPerMonth ?? 0).toLocaleString()}</p><p className="text-xs text-slate-500">Unused points roll over for one month</p></div>
+          <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Phone sessions a month</p><p className="mt-1 text-2xl font-bold tabular-nums">{(billing?.pointsPerMonth ?? 0).toLocaleString()}</p><p className="text-xs text-slate-500">Unused sessions roll over for one month</p></div>
           <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">This month</p><p className="mt-1 text-2xl font-bold tabular-nums">{dollars(billing?.monthlyCents ?? 0)}</p><p className="text-xs text-slate-500">{billing?.sub?.status === 'past_due' ? <span className="text-rose-300">The last payment failed. Update the card.</span> : billing?.sub?.running && billing.sub.periodEnd ? (billing.seats ? 'Renews ' : 'Ends ') + day(billing.sub.periodEnd) : 'No subscription'}</p></div>
         </div>
         <p className="mt-4 text-sm text-slate-400">Seats are priced per client per month. Each bracket’s price applies only to the clients inside it. White-label is free from 10 client seats.</p>
@@ -235,7 +235,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
             <thead className="text-xs text-slate-500"><tr><th className="py-1 pr-3 font-medium">Seat</th>{tiers.map((t, i) => <th key={i} className="px-2 py-1 text-right font-medium">{t.upTo === null ? `${(tiers[i - 1]?.upTo ?? 0) + 1}+` : `${(tiers[i - 1]?.upTo ?? 0) + 1}–${t.upTo}`}</th>)}</tr></thead>
             <tbody className="divide-y divide-slate-800">
               {SEATS.map((l) => (
-                <tr key={l}><td className="py-1.5 pr-3"><span className="font-semibold text-slate-200">{LINES[l].name}</span> <span className="text-xs text-slate-500">{LINES[l].points.toLocaleString()} points a month{l === 'SCOUT' ? ', by number' : ', per Google listing'}</span></td>{LINES[l].tiers.map((t, i) => <td key={i} className="px-2 py-1.5 text-right tabular-nums text-slate-200">{dollars(t.cents)}</td>)}</tr>
+                <tr key={l}><td className="py-1.5 pr-3"><span className="font-semibold text-slate-200">{LINES[l].name}</span> <span className="text-xs text-slate-500">{LINES[l].points.toLocaleString()} phone sessions a month{l === 'SCOUT' ? ', by number' : ', per Google listing'}</span></td>{LINES[l].tiers.map((t, i) => <td key={i} className="px-2 py-1.5 text-right tabular-nums text-slate-200">{dollars(t.cents)}</td>)}</tr>
               ))}
             </tbody>
           </table>
@@ -253,7 +253,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           <label htmlFor="scout-seats" className="text-sm text-slate-300">Scout seats</label>
           <input id="scout-seats" type="number" min={0} max={500} value={scoutWant} onChange={(e) => setScout(Math.max(0, Math.min(500, Number(e.target.value) || 0)))} className="w-24 rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm tabular-nums outline-none focus:border-emerald-500" />
           <button type="button" onClick={saveScout} disabled={busy === 'scout' || scoutWant === counts.SCOUT || billing?.ready === false} className={go}>{busy === 'scout' ? 'Working…' : scoutWant > counts.SCOUT ? `Add ${scoutWant - counts.SCOUT} · ${dollars(lineCents('SCOUT', scoutWant) - lineCents('SCOUT', counts.SCOUT))} a month more` : scoutWant < counts.SCOUT ? `Go down to ${scoutWant}` : 'Save'}</button>
-          {scoutWant !== counts.SCOUT && <span className="text-sm text-slate-400">Your month becomes <span className="font-semibold text-slate-200">{dollars(monthlyCents(withScout))}</span>. {billing?.sub?.running ? (scoutWant > counts.SCOUT ? 'The rest of this month is charged now, with its share of the points.' : 'Nothing is refunded.') : 'You pay on the next page.'}</span>}
+          {scoutWant !== counts.SCOUT && <span className="text-sm text-slate-400">Your month becomes <span className="font-semibold text-slate-200">{dollars(monthlyCents(withScout))}</span>. {billing?.sub?.running ? (scoutWant > counts.SCOUT ? 'The rest of this month is charged now, with its share of the phone sessions.' : 'Nothing is refunded.') : 'You pay on the next page.'}</span>}
         </div>
       </div>
 

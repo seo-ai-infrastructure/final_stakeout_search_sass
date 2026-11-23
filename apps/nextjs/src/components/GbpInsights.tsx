@@ -300,7 +300,7 @@ export default function GbpInsights({ profile, location, businessName, place, ra
                           {months.length > 1 && <td className="px-3 py-1.5 text-right text-xs tabular-nums"><Move move={r.move} /></td>}
                           {months.length > 2 && <td className="px-3 py-1"><Spark values={r.byMonth.map((v) => v ?? 0)} tone={r.latest !== null && r.previous !== null && r.latest < r.previous ? '#fb7185' : '#34d399'} /></td>}
                           {months.length > 2 && <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{r.exact ? fmt(r.total) : '–'}</td>}
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right"><a href={scanLink([r.keyword], 5)} className="rounded-md border border-emerald-500/50 px-2 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 focus:opacity-100 lg:opacity-0 lg:group-hover:opacity-100" title={`Scan “${r.keyword}” on a 5×5 grid around this listing: 25 points, 25 credits`}>Scan 5×5 · 25 cr</a></td>
+                          <td className="whitespace-nowrap px-3 py-1.5 text-right"><a href={scanLink([r.keyword], 5)} className="rounded-md border border-emerald-500/50 px-2 py-1 text-xs font-semibold text-emerald-300 hover:bg-emerald-500 hover:text-slate-950 focus:opacity-100 lg:opacity-0 lg:group-hover:opacity-100" title={`Scan “${r.keyword}” on a 5×5 grid around this listing: 25 grid points, 25 phone sessions`}>Scan 5×5 · 25 cr</a></td>
                         </tr>
                       );
                     })}

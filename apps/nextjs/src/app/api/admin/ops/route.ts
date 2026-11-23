@@ -154,13 +154,13 @@ export async function POST(req: Request) {
 
     if (b.action === 'add_credits') {
       const amount = Number(b.amount);
-      if (!Number.isSafeInteger(amount) || amount === 0 || Math.abs(amount) > 100000) throw new InputError('Enter a whole number of credits (not zero).');
+      if (!Number.isSafeInteger(amount) || amount === 0 || Math.abs(amount) > 100000) throw new InputError('Enter a whole number of phone sessions (not zero).');
       const note = String(b.note ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 80);
       // The ledger row and the balance change together, so the balance always equals the ledger.
       const balance = await db.$transaction(async (tx) => {
         const u = await tx.user.findUnique({ where: { email }, select: { id: true, creditBalance: true } });
         if (!u) throw new InputError('No account has that email.', 404);
-        if (u.creditBalance + amount < 0) throw new InputError(`That account only has ${u.creditBalance} credits.`);
+        if (u.creditBalance + amount < 0) throw new InputError(`That account only has ${u.creditBalance} phone sessions.`);
         await tx.creditLedger.create({
           data: { userId: u.id, amount, reason: 'ADMIN_TOPUP', externalEventId: `admin:${me.email}:${Date.now()}:${randomBytes(3).toString('hex')}${note ? ':' + note : ''}` },
         });

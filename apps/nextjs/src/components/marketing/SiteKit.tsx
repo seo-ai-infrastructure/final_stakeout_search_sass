@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from 'react';
 import { HREF } from './links';
 export { HREF } from './links';
-import { BONUS_POINTS, PROMO, PROSPECT_PACKS, WELCOME, usd } from '@/lib/pricing';
+import { BONUS_POINTS, PROMO, WELCOME, usd } from '@/lib/pricing';
 
 /** The pieces the home and pricing pages share: colors, links, icons, the header, the footer and the offer bar. */
 
@@ -10,9 +10,8 @@ export const ACCENT = '#FF5500';
 export const TONE = { accent: ACCENT, accentSoft: ACCENT + '1F', accentLine: ACCENT + '66', accentGlow: ACCENT + '26' };
 export const MONO = "'JetBrains Mono', ui-monospace, monospace";
 
-/** How many 5×5 Scan Now audits the Black Friday bonus buys. */
+/** How many 5×5 audits the Black Friday bonus phone sessions buy. */
 const BONUS_AUDITS = BONUS_POINTS / WELCOME.credits;
-const FIVE_AUDITS = PROSPECT_PACKS.find((p) => p.audits === BONUS_AUDITS);
 
 export function Check({ size = 18, top = 2 }: { size?: number; top?: number }) {
   return (
@@ -57,8 +56,7 @@ export function OfferBanner({ live, href }: { live: boolean; href: string }) {
     <a href={href} style={{ display: 'block', background: '#1A0F08', borderBottom: '1px solid rgba(255, 85, 0, 0.35)', color: '#FFD9C2', textAlign: 'center', padding: '11px clamp(16px, 2vw, 24px)', fontSize: 14, lineHeight: 1.5, fontWeight: 500 }}>
       {live ? (
         <>
-          <span style={{ color: ACCENT, fontWeight: 700 }}>{PROMO.name}:</span> start your first seat by {PROMO.endsText} and get {BONUS_AUDITS} prospect audits free
-          {FIVE_AUDITS ? ` (a ${usd(FIVE_AUDITS.cents)} value)` : ''}. Your first 5×5 audit is {usd(WELCOME.cents)} →
+          <span style={{ color: ACCENT, fontWeight: 700 }}>{PROMO.name}:</span> start your first seat by {PROMO.endsText} and get {BONUS_POINTS} bonus phone sessions free, {BONUS_AUDITS} 5×5 audits’ worth. Your first 5×5 audit is {usd(WELCOME.cents)} →
         </>
       ) : (
         <>

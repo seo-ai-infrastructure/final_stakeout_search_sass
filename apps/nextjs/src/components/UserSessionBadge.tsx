@@ -34,10 +34,10 @@ export function UserSessionBadge({ initialUser }: { initialUser?: SessionUser } 
     fetch('/api/billing/confirm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id }) })
       .then(async (r) => ({ ok: r.ok, d: await r.json() }))
       .then(({ ok, d }) => {
-        setPaid(ok && d.refunded ? 'The first audit is one per account and per card, and this one has already been used. Your payment was refunded in full; no points were added.' : ok && d.plan ? `You are on the ${d.plan} plan: ${Number(d.credits).toLocaleString()} points added, and the same every month until you cancel.` : ok && !Number(d.credits) ? 'Payment received. We will email you to set up your white label.' : ok ? `Payment received: ${Number(d.credits).toLocaleString()} points added.` : d.error || 'Your payment is still being confirmed. Your points will appear shortly.');
+        setPaid(ok && d.refunded ? 'The first audit is one per account and per card, and this one has already been used. Your payment was refunded in full; no phone sessions were added.' : ok && d.plan ? `You are on the ${d.plan} plan: ${Number(d.credits).toLocaleString()} phone sessions added, and the same every month until you cancel.` : ok && !Number(d.credits) ? 'Payment received. We will email you to set up your white label.' : ok ? `Payment received: ${Number(d.credits).toLocaleString()} phone sessions added.` : d.error || 'Your payment is still being confirmed. Your phone sessions will appear shortly.');
         window.dispatchEvent(new Event('balance-change'));
       })
-      .catch(() => setPaid('Your payment is still being confirmed. Your points will appear shortly.'));
+      .catch(() => setPaid('Your payment is still being confirmed. Your phone sessions will appear shortly.'));
   }, []);
   useEffect(() => {
     const update = () =>
@@ -68,12 +68,12 @@ export function UserSessionBadge({ initialUser }: { initialUser?: SessionUser } 
       <button
         type="button"
         onClick={() => setBuying(true)}
-        title="Points: what they cost and how to get more"
-        aria-label={user.creditBalance.toLocaleString() + ' points. See prices and get more'}
+        title="Phone sessions: what they cost and how to get more"
+        aria-label={user.creditBalance.toLocaleString() + ' phone sessions. See prices and get more'}
         className={styles.points}
       >
         <Coins className="h-3.5 w-3.5" />
-        <span>{user.creditBalance.toLocaleString()}<span className={styles.unit}>pts</span></span>
+        <span>{user.creditBalance.toLocaleString()}<span className={styles.unit}>sessions</span></span>
       </button>
       <CreditTopUpModal
         isOpen={buying}

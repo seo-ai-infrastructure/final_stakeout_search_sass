@@ -15,7 +15,7 @@ export default function DemoSalesSections() {
     </section>
     <section className="stakeout-cta-banner" aria-labelledby="demo-cta-heading">
       <div><p className="demo-eyebrow">PUT STAKEOUT ON YOUR MARKET</p><h2 id="demo-cta-heading">Want This Map Built for Your Business—With Live Phone Receipts?</h2><p>Find out what mobile searchers see in the neighborhoods you want to serve. Bring the gaps, the opportunities and the evidence into a focused 30-day visibility sprint.</p><p className="demo-case-study"><b>Reported client result · Miami Beach legal sprint</b><span>0 → 17 GBP calls in the first 7 days.</span> A prior campaign result, not a forecast for your business.</p></div>
-      <div className="demo-cta-actions"><a className="demo-primary-cta" href={SPRINT_URL}>Apply for 1 of 12 White Label SEO Services Spots ($297/mo) →</a><a className="demo-secondary-cta" href={PLANS_URL}>Run Live Grids on Your Own Account</a><small>For local businesses and agencies. Explore the sandbox without an account or credits.</small></div>
+      <div className="demo-cta-actions"><a className="demo-primary-cta" href={SPRINT_URL}>Apply for 1 of 12 White Label SEO Services Spots ($297/mo) →</a><a className="demo-secondary-cta" href={PLANS_URL}>Run Live Grids on Your Own Account</a><small>For local businesses and agencies. Explore the sandbox without an account or phone sessions.</small></div>
     </section>
   </>;
 }

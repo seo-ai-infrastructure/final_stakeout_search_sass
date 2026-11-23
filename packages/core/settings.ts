@@ -48,7 +48,7 @@ export const defaultSettings = (env: Record<string, string | undefined> = proces
   costPerPointUsd: num(env.COST_PER_POINT_USD, 0.033),
   powerSave: env.DUOPLUS_POWER_SAVE === 'true',
   idleOffMinutes: num(env.POWER_IDLE_OFF_MINUTES, 10),
-  mobileCreditsPerPoint: num(env.MOBILE_CREDITS_PER_POINT, 2),
+  mobileCreditsPerPoint: num(env.MOBILE_CREDITS_PER_POINT, 1),
   mobileForCustomers: env.MOBILE_FOR_CUSTOMERS === 'true',
   aiFlagsForCustomers: env.AI_FLAGS_FOR_CUSTOMERS === 'true',
   pageOneShareForCustomers: env.PAGE_ONE_SHARE_FOR_CUSTOMERS === 'true',
@@ -88,7 +88,7 @@ export function cleanSettings(input: Record<string, unknown>): Partial<Settings>
   }
   if ('mobileCreditsPerPoint' in input) {
     const n = Number(input.mobileCreditsPerPoint);
-    if (!Number.isInteger(n) || n < 1 || n > 10) throw new Error('A mobile-data point can cost 1 to 10 credits (a whole number).');
+    if (!Number.isInteger(n) || n < 1 || n > 10) throw new Error('A mobile-data point can cost 1 to 10 phone sessions (a whole number).');
     out.mobileCreditsPerPoint = n;
   }
   if ('mobileForCustomers' in input) {

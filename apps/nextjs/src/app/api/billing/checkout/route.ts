@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     // { portal: true }: Stripe's page for the plan's card, invoices and cancelling.
     if (portal === true) return Response.json({ url: await planPortal(u.id, back) });
     if (!item) throw new InputError('That is not available for this account.');
-    const what = item.credits ? `${item.credits.toLocaleString('en-US')} points${item.validityDays ? `, valid for ${item.validityDays} days` : ''}. 1 point = 1 real phone run at 1 grid point.` : item.blurb;
+    const what = item.credits ? `${item.credits.toLocaleString('en-US')} phone sessions${item.validityDays ? `, valid for ${item.validityDays} days` : ''}. 1 phone session = 1 real phone run at 1 grid point.` : item.blurb;
     const session = await stripe<{ id: string; url: string }>(
       '/checkout/sessions',
       'POST',
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
         client_reference_id: u.id,
         customer_email: u.email,
         metadata: { userId: u.id, credits: item.credits, item: item.key },
-        payment_intent_data: { description: `Stakeout ${item.name}${item.credits ? `: ${item.credits} points` : ''}`, metadata: { userId: u.id, credits: item.credits, item: item.key } },
+        payment_intent_data: { description: `Stakeout ${item.name}${item.credits ? `: ${item.credits} phone sessions` : ''}`, metadata: { userId: u.id, credits: item.credits, item: item.key } },
         line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: item.cents, product_data: { name: `Stakeout Search · ${item.name}`, description: what, metadata: { item: item.key, points: String(item.credits), ...(item.validityDays ? { validity_days: String(item.validityDays) } : {}) } } } }],
         success_url: back + '?paid={CHECKOUT_SESSION_ID}',
         cancel_url: back + '?paid=cancelled',
