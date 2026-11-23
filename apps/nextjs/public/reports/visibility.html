@@ -240,6 +240,7 @@ footer .wrap{display:grid;gap:6px}
     <nav aria-label="Report sections">
       <a href="#coverage">Coverage</a><a href="#actions">Priority actions</a><a href="#history">Scan history</a><a href="#google">Google data</a><a href="#receipts">Point receipts</a>
     </nav>
+    <a class="print" id="brieflink" href="#" hidden style="text-decoration:none">Open the brief</a>
     <button class="print" type="button" id="savecopy" hidden>Save offline copy</button>
   </div>
 </header>
@@ -376,6 +377,7 @@ const dayET = (iso) => DAY.format(new Date(iso));
 
 /* ---- Data: exactly what Stakeout stores for this business's scans ---- */
 const params = new URLSearchParams(location.search);
+{ const bl = document.getElementById('brieflink'); if (bl && !window.__REPORT_DATA__ && (params.get('scan') || params.get('share'))) { bl.href = '/reports/brief.html?' + (params.get('scan') ? 'scan=' + encodeURIComponent(params.get('scan')) : 'share=' + encodeURIComponent(params.get('share'))); bl.hidden = false; } }
 const scanId = params.get('scan'), shareId = params.get('share');
 const status = (html) => {
   const el = $('#status');

@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Local search and revenue brief</title>
+<style>
+@font-face{font-family:"Source Serif 4";src:url(/reports/fonts/source-serif-4.woff2) format("woff2");font-weight:200 900}
+@font-face{font-family:"Archivo";src:url(/reports/fonts/archivo.woff2) format("woff2");font-weight:100 900;font-stretch:62% 125%}
+:root{--paper:#fff;--ink:#0e1a24;--graphite:#46535f;--fog:#7d8a96;--hair:#dde2e7;--hair2:#eceff2;--client:#ff5a1f;--plate:#0b1220;--good:#1f7a5c;--bad:#b23e2c;
+  --serif:"Source Serif 4",Georgia,serif;--sans:"Archivo",system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1440px;background:var(--paper);color:var(--ink);font:400 16px/1.55 var(--sans);-webkit-font-smoothing:antialiased}
+p{text-wrap:pretty}
+.wrap{width:1200px;margin:0 auto}
+.tn{font-variant-numeric:tabular-nums lining-nums}
+
+.mast{border-bottom:1px solid var(--hair)}
+.mast .wrap{display:flex;align-items:center;justify-content:space-between;height:76px}
+.logo{display:flex;align-items:center;gap:10px}
+.logo .mark{width:22px;height:22px;border-radius:6px;background:var(--client)}
+.logo b{display:block;font:800 15px/1 var(--sans);letter-spacing:.06em}
+.logo small{display:block;font:600 8.5px/1 var(--sans);letter-spacing:.42em;color:var(--client);margin-top:3px}
+.mast-meta{text-align:right;font-size:13px;line-height:1.45;color:var(--graphite)}
+.mast-meta b{color:var(--ink);font-weight:600}
+
+.title{padding:56px 0 0}
+.client{font-size:15px;line-height:1.5;color:var(--graphite)}
+.client b{color:var(--ink);font-weight:600}
+h1{font:560 52px/1.1 var(--serif);letter-spacing:-.012em;max-width:1040px;margin-top:24px;text-wrap:balance}
+.dek{font-size:18px;line-height:1.55;color:#2c3843;max-width:820px;margin-top:20px}
+
+/* Ledger: measured | modeled */
+.ledger{display:grid;grid-template-columns:repeat(4,1fr);margin-top:46px;column-gap:0}
+.ledger .grp{font:600 12.5px/1 var(--sans);color:var(--graphite);padding-bottom:10px}
+.ledger .grp.m{grid-column:1/3}.ledger .grp.p{grid-column:3/4;padding-left:24px}.ledger .grp.e{grid-column:4/5;padding-left:24px;color:var(--fog)}
+.cell.bench{border-top:1.5px solid #8796a3}.cell.bench .fig{color:#2f3c48}
+.cell .edit{display:inline-block;margin-top:10px;font:600 12.5px/1 var(--sans);color:var(--ink);background:none;border:0;border-bottom:1px solid currentColor;padding:0 0 2px;cursor:pointer}
+.cell{padding:20px 24px 22px 0;border-top:1.5px solid var(--ink);border-bottom:1px solid var(--hair)}
+.cell+.cell{padding-left:24px;border-left:1px solid var(--hair)}
+.cell.est{border-top:1.5px dashed #9aa6b1}
+.cell .k{font-size:13.5px;color:var(--graphite);font-weight:500}
+.cell .fig{font:500 52px/1.05 var(--serif);letter-spacing:-.02em;margin-top:10px}
+.cell .fig small{font:400 20px/1 var(--serif);color:var(--graphite);margin-left:6px;letter-spacing:0}
+.cell.est .fig{color:#2f3c48}
+.cell .chg{font-size:13.5px;font-weight:600;margin-top:10px}
+.up{color:var(--good)}.dn{color:var(--bad)}
+.cell .ln{font-size:13px;line-height:1.5;color:var(--graphite);margin-top:8px}
+.cell .ln b{font-weight:600;color:var(--ink)}
+.cell .ft{font-size:12px;line-height:1.45;color:var(--fog);margin-top:10px}
+
+/* Sections */
+.sec{padding-top:84px}
+.sec-k{font:600 13px/1 var(--sans);color:var(--graphite)}
+h2{font:600 31px/1.2 var(--serif);letter-spacing:-.01em;margin-top:10px;max-width:1060px;text-wrap:balance}
+.sub{font-size:15px;color:var(--graphite);margin-top:8px;max-width:820px}
+.source{font-size:12.5px;line-height:1.5;color:var(--fog);margin-top:14px;max-width:960px}
+.source b{font-weight:600;color:var(--graphite)}
+
+/* Rollup */
+.tbl{width:100%;border-collapse:collapse;margin-top:26px;font-size:14.5px}
+.tbl th{font:600 12.5px/1.3 var(--sans);color:var(--graphite);text-align:left;padding:0 14px 11px 0;border-bottom:1.5px solid var(--ink);vertical-align:bottom}
+.tbl td{padding:15px 14px 15px 0;border-bottom:1px solid var(--hair2);vertical-align:top;font-variant-numeric:tabular-nums lining-nums}
+.tbl .r{text-align:right}
+.tbl td.big{font:500 26px/1 var(--serif)}
+.tbl .office b{display:block;font-weight:600}
+.tbl .office span{display:block;font-size:12.5px;color:var(--fog);margin-top:3px}
+.flag{display:inline-flex;gap:8px;align-items:baseline;font-size:13.5px;line-height:1.4}
+.flag::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--bad);flex:none;transform:translateY(-1px)}
+.tbl tr.pending td{color:var(--fog);font-size:13.5px;border-bottom:0;padding-top:14px}
+
+/* Map */
+.maphead{display:flex;justify-content:space-between;align-items:flex-end;gap:40px}
+.tabs{display:flex;border:1px solid var(--hair);border-radius:6px;overflow:hidden;flex:none;margin-bottom:4px}
+.tabs span{font-size:13px;font-weight:500;padding:8px 14px;color:var(--graphite)}
+.tabs span+span{border-left:1px solid var(--hair)}
+.tabs span.on{background:var(--ink);color:#fff}
+.plate{position:relative;width:1440px;height:640px;margin-top:28px;background:var(--plate);overflow:hidden}
+.plate::before{content:"";position:absolute;left:0;right:0;top:0;height:30px;background:linear-gradient(#0b1220,rgba(11,18,32,0));z-index:1}
+.pin{position:absolute;width:36px;height:36px;margin:-18px 0 0 -18px;border-radius:9px;display:grid;place-items:center;font:700 12.5px/1 var(--sans);color:#fff;border:2px solid;box-shadow:0 1px 6px rgba(0,0,0,.6);font-variant-numeric:tabular-nums}
+.pin.s0{background:#1a242c;border-color:#4c5a66;color:#9aa8b4}
+.pin.s1{background:#24493d;border-color:#4f8a73}
+.pin.s2{background:#2a7558;border-color:#6cc3a0}
+.pin.s3{background:#1f9a6e;border-color:#9be3c4}
+.pin.sel{outline:3px solid #ff8a4c;outline-offset:3px}
+.pin .ad{position:absolute;right:-12px;top:-11px;font:800 8px/1 var(--sans);letter-spacing:.04em;background:#eef1f4;color:var(--ink);border-radius:3px;padding:3px 4px 2px;box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.leader{position:absolute;inset:0;pointer-events:none}
+.band{position:absolute;right:calc(100% - 214px);width:134px;text-align:right;transform:translateY(-50%);background:rgba(11,18,32,.86);border-radius:4px;padding:8px 11px 9px}
+.band small{display:block;font-size:12px;color:#9fb0bf;line-height:1.35}
+.band b{display:block;font:500 27px/1.1 var(--serif);color:#fff;font-variant-numeric:tabular-nums lining-nums;margin:3px 0 2px}
+.receipt{position:absolute;left:1010px;top:86px;width:310px;background:#fff;border-radius:6px;box-shadow:0 18px 40px rgba(0,0,0,.45);padding:18px 20px 16px}
+.receipt .where{display:flex;justify-content:space-between;align-items:baseline}
+.receipt .where b{font:600 22px/1.15 var(--serif)}
+.receipt .where span{font-size:12px;color:var(--fog);font-weight:600}
+.receipt .when{font-size:12.5px;line-height:1.45;color:var(--graphite);margin-top:5px}
+.receipt .score{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;margin-top:14px;padding:12px 0;border-top:1px solid var(--hair2);border-bottom:1px solid var(--hair2)}
+.receipt .score b{font:500 36px/1 var(--serif);font-variant-numeric:tabular-nums lining-nums}
+.receipt .score span{font-size:12.5px;line-height:1.4;color:var(--graphite)}
+.receipt h4{font:600 12.5px/1 var(--sans);color:var(--graphite);margin:14px 0 6px}
+.receipt ol{list-style:none}
+.receipt li{display:grid;grid-template-columns:18px 1fr;gap:6px;font-size:13px;line-height:1.35;padding:5px 0}
+.receipt li i{font-style:normal;color:var(--fog);font-weight:600}
+.receipt li.you{font-weight:600}.receipt li.you i{color:var(--client)}
+.receipt .y{margin-left:5px;font-size:11px;font-weight:600;color:var(--client)}
+.receipt .facts{margin-top:10px;padding-top:10px;border-top:1px solid var(--hair2);display:grid;gap:4px;font-size:12.5px;color:#2c3843}
+.receipt .facts span{display:flex;justify-content:space-between;gap:10px}
+.receipt .facts em{font-style:normal;color:var(--fog)}
+.receipt .rec{margin-top:12px;font-size:12px;color:var(--fog);display:flex;align-items:center;gap:8px}
+.receipt .rec::before{content:"";width:8px;height:8px;border-radius:50%;background:#e0483b;box-shadow:0 0 0 3px rgba(224,72,59,.16)}
+.attrib{position:absolute;right:0;bottom:0;font-size:10.5px;color:rgba(214,224,233,.62);background:rgba(11,18,32,.82);padding:4px 10px 5px;border-top-left-radius:4px}
+.keys{display:grid;grid-template-columns:auto auto 1fr;gap:12px 48px;margin-top:18px;font-size:12.5px;color:var(--graphite);align-items:start}
+.keys h5{font:600 12px/1 var(--sans);color:var(--fog);margin-bottom:8px}
+.keys .row{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
+.keys .row span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:16px;height:16px;border-radius:4.5px;border:2px solid;display:inline-block}
+.ramp{display:flex;align-items:center;gap:0}
+.ramp i{width:34px;height:12px;display:block}
+.ramp i:first-child{border-radius:3px 0 0 3px}.ramp i:last-child{border-radius:0 3px 3px 0}
+.ramp-l{display:flex;justify-content:space-between;width:204px;font-size:11px;color:var(--fog);margin-top:5px}
+.adk{font:800 8px/1 var(--sans);background:#eef1f4;color:var(--ink);border:1px solid #cfd6dd;border-radius:3px;padding:3px 4px 2px}
+
+/* Pairs */
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:72px}
+.pair h2{font-size:24px}
+.db{margin-top:24px;border-top:1px solid var(--hair)}
+.db .row{display:grid;grid-template-columns:210px minmax(0,1fr) 92px;gap:14px;align-items:center;padding:9px 0;border-bottom:1px solid var(--hair2);font-size:14px}
+.db .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.db .row.you .nm{font-weight:600}
+.db .v{text-align:right;font-variant-numeric:tabular-nums;font-size:13px;color:var(--graphite)}
+.db .v b{color:var(--ink);font-weight:600}
+.db .row.you .v b{color:var(--client)}
+.db svg{display:block;width:100%;height:16px;overflow:visible}
+.db .axis{display:grid;grid-template-columns:210px minmax(0,1fr) 92px;gap:14px;font-size:11px;color:var(--fog);padding-top:7px}
+.db .axis div{display:flex;justify-content:space-between}
+.dbkey{display:flex;gap:18px;font-size:12px;color:var(--graphite);margin-top:14px;align-items:center}
+.dbkey span{display:inline-flex;align-items:center;gap:6px}
+.bars{margin-top:24px;border-top:1px solid var(--hair)}
+.bars .row{display:grid;grid-template-columns:232px minmax(0,1fr) 32px;align-items:center;gap:16px;padding:9px 0;border-bottom:1px solid var(--hair2);font-size:14px}
+.bars .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bars .track{height:8px;border-radius:4px;background:#eef1f4;overflow:hidden}
+.bars .fill{height:100%;border-radius:4px;background:#7f8e9b}
+.bars .row.you .nm{font-weight:600}.bars .row.you .v{color:var(--client)}
+.bars .v{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.note{font-size:13.5px;line-height:1.55;color:#2c3843;margin-top:16px;padding-left:14px;border-left:2px solid var(--hair)}
+
+/* Funnel */
+.flow{display:grid;grid-template-columns:1fr 64px 1fr 64px 1fr;margin-top:30px;align-items:stretch}
+.node{border-top:1.5px solid var(--ink);padding-top:14px}
+.node h3{font:600 19px/1.25 var(--serif)}
+.node .src{font-size:12.5px;color:var(--fog);margin-top:3px}
+.node .line{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--hair2);font-size:14px}
+.node .line b{font:500 26px/1 var(--serif);font-variant-numeric:tabular-nums lining-nums}
+.node .line.strong b{color:var(--good)}
+.node .line em{font-style:normal;font-size:12.5px;color:var(--fog);display:block;margin-top:2px}
+.node .line.muted{color:var(--fog)}.node .line.muted b{color:var(--fog)}
+.arrow{display:flex;align-items:center;justify-content:center;color:#9aa6b1}
+.arrow svg{width:40px;height:16px}
+.total{margin-top:30px;display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:center;padding:18px 0;border-top:1.5px solid var(--ink);border-bottom:1px solid var(--hair)}
+.total b{font:500 44px/1 var(--serif);font-variant-numeric:tabular-nums lining-nums}
+.total p{font-size:14.5px;line-height:1.55;color:#2c3843}
+.split2{display:grid;grid-template-columns:1fr 1fr;gap:72px;margin-top:34px}
+.split2 h4{font:600 13px/1.3 var(--sans);color:var(--graphite);padding-bottom:9px;border-bottom:1px solid var(--hair)}
+.kv{display:grid;grid-template-columns:1fr auto;gap:12px;padding:10px 0;border-bottom:1px solid var(--hair2);font-size:14px;align-items:baseline}
+.kv b{font-variant-numeric:tabular-nums;font-weight:600}
+.kv em{font-style:normal;color:var(--fog);font-size:12.5px;display:block;margin-top:2px}
+.kv .g{color:var(--good)}
+
+/* Moves */
+.moves{margin-top:28px;border-top:1.5px solid var(--ink)}
+.move{display:grid;grid-template-columns:56px minmax(0,1fr) 270px;gap:32px;padding:26px 0 28px;border-bottom:1px solid var(--hair)}
+.move .n{font:500 38px/1 var(--serif)}
+.move h3{font:600 22px/1.28 var(--serif)}
+.move p{font-size:15px;line-height:1.6;color:#2c3843;margin-top:8px;max-width:640px}
+.move .play{border-left:1px solid var(--hair);padding-left:22px}
+.move .play small{display:block;font-size:12px;font-weight:600;color:var(--graphite)}
+.move .play b{display:block;font:500 30px/1.1 var(--serif);margin-top:6px;font-variant-numeric:tabular-nums lining-nums}
+.move .play span{display:block;font-size:12.5px;line-height:1.45;color:var(--fog);margin-top:5px}
+.move .play .px{display:block;font-style:normal;font-size:12.5px;line-height:1.45;color:var(--graphite);margin-top:10px;padding-top:9px;border-top:1px solid var(--hair)}
+.move .play .px strong{font-weight:600;color:var(--ink)}
+
+/* Receipts */
+.rc{width:100%;border-collapse:collapse;margin-top:22px;font-size:13.5px}
+.rc th{font:600 12px/1.3 var(--sans);color:var(--graphite);text-align:left;padding:0 14px 10px 0;border-bottom:1.5px solid var(--ink)}
+.rc td{padding:11px 14px 11px 0;border-bottom:1px solid var(--hair2);font-variant-numeric:tabular-nums}
+.rc .r{text-align:right}
+.rc .pt{font-weight:600;white-space:nowrap}
+.rc .rec{color:var(--graphite);white-space:nowrap}
+.rc .rec::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:#e0483b;margin-right:7px;transform:translateY(-1px)}
+.more{display:flex;justify-content:space-between;align-items:center;padding:14px 0;font-size:13.5px}
+.more a{color:var(--ink);font-weight:600;text-decoration:none;border-bottom:1px solid var(--ink)}
+.btn{font-size:13px;font-weight:600;border:1px solid var(--hair);border-radius:6px;padding:7px 12px;color:var(--ink)}
+
+/* Method */
+.method{margin-top:96px;border-top:1.5px solid var(--ink);padding-top:26px;display:grid;grid-template-columns:220px 1fr;gap:40px}
+.method h3{font:600 19px/1.25 var(--serif)}
+.mt{width:100%;border-collapse:collapse;font-size:13px}
+.mt th{text-align:left;font-weight:600;color:var(--graphite);padding:0 12px 8px 0;border-bottom:1px solid var(--hair);font-size:12px}
+.mt td{padding:9px 12px 9px 0;border-bottom:1px solid var(--hair2);color:#2c3843;vertical-align:top}
+.mnotes{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:22px}
+.mnotes p{font-size:13px;line-height:1.6;color:var(--graphite)}
+.mnotes b{color:var(--ink);font-weight:600}
+footer{margin-top:72px;border-top:1px solid var(--hair);padding:24px 0 40px}
+footer .wrap{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--graphite)}
+
+.ledger .grp.m{grid-column:1/3}.ledger .grp.p{grid-column:3/4;padding-left:24px}.ledger .grp.e{grid-column:4/5;padding-left:24px;color:var(--fog)}
+.pin.rv{border-style:dashed;border-color:#e3a857;background:#2a2218;color:#e9cfa4}
+.pin .ai{position:absolute;right:-14px;top:-11px;font:800 8px/1 var(--sans);letter-spacing:.03em;background:#ff8a4c;color:#1b0b02;border-radius:3px;padding:3px 4px 2px;box-shadow:0 1px 3px rgba(0,0,0,.5);white-space:nowrap}
+.aik{font:800 8px/1 var(--sans);letter-spacing:.03em;background:#ff8a4c;color:#1b0b02;border-radius:3px;padding:3px 4px 2px}
+.tbl td.na{color:var(--fog);font-size:13px}
+.mgrid{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,96px);gap:0 10px;margin-top:24px;border-top:1px solid var(--hair);align-items:center}
+.mgrid>*{padding:12px 0;border-bottom:1px solid var(--hair2)}
+.mgrid .hd{font-size:12px;font-weight:600;color:var(--graphite);padding:10px 0 8px}
+.mgrid .lab{font-size:14px;line-height:1.4;padding-right:12px}
+.mg{display:flex;align-items:center;gap:10px}
+.mg .g{display:grid;grid-template-columns:repeat(3,13px);gap:3px}
+.mg .g i{width:13px;height:13px;border-radius:3px;background:#eef1f4;border:1px solid #dbe1e6}
+.mg .g i.on{background:var(--client);border-color:var(--client)}
+.mg .g i.u{background:repeating-linear-gradient(45deg,#e3e8ec 0 2px,#fff 2px 4px)}
+.mg b{font:500 24px/1 var(--serif);font-variant-numeric:tabular-nums lining-nums}
+.mkt td span,.mkt td.r span{display:block;font-size:12px;color:var(--fog);margin-top:2px}
+.mkt tr.brand td{color:var(--graphite)}
+.conn{margin-top:30px;border-top:1.5px dashed #9aa6b1;padding-top:16px}
+.conn h4{font:600 13px/1.3 var(--sans);color:var(--graphite)}
+.cgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:12px}
+.cgrid b{font:600 17px/1.3 var(--serif)}
+.cgrid p{font-size:13.5px;line-height:1.55;color:var(--graphite);margin-top:4px}
+.conn>p{font-size:13.5px;line-height:1.55;color:#2c3843;margin-top:16px}
+
+.mg .g i.x{visibility:hidden}
+/* Live page */
+body{width:auto;max-width:none}
+.wrap{width:min(1200px,calc(100% - 48px))}
+.status{width:min(1200px,calc(100% - 48px));margin:80px auto;font-size:16px;color:var(--graphite)}
+.status b{color:var(--ink)}
+.mast-meta .ver{color:var(--fog);font-size:12px}
+.logo img{height:26px;width:auto;display:block}
+.ledger .cell{min-width:0}
+.cell .edit{display:inline-block;margin-top:10px;font:600 12.5px/1 var(--sans);color:var(--ink);background:none;border:0;border-bottom:1px solid currentColor;padding:0 0 2px;cursor:pointer}
+.cell .edit:focus-visible,.tabs button:focus-visible,.pop button:focus-visible,.pop input:focus-visible{outline:2px solid var(--client);outline-offset:2px}
+.cell.bench{border-top:1.5px solid #8796a3}.cell.bench .fig{color:#2f3c48}
+.tabs button{font:500 13px/1 var(--sans);padding:8px 14px;color:var(--graphite);background:#fff;border:0;cursor:pointer}
+.tabs button+button{border-left:1px solid var(--hair)}
+.tabs button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.tabs button:disabled{color:#b8c1c9;cursor:default}
+.plate{background:var(--plate);width:100%;max-width:1440px;margin-left:auto;margin-right:auto}
+.plate #bmap{position:absolute;inset:0}
+.plate .maplibregl-ctrl-bottom-right,.plate .maplibregl-ctrl-bottom-left{display:none}
+.pinw{width:36px;height:36px;position:relative;cursor:pointer}
+.pinw .pin{position:relative;margin:0}
+.plate .band,.plate .receipt,.plate .attrib,.plate .leader,.plate .divlab{z-index:3}
+.plate .divlab{position:absolute;font:600 12px/1 var(--sans);color:#d7e0e7;text-shadow:0 1px 3px #0b1220;pointer-events:none}
+.pop{position:absolute;z-index:20;width:320px;background:#fff;border:1px solid var(--hair);border-radius:8px;box-shadow:0 18px 40px rgba(14,26,36,.18);padding:16px 18px}
+.pop h4{font:600 14px/1.3 var(--sans)}
+.pop p{font-size:12.5px;color:var(--fog);margin-top:4px;line-height:1.45}
+.pop label{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center;font-size:13.5px;margin-top:10px}
+.pop input{font:500 14px var(--sans);border:1px solid var(--hair);border-radius:6px;padding:7px 9px;width:100%;text-align:right;font-variant-numeric:tabular-nums}
+.pop .acts{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+.pop .acts span{display:flex;gap:8px}
+.pop button{font:600 13px var(--sans);border-radius:6px;padding:8px 12px;cursor:pointer;border:1px solid var(--hair);background:#fff;color:var(--ink)}
+.pop button.go{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pop .msg{font-size:12px;color:var(--fog);margin-top:8px;min-height:16px}
+.muted{color:var(--fog)}
+@media (max-width:1100px){
+  .ledger{grid-template-columns:1fr 1fr;row-gap:0}
+  .ledger .grp{display:none}
+  .cell:nth-child(n){padding-left:0;border-left:0}
+  .cell:nth-child(even){padding-left:24px;border-left:1px solid var(--hair)}
+  .plate{height:auto}
+  .plate .mapbox{position:relative;height:560px}
+  .plate .receipt{position:static;width:auto;margin:16px 24px 24px;box-shadow:none}
+  .plate .band{display:none}
+  .pair{grid-template-columns:1fr;gap:0}
+  .flow{grid-template-columns:1fr;gap:18px}.flow .arrow{display:none}
+  .move{grid-template-columns:40px minmax(0,1fr)}.move .play{grid-column:2;border-left:0;padding-left:0;border-top:1px solid var(--hair);padding-top:14px}
+  .method{grid-template-columns:1fr}.mnotes{grid-template-columns:1fr}
+  .split2,.cgrid{grid-template-columns:1fr;gap:20px}
+  .keys{grid-template-columns:1fr}
+  .tscroll{overflow-x:auto}
+}
+@media (max-width:640px){
+  h1{font-size:34px}
+  h2{font-size:24px}
+  .ledger{grid-template-columns:1fr}
+  .cell:nth-child(even){padding-left:0;border-left:0}
+  .maphead{flex-direction:column;align-items:flex-start;gap:14px}
+  .plate .mapbox{height:440px}
+  .mast .wrap{height:auto;padding:14px 0;gap:12px;flex-wrap:wrap}
+}
+@media print{.edit,.tabs,.more .btn{display:none}}
+.plate .mapbox{position:absolute;inset:0}
+.plate .receipt{left:auto;right:max(24px,calc((100% - 1200px) / 2))}
+.plate .band{right:auto;left:max(16px,calc((100% - 1200px) / 2 - 40px))}
+@media (max-width:1100px){.plate .mapbox{position:relative;inset:auto}}
+</style>
+</head>
+<body>
+<header class="mast"><div class="wrap">
+  <div class="logo" id="logo"><span class="mark"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></div>
+  <div class="mast-meta"><b>Local search and revenue brief</b><br><span id="mastdate"></span><br><span class="ver" id="ver"></span></div>
+</div></header>
+<div class="status" id="status">Loading the brief…</div>
+<main id="brief" hidden>
+<section class="title wrap"><p class="client" id="client"></p><h1 id="h1"></h1><p class="dek" id="dek"></p></section>
+<section class="wrap ledger" aria-label="Commercial ledger" id="ledger"></section>
+
+<section class="wrap sec">
+  <div class="maphead"><div><p class="sec-k">Exhibit A</p><h2 id="ah2"></h2><p class="sub" id="asub"></p></div><div class="tabs" id="tabs" role="group" aria-label="Score shown on the map"></div></div>
+</section>
+<div class="plate" id="plate">
+  <div class="mapbox"><div id="bmap" role="img" aria-label="The scan’s points on the map"></div></div>
+  <svg class="leader" id="leader" aria-hidden="true"></svg>
+  <div class="band" id="banda"></div><div class="band" id="bandb"></div>
+  <aside class="receipt" id="receipt"></aside>
+  <div class="attrib">© OpenFreeMap © OpenMapTiles © OpenStreetMap contributors · Income: U.S. Census Bureau, ACS 5-year</div>
+</div>
+<div class="wrap"><div class="keys" id="keys"></div><p class="source" id="asrc"></p></div>
+
+<div class="wrap pair">
+  <section class="sec" id="exb">
+    <p class="sec-k">Exhibit B</p><h2 id="bh2"></h2>
+    <div class="mgrid" id="mgrid"></div>
+    <div class="dbkey"><span><svg width="12" height="12"><rect x=".5" y=".5" width="11" height="11" rx="2.5" fill="#ff5a1f"/></svg>First</span><span><svg width="12" height="12"><rect x=".5" y=".5" width="11" height="11" rx="2.5" fill="#eef1f4" stroke="#dbe1e6"/></svg>Not first</span><span><svg width="12" height="12"><defs><pattern id="h" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="4" fill="#e3e8ec"/></pattern></defs><rect x=".5" y=".5" width="11" height="11" rx="2.5" fill="url(#h)" stroke="#dbe1e6"/></svg>Not read</span></div>
+    <p class="source" id="bsrc"></p>
+  </section>
+  <section class="sec">
+    <p class="sec-k">Exhibit C</p><h2 id="ch2"></h2>
+    <div class="bars" id="ads"></div><p class="note" id="cnote"></p><p class="source" id="csrc"></p>
+  </section>
+</div>
+
+<section class="wrap sec"><p class="sec-k">Exhibit D</p><h2 id="dh2"></h2><p class="sub" id="dsub"></p><div id="dbody"></div></section>
+
+<section class="wrap sec" id="movesec"><p class="sec-k">Next moves</p><h2>Three moves, ranked by the demand each puts in play</h2><div class="moves" id="moves"></div></section>
+
+<section class="wrap sec">
+  <p class="sec-k">Receipts</p><h2>Every score traces to a screen</h2><p class="sub" id="rsub"></p>
+  <div class="tscroll"><table class="rc"><thead><tr><th style="width:90px">Point</th><th style="width:170px">Place</th><th>What the phone saw</th><th style="width:190px">Ads on the page</th><th class="r" style="width:80px">Score</th><th style="width:130px">Evidence</th></tr></thead><tbody id="rcpts"></tbody></table></div>
+  <div class="more"><a id="rall"></a></div>
+</section>
+
+<section class="wrap method">
+  <h3>How this was measured</h3>
+  <div>
+    <div class="tscroll"><table class="mt">
+      <thead><tr><th style="width:250px">What the phone’s screen showed</th><th>Points for the business at that spot</th></tr></thead>
+      <tbody>
+        <tr><td>Only map results</td><td>#1: 100. #2: 70. #3: 45. #4: 20, falling to 4 at #10. Not found: 0.</td></tr>
+        <tr><td>A single listing in the map results</td><td>The business’s own: 100. A rival’s: 0.</td></tr>
+        <tr><td>Only an AI answer</td><td>Card 1: 100. Card 2: 75. Card 3: 55. Card 4: 28, falling to 14 at card 8. Recommended in its text: 60. Named in its text: 22. A cited listing adds 5 and a cited website 10; cited without a card or a mention: 14 to 24. An answer that couldn’t be read: 0.</td></tr>
+        <tr><td>Map results and an AI answer</td><td>55% the map results’ points plus 45% the answer’s; 60/40 when the map results sit above the answer, 45/55 when the answer sits above them.</td></tr>
+        <tr><td>Ads above the results</td><td>After ads: the score × 0.88 for one, × 0.75 for two or more. A Local Services Ads block counts once, each sponsored result once.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="mnotes">
+      <p><b>Search visibility</b> is the average score over a search’s points; the headline averages the latest scan of each search that doesn’t name the business. Weighted by household income, each point counts by its census tract’s income band (× 0.6 under $40k to × 1.85 at $150k and up) times its households (ACS 5-year).</p>
+      <p><b>Change</b> compares each point with its average over the previous 14 days, on points searched at the same spot (within 150 m), so a larger grid never reads as a loss. Answers that couldn’t be read are left out; where earlier answers were read the older way, only the map results are compared.</p>
+      <p><b>Money.</b> Verified actions come from the business’s own Google accounts, read-only. Prices are Google Ads averages for the county over the last 12 months (DataForSEO). Modeled figures use sample inputs until the business sets its own.</p>
+    </div>
+    <p class="source" id="mver"></p>
+  </div>
+</section>
+
+<footer><div class="wrap"><div class="logo"><span class="mark"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></div><span>Every number has a real-device receipt or a Google source.</span></div></footer>
+</main>
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const qs = new URLSearchParams(location.search);
+const scanId = qs.get('scan'), shareId = qs.get('share');
+const ET = { timeZone: 'America/New_York' };
+const dayLong = (iso) => new Date(iso).toLocaleDateString('en-US', { ...ET, month: 'long', day: 'numeric', year: 'numeric' });
+const dayMd = (iso) => new Date(iso).toLocaleDateString('en-US', { ...ET, month: 'long', day: 'numeric' });
+const dayShort = (iso) => new Date(iso).toLocaleDateString('en-US', { ...ET, month: 'short', day: 'numeric' });
+const timeEt = (iso) => new Date(iso).toLocaleTimeString('en-US', { ...ET, hour: 'numeric', minute: '2-digit' }) + ' ET';
+const one = (v) => (v === null || v === undefined || !Number.isFinite(v) ? '–' : (Math.round(v * 10) / 10).toFixed(1));
+const int = (v) => Math.round(v).toLocaleString('en-US');
+const money = (v) => '$' + Math.round(v).toLocaleString('en-US');
+const money2 = (v) => '$' + Number(v).toFixed(2);
+const pct = (v) => Math.round(v * 100) + '%';
+const cap = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
+const poss = (s) => (/[’']s$/.test(s) ? s : s + '’s');
+const half = (label) => String(label).replace(/ \d.*$/, '').toLowerCase();
+const chg = (now, was, unit = '') => (now === was ? `same as the ${unit || 'period'} before` : `${now > was ? '▲' : '▼'} ${int(Math.abs(now - was))} from ${int(was)}`);
+let D = null;
+
+function status(html) { $('#status').hidden = false; $('#status').innerHTML = html; $('#brief').hidden = true; }
+
+/* ---- Title ---- */
+function title() {
+  const h = D.headline, city = (D.market || '').split(',')[0] || 'its market';
+  $('#client').innerHTML = `Prepared for <b>${esc(D.business)}</b><br>${esc([D.market, D.website].filter(Boolean).join(' · '))}`;
+  let h1 = `${esc(D.short)} scores ${one(h.score)} of 100 for local search visibility around ${esc(city)}`;
+  if (D.ledger.kind === 'connected') {
+    const a = D.ledger.actions;
+    h1 += `, and Google sent it ${int(a.now)} verified actions in 28 days, ${a.now === a.was ? 'the same as the 28 days before' : (a.now > a.was ? 'up' : 'down') + ' from ' + int(a.was)}.`;
+  } else if (D.map.split) {
+    const s = D.map.split, inA = D.map.pins.filter((p) => (s.axis === 'rows' ? p.r : p.c) < s.cut);
+    const fa = inA.filter((p) => p.first).length, fb = D.map.pins.filter((p) => p.first).length - fa;
+    const [hi, lo] = s.a.score >= s.b.score ? [[s.a, fa], [s.b, fb]] : [[s.b, fb], [s.a, fa]];
+    h1 += `. Google puts it first at ${hi[1]} of ${hi[0].points} points in the ${half(hi[0].label)}, and at ${lo[1] || 'none'}${lo[1] ? ' of ' + lo[0].points : ''} in the ${half(lo[0].label)}.`;
+  } else h1 += '.';
+  $('#h1').innerHTML = h1;
+  const m = D.measured;
+  const span = m.from && m.to ? (dayMd(m.from) === dayMd(m.to) ? dayLong(m.to) : `${dayMd(m.from)} to ${dayLong(m.to).replace(/, \d{4}$/, '')}`) : '';
+  $('#dek').innerHTML = `Measured on real phones at ${int(m.points)} points across ${m.scans} scans of ${m.searches} search${m.searches > 1 ? 'es' : ''}${span ? ', ' + esc(span) : ''}${D.connected ? `, and from ${esc(poss(D.short))} own Google accounts` : ''}. Each point is scored by what its screen showed: the AI answer, the map results and the ads above them.${D.connected ? '' : ` ${esc(D.short)} hasn’t connected its Google accounts, so the calls and visits this visibility brings are estimated from Google’s own search counts, and marked as estimates.`}`;
+  $('#mastdate').textContent = dayLong(D.built);
+  $('#ver').textContent = 'Scoring version ' + D.version;
+  document.title = D.business + ' · Local search and revenue brief';
+  if (D.brand?.logo) $('#logo').innerHTML = `<img src="${esc(D.brand.logo)}" alt="${esc(D.brand.name)}">`;
+  else if (D.brand?.name) $('#logo').innerHTML = `<span><b>${esc(D.brand.name)}</b></span>`;
+}
+
+/* ---- Ledger ---- */
+function ledger() {
+  const h = D.headline, L = D.ledger, a = D.assumptions, md = D.marketData;
+  const c1 = `<div class="cell"><div class="k">Search visibility</div><div class="fig tn">${one(h.score)}<small>of 100</small></div>
+    ${h.change ? `<div class="chg ${h.change.change >= 0 ? 'up' : 'dn'}">${h.change.change >= 0 ? '▲' : '▼'} ${one(Math.abs(h.change.change))}${h.change.map ? ' in the map results' : ''} on ${h.change.points} matched points</div>` : '<div class="chg" style="color:var(--graphite)">Change shows after a second scan of the same points</div>'}
+    <div class="ln">${h.searches.map((s) => `${esc(cap(s.kw))} <b class="tn">${one(s.score)}</b>`).join('<br>')}</div>
+    <div class="ft">Weighted by household income: ${one(h.weighted)} · After ads: ${one(h.afterAds)}${h.branded.length ? `<br>Searches naming ${esc(D.short)}, shown apart: ${h.branded.map((b) => esc(b.kw) + ' ' + one(b.score)).join(', ')}` : ''}</div></div>`;
+  let c2, c3, c4, g2, g3, g4;
+  if (L.kind === 'connected') {
+    const x = L.actions;
+    g2 = 'Measured'; g3 = md?.county ? `Priced at ${md.county} ad rates` : 'Priced at local ad rates'; g4 = 'Modeled from ' + (a.sample ? 'sample inputs' : 'the firm’s inputs');
+    c2 = `<div class="cell"><div class="k">Verified actions from Google</div><div class="fig tn">${int(x.now)}</div><div class="chg ${x.now >= x.was ? 'up' : 'dn'}">${chg(x.now, x.was, '28 days')}, the 28 days before</div>
+      <div class="ln">${x.calls ? `<b class="tn">${int(x.calls.now)}</b> calls from the listing<br>` : ''}${x.visits ? `<b class="tn">${int(x.visits.now)}</b> site visits from the listing’s link<br>` : ''}${x.clicks ? `<b class="tn">${int(x.clicks.now)}</b> clicks from Google Search` : ''}</div>
+      ${x.directions ? `<div class="ft">${int(x.directions.now)} direction requests shown, not counted</div>` : ''}</div>`;
+    c3 = L.spend ? `<div class="cell bench"><div class="k">Ad-spend equivalent</div><div class="fig tn" id="spend">${money(L.spend.now)}</div><div class="chg ${L.spend.now >= L.spend.was ? 'up' : 'dn'}">${L.spend.now >= L.spend.was ? '▲' : '▼'} ${money(Math.abs(L.spend.now - L.spend.was))} from ${money(L.spend.was)}</div>
+      <div class="ln">${int(x.now)} actions at <b class="tn" id="spendcpc">${money2(L.spend.cpc)}</b> each</div><div class="ft">${L.spend.own ? 'The firm’s own cost per click.' : `Every action priced at the average Google Ads click in ${esc(md?.county || 'the county')} for the firm’s scanned non-brand searches, last 12 months.${L.spend.low && L.spend.high ? ` Top-of-page bids: ${money(L.spend.low)} to ${money(L.spend.high)}.` : ''}`}</div></div>`
+      : `<div class="cell bench"><div class="k">Ad-spend equivalent</div><div class="fig tn muted">–</div><div class="ft">Local prices aren’t looked up yet for this market.</div></div>`;
+    c4 = `<div class="cell est" id="c4"></div>`;
+  } else {
+    const f = D.map.first;
+    g2 = 'Measured on phones'; g3 = 'From Google Ads'; g4 = 'Modeled from ' + (a.sample ? 'sample inputs' : 'the business’s inputs');
+    c2 = `<div class="cell"><div class="k">First on Google</div><div class="fig tn">${f.total}<small>of ${D.map.points} points</small></div><div class="chg" style="color:var(--graphite)">${esc(cap(D.map.kw))}, ${esc(dayShort(D.map.at))}</div>
+      <div class="ln">${f.panel ? `<b class="tn">${f.panel}</b> as the single listing in the map results<br>` : ''}<b class="tn">${f.pack}</b> at the top of the map results${D.map.aiPoints ? `<br><b class="tn">${f.ai}</b> named first in Google’s AI answer` : ''}</div>
+      ${f.rivals ? `<div class="ft">A rival held the single listing at ${f.rivals} points</div>` : ''}</div>`;
+    c3 = L.demand ? `<div class="cell bench"><div class="k">Searches in play</div><div class="fig tn">${int(L.demand.searches)}<small>a month</small></div><div class="chg" style="color:var(--graphite)">From ${esc(md.city || 'the city')}, last 12 months</div>
+      <div class="ln">${L.demand.rows.map((r) => `${esc(cap(r.kw))} <b class="tn">${r.searches === null ? '–' : int(r.searches)}</b>`).join('<br>')}</div>
+      <div class="ft">Google Ads counts.${Number.isFinite(L.demand.low) ? ` Advertisers pay ${money2(L.demand.low)}${L.demand.high > L.demand.low ? ' to ' + money2(L.demand.high) : ''} a click for these across ${esc(md.county)}.` : ''}</div></div>`
+      : `<div class="cell bench"><div class="k">Searches in play</div><div class="fig tn muted">–</div><div class="ft">Google’s search counts aren’t looked up yet for this market.</div></div>`;
+    c4 = `<div class="cell est" id="c4"></div>`;
+  }
+  $('#ledger').innerHTML = `<div class="grp m">${g2}</div><div class="grp p">${esc(g3)}</div><div class="grp e">${esc(g4)}</div>` + c1 + c2 + c3 + c4;
+  modeled();
+}
+
+/** The modeled cell, from the inputs in force (recomputed while they're edited). */
+function modeled() {
+  const L = D.ledger, a = D.assumptions, el = $('#c4');
+  if (!el) return;
+  const edit = D.canEdit ? `<br><button class="edit" type="button" id="editbtn">Edit assumptions</button>` : '';
+  if (L.kind === 'connected') {
+    const n = L.actions.now, value = n * a.qualified * a.close * a.value, wins = n * a.qualified * a.close;
+    el.innerHTML = `<div class="k">${/lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')) ? 'Case pipeline' : 'Job pipeline'}</div><div class="fig tn">${money(value)}</div><div class="chg" style="color:var(--graphite)">${(Math.round(wins * 100) / 100).toLocaleString('en-US')} ${/lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')) ? 'signed cases' : 'booked jobs'}</div>
+      <div class="ln">${int(n)} actions × ${pct(a.qualified)} qualified × ${pct(a.close)} ${/lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')) ? 'signed' : 'booked'} × ${money(a.value)} average ${/lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')) ? 'fee' : 'job'}</div>
+      <div class="ft">${a.sample ? 'Sample inputs. The firm sets its own intake rate, sign rate and fee.' : 'The firm’s own inputs.'}${edit}</div>`;
+    if (L.spend && a.cpc) { $('#spend').textContent = money(L.actions.now * a.cpc); $('#spendcpc').textContent = money2(a.cpc); }
+  } else if (L.value) {
+    const v = L.value, cpc = a.cpc ?? v.cpc, monthly = v.seen * a.tap * cpc;
+    el.innerHTML = `<div class="k">Ad value of today’s visibility</div><div class="fig tn">${money(monthly)}<small>a month</small></div><div class="chg" style="color:var(--graphite)">About ${int(v.seen * a.tap)} estimated taps a month</div>
+      <div class="ln">${int(v.seen)} searches show ${esc(D.short)} in the top three × ${a.tap > 0 ? '1 in ' + Math.round(1 / a.tap) : '0'} tap × ${money2(cpc)} a click</div>
+      <div class="ft">What those taps would cost as ads. ${a.sample ? 'Sample tap rate' : 'The business’s own tap rate'}${a.cpc ? '; its own cost per click.' : `; ${money2(v.cpc)} is the ${esc(D.marketData.county)} average for these searches.`}${edit}</div>`;
+  } else el.innerHTML = `<div class="k">Ad value of today’s visibility</div><div class="fig tn muted">–</div><div class="ft">Needs Google’s search counts for this market.${edit}</div>`;
+  $('#editbtn')?.addEventListener('click', openPop);
+}
+
+function openPop() {
+  const a = D.assumptions, L = D.ledger, btn = $('#editbtn');
+  $('#pop')?.remove();
+  const pop = document.createElement('div');
+  pop.id = 'pop'; pop.className = 'pop'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'Edit assumptions');
+  const f = (id, label, v, step) => `<label>${label}<input id="${id}" type="number" step="${step}" min="0" value="${v}"></label>`;
+  pop.innerHTML = `<h4>Edit assumptions</h4><p>Measured numbers don’t change. These inputs only drive the modeled figure, and are kept for this business.</p>` +
+    (L.kind === 'connected'
+      ? f('aq', 'Qualified, %', Math.round(a.qualified * 100), 1) + f('ac', (/lawyer|attorney|law/i.test(D.searches.map((s) => s.kw).join(' ')) ? 'Signed' : 'Booked') + ', %', Math.round(a.close * 100), 1) + f('av', 'Average value, $', a.value, 50)
+      : f('at', 'Taps per 100 searches', Math.round(a.tap * 100), 1)) +
+    f('ap', 'Cost per click, $ (blank: Google’s)', a.cpc ?? '', 0.01) +
+    `<div class="msg" id="popmsg"></div><div class="acts"><button type="button" id="popreset">Use sample inputs</button><span><button type="button" id="popcancel">Cancel</button><button type="button" class="go" id="popsave">Save</button></span></div>`;
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.left = Math.max(12, Math.min(window.scrollX + r.left, window.scrollX + document.documentElement.clientWidth - 332)) + 'px';
+  pop.style.top = window.scrollY + r.bottom + 8 + 'px';
+  const before = { ...D.assumptions };
+  const read = () => {
+    const num = (id) => { const v = $('#' + id)?.value; return v === undefined || v === '' ? null : Number(v); };
+    const next = { ...D.assumptions };
+    if (L.kind === 'connected') { next.qualified = (num('aq') ?? 0) / 100; next.close = (num('ac') ?? 0) / 100; next.value = num('av') ?? 0; }
+    else next.tap = (num('at') ?? 0) / 100;
+    next.cpc = num('ap');
+    return next;
+  };
+  pop.addEventListener('input', () => { D.assumptions = { ...read(), sample: false, base: D.assumptions.base }; modeled(); });
+  const close = () => { pop.remove(); $('#editbtn')?.focus(); };
+  $('#popcancel').onclick = () => { D.assumptions = before; modeled(); close(); };
+  $('#popreset').onclick = async () => {
+    await fetch('/api/scans/' + encodeURIComponent(scanId) + '/brief', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reset: true }) });
+    D.assumptions = { ...D.assumptions.base, sample: true, base: D.assumptions.base }; modeled(); close();
+  };
+  $('#popsave').onclick = async () => {
+    const next = read();
+    const r = await fetch('/api/scans/' + encodeURIComponent(scanId) + '/brief', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ assumptions: next }) });
+    const v = await r.json().catch(() => ({}));
+    if (!r.ok) { $('#popmsg').textContent = 'Not saved: ' + (v.error || r.status); return; }
+    D.assumptions = { ...v.assumptions, sample: false, base: D.assumptions.base }; modeled(); close();
+  };
+  pop.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#popcancel').click(); });
+  $('#' + (L.kind === 'connected' ? 'aq' : 'at')).focus();
+}
+
+/* ---- Exhibit A: the map ---- */
+const INCOME = ['#261f18', '#4c3c28', '#735b38', '#9c7f49', '#c7aa6c', '#edd8a6'];
+const INCOME_BREAKS = [40000, 60000, 80000, 100000, 150000];
+let map = null, lib = null, markers = [], mode = 'score';
+function quietBase(m) {
+  const attempt = (fn) => { try { fn(); } catch { /* this style lacks it */ } };
+  for (const l of m.getStyle().layers || []) {
+    const id = l.id, type = l.type, src = l['source-layer'];
+    if (src === 'poi') attempt(() => m.setLayoutProperty(id, 'visibility', 'none'));
+    else if (type === 'background') attempt(() => m.setPaintProperty(id, 'background-color', '#0b1220'));
+    else if (type === 'line' && src === 'transportation') {
+      if (/casing|path|track|service|rail|pier|ferry/i.test(id)) attempt(() => m.setLayoutProperty(id, 'visibility', 'none'));
+      else { const minor = /minor|street|tertiary|residential/i.test(id), motorway = /motorway|trunk/i.test(id); attempt(() => m.setPaintProperty(id, 'line-color', motorway ? '#3b4a61' : '#334155')); attempt(() => m.setPaintProperty(id, 'line-opacity', minor ? 0.28 : motorway ? 0.8 : 0.55)); }
+    } else if (type === 'line') attempt(() => m.setPaintProperty(id, 'line-opacity', 0.3));
+    else if (type === 'fill' && src === 'water') { attempt(() => m.setPaintProperty(id, 'fill-color', '#0d2238')); attempt(() => m.setPaintProperty(id, 'fill-outline-color', '#3b82a6')); }
+    else if (type === 'fill' && /^(landuse|landcover|park|building|aeroway)$/.test(src || '')) attempt(() => m.setPaintProperty(id, 'fill-opacity', 0.2));
+    else if (type === 'symbol') { attempt(() => m.setPaintProperty(id, 'text-color', src === 'water_name' ? '#7dd3fc' : src === 'transportation_name' ? '#94a3b8' : '#cbd5e1')); attempt(() => m.setPaintProperty(id, 'text-halo-color', '#0b1220')); attempt(() => m.setPaintProperty(id, 'text-halo-width', 1.6)); }
+  }
+}
+const valueOf = (p) => (mode === 'm' ? p.m : mode === 'a' ? p.a : p.score);
+const cls = (v) => (v === null ? 's0 na' : v >= 60 ? 's3' : v >= 25 ? 's2' : v > 0 ? 's1' : 's0');
+function exhibitA() {
+  const M = D.map, s = M.split;
+  const [hi, lo] = s ? (s.a.score >= s.b.score ? [s.a, s.b] : [s.b, s.a]) : [null, null];
+  $('#ah2').textContent = s ? `${D.short} scores ${one(hi.score)} of 100 in the ${half(hi.label)}, and ${one(lo.score)} in the ${half(lo.label)}` : `${D.short} scores ${one(D.searches.find((x) => x.scan === M.scan)?.score)} of 100 across ${M.points} points`;
+  const ai1 = M.pins.filter((p) => p.ai1).length, rivals = M.pins.filter((p) => p.rival).length;
+  $('#asub').textContent = `“${cap(M.kw)}”, ${M.points} points on ${dayMd(M.at)}. Each square’s number is that point’s score. ${rivals ? `Dashed squares are the ${rivals} points where a rival’s listing was the only one shown. ` : ''}${ai1 ? `A tag marks where Google’s AI answer named ${D.short} first. ` : ''}The map shades each census tract by household income.`;
+  const hasM = M.pins.some((p) => p.m !== null), hasA = M.pins.some((p) => p.a !== null);
+  $('#tabs').innerHTML = [['score', 'Overall', true], ['m', 'Map pack', hasM], ['a', 'AI answer', hasA]].map(([k, t, on]) => `<button type="button" data-mode="${k}" aria-pressed="${k === mode}" ${on ? '' : 'disabled'}>${t}</button>`).join('');
+  $('#tabs').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; $('#tabs').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); drawPins(); }));
+  if (s) {
+    $('#banda').innerHTML = `<small>${esc(s.a.label)}</small><b>${one(s.a.score)}</b><small>average score</small>`;
+    $('#bandb').innerHTML = `<small>${esc(s.b.label)}</small><b>${one(s.b.score)}</b><small>average score</small>`;
+  } else { $('#banda').hidden = true; $('#bandb').hidden = true; }
+  const R = M.receipt;
+  if (R) {
+    const youIdx = R.you.findIndex(Boolean);
+    $('#receipt').innerHTML = `<div class="where"><b>${esc(R.area || 'This point')}</b><span>Point R${R.r + 1}·C${R.c + 1}</span></div>
+      <p class="when">Searched ${esc(dayLong(R.at))} at ${esc(timeEt(R.at))}, on a real phone at this point</p>
+      <div class="score"><b>${Math.round(R.score)}</b><span>${esc(R.saw)}${R.ads !== 'None' ? `, below ${esc(R.ads.replace(/^(\d+) /, '$1 '))}` : ', and no ads'}</span></div>
+      ${R.aiFirst.length ? `<h4>Google’s AI answer, first three named</h4><ol>${R.aiFirst.map((n, i) => `<li class="${R.you[i] ? 'you' : ''}"><i>${i + 1}</i><span>${esc(n)}${R.you[i] ? '<span class="y">You</span>' : ''}</span></li>`).join('')}</ol>` : R.first.length ? `<h4>The map results, first three</h4><ol>${R.first.map((n, i) => `<li><i>${i + 1}</i><span>${esc(n)}</span></li>`).join('')}</ol>` : ''}
+      <div class="facts">${R.listingLinks ? `<span>Google listing cited<em>${R.listingLinks} links</em></span>` : ''}${R.inc ? `<span>Median household income<em>${money(R.inc)}</em></span>` : ''}${R.hh !== null ? `<span>Households in the tract<em>${int(R.hh)}</em></span>` : ''}</div>
+      ${R.rec ? '<p class="rec">Screen recording on file</p>' : ''}`;
+    void youIdx;
+  } else $('#receipt').hidden = true;
+  const showAd = M.lsaPoints > 0 && M.lsaPoints <= M.points / 2;
+  $('#keys').innerHTML = `<div><h5>Score at the point, 0 to 100</h5><div class="row">
+    <span><i class="sw" style="background:#1f9a6e;border-color:#9be3c4"></i>60–100</span><span><i class="sw" style="background:#2a7558;border-color:#6cc3a0"></i>25–59</span><span><i class="sw" style="background:#24493d;border-color:#4f8a73"></i>1–24</span><span><i class="sw" style="background:#1a242c;border-color:#4c5a66"></i>0</span>
+    ${rivals ? '<span><i class="sw" style="background:#2a2218;border:2px dashed #e3a857"></i>A rival’s single listing</span>' : ''}${ai1 ? `<span><span class="aik">AI 1st</span>Named first in Google’s AI answer</span>` : ''}${showAd ? '<span><span class="adk">AD</span>Local Services Ads ran here</span>' : ''}</div></div>
+    <div><h5>Median household income</h5><div class="ramp">${INCOME.map((c) => `<i style="background:${c};opacity:.75"></i>`).join('')}</div><div class="ramp-l"><span>Under $40k</span><span>$150k+</span></div></div><div></div>`;
+  const legacy = M.pins.some((p) => p.reading === 'named');
+  $('#asrc').innerHTML = `<b>Source:</b> Stakeout Search, ${M.points} searches on real phones, ${esc(dayLong(M.at))}, ${esc(timeEt(M.at))}, points ${M.km ? (M.km / 1.609344).toFixed(1).replace(/\.0$/, '') + ' mile' + (Math.round(M.km / 1.609344) === 1 ? '' : 's') + ' apart' : 'on a grid'}. ${M.lsaPoints ? `Local Services Ads ran at ${M.lsaPoints} of the ${M.points} points; the after-ads figures count them. ` : ''}${legacy ? 'That run’s AI answers were read the earlier way, by whether the business was named, not card by card. ' : ''}Scores and the income weighting are explained under How this was measured.`;
+  initMap();
+}
+function drawPins() {
+  for (const { el, p } of markers) {
+    const v = valueOf(p);
+    const pin = el.firstChild;
+    pin.className = 'pin ' + cls(v) + (p.rival ? ' rv' : '') + (D.map.receipt && p.r === D.map.receipt.r && p.c === D.map.receipt.c ? ' sel' : '');
+    pin.firstChild.nodeValue = v === null ? '–' : String(Math.round(v));
+  }
+}
+async function initMap() {
+  if (!D.mapStyle?.style) return;
+  const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = '/vendor/maplibre-gl.css'; document.head.appendChild(css);
+  lib = await import('/vendor/maplibre-gl.mjs');
+  lib.setWorkerUrl('/maplibre-gl-worker.mjs');
+  const M = D.map;
+  map = new lib.Map({ container: 'bmap', style: D.mapStyle.style, center: M.center, zoom: 10, attributionControl: false, interactive: false, canvasContextAttributes: { preserveDrawingBuffer: true } });
+  await new Promise((ok) => map.once('load', ok));
+  quietBase(map);
+  const labels = (map.getStyle().layers || []).find((l) => l.type === 'symbol')?.id;
+  if (D.mapStyle.census) {
+    try {
+      await new Promise((ok, no) => { if (window.pmtiles) return ok(); const sc = document.createElement('script'); sc.src = '/vendor/pmtiles.js'; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); });
+      lib.addProtocol('pmtiles', new window.pmtiles.Protocol().tile);
+      map.addSource('census', { type: 'vector', url: 'pmtiles://' + location.origin + '/api/census/' + D.mapStyle.census + '.pmtiles', promoteId: 'id' });
+      const step = ['step', ['to-number', ['get', 'inc']], INCOME[0]];
+      INCOME_BREAKS.forEach((b, i) => step.push(b, INCOME[i + 1]));
+      map.addLayer({ id: 'income', type: 'fill', source: 'census', 'source-layer': 'tract', paint: { 'fill-color': ['case', ['has', 'inc'], step, 'rgba(0,0,0,0)'], 'fill-opacity': 0.38 } }, labels);
+      for (const l of map.getStyle().layers || []) { const src = l['source-layer']; if ((l.type === 'fill' && src === 'water') || (l.type === 'line' && (src === 'transportation' || src === 'waterway'))) { try { map.moveLayer(l.id, labels); } catch { /* stays */ } } }
+    } catch (e) { console.warn('[brief] no income shading', e); }
+  }
+  const pts = M.pins.filter((p) => typeof p.lat === 'number' && typeof p.lng === 'number');
+  const half = (Number(M.km) || 1) / 2, cosL = Math.cos((M.center[1] * Math.PI) / 180);
+  const box = [Math.min(...pts.map((p) => p.lng)) - half / (111 * cosL), Math.min(...pts.map((p) => p.lat)) - half / 111, Math.max(...pts.map((p) => p.lng)) + half / (111 * cosL), Math.max(...pts.map((p) => p.lat)) + half / 111];
+  map.addSource('frame', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[box[0], box[1]], [box[2], box[1]], [box[2], box[3]], [box[0], box[3]], [box[0], box[1]]]] } } });
+  map.addLayer({ id: 'frame-line', type: 'line', source: 'frame', paint: { 'line-color': '#ff5a1f', 'line-opacity': 0.75, 'line-width': 1.3 } });
+  for (const p of pts) {
+    const el = document.createElement('div'); el.className = 'pinw'; el.title = `R${p.r + 1}·C${p.c + 1}${p.area ? ' · ' + p.area : ''}`;
+    el.innerHTML = `<span class="pin">0${p.ai1 ? '<span class="ai">AI 1st</span>' : ''}${p.lsa && M.lsaPoints <= M.points / 2 ? '<span class="ad">AD</span>' : ''}</span>`;
+    markers.push({ el, p, m: new lib.Marker({ element: el }).setLngLat([p.lng, p.lat]).addTo(map) });
+  }
+  drawPins();
+  const fit = () => {
+    const plate = $('#plate').getBoundingClientRect(), wide = window.innerWidth > 1100;
+    const rc = $('#receipt').getBoundingClientRect(), bd = $('#banda').getBoundingClientRect();
+    const left = wide && D.map.split ? Math.max(40, bd.right - plate.left + 36) : 30, right = wide && !$('#receipt').hidden ? Math.max(40, plate.right - rc.left + 40) : 30;
+    map.resize();
+    map.fitBounds([[box[0], box[1]], [box[2], box[3]]], { padding: { top: 46, bottom: 40, left, right }, duration: 0 });
+    overlay();
+  };
+  fit();
+  window.addEventListener('resize', () => requestAnimationFrame(fit));
+}
+/** The divider between the halves, and the line from the receipt's point to its card. */
+function overlay() {
+  const svg = $('#leader'), M = D.map, s = M.split, plate = $('#plate').getBoundingClientRect(), mb = $('#bmap').getBoundingClientRect();
+  const at = (p) => { const q = map.project([p.lng, p.lat]); return { x: q.x + mb.left - plate.left, y: q.y + mb.top - plate.top }; };
+  let html = '';
+  document.querySelectorAll('.divlab').forEach((x) => x.remove());
+  if (s) {
+    const key = s.axis === 'rows' ? 'r' : 'c';
+    const A = M.pins.filter((p) => p[key] === s.cut - 1).map(at), B = M.pins.filter((p) => p[key] === s.cut).map(at);
+    if (A.length && B.length) {
+      const all = M.pins.map(at);
+      if (s.axis === 'columns') {
+        const x = (A.reduce((a, p) => a + p.x, 0) / A.length + B.reduce((a, p) => a + p.x, 0) / B.length) / 2, y0 = Math.min(...all.map((p) => p.y)) - 34, y1 = Math.max(...all.map((p) => p.y)) + 30;
+        html += `<path d="M${x} ${y0} V${y1}" fill="none" stroke="rgba(226,234,240,.62)" stroke-width="1.4" stroke-dasharray="5 5"/>`;
+        lab(half(s.a.label).replace(' columns', ''), x - 8, y0 - 6, 'end'); lab(half(s.b.label).replace(' columns', ''), x + 8, y0 - 6, 'start');
+      } else {
+        const y = (A.reduce((a, p) => a + p.y, 0) / A.length + B.reduce((a, p) => a + p.y, 0) / B.length) / 2, x0 = Math.min(...all.map((p) => p.x)) - 34, x1 = Math.max(...all.map((p) => p.x)) + 34;
+        html += `<path d="M${x0} ${y} H${x1}" fill="none" stroke="rgba(226,234,240,.62)" stroke-width="1.4" stroke-dasharray="5 5"/>`;
+      }
+      if (window.innerWidth > 1100) {
+        const ya = (A.length ? 0 : 0) + (s.axis === 'rows' ? M.pins.filter((p) => p.r < s.cut).map(at).reduce((a, p, _, l) => a + p.y / l.length, 0) : plate.height * 0.36);
+        const yb = s.axis === 'rows' ? M.pins.filter((p) => p.r >= s.cut).map(at).reduce((a, p, _, l) => a + p.y / l.length, 0) : plate.height * 0.68;
+        $('#banda').style.top = ya + 'px'; $('#bandb').style.top = yb + 'px';
+      }
+    }
+  }
+  const R = M.receipt, rc = $('#receipt');
+  if (R && window.innerWidth > 1100 && !rc.hidden) {
+    const p = M.pins.find((q) => q.r === R.r && q.c === R.c), q = at(p), card = rc.getBoundingClientRect();
+    const cx = card.left - plate.left, top = card.top - plate.top + 20, bot = card.bottom - plate.top - 20;
+    const gap = (() => { const ys = [...new Set(M.pins.map((x) => Math.round(at(x).y)))].sort((a, b) => a - b); const i = ys.findIndex((y) => y > q.y + 5); return i >= 0 ? (q.y + ys[i]) / 2 : q.y + 40; })();
+    const y = Math.min(bot, Math.max(top, gap));
+    html += `<polyline points="${q.x},${q.y + 19} ${q.x},${y} ${cx},${y}" fill="none" stroke="#ff8a4c" stroke-width="1.6"/><circle cx="${cx}" cy="${y}" r="3.5" fill="#ff8a4c"/>`;
+  }
+  svg.setAttribute('width', plate.width); svg.setAttribute('height', plate.height); svg.innerHTML = html;
+  function lab(t, x, y, anchor) { const d = document.createElement('div'); d.className = 'divlab'; d.textContent = cap(t); d.style.top = y - 12 + 'px'; d.style[anchor === 'end' ? 'right' : 'left'] = (anchor === 'end' ? plate.width - x : x) + 'px'; $('#plate').appendChild(d); }
+}
+
+/* ---- Exhibits B and C ---- */
+function exhibitB() {
+  const B = D.exB;
+  if (!B) { $('#exb').hidden = true; return; }
+  const rows = [B.ai && ['Named first in Google’s AI answer', B.ai, B.counts.ai], B.map && ['First in the map results, or their single listing', B.map, B.counts.map]].filter(Boolean);
+  const [lead, grids, counts] = rows[0];
+  const last = counts[counts.length - 1], prev = counts.slice(0, -1), dates = grids.slice(0, -1).map((g) => dayMd(g.at));
+  const same = prev.every((x) => x === prev[0]);
+  const dl = (ds) => [...new Set(ds)].reduce((a, d, i, l) => a + (i ? (i === l.length - 1 ? ' and ' : ', ') : '') + d, '');
+  const tail = same ? (last === prev[0] ? `the same as on ${dl(dates)}` : `${last > prev[0] ? 'up' : 'down'} from ${prev[0]} on ${dl(dates)}`) : `against ${prev.map((c, i) => `${c} on ${dates[i]}`).join(', ')}`;
+  $('#bh2').textContent = `On the same ${B.points} points, ${rows[0] === rows.find((r) => r[0].startsWith('Named')) ? `Google’s AI answer named ${D.short} first` : `${D.short} came first in the map results`} at ${last} on ${dayMd(grids[grids.length - 1].at)}, ${tail}`;
+  void lead;
+  const W = B.width;
+  $('#mgrid').style.gridTemplateColumns = `minmax(0,1fr) repeat(${grids.length},${Math.max(76, W * 16 + 44)}px)`;
+  $('#mgrid').innerHTML = '<span></span>' + grids.map((g) => `<span class="hd">${esc(dayShort(g.at))}</span>`).join('') + rows.map(([label, gs]) => `<span class="lab">${esc(label)}</span>` + gs.map((g) => `<span class="mg"><span class="g" style="grid-template-columns:repeat(${W},13px)">${[...g.cells].map((v) => `<i class="${v === '1' ? 'on' : v === 'u' ? 'u' : v === 'x' ? 'x' : ''}"></i>`).join('')}</span><b>${[...g.cells].filter((v) => v === '1').length}</b></span>`).join('')).join('');
+  const mixed = D.map && grids.length;
+  $('#bsrc').innerHTML = `<b>Source:</b> the same ${B.points} points on ${grids.map((g) => `${dayMd(g.at)} (${timeEt(g.at)})`).join(', ')}.${mixed ? ' Answers read card by card count card 1; earlier readings count the first business named.' : ''}`;
+}
+function exhibitC() {
+  const A = D.ads, short = D.short;
+  if (!A.anyPoints) { $('#ch2').textContent = `No ads ran at the ${A.points} points.`; $('#ads').innerHTML = ''; }
+  else if (A.lsaPoints) {
+    $('#ch2').textContent = `Rivals’ Local Services Ads ran above the results at ${A.rivalsLsaPoints} of ${A.points} points. ${short}, at ${A.ownLsaPoints || 'none'}.`;
+    const rows = [...A.lsa.map((x) => [x.name, x.points, false]), [D.business.split(',')[0], A.ownLsaPoints, true]];
+    $('#ads').innerHTML = rows.map(([n, v, you]) => `<div class="row${you ? ' you' : ''}"><span class="nm" title="${esc(n)}">${esc(n)}</span><div class="track"><div class="fill" style="width:${(100 * v) / A.points}%"></div></div><span class="v">${v}</span></div>`).join('');
+  } else {
+    $('#ch2').textContent = `Ads ran at ${A.anyPoints} of ${A.points} points, none of them Local Services Ads.`;
+    $('#ads').innerHTML = '';
+  }
+  const others = [A.finder.length ? `Ads also ran among the map results: ${A.finder.map((x, i) => `${x.name} at ${x.points}${i ? '' : ' points'}`).join(', ')}.` : '', A.results.length ? `Sponsored results: ${A.results.map((x, i) => `${x.name} at ${x.points}${i ? '' : ' points'}`).join(', ')}.` : ''].filter(Boolean);
+  const o = A.ownNow, own = o ? [o.finder ? `among the map results at ${o.finder}` : '', o.lsa ? `as a Local Services Ad at ${o.lsa}` : '', o.results ? `as a sponsored result at ${o.results}` : ''].filter(Boolean) : [];
+  if (own.length) others.push(`On ${dayMd(o.at)}, ${poss(short)} own ads appeared at ${o.finder + o.lsa + o.results > o.points ? 'several' : Math.min(o.points, o.finder + o.lsa + o.results)} of ${o.points} points: ${own.join(', and ')}.`);
+  $('#cnote').hidden = !others.length; $('#cnote').textContent = others.join(' ');
+  $('#csrc').innerHTML = `<b>Source:</b> ads on the phones’ screens at the ${A.points} points, ${esc(dayMd(D.map.at))}.`;
+}
+
+/* ---- Exhibit D ---- */
+function exhibitD() {
+  const G = D.google, md = D.marketData;
+  if (D.connected && G) {
+    const a = D.ledger.actions;
+    $('#dh2').textContent = `The listing turned ${G.views ? int(G.views.now) + ' views' : 'its views'} into ${a.calls ? int(a.calls.now) : 0} calls and ${a.visits ? int(a.visits.now) : 0} site visits. Google Search added ${a.clicks ? int(a.clicks.now) : 0} clicks.`;
+    const p = D.periods?.recent;
+    $('#dsub').textContent = `${p ? `${dayMd(p.from)} to ${dayLong(p.to)}, from` : 'From'} ${poss(D.short)} connected Google Business Profile, Search Console and Analytics.`;
+    const line = (label, x, strong, muted, note) => x ? `<div class="line${strong ? ' strong' : ''}${muted ? ' muted' : ''}"><span>${label}<em>${note ?? (x.was !== undefined ? (x.now === x.was ? 'same as before' : `${x.now > x.was ? '+' : '−'}${x.was && Math.abs(x.now - x.was) / x.was >= 0.1 && x.was >= 20 ? Math.round((100 * Math.abs(x.now - x.was)) / x.was) + '%' : int(Math.abs(x.now - x.was))} from ${int(x.was)}`) : '')}</em></span><b>${int(x.now)}</b></div>` : '';
+    $('#dbody').innerHTML = `<div class="flow">
+      <div class="node"><h3>Google Business Profile</h3><p class="src">The listing</p>${line('Views on Search and Maps', G.views)}${line('Calls', G.calls, true)}${line('Website clicks', G.websiteClicks)}${line('Direction requests', G.directions, false, true, G.directions ? `${G.directions.now >= G.directions.was ? '+' : '−'}${int(Math.abs(G.directions.now - G.directions.was))} from ${int(G.directions.was)}; not counted` : '')}</div>
+      <div class="arrow"><svg viewBox="0 0 40 16"><path d="M2 8h32M28 3l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></div>
+      <div class="node"><h3>The website</h3><p class="src">Google Analytics</p>${line('Visits from the listing’s link', G.visits, true)}${line('All visits to the page', G.pageVisits)}</div>
+      <div class="arrow"><svg viewBox="0 0 40 16"><path d="M38 8H6M12 3L6 8l6 5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></div>
+      <div class="node"><h3>Google Search</h3><p class="src">Search Console</p>${G.gsc ? line('Times shown', G.gsc.impressions) : ''}${line('Clicks', G.clicks, true)}${G.gsc?.position.now ? `<div class="line"><span>Average position<em>${G.gsc.position.was ? `${Math.abs(G.gsc.position.was - G.gsc.position.now).toFixed(1)} places ${G.gsc.position.now < G.gsc.position.was ? 'higher' : 'lower'}` : ''}</em></span><b>${one(G.gsc.position.now)}</b></div>` : ''}</div>
+    </div>
+    <div class="total"><b>${int(a.now)}</b><p>verified actions: ${a.calls ? int(a.calls.now) + ' calls' : ''}${a.visits ? ` and ${int(a.visits.now)} visits from the listing` : ''}${a.clicks ? `, plus ${int(a.clicks.now)} Google Search clicks` : ''}. Website clicks on the listing aren’t added again, because its tagged visits already count those people.</p></div>
+    <div class="split2"><div><h4>Discovery and brand</h4>
+      ${G.listingTop.length ? `<div class="kv"><span>Listing: top searches that don’t name ${esc(D.short)}<em>${G.listingTop.filter((r) => r.es).length} of them in Spanish</em></span><b>${G.listingTop.filter((r) => !r.branded).length} of ${G.listingTop.length}</b></div>` : ''}
+      ${G.gsc ? `<div class="kv"><span>Website: times shown for searches naming ${esc(D.short)}<em>${int(G.brandClicks)} clicks</em></span><b>${int(G.brandShown)} of ${int(G.totalShown)}</b></div>` : ''}
+      ${G.spanish.listed ? `<div class="kv"><span>Website: searches in Spanish<em>shown ${int(G.spanish.shown)} times in all</em></span><b>${G.spanish.spanish} of ${G.spanish.listed}</b></div>` : ''}</div>
+      <div><h4>Just off page one</h4>${G.offPageOne.length ? G.offPageOne.map((q) => `<div class="kv"><span>${esc(q.query)}<em>${int(q.impressions)} times shown</em></span><b class="${q.position <= 12 ? 'g' : ''}">${one(q.position)}</b></div>`).join('') : '<p class="muted" style="font-size:13.5px;padding-top:10px">No search sits at positions 9 to 20.</p>'}</div></div>`;
+    return;
+  }
+  const rows = md?.rows ?? [];
+  const plain = rows.filter((r) => !r.brand);
+  const total = plain.reduce((a, r) => a + (r.searches ?? 0), 0);
+  const cpcs = plain.map((r) => r.cpc).filter((x) => x !== null);
+  $('#dh2').textContent = md ? `${md.city || 'The city'} makes ${plain.length === 1 ? 'this search' : `these ${plain.length} searches`} ${int(total)} times a month.${cpcs.length ? ` Advertisers pay ${money2(Math.min(...cpcs))}${Math.max(...cpcs) > Math.min(...cpcs) ? ' to ' + money2(Math.max(...cpcs)) : ''} a click for ${plain.length === 1 ? 'it' : 'them'}.` : ''}` : `What ${D.short} is missing until its Google accounts are connected`;
+  $('#dsub').textContent = md ? `Google Ads figures, 12-month averages: searches from ${md.city || 'the city'}, cost per click across ${md.county}. ${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.` : `${poss(D.short)} Google accounts aren’t connected, so its calls and visits aren’t counted yet.`;
+  $('#dbody').innerHTML = (md ? `<div class="tscroll"><table class="tbl mkt"><thead><tr><th>Search</th><th class="r" style="width:170px">Searches a month, ${esc(md.city || 'the city')}</th><th class="r" style="width:170px">Cost per click, ${esc(md.county)}</th><th class="r" style="width:190px">Top-of-page bids</th><th class="r" style="width:190px">${esc(D.short)} in the top three</th></tr></thead><tbody>` +
+    rows.map((r) => `<tr class="${r.brand ? 'brand' : ''}"><td>${esc(r.kw)}${r.brand ? '<span>Searches naming the business</span>' : r.via ? `<span>Priced as “${esc(r.via)}”: Google withholds this exact search</span>` : ''}</td><td class="r">${r.searches === null ? 'Not reported' : int(r.searches)}</td><td class="r">${r.cpc === null ? 'Not reported' : money2(r.cpc)}</td><td class="r">${r.low !== null && r.high !== null ? `${money2(r.low)} to ${money2(r.high)}` : 'Not reported'}</td><td class="r">${r.brand ? 'Not scanned' : `${r.top3} of ${r.points} points<span>${esc(dayMd(r.at))}</span>`}</td></tr>`).join('') + '</tbody></table></div>' : '') +
+    `<div class="conn"><h4>Not connected yet</h4><div class="cgrid"><div><b>Google Business Profile</b><p>Calls, website clicks and direction requests from the listing, and the searches that showed it.</p></div><div><b>Search Console</b><p>The searches that showed ${esc(D.website || 'the website')}, and the clicks they sent.</p></div><div><b>Google Analytics</b><p>Visits from the listing’s link, and what those visitors did on the site.</p></div></div><p>Once connected, counted calls and visits replace the sample tap rate in the ledger${md ? `, priced at the same ${esc(md.county)} rates` : ''}.</p></div>`;
+}
+
+/* ---- Moves, receipts, method ---- */
+function moves() {
+  $('#moves').innerHTML = D.moves.map((m, i) => `<div class="move"><span class="n">${i + 1}</span><div><h3>${esc(m.title)}</h3><p>${esc(m.why)}</p></div><div class="play"><small>In play</small><b>${esc(m.inPlay)}</b><span>${esc(m.inPlayNote)}</span>${m.price ? `<em class="px"><strong>${esc(m.price.split(' a click')[0])}</strong> a click${esc(m.price.split(' a click')[1] ?? '')}</em>` : ''}</div></div>`).join('');
+  $('#movesec').hidden = !D.moves.length;
+}
+function receipts() {
+  $('#rsub').textContent = `“${cap(D.map.kw)}”, ${dayLong(D.map.at)}, ${timeEt(D.map.at)}.`;
+  $('#rcpts').innerHTML = D.receipts.map((r) => `<tr><td class="pt">${esc(r.point)}</td><td>${esc(r.area || '')}</td><td>${esc(r.saw)}</td><td>${esc(r.ads)}</td><td class="r" style="font-weight:600">${one(r.score)}</td><td class="${r.rec ? 'rec' : 'muted'}">${r.rec ? 'Recording' : 'No recording'}</td></tr>`).join('');
+  $('#rall').textContent = `Show all ${int(D.receiptsTotal)} receipts from ${D.scansTotal} scans`;
+  $('#rall').href = D.link.report;
+}
+function method() {
+  $('#mver').textContent = `Scoring version ${D.version}.`;
+}
+
+async function load() {
+  if (!scanId && !shareId) return status('<b>No scan chosen.</b> Open this brief from a scan in Stakeout.');
+  try {
+    const r = await fetch(shareId ? '/api/share/' + encodeURIComponent(shareId) + '/brief' : '/api/scans/' + encodeURIComponent(scanId) + '/brief', { credentials: 'same-origin', cache: 'no-store' });
+    if (r.status === 401) return status('<b>Sign in to Stakeout</b> to see this brief. <a href="/login?next=' + encodeURIComponent(location.pathname + location.search) + '">Sign in</a>');
+    const v = await r.json().catch(() => null);
+    if (!r.ok || !v) return status('<b>This brief isn’t available.</b> ' + esc(v?.error || ''));
+    D = v;
+  } catch (e) {
+    return status('<b>This brief didn’t load.</b> Check the connection and reload.');
+  }
+  $('#status').hidden = true; $('#brief').hidden = false;
+  title(); ledger(); exhibitA(); exhibitB(); exhibitC(); exhibitD(); moves(); receipts(); method();
+}
+load();
+
+</script>
+</body>
+</html>

@@ -44,12 +44,13 @@ export function stakeoutPin(p: Point): StakeoutPin {
   return { id: `${p.r},${p.c}`, r: p.r, c: p.c, lat: p.lat, lng: p.lng, inc: p.inc ?? null, pack: p.pack, rank: p.rank, oneBox: p.oneBox, paidUnitsAbove: paidUnitsAbove(p), ...ai } as StakeoutPin;
 }
 
-export type Scored = Point & { score: number; afterAds: number; mapPart: number | null; aiPart: number | null; scenario: string; reading: 'card' | 'named' | 'none' };
+export type Scored = Point & { score: number; afterAds: number; mapPart: number | null; aiPart: number | null; scenario: string; reading: 'card' | 'named' | 'unread' | 'none'; excluded: boolean };
 
 export function scorePoints(points: Point[]): Scored[] {
   return points.map((p) => {
     const s = scorePin(stakeoutPin(p));
-    return { ...p, score: s.baseScore ?? 0, afterAds: s.adjustedScore ?? s.baseScore ?? 0, mapPart: s.packUtility, aiPart: s.aiUtility, scenario: s.scenario, reading: p.aiShown ? (p.state === 'parsed' ? 'card' : 'named') : 'none' };
+    const reading = !p.aiShown ? 'none' : p.state === 'parsed' ? 'card' : p.state === 'legacy' ? 'named' : 'unread';
+    return { ...p, score: s.baseScore ?? 0, afterAds: s.adjustedScore ?? s.baseScore ?? 0, mapPart: s.packUtility, aiPart: s.aiUtility, scenario: s.scenario, reading, excluded: s.scenario === 'EXCLUDED' } as Scored;
   });
 }
 
@@ -62,7 +63,9 @@ export function weights(points: Point[]): number[] {
   return points.map((p) => incomeWeight(p.inc ?? null).weight * (typeof p.hh === 'number' ? p.hh : typical));
 }
 
-export function summarize(scored: Scored[]) {
+/** Points with neither a map pack nor an AI answer on the page are left out, as the engine leaves them out. */
+export function summarize(all: Scored[]) {
+  const scored = all.filter((p) => !p.excluded);
   const w = weights(scored);
   const wt = w.reduce((a, b) => a + b, 0);
   return {
@@ -83,11 +86,13 @@ const near = (a: Point, b: Point) => typeof a.lat === 'number' && typeof a.lng =
 export function matchedChange(current: Scored[], earlier: Scored[][]) {
   const map = earlier.flat().some((p) => p.reading === 'named') || current.some((p) => p.reading === 'named');
   const part = (p: Scored) => (map ? (p.mapPart ?? 0) : p.score);
+  // Answers that couldn't be read are left out on both sides.
+  const usable = (p: Scored) => !p.excluded && p.reading !== 'unread';
   if (map && !current.some((p) => p.pack)) return null;
   const pairs: { now: number; was: number }[] = [];
-  for (const p of current) {
+  for (const p of current.filter(usable)) {
     const was = earlier
-      .map((run) => run.filter((q) => near(p, q)).sort((a, b) => haversineMeters(p.lat!, p.lng!, a.lat!, a.lng!) - haversineMeters(p.lat!, p.lng!, b.lat!, b.lng!))[0])
+      .map((run) => run.filter((q) => usable(q) && near(p, q)).sort((a, b) => haversineMeters(p.lat!, p.lng!, a.lat!, a.lng!) - haversineMeters(p.lat!, p.lng!, b.lat!, b.lng!))[0])
       .filter((q): q is Scored => Boolean(q));
     if (was.length) pairs.push({ now: part(p), was: mean(was.map(part)) as number });
   }

@@ -222,7 +222,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
   const map = {
     scan: ms.id, kw: ms.kw, at: ms.at, size: ms.size, km: ms.km, center: ms.center, points: mapPins.length,
     lsaPoints: lsaPts, aiPoints: aiShownPts,
-    pins: mapPins.map((p) => ({ r: p.r, c: p.c, lat: p.lat, lng: p.lng, score: r1(p.score), afterAds: r1(p.afterAds), lsa: hasLsa(p), ai1: aiFirstOf(p, business) === true, rival: p.oneBox === 'other', won: p.oneBox === 'won', area: p.area })),
+    pins: mapPins.map((p) => ({ r: p.r, c: p.c, lat: p.lat, lng: p.lng, score: r1(p.score), afterAds: r1(p.afterAds), m: p.pack ? r1(p.mapPart) : null, a: p.aiShown ? r1(p.aiPart ?? 0) : null, reading: p.reading, lsa: hasLsa(p), ai1: aiFirstOf(p, business) === true, rival: p.oneBox === 'other', won: p.oneBox === 'won', first: isFirst(p), rank: p.rank, area: p.area })),
     split: split ? { axis: split.axis, cut: split.cut, a: { ...split.a, score: r1(split.a.score) }, b: { ...split.b, score: r1(split.b.score) } } : null,
     receipt: pick ? {
       r: pick.r, c: pick.c, area: pick.area, at: (pick as { at?: string | null }).at ?? ms.at, score: r1(pick.score), afterAds: r1(pick.afterAds),
@@ -303,7 +303,7 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
     : { kind: 'scan' as const, demand: market ? { searches: perSearch.reduce((acc, s) => acc + (s.searches ?? 0), 0), rows: perSearch.map((s) => ({ kw: s.kw, searches: s.searches })), low: Math.min(...perSearch.map((s) => s.price?.cpc ?? Infinity)), high: Math.max(...perSearch.map((s) => s.price?.cpc ?? -Infinity)) } : null, value: market && tapCpc ? { seen: Math.round(seen), taps: Math.round(seen) * a.tap, cpc: a.cpc ?? Math.round(tapCpc * 100) / 100, monthly: Math.round(seen) * a.tap * (a.cpc ?? Math.round(tapCpc * 100) / 100) } : null };
 
   // Next moves, ranked by the searches each puts in play a month.
-  type Move = { title: string; why: string; inPlay: string; inPlayNote: string; price: string | null; weight: number; kw?: string };
+  type Move = { title: string; why: string; inPlay: string; inPlayNote: string; price: string | null; weight: number; kw?: string; type: string };
   const moves: Move[] = [];
   const cpcText = (k: string) => { const p = priceOf(k); return p?.cpc ? `$${p.cpc.toFixed(2)} a click as an ad${market?.countyName ? ' in ' + market.countyName : ''}` : null; };
   for (const s of perSearch) {
@@ -313,14 +313,14 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
       const pins = sr.runs[0].pins;
       const places = [1, 2, 3].map((k) => ({ k, n: pins.filter((p) => p.rank === k && p.oneBox !== 'won').length + (k === 1 ? pins.filter((p) => p.oneBox === 'won').length : 0) })).filter((x) => x.n);
       const nf = pins.filter((p) => p.pack && !p.rank && p.oneBox !== 'won').length;
-      moves.push({ kw: s.kw, title: `Get ${short} to first for “${s.kw}”`, why: `${short} came ${places.map((x) => `${ordinal(x.k)} at ${x.n}`).join(', ') || 'below third everywhere'} of ${sr.points} points${nf ? `, and wasn’t found at ${nf}` : ''}.`, inPlay: s.searches.toLocaleString('en-US'), inPlayNote: `searches a month${market?.cityName ? ' from ' + market.cityName : ''}`, price: cpcText(s.kw), weight: s.searches * (1 - first) });
+      moves.push({ type: 'first', kw: s.kw, title: `Get ${short} to first for “${s.kw}”`, why: `${short} came ${places.map((x) => `${ordinal(x.k)} at ${x.n}`).join(', ') || 'below third everywhere'} of ${sr.points} points${nf ? `, and wasn’t found at ${nf}` : ''}.`, inPlay: s.searches.toLocaleString('en-US'), inPlayNote: `searches a month${market?.cityName ? ' from ' + market.cityName : ''}`, price: cpcText(s.kw), weight: s.searches * (1 - first) });
     }
   }
   if (rivalPanels.length >= Math.max(3, 0.2 * mapPins.length) && split) {
     const side = (p: Scored) => ((split.axis === 'rows' ? p.r : p.c) < split.cut ? 'a' : 'b');
     const inA = rivalPanels.filter((p) => side(p) === 'a').length, where = inA >= rivalPanels.length - inA ? split.a.label : split.b.label;
     const vol = market?.searches[words(ms.kw)] ?? null;
-    moves.push({ kw: ms.kw, title: `Win the single listing Google shows in the ${where.replace(/ \d.*$/, '').toLowerCase()}`, why: `For “${ms.kw}”, Google’s map results showed a single listing at ${rivalPanels.length + map.first.panel} of ${mapPins.length} points. ${short} held ${map.first.panel}; rivals held ${rivalPanels.length}${topRival ? `, ${topRival.name} ${topRival.count} of them` : ''}.`, inPlay: `${rivalPanels.length} points`, inPlayNote: 'where a rival held the single listing, Exhibit A', price: cpcText(ms.kw), weight: (vol ?? 50) * (rivalPanels.length / mapPins.length) });
+    moves.push({ type: 'panel', kw: ms.kw, title: `Win the single listing Google shows in the ${where.replace(/ \d.*$/, '').toLowerCase()}`, why: `For “${ms.kw}”, Google’s map results showed a single listing at ${rivalPanels.length + map.first.panel} of ${mapPins.length} points. ${short} held ${map.first.panel}; rivals held ${rivalPanels.length}${topRival ? `, ${topRival.name} ${topRival.count} of them` : ''}.`, inPlay: `${rivalPanels.length} points`, inPlayNote: 'where a rival held the single listing, Exhibit A', price: cpcText(ms.kw), weight: (vol ?? 50) * (rivalPanels.length / mapPins.length) });
   }
   if (split && aiShownPts >= mapPins.length / 2) {
     const side = (p: Scored) => ((split.axis === 'rows' ? p.r : p.c) < split.cut ? 'a' : 'b');
@@ -329,24 +329,26 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
       const named = pts.filter((p) => p.state === 'parsed' ? Boolean(p.featured?.inline || (p.featured?.card && p.featured.card <= 3)) : (p.aiFirst ?? []).slice(0, 3).some((x) => mine(x, business))).length;
       if (pts.length >= 4 && named / pts.length < 0.25) {
         const vol = market?.searches[words(ms.kw)] ?? null;
-        moves.push({ kw: ms.kw + ':ai', title: `Win the AI answer in the ${split[h].label.replace(/ \d.*$/, '').toLowerCase()}`, why: `For “${ms.kw}”, Google’s AI answer named ${short} among its first three at ${named} of ${pts.length} points there.`, inPlay: `${pts.length} points`, inPlayNote: `averaging ${r1(mean(pts.map((p) => p.score)))} of 100, Exhibit A`, price: cpcText(ms.kw), weight: (vol ?? 50) * (pts.length / mapPins.length) * 0.8 });
+        moves.push({ type: 'ai', kw: ms.kw + ':ai', title: `Win the AI answer in the ${split[h].label.replace(/ \d.*$/, '').toLowerCase()}`, why: `For “${ms.kw}”, Google’s AI answer named ${short} among its first three at ${named} of ${pts.length} points there.`, inPlay: `${pts.length} points`, inPlayNote: `averaging ${r1(mean(pts.map((p) => p.score)))} of 100, Exhibit A`, price: cpcText(ms.kw), weight: (vol ?? 50) * (pts.length / mapPins.length) * 0.8 });
       }
     }
   }
   if (connected) {
     const q = offPageOne[0];
-    if (q) moves.push({ kw: q.query, title: `Put the page on page one for “${q.query}”`, why: `It sits at position ${r1(q.position)}, just past page one, and Google showed it ${q.impressions} times in 28 days.`, inPlay: q.impressions.toLocaleString('en-US'), inPlayNote: 'times Google showed the page for it in 28 days, Exhibit D', price: cpcText(q.query), weight: (q.impressions * 30) / 28 });
+    if (q) moves.push({ type: 'pageone', kw: q.query, title: `Put the page on page one for “${q.query}”`, why: `It sits at position ${r1(q.position)}, just past page one, and Google showed it ${q.impressions} times in 28 days.`, inPlay: q.impressions.toLocaleString('en-US'), inPlayNote: 'times Google showed the page for it in 28 days, Exhibit D', price: cpcText(q.query), weight: (q.impressions * 30) / 28 });
     const es = kwRows.filter((r) => r.es), esShown = es.reduce((acc, r) => acc + n(r.total), 0), allShown = kwRows.reduce((acc, r) => acc + n(r.total), 0);
     if (es.length && allShown && esShown / allShown >= 0.25 && n(gsc?.spanishShown) < 50)
-      moves.push({ kw: 'es', title: 'Add a Spanish version of the page', why: `Spanish searches led the listing’s top searches, starting with “${es[0].keyword}”, while the website is barely shown for Spanish searches.`, inPlay: `${esShown}${es.some((r) => /^</.test(r.latest)) ? '+' : ''}`, inPlayNote: 'times Spanish searches showed the listing, Exhibit D', price: null, weight: esShown });
+      moves.push({ type: 'spanish', kw: 'es', title: 'Add a Spanish version of the page', why: `Spanish searches led the listing’s top searches, starting with “${es[0].keyword}”, while the website is barely shown for Spanish searches.`, inPlay: `${esShown}${es.some((r) => /^</.test(r.latest)) ? '+' : ''}`, inPlayNote: 'times Spanish searches showed the listing, Exhibit D', price: null, weight: esShown });
   }
   const weakest = [...plain].sort((x, y) => (x.score ?? 0) - (y.score ?? 0))[0];
-  if (weakest && plain.length > 1 && !moves.some((m) => m.kw === weakest.kw)) {
+  const firstMove = moves.filter((m) => m.type === 'first').sort((x, y) => y.weight - x.weight)[0];
+  if (weakest && plain.length > 1 && firstMove?.kw !== weakest.kw) {
     const vol = market?.searches[words(weakest.kw)] ?? null;
-    moves.push({ kw: weakest.kw, title: `Lift ${short} for “${weakest.kw}”`, why: `It’s ${short}’s weakest search, at ${r1(weakest.score)} of 100: first at ${weakest.first} of ${weakest.points} points.`.replace('’’s', '’'), inPlay: vol ? vol.toLocaleString('en-US') : `${weakest.points} points`, inPlayNote: vol ? `searches a month${market?.cityName ? ' from ' + market.cityName : ''}, Exhibit D` : 'scanned points', price: cpcText(weakest.kw), weight: vol ?? 10 });
+    moves.push({ type: 'weakest', kw: weakest.kw, title: `Lift ${short} for “${weakest.kw}”`, why: `It’s ${short}’s weakest search, at ${r1(weakest.score)} of 100: first at ${weakest.first} of ${weakest.points} points.`.replace('’’s', '’'), inPlay: vol ? vol.toLocaleString('en-US') : `${weakest.points} points`, inPlayNote: vol ? `searches a month${market?.cityName ? ' from ' + market.cityName : ''}, Exhibit D` : 'scanned points', price: cpcText(weakest.kw), weight: vol ?? 10 });
   }
   const ranked: Move[] = [];
-  for (const m of moves.sort((x, y) => y.weight - x.weight)) if (!ranked.some((x) => x.kw === m.kw) && ranked.length < 3) ranked.push(m);
+  // One move of each kind (the biggest "get to first" only), ranked by what each puts in play.
+  for (const m of moves.sort((x, y) => y.weight - x.weight)) if (!ranked.some((x) => x.kw === m.kw || x.type === m.type) && ranked.length < 3) ranked.push(m);
 
   // Receipts: the map scan's points, strongest first and the weakest after.
   const sorted = [...mapPins].sort((x, y) => y.score - x.score);
@@ -362,8 +364,9 @@ export async function buildBrief(v: VisibilityData, opts: { lookUp: boolean; ass
     map, exB, ads, ledger, assumptions: { ...a, sample, base },
     marketData: market ? { county: market.countyName, city: market.cityName, at: market.at, basket: market.basket, rows: [...perSearch.map((s) => ({ kw: s.kw, searches: s.searches, cpc: s.price?.cpc ?? null, low: s.price?.lowBid ?? null, high: s.price?.highBid ?? null, via: (s.price as { via?: string } | null)?.via ?? null, top3: s.top3, points: s.points, at: s.at })), (() => { const b = brandSearch(business); const p = market.prices[b]; return { kw: b, brand: true, searches: market.searches[b] ?? null, cpc: p?.cpc ?? null, low: p?.lowBid ?? null, high: p?.highBid ?? null, via: null, top3: null, points: null, at: null }; })()] } : null,
     google: connected ? { calls, visits, clicks, directions: actions?.directions ?? null, views: daily?.kind === 'daily' ? { now: n(daily.totals?.views), was: n(daily.before?.views) } : null, websiteClicks: daily?.kind === 'daily' ? { now: n(daily.totals?.websiteClicks), was: n(daily.before?.websiteClicks) } : null, pageVisits: ga?.page ? { now: n(ga.page.recent?.sessions), was: n(ga.page.before?.sessions) } : null, gsc: gsc?.recent ? { impressions: { now: n(gsc.recent.impressions), was: n(gsc.before?.impressions) }, position: { now: gsc.recent.position ?? null, was: gsc.before?.position ?? null } } : null, listingTop: kwRows.map((r) => ({ kw: r.keyword, latest: r.latest, es: Boolean(r.es), branded: isBranded(r.keyword, business) })), offPageOne, spanish: { listed: gsc?.listed ?? 0, spanish: gsc?.spanish ?? 0, shown: gsc?.spanishShown ?? 0 }, brandShown: (gsc?.queries ?? []).filter((q) => isBranded(q.query, business)).reduce((acc, q) => acc + q.impressions, 0), brandClicks: (gsc?.queries ?? []).filter((q) => isBranded(q.query, business)).reduce((acc, q) => acc + q.clicks, 0), totalShown: gsc?.recent?.impressions ?? 0 } : null,
-    moves: ranked.map(({ weight, kw, ...m }) => m),
+    moves: ranked.map(({ weight, kw, type, ...m }) => m),
     receipts, receiptsTotal: scans.reduce((acc, s) => acc + s.pins.length, 0), scansTotal: scans.length,
+    measured: { points: scans.reduce((acc, s) => acc + s.pins.length, 0), scans: scans.length, searches: searches.length, from: scans[scans.length - 1]?.at ?? null, to: scans[0]?.at ?? null },
   };
 }
 
