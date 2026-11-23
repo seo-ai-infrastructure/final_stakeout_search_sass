@@ -38,6 +38,7 @@ export function CreditTopUpModal(p: Props) {
     [accountPlan, setAccountPlan] = useState<AccountPlan | null>(null),
     [briefs, setBriefs] = useState<number | null>(null),
     [ready, setReady] = useState(true),
+    [loaded, setLoaded] = useState(false),
     [going, setGoing] = useState(false),
     [error, setError] = useState('');
   useEffect(() => {
@@ -49,11 +50,12 @@ export function CreditTopUpModal(p: Props) {
           const list: Item[] = d.packs ?? [];
           setItems(list);
           setReady(d.ready !== false);
+          setLoaded(true);
           setAccountPlan(d.accountPlan ?? null);
           setBriefs(typeof d.briefs === 'number' ? d.briefs : null);
           choose((list.find((k) => k.key === p.want) ?? list.find((k) => k.key === 'welcome') ?? list.find((k) => k.featured && k.key.startsWith('sessions-')) ?? list.find((k) => k.key === 'closer') ?? list.find((k) => k.key.startsWith('topup')) ?? list.find((k) => k.key === 'prospect-5') ?? list[0])?.key ?? '');
         })
-        .catch(() => setError('Unable to load the price list.'));
+        .catch(() => { setLoaded(true); setError('Unable to load the price list.'); });
   }, [p.isOpen, p.want]);
   if (!p.isOpen) return null;
   /** To Stripe's payment page for the chosen item; the buyer comes back to this page afterwards. */
@@ -98,12 +100,15 @@ export function CreditTopUpModal(p: Props) {
           A phone session is one real phone run at one grid point: a 5×5 scan is 25, Scan Now or scheduled.{' '}
           <a href="/pricing" target="_blank" rel="noreferrer" className="text-emerald-400 hover:underline">Pricing</a>
         </p>
-        <a href="/profiles?tab=plan" className="block rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-100 hover:bg-emerald-500/20">
+        {/* Until the price list is in, it is not known whether this account is sold plans or seats. */}
+        {loaded && <a href="/profiles?tab=plan" className="block rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-100 hover:bg-emerald-500/20">
           {plans
             ? <><span className="font-semibold">Plans are the best value:</span> Scout $49 (300 phone sessions, 5 briefs a month), Agency $129 (1,000 and 20), Scale $299 (3,000 and 60). Unused plan sessions and briefs roll over for one month. <span className="font-semibold underline">Plan and billing</span></>
             : <><span className="font-semibold">Monthly seats are the best value:</span> Scout from $39, Command from $59, Dominator from $99 per client, with 250 to 1,250 phone sessions a month each. <span className="font-semibold underline">Plan and billing</span></>}
-        </a>
-        {ready && items.length > 0 ? (
+        </a>}
+        {!loaded ? (
+          <p className="text-sm text-slate-400">Loading prices…</p>
+        ) : ready && items.length > 0 ? (
           <>
             <div role="radiogroup" aria-label="What to buy" className="space-y-2">
               {items.map((k, i) => (

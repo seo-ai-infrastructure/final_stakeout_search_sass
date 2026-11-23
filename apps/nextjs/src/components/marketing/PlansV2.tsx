@@ -126,7 +126,7 @@ export function ExtrasSection() {
           </Box>
           <Box title="Phone sessions" price="For plan holders">
             <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>{SESSION_PACKS.map((i) => row(i.name, usd(i.cents), i.blurb))}</ul>
-            <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.55, color: '#94A3B8' }}>Bought sessions never expire while your plan is active.</p>
+            <p style={{ margin: '12px 0 0', fontSize: 13.5, lineHeight: 1.55, color: '#94A3B8' }}>Bought sessions never expire, plan or no plan.</p>
           </Box>
           <Box title="Revenue briefs" price="Any account">
             <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>{BRIEF_PACKS.map((i) => row(i.name, usd(i.cents), i.blurb))}</ul>
