@@ -209,8 +209,17 @@ export function adbUnreachable(message: string) {
 /**
  * When the worker restarts a phone whose ADB refuses it: after 2 refusals within 10 minutes; at most
  * once every 20 minutes and 6 times a day per phone; no new points for 5 minutes while it boots.
+ * When more than `fleetWide` phones are refused within 5 minutes the connection is at fault (the
+ * DuoPlus ADB whitelist, the network), not the phones: nothing is restarted, the admins are told.
  */
-export const ADB_RESTART = { strikes: 2, strikeWindowSec: 600, gapSec: 1200, perDay: 6, restSec: 300, offForMs: 30000 } as const;
+export const ADB_RESTART = { strikes: 2, strikeWindowSec: 600, gapSec: 1200, perDay: 6, restSec: 300, offForMs: 30000, fleetWide: 3, fleetWindowSec: 300, powerOnTries: 3 } as const;
+
+/** Whether ADB refusals from this many phones at once point at the connection rather than the phones. */
+export const adbFleetWide = (phones: number) => phones > ADB_RESTART.fleetWide;
+
+/** IPv4 addresses DuoPlus names when it refuses a phone action ("… is not allowed to access"). */
+export const refusedAddresses = (text: string) =>
+  /not allowed to access/i.test(text) ? [...new Set(text.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) ?? [])] : [];
 
 /**
  * At worker start: phones whose last point failed on ADB within the hour, with no success since.

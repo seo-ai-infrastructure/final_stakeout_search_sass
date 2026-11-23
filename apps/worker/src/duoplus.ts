@@ -1,4 +1,5 @@
-import { phoneUsable, phoneInScope, expiresWithin, adbWhitelist, readPhoneStatus, ADB_RESTART, stuckOnAdb } from '@stakeout/core/fleetHealth';
+import { phoneUsable, phoneInScope, expiresWithin, adbWhitelist, readPhoneStatus, ADB_RESTART, adbFleetWide, refusedAddresses, stuckOnAdb } from '@stakeout/core/fleetHealth';
+import { nudgeAlerts, pushAlert } from '@stakeout/core/alerts';
 import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { redis, duoplusPost } from '@stakeout/core/redis';
@@ -663,6 +664,18 @@ export async function ensureAdbWhitelist(force = false, alsoAllow: string[] = []
 export async function restartStuckPhone(imageId: string, why: string, strikesNeeded: number = ADB_RESTART.strikes): Promise<boolean> {
   if (process.env.DUOPLUS_AUTO_RESTART === 'false' || !process.env.DUOPLUS_API_KEY || !phoneInScope(imageId)) return false;
   const r = redis();
+  // Many phones refused at once: the connection is at fault, and a restart would only switch phones off.
+  if (strikesNeeded > 1) {
+    const fleetKey = 'stakeout:adbrefused:fleet', now = Date.now();
+    await r.zadd(fleetKey, now, imageId);
+    await r.zremrangebyscore(fleetKey, 0, now - ADB_RESTART.fleetWindowSec * 1000);
+    await r.expire(fleetKey, ADB_RESTART.fleetWindowSec * 3);
+    const phones = await r.zcard(fleetKey);
+    if (adbFleetWide(phones)) {
+      await adbFleetAlert(phones, why);
+      return false;
+    }
+  }
   const strikeKey = 'stakeout:adbrefused:' + imageId;
   const strikes = await r.incr(strikeKey);
   if (strikes === 1) await r.expire(strikeKey, ADB_RESTART.strikeWindowSec);
@@ -681,20 +694,63 @@ export async function restartStuckPhone(imageId: string, why: string, strikesNee
   await db.devicePool.update({ where: { imageId }, data: { cooldownUntil: new Date(Date.now() + ADB_RESTART.restSec * 1000) } }).catch(() => {});
   const off: any = await duoplusPost('/api/v1/cloudPhone/powerOff', { image_ids: [imageId] }).catch((e) => ({ error: String(e) }));
   console.warn('[duoplus] restarting', imageId, '(ADB refused:', why.slice(0, 120) + ') · off:', JSON.stringify(off?.data ?? off).slice(0, 160));
-  // Back on after a pause. If this worker stops first, the fleet check or power saving switches it on when it is needed.
-  setTimeout(() => {
-    void duoplusPost('/api/v1/cloudPhone/powerOn', { image_ids: [imageId] })
-      .then((on: any) => console.log('[duoplus] restart: powering on', imageId, '·', JSON.stringify(on?.data ?? on).slice(0, 160)))
-      .catch((e) => console.warn('[duoplus] restart: power-on failed for', imageId, '-', String(e)));
-  }, ADB_RESTART.offForMs);
+  // Back on after a pause (retried, and the admins told if DuoPlus keeps refusing).
+  setTimeout(() => void powerBackOn(imageId), ADB_RESTART.offForMs);
   return true;
+}
+
+/**
+ * Switches a restarted phone back on. A refusal that names our address puts it on the whitelist and
+ * tries again; after the last try the admins are emailed to switch it on in the DuoPlus console.
+ */
+async function powerBackOn(imageId: string, attempt = 1): Promise<void> {
+  const on: any = await duoplusPost('/api/v1/cloudPhone/powerOn', { image_ids: [imageId] }).catch((e) => ({ error: String(e) }));
+  const text = JSON.stringify(on?.data ?? on);
+  const refused = refusedAddresses(text);
+  if (!on?.error && !refused.length) {
+    console.log('[duoplus] restart: powering on', imageId, '·', text.slice(0, 160));
+    return;
+  }
+  console.warn('[duoplus] restart: power-on refused for', imageId, `(try ${attempt} of ${ADB_RESTART.powerOnTries}) ·`, text.slice(0, 240));
+  if (refused.length) await ensureAdbWhitelist(true, refused).catch((e) => console.warn('[duoplus] ADB whitelist not updated:', e instanceof Error ? e.message : e));
+  if (attempt < ADB_RESTART.powerOnTries) {
+    setTimeout(() => void powerBackOn(imageId, attempt + 1), 30000 * attempt);
+    return;
+  }
+  const fresh = await pushAlert('phone-off:' + imageId, {
+    subject: `Stakeout: phone ${imageId} is off and could not be switched back on`,
+    lines: [
+      `The worker restarted ${imageId} because its ADB kept refusing connections, then DuoPlus refused to switch it back on ${ADB_RESTART.powerOnTries} times: ${text.slice(0, 300)}`,
+      'Switch it on in the DuoPlus console. If DuoPlus names an address, add it to DUOPLUS_ADB_WHITELIST_EXTRA on the worker.',
+    ],
+    path: '/admin/devices',
+  }, 3600);
+  if (fresh) await nudgeAlerts();
+}
+
+/** Many phones refusing ADB at once: one email an hour, and no phone is touched. */
+async function adbFleetAlert(phones: number, why: string) {
+  console.warn('[duoplus]', phones, 'phones refused ADB within', ADB_RESTART.fleetWindowSec / 60, 'minutes: the connection is at fault, so none is restarted ·', why.slice(0, 120));
+  const fresh = await pushAlert('adb-fleet', {
+    subject: `Stakeout: ${phones} phones refuse ADB connections`,
+    lines: [
+      `${phones} phones refused ADB connections within ${ADB_RESTART.fleetWindowSec / 60} minutes (${why.slice(0, 160)}). Points sent to them fail until this is fixed.`,
+      'When many phones fail at once the cause is the connection, usually a worker address missing from the DuoPlus ADB whitelist, so no phone was restarted. Check that every Railway outbound address is on the whitelist (DUOPLUS_ADB_WHITELIST_EXTRA keeps them there).',
+    ],
+    path: '/admin/devices',
+  }, 3600);
+  if (fresh) await nudgeAlerts();
 }
 
 /** At worker start: restart the phones that were stuck on ADB when it stopped (see stuckOnAdb). */
 export async function restartStuckAtStart() {
   const phones = await db.devicePool.findMany({ select: { imageId: true, isEnabled: true, lastFailureCode: true, lastFailureAt: true, lastSuccessAt: true } });
   const ids = stuckOnAdb(phones);
-  if (!ids.length) return;
+  if (!ids.length || process.env.DUOPLUS_AUTO_RESTART === 'false') return;
+  if (adbFleetWide(ids.length)) {
+    await adbFleetAlert(ids.length, 'their last points failed on ADB before the worker started');
+    return;
+  }
   console.log('[duoplus] start-up: restarting', ids.length, 'phone(s) stuck on ADB:', ids.join(', '));
   for (const id of ids) await restartStuckPhone(id, 'its last point failed on ADB', 1).catch((e) => console.warn('[duoplus] restart skipped for', id, '-', (e as Error).message));
 }

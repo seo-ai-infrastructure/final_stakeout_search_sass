@@ -173,3 +173,13 @@ test('at start-up, only phones whose last point failed on ADB within the hour, w
   assert.deepEqual(ids, ['stuck', 'never-ok']);
   assert.deepEqual([ADB_RESTART.strikes, ADB_RESTART.strikeWindowSec, ADB_RESTART.gapSec, ADB_RESTART.perDay], [2, 600, 1200, 6], 'twice in 10 minutes; once per 20 minutes; 6 a day');
 });
+
+test('ADB refusals from many phones at once are the connection, not the phones: no restarts', async () => {
+  const { adbFleetWide, refusedAddresses } = await import('../packages/core/fleetHealth');
+  assert.equal(adbFleetWide(1), false);
+  assert.equal(adbFleetWide(3), false);
+  assert.equal(adbFleetWide(4), true);
+  assert.equal(adbFleetWide(9), true, 'today: 9 phones refused within minutes = a whitelist problem');
+  assert.deepEqual(refusedAddresses('DuoPlus rejected /api/v1/cloudPhone/powerOn: Success {"dL0Ue":"The current IP：152.55.180.242 address is not allowed to access"}'), ['152.55.180.242']);
+  assert.deepEqual(refusedAddresses('{"success":["dL0Ue"],"fail":[]}'), []);
+});
