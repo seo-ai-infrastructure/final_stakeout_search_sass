@@ -754,3 +754,18 @@ export async function restartStuckAtStart() {
   console.log('[duoplus] start-up: restarting', ids.length, 'phone(s) stuck on ADB:', ids.join(', '));
   for (const id of ids) await restartStuckPhone(id, 'its last point failed on ADB', 1).catch((e) => console.warn('[duoplus] restart skipped for', id, '-', (e as Error).message));
 }
+
+
+/**
+ * A phone whose ADB refused us gets ADB switched on again through the DuoPlus API (openAdb), at
+ * most once every 10 minutes per phone. DuoPlus can list a phone's ADB as on while its endpoint
+ * refuses every connection; re-opening it is the light fix, safe even when many phones are
+ * refused at once (unlike a restart). The fleet check picks up a changed ADB address.
+ */
+export async function reopenAdb(imageId: string, why: string): Promise<boolean> {
+  if (!process.env.DUOPLUS_API_KEY || !phoneInScope(imageId) || process.env.DUOPLUS_AUTO_PROVISION === 'false') return false;
+  if (!(await redis().set('stakeout:adbreopen:' + imageId, String(Date.now()), 'EX', 600, 'NX'))) return false;
+  const r: any = await duoplusPost('/api/v1/cloudPhone/openAdb', { image_ids: [imageId] }).catch((e) => ({ error: String(e) }));
+  console.warn('[duoplus] re-opening ADB on', imageId, '(refused:', why.slice(0, 100) + ') ·', JSON.stringify(r?.data ?? r).slice(0, 200));
+  return !r?.error;
+}

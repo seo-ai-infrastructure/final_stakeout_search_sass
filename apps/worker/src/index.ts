@@ -21,7 +21,7 @@ import { queuePriority } from '@stakeout/core/speed';
 import { listsForPin, proxyPlace, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
-import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, restartStuckAtStart, restartStuckPhone, type LeasedDevice } from './duoplus';
+import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, reopenAdb, restartStuckAtStart, restartStuckPhone, type LeasedDevice } from './duoplus';
 import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
@@ -235,6 +235,8 @@ async function execute(job: Job, token?: string) {
       // The phone's ADB refused us (it shows as on but won't connect): a second refusal within
       // 10 minutes switches it off and on again. This point still holds the phone meanwhile.
       if (e instanceof Error && adbUnreachable(e.message)) {
+        // First the light fix: switch the phone's ADB on again (once per 10 minutes per phone).
+        await reopenAdb(d.imageId, e.message).catch((err) => console.warn('[duoplus] ADB not re-opened for', d.imageId, '-', (err as Error).message));
         await restartStuckPhone(d.imageId, e.message).catch((err) => console.warn('[duoplus] restart skipped for', d.imageId, '-', (err as Error).message));
       }
       if (e instanceof Error && e.message === 'FLAG_CAPTCHA_DETECTED') {
