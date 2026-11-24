@@ -35,7 +35,7 @@ import { phoneTailKey } from '@stakeout/core/idleProxy';
 import { enterLane, laneExit, laneNote, lanesOn, laneWave, leaveLane } from './lane';
 import { laneConfigs, spillTo } from '@stakeout/core/lane';
 import { nudgeAlerts, pushAlert } from '@stakeout/core/alerts';
-import { internalScan } from './internal';
+import { internalScan, priorityAccount } from './internal';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficByHour, trafficHourKey, trafficLow, type TrafficHour, type TrafficReading } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
@@ -127,7 +127,9 @@ async function execute(job: Job, token?: string) {
         console.log('[lane] point', pin.id, 'overflows to metered mobile data after', Math.round(waitedMs / 1000) + 's without a place on a line');
       } else {
         if (!job.data.laneWaitSince) await job.updateData({ ...job.data, laneWaitSince: Date.now() });
-        await job.moveToDelayed(Date.now() + 7000 + Math.floor(Math.random() * 5000), token);
+        // The priority queue (Scale, Agency Max) tries the door again sooner, so it is first in when a wave opens.
+        const first = await priorityAccount(pin.scan.userId);
+        await job.moveToDelayed(Date.now() + (first ? 2000 + Math.floor(Math.random() * 2000) : 7000 + Math.floor(Math.random() * 5000)), token);
         throw new DelayedError();
       }
     }
@@ -424,8 +426,8 @@ async function dispatch() {
         s.scheduleCron.replace(/^PAUSED:/, ''),
       );
     }
-    // Scan Now points go first (no priority is first in line); scheduled ones wait behind them.
-    const priority = queuePriority(s.speed);
+    // Scan Now points go first, scheduled ones behind them; Scale and Agency Max ahead of the rest at each speed.
+    const priority = queuePriority(s.speed, await priorityAccount(s.userId));
     await pins.addBulk(
       s.pins.map((p) => ({
         name: 'measure',

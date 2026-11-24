@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, ANNUAL_MONTHS_PAID, FOUNDING, FOUNDING_PLANS, LINES, monthlyPoints, rolloverMonths, yearCents, type AccountPlan } from '@stakeout/core/gbpPlans';
+import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, ANNUAL_MONTHS_PAID, FOUNDING, FOUNDING_PLANS, LINES, carryCap, monthlyPoints, rolloverMonths, yearCents, type AccountPlan } from '@stakeout/core/gbpPlans';
 import { shapeSkips } from '@stakeout/core/gridSizes';
 import { BOOST, BOOST_BELOW, BRIEF_PACKS, CLOSER, usd } from '@/lib/pricing';
 import { ACCENT, Check, Faq, HREF, MONO, OfferBanner, SiteFoot, SiteNav, TONE, type FaqItem } from './SiteKit';
@@ -72,8 +72,10 @@ export function PlanCards({ style, yearly = false, foundingLeft = 0 }: { style?:
         const d = ACCOUNT_PLANS[p], featured = p === FEATURED;
         const features = [
           `${d.briefs} brief credit${d.briefs === 1 ? '' : 's'} a month`,
+          d.locations === null ? 'Unlimited tracked businesses' : `Up to ${d.locations} tracked businesses a month`,
           d.whiteLabel ? 'White-label reports on your own domain' : 'Share links with the Stakeout badge',
           seatText(p),
+          ...(d.priority ? ['Priority queue: first to the phones and the 5G lines'] : []),
           `Unused sessions ${rollover(p, yearly)}`,
         ];
         return (
@@ -119,8 +121,10 @@ function CompareTable({ yearly }: { yearly: boolean }) {
     [`Yearly (${12 - ANNUAL_MONTHS_PAID} months free)`, ACCOUNT_PLAN_ORDER.map((p) => `${usd(yearCents(p))} / year (${usd(Math.round(yearCents(p) / 12))} / month)`)],
     ['Real-phone sessions a month', ACCOUNT_PLAN_ORDER.map((p) => `${n(ACCOUNT_PLANS[p].points)} (${n(Math.floor(ACCOUNT_PLANS[p].points / SQUARE_5))} square 5×5s or ${n(Math.floor(ACCOUNT_PLANS[p].points / CIRCLE_5))} circles)`)],
     ['Price per session', ACCOUNT_PLAN_ORDER.map((p) => `${cents(perSession(p, false))} (${cents(perSession(p, true))} yearly)`)],
-    [`Founding members (first ${FOUNDING.seats})`, ACCOUNT_PLAN_ORDER.map((p) => (ACCOUNT_PLANS[p].founding ? `${n(monthlyPoints({ [p]: 1 }, true))} sessions a month` : '—'))],
+    [`Founding members (first ${FOUNDING.seats})`, ACCOUNT_PLAN_ORDER.map((p) => (ACCOUNT_PLANS[p].founding ? `${n(monthlyPoints({ [p]: 1 }, true))} sessions a month, bank up to ${n(carryCap(p, 'month', monthlyPoints({ [p]: 1 }, true)))}` : '—'))],
     ['Brief credits a month', ACCOUNT_PLAN_ORDER.map((p) => n(ACCOUNT_PLANS[p].briefs))],
+    ['Tracked businesses a month', ACCOUNT_PLAN_ORDER.map((p) => (ACCOUNT_PLANS[p].locations === null ? 'Unlimited' : `Up to ${ACCOUNT_PLANS[p].locations}`))],
+    ['Priority queue (first to the phones and 5G lines)', ACCOUNT_PLAN_ORDER.map((p) => (ACCOUNT_PLANS[p].priority ? 'Included' : '—'))],
     ['Team seats (you included)', ACCOUNT_PLAN_ORDER.map((p) => (ACCOUNT_PLANS[p].seats === null ? 'Unlimited' : ACCOUNT_PLANS[p].seats === 1 ? '1 (just you)' : n(ACCOUNT_PLANS[p].seats as number)))],
     ['Google Maps, mobile organic and AI Overviews', all('All in one session')],
     ['Screen recording at every point', all('Included')],
@@ -257,9 +261,10 @@ export function ExtrasSection() {
 export const PLANS_FAQ: FaqItem[] = [
   ['What is a phone session?', `One real Android phone run at one grid point: the phone’s GPS set there, the search recorded on video, and the page and AI Overview saved. A 3×3 scan is 9 phone sessions, a 5×5 is 25, a 7×7 is 49 and a 9×9 is 81. A circle grid drops the corners (a 5×5 circle is ${CIRCLE_5}), and points you switch off, over water or empty land, aren’t charged.`],
   ['Is there a yearly price?', `Yes: pay for ${ANNUAL_MONTHS_PAID} months and get 12. Scout is ${usd(yearCents('P_SCOUT'))}, Agency ${usd(yearCents('P_AGENCY'))}, Scale ${usd(yearCents('P_SCALE'))} and Agency Max ${usd(yearCents('P_MAX'))} a year. Phone sessions and brief credits still come every month.`],
-  ['Do unused sessions roll over?', `On Scout paid monthly they reset each month; on Scout paid yearly, one month’s roll over. On Agency, one month’s roll over (up to ${n(ACCOUNT_PLANS.P_AGENCY.points)}); on Scale and Agency Max, two months’ (up to ${n(2 * ACCOUNT_PLANS.P_SCALE.points)} and ${n(2 * ACCOUNT_PLANS.P_MAX.points)}). Brief credits roll over for a month wherever sessions do. Sessions and brief credits you buy never expire.`],
+  ['Do unused sessions roll over?', `On Scout paid monthly they reset each month; on Scout paid yearly, one month’s roll over. On Agency, one month’s roll over (up to ${n(ACCOUNT_PLANS.P_AGENCY.points)}); on Scale and Agency Max, two months’ (up to ${n(2 * ACCOUNT_PLANS.P_SCALE.points)} and ${n(2 * ACCOUNT_PLANS.P_MAX.points)}). Founding members bank on their larger allowance: up to ${n(carryCap('P_AGENCY', 'month', monthlyPoints({ P_AGENCY: 1 }, true)))}, ${n(carryCap('P_SCALE', 'month', monthlyPoints({ P_SCALE: 1 }, true)))} and ${n(carryCap('P_MAX', 'month', monthlyPoints({ P_MAX: 1 }, true)))}. Brief credits roll over for a month wherever sessions do. Sessions and brief credits you buy never expire.`],
   ['What is a founding member?', `One of the first ${FOUNDING.seats} accounts to start ${foundingNames}, monthly or yearly. Founding members get ${FOUNDING.bonus * 100}% more of their plan’s phone sessions every month for as long as they stay on one of those plans: Agency ${n(monthlyPoints({ P_AGENCY: 1 }, true))}, Scale ${n(monthlyPoints({ P_SCALE: 1 }, true))} and Agency Max ${n(monthlyPoints({ P_MAX: 1 }, true))} a month.`],
   ['What is a revenue brief?', 'A finished client report built from your scans: the local visibility score, where the business wins and loses on the map, the rivals’ ads above it, and what that visibility is worth at live county Google Ads prices. A brief credit compiles one, and it is kept as it is: it never recalculates when opened. Spend another brief credit to update it with your newest scan; the share link stays the same. Reopening it, sharing it or changing the close-rate inputs is free.'],
+  ['What is a tracked business?', `A business you scan: Scout tracks up to ${ACCOUNT_PLANS.P_SCOUT.locations} a billing month, Agency ${ACCOUNT_PLANS.P_AGENCY.locations}, Scale ${ACCOUNT_PLANS.P_SCALE.locations} and Agency Max as many as you like. Scanning the same business again, with any keyword or grid, never counts twice, and every business with a repeating scan stays tracked. Once the month’s are in use, a new business waits for next month or a bigger plan.`],
   ['How do team seats work?', `Add people by email on the Plan and billing page. They sign in with their own email and password and work in your account: they run scans and open reports, using its phone sessions. The plan, billing and API keys stay with you, and you can take anyone off at any time. Agency has ${ACCOUNT_PLANS.P_AGENCY.seats} seats, Scale ${ACCOUNT_PLANS.P_SCALE.seats} and Agency Max no limit, you included; Scout is for one person.`],
   ['What does the listing add-on add?', `For ${usd(ADDON.tiers[0].cents)} a month per Google listing, on top of any plan: the listing tools (safe edits, posts, review replies, the change watchdog, rival gaps), AI agents that work on the listing, ${n(ADDON.points)} more phone sessions and ${ADDON.briefs} more brief credit a month.`],
   ['Can I try it before a plan?', `Yes: the ${CLOSER.name} is ${usd(CLOSER.cents)} once, no subscription. ${n(CLOSER.credits)} phone sessions run on our 5G lines (two 5×5 audits) and ${CLOSER.briefs} brief credit, which never expire. One per account.`],

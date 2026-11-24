@@ -5,6 +5,7 @@ import { wakeWorker } from '@stakeout/core/wake';
 import { randomUUID } from 'node:crypto';
 import { createScan } from '@stakeout/core/scans';
 import { catchUpPlanMonths } from '@/lib/gbpBilling';
+import { assertLocationRoom } from '@/lib/locationLimits';
 import { parseSpec, market, buildGrid, placedPins, InputError, OFFERED_GRID_SIZES, fixedCron } from '@stakeout/core/grid';
 import { skippedPoints } from '@stakeout/core/gridSizes';
 import { getSettings, ispAllowed } from '@stakeout/core/settings';
@@ -148,6 +149,8 @@ export async function POST(req: Request) {
     const freeRescanAt = firstAudit ? new Date((runAt ?? new Date()).getTime() + 7 * 86400000) : undefined;
     // A yearly plan's new month is added before the scan is charged.
     await catchUpPlanMonths(u.id).catch(() => false);
+    // A plan tracks so many businesses a month: a new one past the cap is refused (agents' scans too).
+    if (u.role !== 'ADMIN') await assertLocationRoom(u.id, { business: s.targetBusiness, googleId: s.targetKgmid, lat: s.centerLat, lng: s.centerLng });
     const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins, { cron, speed, runAt, freeRescanAt, laneOnly: s.network === 'mobile' && proof });
     await wakeWorker('new scan');
     // A customer just started a scan: if the worker has gone quiet, the admins hear about it now.

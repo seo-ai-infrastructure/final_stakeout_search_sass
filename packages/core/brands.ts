@@ -6,7 +6,11 @@ import { cleanDomain } from './brandHost';
  * logo. One set of domain → brand, and one value per logo; the lasting copy of both is in
  * Postgres, and Redis is the copy that is read (see kept.ts).
  */
-export type Brand = { domain: string; userId: string; name: string; accent: string | null; hasLogo: boolean; updatedAt: string };
+export type Brand = { domain: string; userId: string; name: string; accent: string | null; hasLogo: boolean; updatedAt: string; /** Set up by the account itself (on a plan with white label): it shows only while the plan includes it. Ones we set up always show. */ self?: boolean };
+
+/** The key of a brand with no domain of its own: it shows on reports on our address only. Never a real host. */
+export const ownAddressKey = (userId: string) => userId.toLowerCase().replace(/[^a-z0-9-]/g, '') + '.brand.invalid';
+export const hasOwnDomain = (b: { domain: string }) => !b.domain.endsWith('.brand.invalid');
 
 const KEY = 'stakeout:brands';
 const LOGO = 'stakeout:brand-logo:';
@@ -26,7 +30,7 @@ export async function listBrands(fresh = false): Promise<Brand[]> {
   for (const [domain, v] of Object.entries(raw)) {
     try {
       const b = JSON.parse(v);
-      if (b && typeof b.userId === 'string' && typeof b.name === 'string') list.push({ domain, userId: b.userId, name: b.name, accent: b.accent ?? null, hasLogo: Boolean(b.hasLogo), updatedAt: String(b.updatedAt ?? '') });
+      if (b && typeof b.userId === 'string' && typeof b.name === 'string') list.push({ ...(b.self ? { self: true } : {}), domain, userId: b.userId, name: b.name, accent: b.accent ?? null, hasLogo: Boolean(b.hasLogo), updatedAt: String(b.updatedAt ?? '') });
     } catch {
       /* an unreadable entry is skipped */
     }
@@ -44,7 +48,7 @@ export const brandForUser = async (userId: string) => (await listBrands()).find(
 export class BrandError extends Error {}
 
 /** Creates or replaces an account's brand. An account has one domain; a domain belongs to one account. */
-export async function saveBrand(input: { userId: string; domain: unknown; name: unknown; accent?: unknown; logo?: { type: string; base64: string } | null }): Promise<Brand> {
+export async function saveBrand(input: { userId: string; domain: unknown; name: unknown; accent?: unknown; logo?: { type: string; base64: string } | null; self?: boolean }): Promise<Brand> {
   const domain = cleanDomain(input.domain);
   if (!domain) throw new BrandError('Enter a domain such as reports.example.com (not this site\'s own address).');
   const name = String(input.name ?? '').trim().slice(0, 60);
@@ -69,7 +73,7 @@ export async function saveBrand(input: { userId: string; domain: unknown; name: 
       hasLogo = true;
     }
   }
-  const brand: Brand = { domain, userId: input.userId, name, accent, hasLogo, updatedAt: new Date().toISOString() };
+  const brand: Brand = { domain, userId: input.userId, name, accent, hasLogo, updatedAt: new Date().toISOString(), ...(input.self ? { self: true } : {}) };
   await kept.set({ [domain]: JSON.stringify(brand) });
   if (previous && previous.domain !== domain) await removeBrand(previous.domain);
   cache = null;

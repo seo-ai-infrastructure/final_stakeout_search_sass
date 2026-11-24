@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { pushAlert } from '@stakeout/core/alerts';
-import { ACCOUNT_PLANS, AGENT_ADDON, ANNUAL_MONTHS_PAID, LINES, LINE_ORDER, PLANS, accountPlanOf, addMonths, addonOn, annualKey, clientSeats, dollars, hasLegacySeats, isAccountPlan, isPlan, monthIndex, monthWindow, monthlyCents, monthlyPoints, nextPlan, planNow, quantityPlan, rolloverMonths, seatBriefs, seatGrant, settlePending, stripeTiers, yearCents, yearlyLine, type AccountPlan, type BillingInterval, type Line, type Plan } from '@stakeout/core/gbpPlans';
+import { ACCOUNT_PLANS, AGENT_ADDON, ANNUAL_MONTHS_PAID, carryCap, LINES, LINE_ORDER, PLANS, accountPlanOf, addMonths, addonOn, annualKey, clientSeats, dollars, hasLegacySeats, isAccountPlan, isPlan, monthIndex, monthWindow, monthlyCents, monthlyPoints, nextPlan, planNow, quantityPlan, rolloverMonths, seatBriefs, seatGrant, settlePending, stripeTiers, yearCents, yearlyLine, type AccountPlan, type BillingInterval, type Line, type Plan } from '@stakeout/core/gbpPlans';
 import { claimFounding, foundingLeft, isFounding } from '@stakeout/core/founding';
 import { briefGrant, briefsLeft } from '@stakeout/core/briefWallet';
 import { getSettings, newPlansFor } from '@stakeout/core/settings';
@@ -475,7 +475,7 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
       state.bought += BONUS_POINTS;
     }
     if (g.renew) {
-      const r = renewPlan(state, g.points, keepMonths * g.points);
+      const r = renewPlan(state, g.points, carryCap(planNowOn, yearly ? 'year' : 'month', g.points));
       if (r.lapse > 0) await tx.creditLedger.create({ data: { userId, amount: -r.lapse, reason: 'SEAT_POINTS_LAPSE', externalEventId: key + ':lapse' } });
       await tx.creditLedger.create({ data: { userId, amount: r.grant, reason: 'SEAT_POINTS', externalEventId: key } });
       await tx.user.update({ where: { id: userId }, data: { creditBalance: { increment: r.grant - r.lapse } } });
@@ -540,7 +540,7 @@ export async function grantPlanMonths(userId?: string, now = new Date()): Promis
         const keepMonths = rolloverMonths(accountPlanOf(counts), 'year');
         const bg = briefGrant('subscription_cycle', seatBriefs(counts), { plan: row.briefPlan, carry: row.briefCarry, granted: row.grantedBriefs });
         const b = bg && keepMonths === 0 ? { ...bg, carry: 0 } : bg;
-        const r = renewPlan(state, monthly, keepMonths * monthly);
+        const r = renewPlan(state, monthly, carryCap(accountPlanOf(counts), 'year', monthly));
         if (r.lapse > 0) await tx.creditLedger.create({ data: { userId: d.userId, amount: -r.lapse, reason: 'SEAT_POINTS_LAPSE', externalEventId: key + ':lapse' } });
         await tx.creditLedger.create({ data: { userId: d.userId, amount: r.grant, reason: 'SEAT_POINTS', externalEventId: key } });
         await tx.user.update({ where: { id: d.userId }, data: { creditBalance: { increment: r.grant - r.lapse } } });
@@ -778,5 +778,7 @@ export async function billingSummary(userId: string) {
     /** Founding member number, or null; and how many founding spots are left. */
     founding: user?.foundingNo ?? null,
     foundingLeft: spots,
+    /** Distinct businesses scanned this billing month, against the plan's cap (null: no limit). */
+    locations: plan ? await import('./locationLimits').then((m) => m.locationUse(userId)).then((l) => (l ? { used: l.used, cap: l.cap } : null)).catch(() => null) : null,
   };
 }

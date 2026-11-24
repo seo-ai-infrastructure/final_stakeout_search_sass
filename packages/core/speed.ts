@@ -22,8 +22,13 @@ export const asRepeat = (v: unknown): Repeat => (v === 'weekly' || v === 'biweek
 /** Phone sessions a grid point costs at this speed: one, Scan Now or scheduled (Scan Now was 2 until 22 Nov 2026). */
 export const speedFactor = (_speed: string | null | undefined) => 1;
 
-/** BullMQ priority for a scan's points: none (first in line) for Scan Now, behind it when scheduled. */
-export const queuePriority = (speed: string | null | undefined) => (speed === 'scheduled' ? 10 : undefined);
+/**
+ * BullMQ priority for a scan's points. BullMQ takes jobs with no priority first, then the lowest
+ * number: Scan Now goes before scheduled, and an account on a plan with the priority queue (Scale,
+ * Agency Max: `first`) goes before the rest at the same speed:
+ *   Scan Now, priority plan: none · Scan Now: 1 · scheduled, priority plan: 5 · scheduled: 10.
+ */
+export const queuePriority = (speed: string | null | undefined, first = false) => (speed === 'scheduled' ? (first ? 5 : 10) : first ? undefined : 1);
 
 /** The days of the month a repeating scan runs on, from the day of the month of its first run. */
 export function runDays(repeat: Repeat, firstDay: number): number[] {

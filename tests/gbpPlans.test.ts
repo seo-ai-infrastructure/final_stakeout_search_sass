@@ -502,3 +502,35 @@ test('team seats: the owner and members, Agency 5, Scale 15, Agency Max no limit
   assert.deepEqual([ACCOUNT_PLANS.P_SCOUT.seats, ACCOUNT_PLANS.P_AGENCY.seats, ACCOUNT_PLANS.P_SCALE.seats, ACCOUNT_PLANS.P_MAX.seats], [1, 5, 15, null]);
   assert.deepEqual([memberSeats(null), memberSeats('P_SCOUT'), memberSeats('P_AGENCY'), memberSeats('P_SCALE'), memberSeats('P_MAX')], [0, 0, 4, 14, Infinity], 'members besides the owner');
 });
+
+test('founding members bank on their larger allowance: 2,500 / 8,750 / 16,250, not the plan’s 2,000 / 7,000 / 13,000', async () => {
+  const { carryCap, monthlyPoints } = await import('../packages/core/gbpPlans');
+  const { renewPlan } = await import('../packages/core/creditPlan');
+  const cap = (p: 'P_AGENCY' | 'P_SCALE' | 'P_MAX', founding: boolean) => carryCap(p, 'month', monthlyPoints({ [p]: 1 }, founding));
+  assert.deepEqual([cap('P_AGENCY', true), cap('P_SCALE', true), cap('P_MAX', true)], [2500, 8750, 16250]);
+  assert.deepEqual([cap('P_AGENCY', false), cap('P_SCALE', false), cap('P_MAX', false)], [2000, 7000, 13000]);
+  assert.equal(carryCap('P_SCOUT', 'month', 800), 0, 'Scout monthly keeps nothing');
+  assert.equal(carryCap('P_SCOUT', 'year', 800), 800, 'Scout yearly keeps a month');
+  assert.equal(carryCap('P_AGENCY', 'month', monthlyPoints({ P_AGENCY: 1, LISTING: 2 }, true)), 2600, 'listing add-ons count toward the month banked');
+  // A founding Scale with 20,000 unused plan sessions at renewal keeps 8,750 and gets 4,375 more.
+  const r = renewPlan({ balance: 20000, bucket: 20000, packFloor: 0, bought: 0 }, 4375, cap('P_SCALE', true));
+  assert.deepEqual([r.carry, r.lapse, r.balance], [8750, 11250, 13125]);
+});
+
+test('tracked businesses: the same business never counts twice; caps by plan', async () => {
+  const { businessKey, samePlace, distinctPlaces } = await import('../packages/core/locations');
+  const { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER } = await import('../packages/core/gbpPlans');
+  assert.deepEqual(ACCOUNT_PLAN_ORDER.map((p) => ACCOUNT_PLANS[p].locations), [5, 20, 50, null]);
+  assert.deepEqual(ACCOUNT_PLAN_ORDER.map((p) => ACCOUNT_PLANS[p].priority), [false, false, true, true], 'priority queue on Scale and Agency Max');
+  assert.equal(businessKey('Cofer & Connelly, PLLC'), businessKey('cofer and connelly'));
+  assert.equal(businessKey("Joe's Plumbing LLC"), businessKey('Joes Plumbing'));
+  const austin = { lat: 30.2672, lng: -97.7431 };
+  const a = { business: 'Cofer & Connelly, PLLC', ...austin };
+  assert.ok(samePlace(a, { business: 'Cofer and Connelly', lat: 30.28, lng: -97.75 }), 're-centred a little: the same business');
+  assert.ok(!samePlace(a, { business: 'Cofer and Connelly', lat: 29.76, lng: -95.37 }), 'the same name in Houston is another location');
+  assert.ok(samePlace({ ...a, googleId: '/g/1' }, { business: 'Totally different name', googleId: '/g/1', lat: 0, lng: 0 }), 'one Google ID: one business');
+  assert.ok(!samePlace({ ...a, googleId: '/g/1' }, { ...a, googleId: '/g/2' }), 'two Google IDs: two businesses');
+  const places = distinctPlaces([a, { business: 'cofer and connelly', lat: 30.27, lng: -97.74, googleId: '/g/9' }, { business: 'Rivers Law Firm', lat: 44.97, lng: -93.26 }, { ...a }]);
+  assert.equal(places.length, 2);
+  assert.equal(places[0].googleId, '/g/9', 'the Google ID learned from a later scan');
+});

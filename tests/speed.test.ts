@@ -10,8 +10,10 @@ test('Scan Now and scheduled scans cost the same, one phone session a pin; Scan 
   assert.equal(speedFactor(undefined), 1, 'a scan that says nothing runs now, at the same price');
   assert.equal(asSpeed('scheduled'), 'scheduled');
   assert.equal(asSpeed('later'), 'now');
-  assert.equal(queuePriority('now'), undefined, 'no priority is first in line in BullMQ');
-  assert.equal(queuePriority('scheduled'), 10);
+  assert.equal(queuePriority('now', true), undefined, 'Scale and Agency Max Scan Now: no priority, first in line in BullMQ');
+  assert.equal(queuePriority('now'), 1, 'everyone else’s Scan Now right behind');
+  assert.equal(queuePriority('scheduled', true), 5);
+  assert.equal(queuePriority('scheduled'), 10, 'scheduled last');
 });
 
 test('weekly is 4 fixed runs a month and every other week 2', () => {

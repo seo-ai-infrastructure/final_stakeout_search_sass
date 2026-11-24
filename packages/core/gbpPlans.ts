@@ -114,11 +114,11 @@ export const SCOUT: LineDef = {
  * `founding`: the plan earns the founding bonus (FOUNDING) for the first accounts on it.
  * White label is set up by us for accounts on a plan with `whiteLabel`.
  */
-export const ACCOUNT_PLANS: Record<AccountPlan, LineDef & { whiteLabel: boolean; bestFor: string; rollover: { month: number; year: number }; founding: boolean; /** People who can sign in to the account, the owner included (null: no limit). */ seats: number | null }> = {
-  P_SCOUT: { name: 'Scout', blurb: 'For solo consultants and in-house marketers.', bestFor: 'Solo and in-house', available: true, lookupKey: 'stakeout_plan_scout_v4', graduated: false, tiers: [{ upTo: null, cents: 9700 }], points: 800, briefs: 1, whiteLabel: false, rollover: { month: 0, year: 1 }, founding: false, seats: 1 },
-  P_AGENCY: { name: 'Agency', blurb: 'For growing agencies.', bestFor: 'Growing agencies', available: true, lookupKey: 'stakeout_plan_agency_v3', graduated: false, tiers: [{ upTo: null, cents: 19700 }], points: 2000, briefs: 5, whiteLabel: true, rollover: { month: 1, year: 1 }, founding: true, seats: 5 },
-  P_SCALE: { name: 'Scale', blurb: 'For multi-market teams.', bestFor: 'Multi-market teams', available: true, lookupKey: 'stakeout_plan_scale_v3', graduated: false, tiers: [{ upTo: null, cents: 29700 }], points: 3500, briefs: 20, whiteLabel: true, rollover: { month: 2, year: 2 }, founding: true, seats: 15 },
-  P_MAX: { name: 'Agency Max', blurb: 'For large portfolios.', bestFor: 'Large portfolios', available: true, lookupKey: 'stakeout_plan_max_v1', graduated: false, tiers: [{ upTo: null, cents: 49700 }], points: 6500, briefs: 40, whiteLabel: true, rollover: { month: 2, year: 2 }, founding: true, seats: null },
+export const ACCOUNT_PLANS: Record<AccountPlan, LineDef & { whiteLabel: boolean; bestFor: string; rollover: { month: number; year: number }; founding: boolean; /** People who can sign in to the account, the owner included (null: no limit). */ seats: number | null; /** Distinct businesses scanned a billing month (null: no limit; see locations.ts). */ locations: number | null; /** Its points go first in the scan queue and at the 5G lane door. */ priority: boolean }> = {
+  P_SCOUT: { name: 'Scout', blurb: 'For solo consultants and in-house marketers.', bestFor: 'Solo and in-house', available: true, lookupKey: 'stakeout_plan_scout_v4', graduated: false, tiers: [{ upTo: null, cents: 9700 }], points: 800, briefs: 1, whiteLabel: false, rollover: { month: 0, year: 1 }, founding: false, seats: 1, locations: 5, priority: false },
+  P_AGENCY: { name: 'Agency', blurb: 'For growing agencies.', bestFor: 'Growing agencies', available: true, lookupKey: 'stakeout_plan_agency_v3', graduated: false, tiers: [{ upTo: null, cents: 19700 }], points: 2000, briefs: 5, whiteLabel: true, rollover: { month: 1, year: 1 }, founding: true, seats: 5, locations: 20, priority: false },
+  P_SCALE: { name: 'Scale', blurb: 'For multi-market teams.', bestFor: 'Multi-market teams', available: true, lookupKey: 'stakeout_plan_scale_v3', graduated: false, tiers: [{ upTo: null, cents: 29700 }], points: 3500, briefs: 20, whiteLabel: true, rollover: { month: 2, year: 2 }, founding: true, seats: 15, locations: 50, priority: true },
+  P_MAX: { name: 'Agency Max', blurb: 'For large portfolios.', bestFor: 'Large portfolios', available: true, lookupKey: 'stakeout_plan_max_v1', graduated: false, tiers: [{ upTo: null, cents: 49700 }], points: 6500, briefs: 40, whiteLabel: true, rollover: { month: 2, year: 2 }, founding: true, seats: null, locations: null, priority: true },
 };
 /** Cheapest first. */
 export const ACCOUNT_PLAN_ORDER: AccountPlan[] = ['P_SCOUT', 'P_AGENCY', 'P_SCALE', 'P_MAX'];
@@ -130,6 +130,12 @@ export const nextPlan = (p: AccountPlan | null): AccountPlan | null => (p ? ACCO
  * Without a plan, or on Scout, none.
  */
 export const memberSeats = (plan: AccountPlan | null | undefined) => (!plan ? 0 : ACCOUNT_PLANS[plan].seats === null ? Infinity : Math.max(0, (ACCOUNT_PLANS[plan].seats as number) - 1));
+/**
+ * The most unused plan sessions a renewal keeps: the plan's rollover months times what the account
+ * actually gets a month (`monthly`: the founding bonus and listing add-ons included), so a founding
+ * Agency banks up to 2,500, a founding Scale 8,750 and a founding Agency Max 16,250.
+ */
+export const carryCap = (plan: AccountPlan | null | undefined, interval: 'month' | 'year', monthly: number) => rolloverMonths(plan, interval) * Math.max(0, monthly);
 /** Months' worth of unused plan sessions a renewal carries over: the plan's, monthly or yearly (seats from before the plans: one). */
 export const rolloverMonths = (plan: AccountPlan | null | undefined, interval: 'month' | 'year') => (plan ? ACCOUNT_PLANS[plan].rollover[interval] : 1);
 
