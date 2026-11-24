@@ -4,7 +4,7 @@ import '@fontsource/jetbrains-mono/latin-600.css';
 import './vs.css';
 import VsBriefTabs from './VsBriefTabs';
 import { HREF } from './links';
-import { BRIEF_PACKS, CLOSER, CLOSER_LIMIT, SESSION_PACKS, usd } from '@/lib/pricing';
+import { BRIEF_PACKS, CLOSER, usd } from '@/lib/pricing';
 import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, type AccountPlan } from '@stakeout/core/gbpPlans';
 
 /**
@@ -43,17 +43,17 @@ function Mark() {
 const WORDS = ['no', 'one', 'two', 'three', 'four'];
 
 /** One line under each plan's allowance. */
-const NOTE = (packs: string): Record<AccountPlan, string> => ({
-  P_SCOUT: 'Unused ones roll over for a month.',
-  P_AGENCY: 'Your logo, name and brand color on shared reports.',
-  P_SCALE: `White-label too. Session packs (${packs}) never expire.`,
-});
+const NOTE: Record<AccountPlan, string> = {
+  P_SCOUT: 'Unused sessions reset each month (one month’s roll over when paid yearly).',
+  P_AGENCY: 'Your logo, name and brand color on shared reports. Unused sessions roll over for a month.',
+  P_SCALE: 'White-label too. Unused sessions roll over for two months.',
+  P_MAX: 'White-label too. Unused sessions roll over for two months.',
+};
 
 export default function VsScraperCredits({ ag }: { ag?: string }) {
   const head = HEADLINES[ag ?? ''] ?? HEADLINES.default;
   const price = usd(CLOSER.cents);
   const audits = Math.floor(CLOSER.credits / 25);
-  const packs = SESSION_PACKS.map((p) => usd(p.cents)).join(' / ');
   // An example grid (not a real scan): strong near the business, rivals' single listings toward the edge.
   const pins = [
     ['100', 'pin-hi'], ['100', 'pin-hi'], ['70', 'pin-hi'], ['45', 'pin-mid'], ['20', 'pin-mid'],
@@ -72,7 +72,7 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
           </a>
           <div className="masthead-meta">
             <span className="rule-pill">1 PIN = 1 REAL ANDROID SESSION · NO MULTIPLIERS</span>
-            <a href={HREF.closer} className="btn"><span className="long">Get the {price} Closer Pack →</span><span className="short">Closer Pack · {price}</span></a>
+            <a href={HREF.closer} className="btn"><span className="long">Get the {price} {CLOSER.name} →</span><span className="short">Proof Pack · {price}</span></a>
           </div>
         </div>
       </header>
@@ -122,7 +122,7 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
 
               <div className="offer-card" id="closer-pack">
                 <div>
-                  <span className="offer-tag">Cold-pitch Closer Pack · No subscription</span>
+                  <span className="offer-tag">Live 5G Proof Pack · No subscription</span>
                   <div className="offer-price-row">
                     <span className="offer-price">{price}</span>
                     <span className="offer-once">one-time · never expires</span>
@@ -137,7 +137,7 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
                 </div>
                 <div>
                   <a href={HREF.closer} className="btn btn-lg">Run your first audit for {price} →</a>
-                  <p className="offer-fine">Up to {CLOSER_LIMIT} per account · Sessions added as soon as you pay · No recurring billing</p>
+                  <p className="offer-fine">One per account · Sessions added as soon as you pay · No recurring billing</p>
                 </div>
               </div>
             </div>
@@ -187,7 +187,7 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
                 <div className="ledger-row"><span>A screen recording at every pin</span><span className="yes">Included</span></div>
                 <div className="ledger-row"><span>U.S. Census household income layer</span><span className="yes">Included</span></div>
                 <div className="ledger-row"><span>A revenue brief priced at county Google Ads rates</span><span>1 brief credit</span></div>
-                <div className="ledger-total"><span>Closer Pack and bought sessions</span><strong>Never expire</strong></div>
+                <div className="ledger-total"><span>Proof Pack and bought sessions</span><strong>Never expire</strong></div>
               </div>
             </div>
           </div>
@@ -258,13 +258,13 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
         <section className="vs-sec paper">
           <div className="wrap">
             <p className="eyebrow">Zero bait-and-switch</p>
-            <h2>Start with the {price} Closer Pack. Upgrade only if it wins you clients.</h2>
+            <h2>Start with the {price} {CLOSER.name}. Upgrade only if it wins you clients.</h2>
             <p className="sec-lead">No trial that turns into a bill. When you’re ready for monthly tracking, every plan uses the same rule: one pin, one phone session.</p>
             <div className="tiers-grid">
               <div className="tier-mini featured">
-                <p className="tier-name">Closer Pack (start here)</p>
+                <p className="tier-name">Live 5G Proof Pack (start here)</p>
                 <p className="tier-cost">{price} <span className="unit">once</span></p>
-                <p className="tier-meta"><strong>{CLOSER.credits} sessions + {CLOSER.briefs} brief credit.</strong> Never expires. Up to {CLOSER_LIMIT} per account.</p>
+                <p className="tier-meta"><strong>{CLOSER.credits} sessions + {CLOSER.briefs} brief credit.</strong> Never expires. One per account.</p>
               </div>
               {ACCOUNT_PLAN_ORDER.map((key) => {
                 const p = ACCOUNT_PLANS[key];
@@ -274,7 +274,7 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
                     <p className="tier-cost">{usd(p.tiers[0].cents)}<span className="unit">/mo</span></p>
                     <p className="tier-meta">
                       <strong>{p.points.toLocaleString('en-US')} sessions + {p.briefs} brief credit{p.briefs === 1 ? '' : 's'} a month.</strong>{' '}
-                      {NOTE(packs)[key]}
+                      {NOTE[key]}
                     </p>
                   </div>
                 );
@@ -289,8 +289,8 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
             <h2>Questions switchers ask before spending {price}</h2>
             <div className="faq-grid">
               <div className="faq-item">
-                <h3 className="faq-q">Does the {price} Closer Pack turn into a monthly subscription?</h3>
-                <p className="faq-a">No. It’s a one-time {price} payment, up to {CLOSER_LIMIT} per account. Its {CLOSER.credits} phone sessions and brief credit never expire.</p>
+                <h3 className="faq-q">Does the {price} {CLOSER.name} turn into a monthly subscription?</h3>
+                <p className="faq-a">No. It’s a one-time {price} payment, one per account. Its {CLOSER.credits} phone sessions and brief credit never expire.</p>
               </div>
               <div className="faq-item">
                 <h3 className="faq-q">Do I need my prospect’s Google Business Profile or Search Console login?</h3>
@@ -311,7 +311,7 @@ export default function VsScraperCredits({ ag }: { ag?: string }) {
                 <p className="eyebrow">Walk into your next pitch with video receipts</p>
                 <p className="final-line">Run {WORDS[audits]} 5×5 real-phone audits and a revenue brief today for {price}.</p>
               </div>
-              <a href={HREF.closer} className="btn btn-lg">Get the {price} Closer Pack →</a>
+              <a href={HREF.closer} className="btn btn-lg">Get the {price} {CLOSER.name} →</a>
             </div>
           </div>
         </section>

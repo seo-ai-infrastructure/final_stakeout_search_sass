@@ -162,37 +162,33 @@ test('pricing: the old credit plan an account was on comes from what it paid for
   assert.equal(itemKeyOf({ item: 'welcome', credits: 25 }), 'welcome');
 });
 
-test('pricing: with the account plans, the Closer Pack (twice at most), and session packs and briefs for any account', async () => {
-  const { CLOSER, CLOSER_LIMIT, SESSION_PACKS, BRIEF_PACKS, itemByKey } = await import('../apps/nextjs/src/lib/pricing');
+test('pricing: with the account plans, the Live 5G Proof Pack once, the Boost for plan holders running low, and briefs; no session packs', async () => {
+  const { BOOST, BOOST_BELOW, CLOSER, CLOSER_LIMIT, BRIEF_PACKS, itemByKey } = await import('../apps/nextjs/src/lib/pricing');
   const keys = (s: Parameters<typeof itemsFor>[0]) => itemsFor(s).map((i) => i.key);
-  assert.deepEqual([CLOSER.key, CLOSER.cents, CLOSER.credits, CLOSER.briefs, CLOSER_LIMIT], ['closer', 1900, 50, 1, 2], '$19: two 5×5 audits and a brief, two per account');
-  assert.deepEqual(SESSION_PACKS.map((p) => [p.key, p.credits, p.cents]), [['sessions-100', 100, 2900], ['sessions-250', 250, 5900], ['sessions-500', 500, 9900]]);
+  assert.deepEqual([CLOSER.key, CLOSER.name, CLOSER.cents, CLOSER.credits, CLOSER.briefs, CLOSER_LIMIT], ['closer', 'Live 5G Proof Pack', 1900, 50, 1, 1], '$19: 50 sessions on the 5G lines and a brief, one per account');
+  assert.deepEqual([BOOST.key, BOOST.credits, BOOST.cents, BOOST_BELOW], ['boost-250', 250, 3900, 0.15], '$39 for 250, under 15% of the month left');
   assert.deepEqual(BRIEF_PACKS.map((p) => [p.key, p.briefs, p.cents, p.credits]), [['briefs-1', 1, 900, 0], ['briefs-5', 5, 3500, 0]]);
-  // A new account: no $5 audit and no prospect audits any more.
-  const packs = ['sessions-100', 'sessions-250', 'sessions-500', 'briefs-1', 'briefs-5'];
-  assert.deepEqual(keys({ newPlans: true, firstPurchase: true }), ['closer', ...packs], 'an account without a plan buys session packs too');
-  assert.deepEqual(keys({ newPlans: true, closers: 1 }), ['closer', ...packs], 'a second Closer Pack');
-  assert.deepEqual(keys({ newPlans: true, closers: 2 }), packs, 'never a third Closer Pack; the session packs stay on sale');
-  assert.deepEqual(keys({ newPlans: true, plan: true, closers: 2 }), ['sessions-plan-200', ...packs], 'a plan holder also gets the plan top-up, before the packs');
-  assert.ok(!keys({ newPlans: true, closers: 2 }).includes('sessions-plan-200'), 'never without a plan');
-  assert.ok(!keys({ newPlans: true, seats: 3, closers: 2 }).includes('sessions-plan-200'), 'never on seats alone');
-  assert.deepEqual(keys({ newPlans: true, seats: 3, closers: 2 }), ['topup-100', 'sessions-250', 'sessions-500', 'briefs-1', 'briefs-5'], 'an account on seats keeps its own price for 100 sessions');
+  const briefs = ['briefs-1', 'briefs-5'];
+  assert.deepEqual(keys({ newPlans: true, firstPurchase: true }), ['closer', ...briefs], 'a new account: the Proof Pack and brief credits; sessions come with a plan');
+  assert.deepEqual(keys({ newPlans: true, closers: 1 }), briefs, 'never a second Proof Pack');
+  assert.deepEqual(keys({ newPlans: true, plan: true, closers: 1 }), briefs, 'a plan holder with room this month: no Boost');
+  assert.deepEqual(keys({ newPlans: true, plan: true, boost: true, closers: 1 }), ['boost-250', ...briefs], 'a plan holder running low: the Boost');
+  assert.deepEqual(keys({ newPlans: true, seats: 3, closers: 1 }), ['topup-100', ...briefs], 'an account on seats keeps its own price for 100 sessions');
+  for (const k of ['sessions-100', 'sessions-250', 'sessions-500', 'sessions-plan-200']) assert.ok(!keys({ newPlans: true, plan: true, boost: true }).includes(k), 'no longer sold: ' + k);
   assert.equal(itemsFor({ newPlans: true, admin: true }).at(-1)?.key, 'admin-test');
-  for (const k of ['closer', 'sessions-250', 'sessions-plan-200', 'briefs-5']) assert.ok(itemByKey(k), 'a paid order finds its item: ' + k);
-  const top = itemByKey('sessions-plan-200')!;
-  assert.deepEqual([top.credits, top.cents], [200, 3000], '200 sessions for $30 (15¢ each)');
+  for (const k of ['closer', 'boost-250', 'sessions-250', 'sessions-plan-200', 'briefs-5']) assert.ok(itemByKey(k), 'a paid order (old ones too) finds its item: ' + k);
   // The old catalog is untouched until the switch.
   assert.deepEqual(keys({ firstPurchase: true }).slice(0, 1), ['welcome']);
 });
 
-test('the Closer Pack past the limit: refunded, with the reason for the buyer and the admins', async () => {
-  const { CLOSER, CLOSER_LIMIT, paidMessage, paymentNotice } = await import('../apps/nextjs/src/lib/pricing');
+test('the Proof Pack past the limit: refunded, with the reason for the buyer and the admins', async () => {
+  const { CLOSER, paidMessage, paymentNotice } = await import('../apps/nextjs/src/lib/pricing');
   const base = { buyer: 'a@b.com', balance: 50, orderId: 'cs_test', captureId: 'pi_test', sandbox: false };
   const back = paymentNotice({ ...base, credits: CLOSER.credits, cents: CLOSER.cents, item: CLOSER.key, refunded: true });
-  assert.equal(back.subject, 'Refunded: Closer Pack past the limit, a@b.com');
-  assert.match(back.lines[0], /paid \$19 for a Closer Pack, but this account already has 2, .* refunded and nothing was added/);
+  assert.equal(back.subject, 'Refunded: Live 5G Proof Pack past the limit, a@b.com');
+  assert.match(back.lines[0], /paid \$19 for a Live 5G Proof Pack, but this account already has 1, .* refunded and nothing was added/);
   assert.match(paymentNotice({ ...base, credits: 25, cents: 500, item: 'welcome', refunded: true }).subject, /^Refunded: second first audit/);
-  assert.equal(paidMessage({ refunded: true, item: CLOSER.key }), `The Closer Pack is limited to ${CLOSER_LIMIT} per account, and this account already has ${CLOSER_LIMIT}. Your payment was refunded in full; nothing was added.`);
+  assert.equal(paidMessage({ refunded: true, item: CLOSER.key }), 'The Live 5G Proof Pack is one per account, and this account already has one. Your payment was refunded in full; nothing was added.');
   assert.match(paidMessage({ refunded: true, item: 'welcome' }), /^The first audit is one per account and per card/);
 });
 

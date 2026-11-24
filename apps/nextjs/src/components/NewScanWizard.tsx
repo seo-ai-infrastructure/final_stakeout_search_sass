@@ -942,7 +942,7 @@ export function NewScanWizard() {
         <div className={styles.mapControls}>
         <div className={styles.mapToolbar} aria-label="Grid controls">
           <div className={styles.shapeGroup} role="radiogroup" aria-label="Grid shape">
-            {([['square', 'Square'], ['round', 'Round'], ['custom', 'Rectangle']] as const).map(([id, text]) => (
+            {([['square', 'Square'], ['round', 'Circle'], ['custom', 'Rectangle']] as const).map(([id, text]) => (
               <button key={id} type="button" role="radio" aria-checked={shape === id} onClick={() => setShape(id)}>{text}</button>
             ))}
             {shape === 'wealth' && <button type="button" role="radio" aria-checked="true">Income areas</button>}

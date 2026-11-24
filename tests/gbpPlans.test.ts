@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ACCOUNT_PLANS, accountPlanOf, hasLegacySeats, nextPlan, seatBriefs, PLANS, SCOUT, SCAN_NOW_5X5, addedCents, allows, clientSeats, dollars, isLine, isPlan, lineCents, monthlyCents, planNow, quantityPlan, seatGrant, seatPoints, stripeTiers, unitCents, settlePending, tierNudge } from '../packages/core/gbpPlans';
+import { ACCOUNT_PLANS, accountPlanOf, hasLegacySeats, nextPlan, seatBriefs, PLANS, SCOUT, SCAN_NOW_5X5, addedCents, allows, clientSeats, dollars, isLine, isPlan, lineCents, monthlyCents, planNow, quantityPlan, seatGrant, seatPoints, stripeTiers, unitCents, settlePending, tierNudge, ACCOUNT_PLAN_ORDER, rolloverMonths } from '../packages/core/gbpPlans';
 
 test('one listing costs less the more listings an account pays for', () => {
   assert.equal(unitCents('MANAGE', 1), 2900);
@@ -99,13 +99,13 @@ test('free reads, Manage changes, a paid listing lets an agent in', () => {
 
 test('the subscription follows the listings that are on a plan', () => {
   const rows = [{ plan: 'MANAGE', status: 'ACTIVE' }, { plan: 'MANAGE', status: 'ACTIVE' }, { plan: 'MANAGE', status: 'ENDING' }, { plan: 'AGENT', status: 'PENDING' }];
-  assert.deepEqual(quantityPlan(rows, { MANAGE: 1 }), { want: { DOMINATOR: 0, COMMAND: 0, MANAGE: 2, AGENT: 0, SCOUT: 0, LISTING: 0, P_SCOUT: 0, P_AGENCY: 0, P_SCALE: 0 }, grows: true, same: false, empty: false });
+  assert.deepEqual(quantityPlan(rows, { MANAGE: 1 }), { want: { DOMINATOR: 0, COMMAND: 0, MANAGE: 2, AGENT: 0, SCOUT: 0, LISTING: 0, P_SCOUT: 0, P_AGENCY: 0, P_SCALE: 0, P_MAX: 0 }, grows: true, same: false, empty: false });
   assert.equal(quantityPlan(rows, { MANAGE: 3 }).grows, false);
   assert.equal(quantityPlan(rows, { MANAGE: 2 }).same, true);
   assert.equal(quantityPlan([{ plan: 'MANAGE', status: 'ENDING' }], { MANAGE: 1 }).empty, true);
   // Scout seats stay as they are unless a new number is given.
   const cmd = [{ plan: 'COMMAND', status: 'ACTIVE' }, { plan: 'DOMINATOR', status: 'ACTIVE' }];
-  assert.deepEqual(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }).want, { DOMINATOR: 1, COMMAND: 1, MANAGE: 0, AGENT: 0, SCOUT: 4, LISTING: 0, P_SCOUT: 0, P_AGENCY: 0, P_SCALE: 0 });
+  assert.deepEqual(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }).want, { DOMINATOR: 1, COMMAND: 1, MANAGE: 0, AGENT: 0, SCOUT: 4, LISTING: 0, P_SCOUT: 0, P_AGENCY: 0, P_SCALE: 0, P_MAX: 0 });
   assert.equal(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }).same, true);
   assert.equal(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }, 6).grows, true);
   assert.equal(quantityPlan(cmd, { COMMAND: 1, DOMINATOR: 1, SCOUT: 4 }, 2).grows, false);
@@ -114,11 +114,16 @@ test('the subscription follows the listings that are on a plan', () => {
 });
 
 test('account plans: one per account, flat; the listing add-on is one line per listing with 50 sessions and a brief', () => {
-  assert.deepEqual([ACCOUNT_PLANS.P_SCOUT.tiers[0].cents, ACCOUNT_PLANS.P_SCOUT.points, ACCOUNT_PLANS.P_SCOUT.briefs], [3900, 300, 1], 'Scout: $39, 300 sessions, 1 brief credit');
-  assert.deepEqual([ACCOUNT_PLANS.P_AGENCY.tiers[0].cents, ACCOUNT_PLANS.P_AGENCY.points, ACCOUNT_PLANS.P_AGENCY.briefs], [12900, 1000, 5], 'Agency: $129, 1,000 sessions, 5 brief credits');
-  assert.deepEqual([ACCOUNT_PLANS.P_SCALE.tiers[0].cents, ACCOUNT_PLANS.P_SCALE.points, ACCOUNT_PLANS.P_SCALE.briefs], [29900, 3000, 20], 'Scale: $299, 3,000 sessions, 20 brief credits');
+  assert.deepEqual([ACCOUNT_PLANS.P_SCOUT.tiers[0].cents, ACCOUNT_PLANS.P_SCOUT.points, ACCOUNT_PLANS.P_SCOUT.briefs], [9700, 800, 1], 'Scout: $97, 800 sessions, 1 brief credit');
+  assert.deepEqual([ACCOUNT_PLANS.P_AGENCY.tiers[0].cents, ACCOUNT_PLANS.P_AGENCY.points, ACCOUNT_PLANS.P_AGENCY.briefs], [19700, 2000, 5], 'Agency: $197, 2,000 sessions, 5 brief credits');
+  assert.deepEqual([ACCOUNT_PLANS.P_SCALE.tiers[0].cents, ACCOUNT_PLANS.P_SCALE.points, ACCOUNT_PLANS.P_SCALE.briefs], [29700, 3500, 20], 'Scale: $297, 3,500 sessions, 20 brief credits');
+  assert.deepEqual([ACCOUNT_PLANS.P_MAX.tiers[0].cents, ACCOUNT_PLANS.P_MAX.points, ACCOUNT_PLANS.P_MAX.briefs, ACCOUNT_PLANS.P_MAX.name], [49700, 6500, 40, 'Agency Max'], 'Agency Max: $497, 6,500 sessions, 40 brief credits');
+  assert.deepEqual(ACCOUNT_PLAN_ORDER, ['P_SCOUT', 'P_AGENCY', 'P_SCALE', 'P_MAX']);
+  assert.deepEqual(ACCOUNT_PLAN_ORDER.map((p) => ACCOUNT_PLANS[p].whiteLabel), [false, true, true, true], 'white label from Agency up');
+  assert.deepEqual(ACCOUNT_PLAN_ORDER.map((p) => [rolloverMonths(p, 'month'), rolloverMonths(p, 'year')]), [[0, 1], [1, 1], [2, 2], [2, 2]], 'Scout resets monthly (one month yearly); Agency one; Scale and Agency Max two');
+  assert.equal(rolloverMonths(null, 'month'), 1, 'seats from before the plans: one month, as sold');
   assert.deepEqual([PLANS.LISTING.tiers[0].cents, PLANS.LISTING.points, PLANS.LISTING.briefs], [2900, 50, 1]);
-  assert.equal(ACCOUNT_PLANS.P_SCOUT.lookupKey, 'stakeout_plan_scout_v3', 'a new price for $39, never the $49 one');
+  assert.deepEqual(ACCOUNT_PLAN_ORDER.map((p) => ACCOUNT_PLANS[p].lookupKey), ['stakeout_plan_scout_v4', 'stakeout_plan_agency_v3', 'stakeout_plan_scale_v3', 'stakeout_plan_max_v1'], 'new Stripe prices for the new amounts, never the old ones');
   assert.equal(isPlan('LISTING'), true, 'the add-on unlocks the listing tools and agents like a listing plan');
   assert.equal(allows('LISTING', 'agent'), true);
   const listings = [{ plan: 'LISTING', status: 'ACTIVE' }, { plan: 'LISTING', status: 'ACTIVE' }];
@@ -127,14 +132,16 @@ test('account plans: one per account, flat; the listing add-on is one line per l
   const up = quantityPlan(listings, { P_AGENCY: 1, LISTING: 2 }, undefined, 'P_SCALE');
   assert.deepEqual([up.want.P_AGENCY, up.want.P_SCALE, up.grows], [0, 1, true], 'switching plans swaps the line');
   assert.equal(quantityPlan([], { P_SCOUT: 1 }, undefined, null).empty, true, 'no plan and no listing: nothing left');
-  assert.equal(monthlyCents({ P_AGENCY: 1, LISTING: 3 }), 12900 + 3 * 2900);
-  assert.equal(seatPoints({ P_AGENCY: 1, LISTING: 3 }), 1150);
+  assert.equal(monthlyCents({ P_AGENCY: 1, LISTING: 3 }), 19700 + 3 * 2900);
+  assert.equal(seatPoints({ P_AGENCY: 1, LISTING: 3 }), 2150);
   assert.equal(seatBriefs({ P_AGENCY: 1, LISTING: 3 }), 8, 'Agency 5 + 3 add-ons');
   assert.equal(accountPlanOf({ P_SCALE: 1, LISTING: 2 }), 'P_SCALE');
   assert.equal(hasLegacySeats({ P_SCALE: 1, LISTING: 2 }), false);
   assert.equal(hasLegacySeats({ COMMAND: 1 }), true);
   assert.equal(nextPlan('P_SCOUT'), 'P_AGENCY');
-  assert.equal(nextPlan('P_SCALE'), null);
+  assert.equal(nextPlan('P_SCALE'), 'P_MAX');
+  assert.equal(nextPlan('P_MAX'), null);
+  assert.equal(accountPlanOf({ P_MAX: 1, LISTING: 1 }), 'P_MAX');
 });
 
 import { PLAYBOOKS, TOOLS, WRITES, annotationsOf, playbookText, rpcAnswer, toolCall } from '../packages/core/agentTools';
@@ -443,18 +450,19 @@ test('a repeating scan at a set time of day', () => {
 test('founding members: 25% more plan sessions a month, never on the listing add-on', async () => {
   const { FOUNDING, foundingBonus, monthlyPoints } = await import('../packages/core/gbpPlans');
   assert.deepEqual([FOUNDING.seats, FOUNDING.bonus], [15, 0.25]);
-  assert.equal(monthlyPoints({ P_SCOUT: 1 }, true), 375);
-  assert.equal(monthlyPoints({ P_AGENCY: 1 }, true), 1250);
-  assert.equal(monthlyPoints({ P_SCALE: 1 }, true), 3750);
-  assert.equal(monthlyPoints({ P_AGENCY: 1 }, false), 1000, 'not a founding member: the plan as sold');
-  assert.equal(monthlyPoints({ P_AGENCY: 1, LISTING: 2 }, true), 1250 + 100, 'the add-on keeps its 50 a listing');
+  assert.equal(monthlyPoints({ P_SCOUT: 1 }, true), 800, 'Scout does not earn the founding bonus');
+  assert.equal(monthlyPoints({ P_AGENCY: 1 }, true), 2500);
+  assert.equal(monthlyPoints({ P_SCALE: 1 }, true), 4375);
+  assert.equal(monthlyPoints({ P_MAX: 1 }, true), 8125);
+  assert.equal(monthlyPoints({ P_AGENCY: 1 }, false), 2000, 'not a founding member: the plan as sold');
+  assert.equal(monthlyPoints({ P_AGENCY: 1, LISTING: 2 }, true), 2500 + 100, 'the add-on keeps its 50 a listing');
   assert.equal(foundingBonus({ LISTING: 3 }), 0);
 });
 
 test('yearly plans: twelve months for the price of ten, at the same monthly sessions', async () => {
   const { ANNUAL_MONTHS_PAID, annualKey, yearCents, yearlyLine } = await import('../packages/core/gbpPlans');
   assert.equal(ANNUAL_MONTHS_PAID, 10);
-  assert.deepEqual([yearCents('P_SCOUT'), yearCents('P_AGENCY'), yearCents('P_SCALE')], [39000, 129000, 299000], '$390 / $1,290 / $2,990');
+  assert.deepEqual([yearCents('P_SCOUT'), yearCents('P_AGENCY'), yearCents('P_SCALE'), yearCents('P_MAX')], [97000, 197000, 297000, 497000], '$970 / $1,970 / $2,970 / $4,970');
   assert.equal(annualKey('stakeout_plan_scout_v3'), 'stakeout_plan_scout_v3_annual');
   assert.ok(yearlyLine('P_AGENCY') && yearlyLine('LISTING'));
   assert.ok(!yearlyLine('COMMAND') && !yearlyLine('SCOUT'), 'the old seats stay monthly');
@@ -476,4 +484,15 @@ test("a yearly plan's months follow Stripe's billing day, short months included"
   const w = monthWindow(start, end, t('2026-06-15T00:00:00Z'));
   assert.deepEqual([iso(w.from), iso(w.to), w.k], ['2026-05-31', '2026-06-30', 4]);
   assert.equal(monthWindow(start, end, end - 1).to, end, 'the last month ends with the year');
+});
+
+test('renewal: a plan keeps what it says of last month, none on Scout monthly, two months on Scale', async () => {
+  const { renewPlan } = await import('../packages/core/creditPlan');
+  const s = { balance: 900, bucket: 3000, packFloor: 0, bought: 0 }; // 900 plan sessions left
+  assert.deepEqual([renewPlan(s, 800, 0).carry, renewPlan(s, 800, 0).lapse, renewPlan(s, 800, 0).balance], [0, 900, 800], 'Scout monthly: nothing carries');
+  assert.deepEqual([renewPlan(s, 800).carry, renewPlan(s, 800).lapse], [800, 100], 'one month: up to a month’s worth');
+  const big = { balance: 9000, bucket: 9000, packFloor: 0, bought: 0 };
+  assert.deepEqual([renewPlan(big, 3500, 7000).carry, renewPlan(big, 3500, 7000).lapse, renewPlan(big, 3500, 7000).balance], [7000, 2000, 10500], 'Scale banks up to 7,000');
+  const packs = { balance: 1200, bucket: 2000, packFloor: 500, bought: 0 }; // 700 plan, 500 bought
+  assert.equal(renewPlan(packs, 800, 0).balance, 500 + 800, 'bought sessions are never touched');
 });

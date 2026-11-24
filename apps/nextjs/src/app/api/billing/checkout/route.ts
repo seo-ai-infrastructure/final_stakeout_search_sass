@@ -6,7 +6,7 @@ import { errorResponse } from '@/lib/api';
 import { catalogFor } from '@/lib/billing';
 import { stripe, stripeConfigured } from '@/lib/stripe';
 import { activePlan, planPortal, settleIfDue } from '@/lib/creditSub';
-import { accountPlanNow, catchUpPlanMonths } from '@/lib/gbpBilling';
+import { accountPlanNow, boostOffer, catchUpPlanMonths } from '@/lib/gbpBilling';
 import { walletOf } from '@/lib/briefStore';
 
 /** What this account can buy, and whether checkout is switched on. */
@@ -16,8 +16,9 @@ export async function GET() {
     await settleIfDue(u.id);
     await catchUpPlanMonths(u.id);
     const plan = await activePlan(u.id);
-    const [accountPlan, wallet] = await Promise.all([accountPlanNow(u.id), walletOf(u.id)]);
-    return Response.json({ packs: await catalogFor(u), ready: stripeConfigured(), plan: plan ? { ...plan, periodEnd: plan.periodEnd?.toISOString() ?? null } : null, accountPlan, briefs: wallet.left });
+    const [accountPlan, wallet, boost] = await Promise.all([accountPlanNow(u.id), walletOf(u.id), boostOffer(u.id).catch(() => null)]);
+    // boost: the plan's sessions left this month, whether the Boost is on sale, Boosts bought this month and what moving up one plan would cost instead.
+    return Response.json({ packs: await catalogFor(u), ready: stripeConfigured(), plan: plan ? { ...plan, periodEnd: plan.periodEnd?.toISOString() ?? null } : null, accountPlan, briefs: wallet.left, boost });
   } catch (e) {
     return errorResponse(e);
   }

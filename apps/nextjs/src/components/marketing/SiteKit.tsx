@@ -61,7 +61,7 @@ export function OfferBanner({ live, href, plans }: { live: boolean; href: string
       ) : (
         <>
           {plans
-            ? <><span style={{ color: ACCENT, fontWeight: 700 }}>Closer Pack: {usd(CLOSER.cents)}.</span> Two full 5×5 audits and a revenue brief, no subscription →</>
+            ? <><span style={{ color: ACCENT, fontWeight: 700 }}>{CLOSER.name}: {usd(CLOSER.cents)}.</span> Two 5×5 audits on our 5G lines and a revenue brief, no subscription →</>
             : <><span style={{ color: ACCENT, fontWeight: 700 }}>First 5×5 real-device audit: {usd(WELCOME.cents)}.</span> It comes off your first month on any seat →</>}
         </>
       )}
@@ -103,10 +103,11 @@ export function SiteNav({ page, plans }: { page: 'home' | 'pricing'; plans?: boo
         </nav>
         <div className="so-wide" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <a href={HREF.login} style={{ padding: '13px 14px', fontSize: 14, lineHeight: 1.4, color: '#CBD5E1' }}>Log in</a>
-          <a className="so-btn" href={plans ? HREF.closer : HREF.firstAudit} style={ctaSmall}>{plans ? `Closer Pack · ${usd(CLOSER.cents)}` : `Run my ${usd(WELCOME.cents)} audit`}</a>
+          {/* On the pricing page the plans come first: the Proof Pack is a link under them. */}
+          <a className="so-btn" href={plans ? (page === 'pricing' ? HREF.plans : HREF.closer) : HREF.firstAudit} style={ctaSmall}>{plans ? (page === 'pricing' ? 'Choose a plan' : `Live 5G Proof · ${usd(CLOSER.cents)}`) : `Run my ${usd(WELCOME.cents)} audit`}</a>
         </div>
         {home && (plans
-          ? <a className="lp-mobile-audit so-btn" href={HREF.closer} aria-label={'Closer Pack, ' + usd(CLOSER.cents)}>{usd(CLOSER.cents)} pack</a>
+          ? <a className="lp-mobile-audit so-btn" href={HREF.closer} aria-label={CLOSER.name + ', ' + usd(CLOSER.cents)}>{usd(CLOSER.cents)} proof</a>
           : <a className="lp-mobile-audit so-btn" href={HREF.firstAudit} aria-label={'Run my ' + usd(WELCOME.cents) + ' audit'}>{usd(WELCOME.cents)} audit</a>)}
         <button
           type="button"
@@ -136,7 +137,7 @@ export function SiteNav({ page, plans }: { page: 'home' | 'pricing'; plans?: boo
             <a href={HREF.login} style={{ display: 'block', padding: '12px 0', color: '#CBD5E1' }}>Log in</a>
           </li>
         </ul>
-        <a className="so-btn" href={plans ? HREF.closer : HREF.firstAudit} style={{ ...ctaSmall, marginTop: 10, width: '100%', justifyContent: 'center', minHeight: 48, fontSize: 16 }}>{plans ? `Get the Closer Pack · ${usd(CLOSER.cents)}` : `Run my ${usd(WELCOME.cents)} audit`}</a>
+        <a className="so-btn" href={plans ? (page === 'pricing' ? HREF.plans : HREF.closer) : HREF.firstAudit} style={{ ...ctaSmall, marginTop: 10, width: '100%', justifyContent: 'center', minHeight: 48, fontSize: 16 }}>{plans ? (page === 'pricing' ? 'Choose a plan' : `Get the ${CLOSER.name} · ${usd(CLOSER.cents)}`) : `Run my ${usd(WELCOME.cents)} audit`}</a>
       </nav>
     </header>
   );

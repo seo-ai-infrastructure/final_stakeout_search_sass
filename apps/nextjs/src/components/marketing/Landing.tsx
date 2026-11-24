@@ -15,7 +15,7 @@ const auditPrice = usd(WELCOME.cents);
 
 function AuditLink({ plans }: { plans?: boolean }) {
   return plans
-    ? <a className="lp-primary so-btn" href={HREF.closer}>Get the Closer Pack · {usd(CLOSER.cents)} <Arrow size={17} /></a>
+    ? <a className="lp-primary so-btn" href={HREF.closer}>Get the {CLOSER.name} · {usd(CLOSER.cents)} <Arrow size={17} /></a>
     : <a className="lp-primary so-btn" href={HREF.firstAudit}>Run my {auditPrice} audit <Arrow size={17} /></a>;
 }
 

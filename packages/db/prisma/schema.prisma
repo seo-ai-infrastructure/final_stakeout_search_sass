@@ -126,6 +126,8 @@ model GridScan {
   runAt            DateTime?
   /// The free re-run of a first $5 audit, a week later; cleared once it has started.
   freeRescanAt     DateTime?
+  /// A Live 5G Proof audit: its points run on the unlimited 5G lines only, never on another network.
+  laneOnly         Boolean   @default(false)
   pins             GridPin[]
   createdAt        DateTime  @default(now())
   completedAt      DateTime?

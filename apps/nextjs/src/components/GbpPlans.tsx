@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, ANNUAL_MONTHS_PAID, FOUNDING, LINES, SEATS, addedCents, dollars, lineCents, monthlyCents, monthlyPoints, yearCents, type AccountPlan, type Line, type Plan } from '@stakeout/core/gbpPlans';
+import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, ANNUAL_MONTHS_PAID, FOUNDING, FOUNDING_PLANS, LINES, SEATS, addedCents, dollars, lineCents, monthlyCents, monthlyPoints, rolloverMonths, yearCents, type AccountPlan, type Line, type Plan } from '@stakeout/core/gbpPlans';
 
 type Loc = { id: string; name: string; plan: string | null };
 type Profile = { id: string; name: string; status: string; problem: string | null; locations: Loc[] };
@@ -13,12 +13,15 @@ const LISTING_SEATS: Plan[] = ['COMMAND', 'DOMINATOR'];
 /** What a listing can be put on for this account: the listing add-on with the account plans (seats too for an account that has them). */
 const listingSeats = (b: Billing | null): Plan[] => (!b?.newPlans ? LISTING_SEATS : b.legacy ? (b.plan ? ['LISTING', ...LISTING_SEATS] : LISTING_SEATS) : ['LISTING']);
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
+/** What happens to a plan's unused sessions at the month's end, as it is billed. */
+const rolloverText = (p: AccountPlan, year: boolean) => { const m = rolloverMonths(p, year ? 'year' : 'month'); return m === 0 ? `Unused sessions reset each month${ACCOUNT_PLANS[p].rollover.year ? ' (one month rolls over when paid yearly)' : ''}` : `Unused sessions roll over for ${m === 1 ? 'one month' : m === 2 ? 'two months' : m + ' months'}`; };
+const foundingNames = FOUNDING_PLANS.map((p) => ACCOUNT_PLANS[p].name).join(', ').replace(/, ([^,]*)$/, ' or $1');
 /** The listing add-on's price as this account pays it: a yearly plan's add-ons are billed with it, yearly. */
 const addonPrice = (b: Billing | null) => (b?.interval === 'year' ? `${dollars(LINES.LISTING.tiers[0].cents * ANNUAL_MONTHS_PAID)} a year` : `${dollars(LINES.LISTING.tiers[0].cents)} a month`);
 const btn = 'rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40';
 const go = 'rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40';
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
-const EMPTY: Record<Line, number> = { DOMINATOR: 0, COMMAND: 0, SCOUT: 0, MANAGE: 0, AGENT: 0, LISTING: 0, P_SCOUT: 0, P_AGENCY: 0, P_SCALE: 0 };
+const EMPTY: Record<Line, number> = { DOMINATOR: 0, COMMAND: 0, SCOUT: 0, MANAGE: 0, AGENT: 0, LISTING: 0, P_SCOUT: 0, P_AGENCY: 0, P_SCALE: 0, P_MAX: 0 };
 
 async function call<T>(url: string, method = 'GET', body?: unknown): Promise<T> {
   const r = await fetch(url, { method, cache: 'no-store', ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) });
@@ -277,13 +280,13 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Plan</p><p className="mt-1 text-2xl font-bold">{billing?.plan ? ACCOUNT_PLANS[billing.plan].name : 'None yet'}</p><p className="text-xs text-slate-500">{counts.LISTING ? `${counts.LISTING} listing add-on${counts.LISTING === 1 ? '' : 's'}` : 'No listing add-ons'}</p></div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Phone sessions a month</p><p className="mt-1 text-2xl font-bold tabular-nums">{(billing?.pointsPerMonth ?? 0).toLocaleString()}</p><p className="text-xs text-slate-500">{billing?.founding ? `Founding member #${billing.founding}: ${FOUNDING.bonus * 100}% more plan sessions` : 'Unused ones roll over for one month'}</p></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Phone sessions a month</p><p className="mt-1 text-2xl font-bold tabular-nums">{(billing?.pointsPerMonth ?? 0).toLocaleString()}</p><p className="text-xs text-slate-500">{billing?.founding && billing.plan && ACCOUNT_PLANS[billing.plan].founding ? `Founding member #${billing.founding}: ${FOUNDING.bonus * 100}% more plan sessions` : billing?.plan ? rolloverText(billing.plan, billing.interval === 'year') : 'Pick a plan below'}</p></div>
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Brief credits left</p><p className="mt-1 text-2xl font-bold tabular-nums">{billing?.briefs?.left ?? 0}</p><p className="text-xs text-slate-500">{billing?.briefs?.perMonth ? `${billing.briefs.perMonth} a month` : 'None a month'}{billing?.briefs?.bought ? ` · ${billing.briefs.bought} bought` : ''}</p></div>
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">{billing?.interval === 'year' ? 'This year' : 'This month'}</p><p className="mt-1 text-2xl font-bold tabular-nums">{dollars(billing?.periodCents ?? billing?.monthlyCents ?? 0)}</p><p className="text-xs text-slate-500">{billing?.sub?.periodEnd && billing.sub.running ? `Renews ${day(billing.sub.periodEnd)}` : 'Monthly or yearly, cancel any time'}</p></div>
           </div>
           {!billing?.plan && (billing?.foundingLeft ?? 0) > 0 && (
             <p className="mt-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-100">
-              <span className="font-semibold">Founding members:</span> the first {FOUNDING.seats} accounts to start a plan get {FOUNDING.bonus * 100}% more phone sessions every month, for as long as they have a plan. {billing?.foundingLeft} of {FOUNDING.seats} spots left.
+              <span className="font-semibold">Founding members:</span> the first {FOUNDING.seats} accounts to start {foundingNames} get {FOUNDING.bonus * 100}% more phone sessions every month, for as long as they stay on one of them. {billing?.foundingLeft} of {FOUNDING.seats} spots left.
             </p>
           )}
           {!billing?.sub?.running && (
@@ -292,22 +295,24 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
               <button type="button" aria-pressed={yearly} onClick={() => setYearly(true)} className={'rounded-md px-3 py-1.5 ' + (yearly ? 'bg-slate-700 font-semibold text-white' : 'text-slate-300 hover:text-white')}>Yearly: 2 months free</button>
             </div>
           )}
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             {ACCOUNT_PLAN_ORDER.map((p) => {
               const d = ACCOUNT_PLANS[p];
               const mine = billing?.plan === p;
               // Prices as this account would pay them: a running plan's own billing, otherwise the switch.
               const year = billing?.sub?.running ? billing.interval === 'year' : yearly;
-              const founding = Boolean(billing?.founding) || (!billing?.plan && (billing?.foundingLeft ?? 0) > 0);
+              // The founding bonus on this plan: for a founding member, or while spots are left for an account not yet on a plan.
+              const founding = d.founding && (Boolean(billing?.founding) || (!billing?.plan && (billing?.foundingLeft ?? 0) > 0));
               const more = monthlyPoints({ [p]: 1 }, true);
               return (
                 <div key={p} className={'rounded-lg border p-4 ' + (mine ? 'border-emerald-500/60 bg-emerald-500/5' : 'border-slate-800 bg-slate-950')}>
                   <div className="flex items-baseline justify-between gap-2"><p className="font-semibold text-slate-100">{d.name}</p><p className="text-lg font-bold tabular-nums">{year ? dollars(yearCents(p)) : dollars(d.tiers[0].cents)}<span className="text-xs font-normal text-slate-500">{year ? ' a year' : ' a month'}</span></p></div>
                   <p className="mt-1 text-xs text-slate-500">{year ? `${dollars(Math.round(yearCents(p) / 12))} a month, ${12 - ANNUAL_MONTHS_PAID} months free · ` : ''}{d.bestFor}</p>
                   <ul className="mt-3 space-y-1 text-sm text-slate-300">
-                    <li>{billing?.founding ? `${more.toLocaleString()} phone sessions a month (founding)` : `${d.points.toLocaleString()} phone sessions a month (${Math.floor(d.points / 25)} 5×5 scans)`}{founding && !billing?.founding ? `, ${more.toLocaleString()} as a founding member` : ''}</li>
+                    <li>{founding && billing?.founding ? `${more.toLocaleString()} phone sessions a month (founding)` : `${d.points.toLocaleString()} phone sessions a month (${Math.floor(d.points / 25)} 5×5 scans)`}{founding && !billing?.founding ? `, ${more.toLocaleString()} as a founding member` : ''}</li>
                     <li>{d.briefs} brief credit{d.briefs === 1 ? '' : 's'} a month</li>
-                    <li>{d.whiteLabel ? 'Your logo, name and brand color on shared reports' : 'Stakeout share links and offline copies'}</li>
+                    <li>{d.whiteLabel ? 'White-label reports: your logo, name and color, on your own domain' : 'Share links with the Stakeout badge'}</li>
+                    <li>{rolloverText(p, year)}</li>
                   </ul>
                   <div className="mt-3">
                     {mine

@@ -18,10 +18,13 @@ export function planRemaining(s: PlanState): number {
   return Math.max(0, Math.min(s.bucket, s.balance - s.packFloor - s.bought));
 }
 
-/** A paid month: the unused plan credits carry over up to one month's worth, the rest lapse, and the month's credits are added. */
-export function renewPlan(s: PlanState, monthly: number) {
+/**
+ * A paid month: the unused plan credits carry over up to `carryCap` (one month's worth unless the
+ * plan says otherwise: none, or two months' worth), the rest lapse, and the month's credits are added.
+ */
+export function renewPlan(s: PlanState, monthly: number, carryCap = monthly) {
   const left = planRemaining(s);
-  const carry = Math.min(left, monthly);
+  const carry = Math.min(left, Math.max(0, carryCap));
   const lapse = left - carry;
   const balance = s.balance - lapse + monthly;
   const bucket = carry + monthly;

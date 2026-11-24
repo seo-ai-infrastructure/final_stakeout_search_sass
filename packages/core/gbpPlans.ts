@@ -17,7 +17,7 @@
  */
 export type Plan = 'COMMAND' | 'DOMINATOR' | 'MANAGE' | 'AGENT' | 'LISTING';
 /** The account plans sold from November 2026: one per account, priced per account, not per client. */
-export type AccountPlan = 'P_SCOUT' | 'P_AGENCY' | 'P_SCALE';
+export type AccountPlan = 'P_SCOUT' | 'P_AGENCY' | 'P_SCALE' | 'P_MAX';
 /** A priced line on the monthly subscription: an account plan, a listing plan, or (before the account plans) Scout seats. */
 export type Line = Plan | 'SCOUT' | AccountPlan;
 /** What a request needs: 'free' to read, 'manage' to change a listing, 'agent' to let an AI agent do it. */
@@ -109,22 +109,28 @@ export const SCOUT: LineDef = {
 
 /**
  * The account plans (from November 2026, for new accounts; seats stay with those who have them).
- * One per account, flat. Phone sessions roll over for one month; so do the plan's brief credits.
+ * One per account, flat, monthly or yearly. `rollover`: how many months' worth of unused plan
+ * sessions carry into the next month (0: they reset; briefs carry one month whenever sessions do).
+ * `founding`: the plan earns the founding bonus (FOUNDING) for the first accounts on it.
+ * White label is set up by us for accounts on a plan with `whiteLabel`.
  */
-export const ACCOUNT_PLANS: Record<AccountPlan, LineDef & { whiteLabel: boolean; bestFor: string }> = {
-  P_SCOUT: { name: 'Scout', blurb: 'For solo consultants closing new retainers.', bestFor: 'Solo consultants closing new retainers', available: true, lookupKey: 'stakeout_plan_scout_v3', graduated: false, tiers: [{ upTo: null, cents: 3900 }], points: 300, briefs: 1, whiteLabel: false },
-  P_AGENCY: { name: 'Agency', blurb: 'For agencies managing 8 to 15 local clients.', bestFor: 'Agencies managing 8 to 15 local clients', available: true, lookupKey: 'stakeout_plan_agency_v2', graduated: false, tiers: [{ upTo: null, cents: 12900 }], points: 1000, briefs: 5, whiteLabel: true },
-  P_SCALE: { name: 'Scale', blurb: 'For multi-location firms, legal groups and roll-ups.', bestFor: 'Multi-location firms, legal groups and roll-ups', available: true, lookupKey: 'stakeout_plan_scale_v2', graduated: false, tiers: [{ upTo: null, cents: 29900 }], points: 3000, briefs: 20, whiteLabel: true },
+export const ACCOUNT_PLANS: Record<AccountPlan, LineDef & { whiteLabel: boolean; bestFor: string; rollover: { month: number; year: number }; founding: boolean }> = {
+  P_SCOUT: { name: 'Scout', blurb: 'For solo consultants and in-house marketers.', bestFor: 'Solo and in-house', available: true, lookupKey: 'stakeout_plan_scout_v4', graduated: false, tiers: [{ upTo: null, cents: 9700 }], points: 800, briefs: 1, whiteLabel: false, rollover: { month: 0, year: 1 }, founding: false },
+  P_AGENCY: { name: 'Agency', blurb: 'For growing agencies.', bestFor: 'Growing agencies', available: true, lookupKey: 'stakeout_plan_agency_v3', graduated: false, tiers: [{ upTo: null, cents: 19700 }], points: 2000, briefs: 5, whiteLabel: true, rollover: { month: 1, year: 1 }, founding: true },
+  P_SCALE: { name: 'Scale', blurb: 'For multi-market teams.', bestFor: 'Multi-market teams', available: true, lookupKey: 'stakeout_plan_scale_v3', graduated: false, tiers: [{ upTo: null, cents: 29700 }], points: 3500, briefs: 20, whiteLabel: true, rollover: { month: 2, year: 2 }, founding: true },
+  P_MAX: { name: 'Agency Max', blurb: 'For large portfolios.', bestFor: 'Large portfolios', available: true, lookupKey: 'stakeout_plan_max_v1', graduated: false, tiers: [{ upTo: null, cents: 49700 }], points: 6500, briefs: 40, whiteLabel: true, rollover: { month: 2, year: 2 }, founding: true },
 };
 /** Cheapest first. */
-export const ACCOUNT_PLAN_ORDER: AccountPlan[] = ['P_SCOUT', 'P_AGENCY', 'P_SCALE'];
-export const isAccountPlan = (v: unknown): v is AccountPlan => v === 'P_SCOUT' || v === 'P_AGENCY' || v === 'P_SCALE';
-/** The next plan up, for the nudge when buying sessions costs about as much as upgrading. */
-export const nextPlan = (p: AccountPlan | null): AccountPlan | null => (p === 'P_SCOUT' ? 'P_AGENCY' : p === 'P_AGENCY' ? 'P_SCALE' : null);
+export const ACCOUNT_PLAN_ORDER: AccountPlan[] = ['P_SCOUT', 'P_AGENCY', 'P_SCALE', 'P_MAX'];
+export const isAccountPlan = (v: unknown): v is AccountPlan => v === 'P_SCOUT' || v === 'P_AGENCY' || v === 'P_SCALE' || v === 'P_MAX';
+/** The next plan up, for the nudges when buying sessions costs about as much as upgrading. */
+export const nextPlan = (p: AccountPlan | null): AccountPlan | null => (p ? ACCOUNT_PLAN_ORDER[ACCOUNT_PLAN_ORDER.indexOf(p) + 1] ?? null : null);
+/** Months' worth of unused plan sessions a renewal carries over: the plan's, monthly or yearly (seats from before the plans: one). */
+export const rolloverMonths = (plan: AccountPlan | null | undefined, interval: 'month' | 'year') => (plan ? ACCOUNT_PLANS[plan].rollover[interval] : 1);
 
 export const LINES: Record<Line, LineDef> = { ...PLANS, SCOUT, ...ACCOUNT_PLANS };
 /** The order lines appear in, at checkout and on the subscription. */
-export const LINE_ORDER: Line[] = ['P_SCALE', 'P_AGENCY', 'P_SCOUT', 'LISTING', 'DOMINATOR', 'COMMAND', 'SCOUT', 'MANAGE', 'AGENT'];
+export const LINE_ORDER: Line[] = ['P_MAX', 'P_SCALE', 'P_AGENCY', 'P_SCOUT', 'LISTING', 'DOMINATOR', 'COMMAND', 'SCOUT', 'MANAGE', 'AGENT'];
 /** The seats sold before the account plans: kept for the accounts that have them. */
 export const LEGACY_LINES: Line[] = ['DOMINATOR', 'COMMAND', 'SCOUT', 'MANAGE', 'AGENT'];
 /** The seats on sale, most capable first. */
@@ -172,12 +178,15 @@ export const clientSeats = (counts: Partial<Record<Line, number>>) => SEATS.redu
 /** Phone sessions a month for these seats. */
 export const seatPoints = (counts: Partial<Record<Line, number>>) => LINE_ORDER.reduce((n, l) => n + Math.max(0, counts[l] ?? 0) * LINES[l].points, 0);
 /**
- * Founding members: the first `seats` accounts to start a plan get `bonus` more of their plan's
- * phone sessions every month, for as long as they have a plan (the listing add-on's are not raised).
+ * Founding members: the first `seats` accounts to start a plan that earns it (Agency, Scale, Agency
+ * Max) get `bonus` more of that plan's phone sessions every month, for as long as they are on one
+ * of those plans (the listing add-on's are not raised).
  */
 export const FOUNDING = { seats: 15, bonus: 0.25 };
+/** The plans that earn the founding bonus, cheapest first. */
+export const FOUNDING_PLANS: AccountPlan[] = ACCOUNT_PLAN_ORDER.filter((p) => ACCOUNT_PLANS[p].founding);
 /** The founding bonus a month for these lines. */
-export const foundingBonus = (counts: Partial<Record<Line, number>>) => ACCOUNT_PLAN_ORDER.reduce((n, l) => n + Math.max(0, counts[l] ?? 0) * Math.round(LINES[l].points * FOUNDING.bonus), 0);
+export const foundingBonus = (counts: Partial<Record<Line, number>>) => FOUNDING_PLANS.reduce((n, l) => n + Math.max(0, counts[l] ?? 0) * Math.round(LINES[l].points * FOUNDING.bonus), 0);
 /** Phone sessions a month for these lines, with the founding bonus when the account has it. */
 export const monthlyPoints = (counts: Partial<Record<Line, number>>, founding: boolean) => seatPoints(counts) + (founding ? foundingBonus(counts) : 0);
 
@@ -263,14 +272,14 @@ export const upgradeMessage = (need: Need) =>
 export function quantityPlan(rows: { plan: string; status: string }[], current: Partial<Record<Line, number>>, scout?: number, account?: AccountPlan | null) {
   // The account plan: the one asked for (null takes it off), or the one on the subscription now.
   const plan = account === undefined ? accountPlanOf(current) : account;
-  const want: Record<Line, number> = { DOMINATOR: 0, COMMAND: 0, MANAGE: 0, AGENT: 0, LISTING: 0, SCOUT: Math.max(0, Math.floor(scout ?? current.SCOUT ?? 0)), P_SCOUT: plan === 'P_SCOUT' ? 1 : 0, P_AGENCY: plan === 'P_AGENCY' ? 1 : 0, P_SCALE: plan === 'P_SCALE' ? 1 : 0 };
+  const want: Record<Line, number> = { DOMINATOR: 0, COMMAND: 0, MANAGE: 0, AGENT: 0, LISTING: 0, SCOUT: Math.max(0, Math.floor(scout ?? current.SCOUT ?? 0)), P_SCOUT: plan === 'P_SCOUT' ? 1 : 0, P_AGENCY: plan === 'P_AGENCY' ? 1 : 0, P_SCALE: plan === 'P_SCALE' ? 1 : 0, P_MAX: plan === 'P_MAX' ? 1 : 0 };
   for (const r of rows) if (r.status === 'ACTIVE' && isPlan(r.plan)) want[r.plan]++;
   const grows = LINE_ORDER.some((l) => want[l] > (current[l] ?? 0));
   const same = LINE_ORDER.every((l) => want[l] === (current[l] ?? 0));
   return { want, grows, same, empty: LINE_ORDER.every((l) => want[l] === 0) };
 }
 
-export const dollars = (cents: number) => '$' + (cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2));
+export const dollars = (cents: number) => '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 });
 
 /** How long a Google Business connection that once had a paying listing may go without one before it is disconnected. */
 export const UNPAID_DAYS = 7;

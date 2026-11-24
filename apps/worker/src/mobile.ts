@@ -806,8 +806,9 @@ async function provision(device: LeasedDevice, p: Pin) {
       if (w) Object.assign(got, w);
       return got;
     }
-    // Internal (admin) runs never use metered mobile data: without a place on the unlimited line the
-    // point waits for one (a proxy problem, so it is tried again).
+    // Internal (admin) runs never use metered mobile data, and a Live 5G Proof audit runs on the 5G
+    // lines only: without a place on a line the point waits for one (a proxy problem, so it is tried again).
+    if (p.scan.laneOnly) throw new Error('PROXY_MOBILE_LANE_ONLY a Live 5G Proof audit runs on the 5G lines only');
     if (await internalScan(p.scan.userId)) throw new Error('PROXY_MOBILE_LANE_ONLY admin test runs use only the unlimited mobile line');
     const provider = mobileProvider();
     if (!provider) throw new Error('MOBILE_DATA_NOT_CONFIGURED set VOIDMOB_API_KEY and VOIDMOB_PROXY_ID (or VOIDMOB_USERNAME and VOIDMOB_PASSWORD, or the Decodo mobile login) on the worker');

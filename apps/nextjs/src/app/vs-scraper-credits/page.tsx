@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import VsScraperCredits from '@/components/marketing/VsScraperCredits';
 import { CLOSER, usd } from '@/lib/pricing';
 
-const description = `Stop buying scraper credits. The ${usd(CLOSER.cents)} Closer Pack runs two full 5×5 audits on real Android phones, with a screen recording at every pin, plus a revenue brief priced at county Google Ads rates.`;
+const description = `Stop buying scraper credits. The ${usd(CLOSER.cents)} ${CLOSER.name} runs two full 5×5 audits on real Android phones over our 5G lines, with a screen recording at every pin, plus a revenue brief priced at county Google Ads rates.`;
 
 export const metadata: Metadata = {
   title: '1 pin = 1 real Android session | Stakeout Search vs. scraper credits',

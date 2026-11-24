@@ -97,7 +97,7 @@ function LoginFormContent() {
           </div>
         </div>
         <h1 className={`mt-4 text-center text-2xl font-extrabold tracking-tight text-white${offerSignup ? '' : ' uppercase'}`}>
-          {closerSignup ? `Create an account for your ${usd(CLOSER.cents)} Closer Pack` : auditSignup ? `Create an account for your ${usd(WELCOME.cents)} audit` : 'Stakeout Observatory'}
+          {closerSignup ? `Create an account for your ${usd(CLOSER.cents)} ${CLOSER.name}` : auditSignup ? `Create an account for your ${usd(WELCOME.cents)} audit` : 'Stakeout Observatory'}
         </h1>
         <p className={offerSignup ? 'mt-2 text-center text-sm leading-6 text-slate-300' : 'mt-1 text-center text-xs text-slate-400'}>
           {closerSignup
@@ -150,7 +150,7 @@ function LoginFormContent() {
               <Coins className="h-4 w-4 shrink-0 text-emerald-400" />
               <span>
                 {closerSignup
-                  ? 'Next, review the Closer Pack and continue to checkout.'
+                  ? `Next, review the ${CLOSER.name} and continue to checkout.`
                   : auditSignup
                   ? 'Next, review your first audit and continue to checkout.'
                   : <>Confirm your email after signing up to <strong>activate your account</strong>.</>}

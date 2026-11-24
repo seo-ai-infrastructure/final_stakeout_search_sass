@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { db } from '@stakeout/db';
 import { settleIfDue } from '@/lib/creditSub';
-import { catchUpPlanMonths } from '@/lib/gbpBilling';
+import { boostOffer, catchUpPlanMonths } from '@/lib/gbpBilling';
 import { getSettings } from '@stakeout/core/settings';
 import { redis } from '@stakeout/core/redis';
 export async function GET() {
@@ -37,6 +37,8 @@ export async function GET() {
       emailVerified: Boolean(user.emailVerifiedAt),
       recentLedger,
       mobileData,
+      // A plan nearly used up this month: the app offers the Boost once per billing month (month: when that month began).
+      boost: await boostOffer(user.id).then((b) => (b?.eligible ? { due: true, left: b.left, monthly: b.monthly, month: b.monthFrom } : null)).catch(() => null),
     });
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

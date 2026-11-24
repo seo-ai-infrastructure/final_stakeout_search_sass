@@ -35,6 +35,8 @@ export async function createScan(
     runAt?: Date;
     /** A first $5 audit: when its free re-run is due. */
     freeRescanAt?: Date;
+    /** A Live 5G Proof audit: its points run on the unlimited 5G lines only. */
+    laneOnly?: boolean;
   },
 ) {
   const prior = await db.gridScan.findUnique({ where: { requestKey: key } });
@@ -71,6 +73,7 @@ export async function createScan(
             speed,
             runAt: opts?.runAt ?? null,
             freeRescanAt: opts?.freeRescanAt ?? null,
+            laneOnly: opts?.laneOnly ?? false,
             shareToken: lead ? randomBytes(24).toString('hex') : null,
             scheduleCron: (s.scheduleType !== 'once' && opts?.cron) || scheduleCron(s.scheduleType),
             totalPins: pins.length,

@@ -1,14 +1,15 @@
 'use client';
 import { Fragment, useEffect, useState } from 'react';
-import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, nextPlan, type AccountPlan } from '@stakeout/core/gbpPlans';
+import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, type AccountPlan } from '@stakeout/core/gbpPlans';
 
 /** The price list in groups, each under its own heading. */
-const groupOf = (key?: string) => (!key ? '' : key === 'welcome' ? 'welcome' : key === 'closer' ? 'closer' : key.startsWith('sessions-') ? 'sessions' : key.startsWith('briefs-') ? 'briefs' : key.startsWith('prospect') ? 'prospect' : key.startsWith('topup') ? 'topup' : key === 'white-label' ? 'extra' : key === 'admin-test' ? 'test' : 'other');
+const groupOf = (key?: string) => (!key ? '' : key === 'welcome' ? 'welcome' : key === 'closer' ? 'closer' : key === 'boost-250' ? 'boost' : key.startsWith('sessions-') ? 'sessions' : key.startsWith('briefs-') ? 'briefs' : key.startsWith('prospect') ? 'prospect' : key.startsWith('topup') ? 'topup' : key === 'white-label' ? 'extra' : key === 'admin-test' ? 'test' : 'other');
 const GROUPS: Record<string, string> = {
   welcome: 'Your first audit · one time',
   prospect: 'Prospect audits · no subscription, valid 90 days',
   topup: 'More phone sessions · for seat holders, never expire',
-  closer: 'Closer Pack · no subscription, up to 2 per account',
+  closer: 'Live 5G Proof Pack · no subscription, one per account',
+  boost: 'Boost · for plan holders running low this month',
   sessions: 'Phone sessions · every surface in one run, never expire',
   briefs: 'Brief credits · one compiles a revenue brief or updates one',
   extra: 'Extras',
@@ -18,15 +19,8 @@ const GROUPS: Record<string, string> = {
 type Item = { key: string; name: string; credits: number; cents: number; blurb: string; briefs?: number; featured?: boolean };
 const usd = (cents: number) => '$' + (cents % 100 ? (cents / 100).toFixed(2) : String(cents / 100));
 const many = (n: number, one: string) => `${n.toLocaleString('en-US')} ${one}${n === 1 ? '' : 's'}`;
-/** When buying sessions costs about as much as moving up a plan (these packs): what the next plan adds, from the plans' own figures. */
-const NUDGE_KEYS: Partial<Record<AccountPlan, string[]>> = { P_SCOUT: ['sessions-250', 'sessions-500'], P_AGENCY: ['sessions-500'] };
-function nudgeFor(plan: AccountPlan, pick: string) {
-  const to = nextPlan(plan);
-  if (!to || !NUDGE_KEYS[plan]?.includes(pick)) return null;
-  const a = ACCOUNT_PLANS[plan], b = ACCOUNT_PLANS[to];
-  const extra = [b.points > a.points ? `${many(b.points - a.points, 'more phone session')}` : '', b.briefs > a.briefs ? `${many(b.briefs - a.briefs, 'more brief credit')}` : ''].filter(Boolean).join(' and ');
-  return { to: b.name, more: usd(b.tiers[0].cents - a.tiers[0].cents), adds: `${extra} every month${b.whiteLabel && !a.whiteLabel ? ', and your logo, name and brand color on shared reports' : ''}` };
-}
+/** The plan's month and the Boost, from the price list (see boostOffer): a second Boost in a month is met with the upgrade's figures first. */
+type BoostInfo = { eligible: boolean; left: number; monthly: number; boosts: number; upgrade: { to: AccountPlan; name: string; chargeCents: number; sessionsNow: number; boostCents: number; savingsCents: number; monthlyAfter: number; priceAfter: string } | null };
 /** The plans in one line: price, sessions and brief credits a month. */
 const PLAN_LINE = ACCOUNT_PLAN_ORDER.map((p) => `${ACCOUNT_PLANS[p].name} ${usd(ACCOUNT_PLANS[p].tiers[0].cents)} (${ACCOUNT_PLANS[p].points.toLocaleString('en-US')} phone sessions, ${many(ACCOUNT_PLANS[p].briefs, 'brief credit')} a month)`).join(', ');
 type Props = {
@@ -45,6 +39,9 @@ export function CreditTopUpModal(p: Props) {
     [pick, choose] = useState(''),
     [accountPlan, setAccountPlan] = useState<AccountPlan | null>(null),
     [briefs, setBriefs] = useState<number | null>(null),
+    [boost, setBoost] = useState<BoostInfo | null>(null),
+    // The upgrade shown in place of a second Boost this month, until the buyer chooses.
+    [intercept, setIntercept] = useState(false),
     [ready, setReady] = useState(true),
     [loaded, setLoaded] = useState(false),
     [going, setGoing] = useState(false),
@@ -54,21 +51,25 @@ export function CreditTopUpModal(p: Props) {
       fetch('/api/billing/checkout')
         .then((r) => r.json())
         .then((d) => {
-          // The item asked for, if it is on offer; else the first audit (a first purchase); on a plan its own top-up;
-          // without one the Closer Pack while it can be bought; else the featured session pack, a top-up, or 5 prospect audits.
+          // The item asked for, if it is on offer; else the first audit (a first purchase); on a plan running low the
+          // Boost; the Proof Pack while it can be bought; else a top-up, brief credits, or 5 prospect audits.
           const list: Item[] = d.packs ?? [];
+          setBoost(d.boost ?? null);
+          setIntercept(false);
           setItems(list);
           setReady(d.ready !== false);
           setLoaded(true);
           setAccountPlan(d.accountPlan ?? null);
           setBriefs(typeof d.briefs === 'number' ? d.briefs : null);
-          choose((list.find((k) => k.key === p.want) ?? list.find((k) => k.key === 'welcome') ?? (d.accountPlan ? list.find((k) => k.key === 'sessions-plan-200') : list.find((k) => k.key === 'closer')) ?? list.find((k) => k.featured && k.key.startsWith('sessions-')) ?? list.find((k) => k.key === 'closer') ?? list.find((k) => k.key.startsWith('topup')) ?? list.find((k) => k.key === 'prospect-5') ?? list[0])?.key ?? '');
+          choose((list.find((k) => k.key === p.want) ?? list.find((k) => k.key === 'welcome') ?? list.find((k) => k.key === 'boost-250') ?? list.find((k) => k.key === 'closer') ?? list.find((k) => k.key.startsWith('topup')) ?? list.find((k) => k.key === 'prospect-5') ?? list[0])?.key ?? '');
         })
         .catch(() => { setLoaded(true); setError('Unable to load the price list.'); });
   }, [p.isOpen, p.want]);
   if (!p.isOpen) return null;
   /** To Stripe's payment page for the chosen item; the buyer comes back to this page afterwards. */
-  async function pay() {
+  async function pay(anyway = false) {
+    // A second Boost this month: what moving up one plan would cost instead, first.
+    if (!anyway && pick === 'boost-250' && boost?.upgrade && boost.boosts >= 1 && !intercept) { setIntercept(true); return; }
     setError('');
     setGoing(true);
     try {
@@ -86,10 +87,28 @@ export function CreditTopUpModal(p: Props) {
       setGoing(false);
     }
   }
+  /** Moves the plan up one (the rest of the period is charged to the card on file now), then reloads the page with the new balance. */
+  async function upgrade() {
+    if (!boost?.upgrade) return;
+    setError('');
+    setGoing(true);
+    try {
+      const res = await fetch('/api/billing/gbp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: boost.upgrade.to }) });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || 'The upgrade did not go through.');
+      if (d.url) { window.location.assign(d.url); return; }
+      // The bank wants the charge confirmed: its page, where the upgrade finishes.
+      if (d.pay) { window.location.assign(d.pay); return; }
+      window.location.reload();
+    } catch (e) {
+      setError((e as Error).message || 'The upgrade did not go through.');
+      setGoing(false);
+    }
+  }
   const chosen = items.find((k) => k.key === pick);
   // Sold the account plans: the window speaks of sessions and briefs, and plans rather than seats.
-  const plans = items.some((k) => k.key === 'closer' || k.key.startsWith('sessions-') || k.key.startsWith('briefs-'));
-  const nudge = accountPlan ? nudgeFor(accountPlan, pick) : null;
+  const plans = items.some((k) => k.key === 'closer' || k.key === 'boost-250' || k.key.startsWith('sessions-') || k.key.startsWith('briefs-')) || Boolean(accountPlan);
+  const up = intercept ? boost?.upgrade ?? null : null;
   return (
     // The overlay scrolls: the price list is taller than a small screen.
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75">
@@ -112,10 +131,28 @@ export function CreditTopUpModal(p: Props) {
         {/* Until the price list is in, it is not known whether this account is sold plans or seats. */}
         {loaded && <a href="/profiles?tab=plan" className="block rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-100 hover:bg-emerald-500/20">
           {plans
-            ? <><span className="font-semibold">Plans are the best value:</span> {PLAN_LINE}. Unused plan sessions and brief credits roll over for one month. <span className="font-semibold underline">Plan and billing</span></>
+            ? <><span className="font-semibold">{accountPlan ? 'Need more every month?' : 'Plans are the best value:'}</span> {PLAN_LINE}. <span className="font-semibold underline">Plan and billing</span></>
             : <><span className="font-semibold">Monthly seats are the best value:</span> Scout from $39, Command from $59, Dominator from $99 per client, with 250 to 1,250 phone sessions a month each. <span className="font-semibold underline">Plan and billing</span></>}
         </a>}
-        {!loaded ? (
+        {loaded && accountPlan && boost && !boost.eligible && (
+          <p className="rounded-lg border border-slate-700 px-3 py-2.5 text-sm text-slate-300">
+            {boost.left.toLocaleString()} of this month’s {boost.monthly.toLocaleString()} plan sessions are left. The Boost (250 sessions for $39) opens when less than 15% are left.
+          </p>
+        )}
+        {up ? (
+          <div className="space-y-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-50">
+            <p className="text-base font-bold text-white">Move up to {up.name} instead?</p>
+            <p>
+              This would be your second Boost this month. Moving up to {up.name} now costs about {usd(up.chargeCents)} for the rest of this billing period and adds about {up.sessionsNow.toLocaleString()} sessions this month
+              {up.savingsCents > 0 ? <>, which would cost {usd(up.boostCents)} in Boosts: <span className="font-semibold">about {usd(up.savingsCents)} less</span>.</> : '.'}
+            </p>
+            <p className="text-emerald-100/80">After that: {up.monthlyAfter.toLocaleString()} sessions a month for {up.priceAfter}. Stripe works out the exact charge.</p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button type="button" onClick={upgrade} disabled={going} className="min-h-[44px] flex-1 rounded-xl bg-emerald-400 px-4 font-extrabold text-slate-950 disabled:opacity-60">{going ? 'Working…' : `Move up to ${up.name}`}</button>
+              <button type="button" onClick={() => pay(true)} disabled={going} className="min-h-[44px] flex-1 rounded-xl border border-slate-500 px-4 font-semibold text-slate-100 disabled:opacity-60">Buy the Boost anyway</button>
+            </div>
+          </div>
+        ) : !loaded ? (
           <p className="text-sm text-slate-400">Loading prices…</p>
         ) : ready && items.length > 0 ? (
           <>
@@ -134,21 +171,15 @@ export function CreditTopUpModal(p: Props) {
                       <span className="font-semibold">{k.name}</span>
                       <span className="shrink-0 font-bold">USD {(k.cents / 100).toFixed(2)}</span>
                     </span>
-                    <span className="block text-sm text-slate-400">{k.blurb}{k.credits && !k.key.startsWith('sessions-') && k.key !== 'closer' ? ` ${k.credits.toLocaleString()} phone sessions.` : ''}</span>
+                    <span className="block text-sm text-slate-400">{k.blurb}{k.credits && !k.key.startsWith('sessions-') && k.key !== 'closer' && k.key !== 'boost-250' ? ` ${k.credits.toLocaleString()} phone sessions.` : ''}</span>
                   </span>
                 </label>
                 </Fragment>
               ))}
             </div>
-            {nudge && (
-              <p className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-100">
-                <span className="font-semibold">Smarter math:</span> {nudge.to} is {nudge.more} more a month and adds {nudge.adds}.{' '}
-                <a href="/profiles?tab=plan" className="font-semibold underline">Switch to {nudge.to}</a>
-              </p>
-            )}
             <button
               type="button"
-              onClick={pay}
+              onClick={() => pay()}
               disabled={going || !chosen}
               className="min-h-[48px] w-full rounded-xl bg-emerald-400 px-4 text-[15px] font-extrabold text-slate-950 disabled:opacity-60"
             >

@@ -15,7 +15,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: 'Pricing | Stakeout Search',
     description: plans
-      ? `One pin, one phone session: Scout ${usd(ACCOUNT_PLANS.P_SCOUT.tiers[0].cents)}, Agency ${usd(ACCOUNT_PLANS.P_AGENCY.tiers[0].cents)} and Scale ${usd(ACCOUNT_PLANS.P_SCALE.tiers[0].cents)} a month, with real-phone sessions and revenue briefs. The listing add-on is ${usd(LINES.LISTING.tiers[0].cents)} a listing. The Closer Pack is ${usd(CLOSER.cents)}, no subscription.`
+      ? `One pin, one phone session: Scout ${usd(ACCOUNT_PLANS.P_SCOUT.tiers[0].cents)}, Agency ${usd(ACCOUNT_PLANS.P_AGENCY.tiers[0].cents)}, Scale ${usd(ACCOUNT_PLANS.P_SCALE.tiers[0].cents)} and Agency Max ${usd(ACCOUNT_PLANS.P_MAX.tiers[0].cents)} a month, or two months free yearly, with real-phone sessions and revenue briefs. The listing add-on is ${usd(LINES.LISTING.tiers[0].cents)} a listing. Try one live grid with the ${usd(CLOSER.cents)} ${CLOSER.name}.`
       : 'Priced per client, not per pin: Scout from $39, Command from $59 and Dominator from $99 a client a month, less as you add clients. Your first 5×5 real-device audit is $5. Prospect audits from $15, no subscription. No setup fees.',
   };
 }

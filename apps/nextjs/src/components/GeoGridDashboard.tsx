@@ -746,6 +746,8 @@ export function GeoGridDashboard({
             {scan.targetType.replaceAll('_', ' ')}
             {scan.network === 'mobile' ? ' · Mobile Network' : scan.network === 'mix' ? ' · Mobile & Residential Networks' : ''}
           </p>
+          {/* An unbranded shared report carries ours. */}
+          {shared && !scan.brand && <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-emerald-300/90">Verified on real phones by Stakeout Search</p>}
         </div>
         {shared ? (
           <div className="flex flex-wrap items-center gap-3">

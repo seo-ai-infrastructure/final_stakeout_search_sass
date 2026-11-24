@@ -37,12 +37,17 @@ export const PROSPECT_PACKS: (PriceItem & { audits: number; saves: number; featu
 export const TOPUP: PriceItem = { key: 'topup-100', name: 'Top-up: 100 phone sessions', credits: 100, cents: 2500, blurb: 'For seat holders who run short. Never expires.' };
 
 /**
- * Sold with the account plans (Scout, Agency, Scale): the Closer Pack for a pitch with no
- * subscription (in place of the $5 first audit and the prospect audits), phone sessions for plan
- * holders who run short, and brief credits. Bought sessions and brief credits never expire.
+ * Sold with the account plans (Scout, Agency, Scale, Agency Max): the Live 5G Proof Pack (key
+ * 'closer', once the Closer Pack) for one live audit with no subscription, run on our 5G lines only
+ * (its scans never spill over to other networks, see proofScan); the Boost for subscribers running
+ * low; and brief credits. The session packs are no longer sold (bought sessions stay). Bought
+ * sessions and brief credits never expire.
  */
-export const CLOSER: PriceItem = { key: 'closer', name: 'Closer Pack', credits: 50, briefs: 1, cents: 1900, blurb: 'No subscription: two full 5×5 audits on real phones and 1 brief credit for a revenue brief priced with live county Google Ads rates. Never expires. Up to 2 per account.' };
-export const CLOSER_LIMIT = 2;
+export const CLOSER: PriceItem = { key: 'closer', name: 'Live 5G Proof Pack', credits: 50, briefs: 1, cents: 1900, blurb: 'No subscription: 50 phone sessions (two 5×5 audits) run on our 5G lines, and 1 brief credit for a revenue brief priced with live county Google Ads rates. Never expires. One per account.' };
+export const CLOSER_LIMIT = 1;
+/** Plan holders under BOOST_BELOW of their month's sessions: 250 more, sold in the app only. */
+export const BOOST: PriceItem = { key: 'boost-250', name: 'Boost: 250 phone sessions', credits: 250, cents: 3900, blurb: 'For plan holders running low this month: 10 more 5×5 scans. Never expire.' };
+export const BOOST_BELOW = 0.15;
 export const SESSION_PACKS: PriceItem[] = [
   { key: 'sessions-100', name: '100 phone sessions', credits: 100, cents: 2900, blurb: '4 full 5×5 scans ($7.25 a scan). For finishing a client audit today.' },
   { key: 'sessions-250', name: '250 phone sessions', credits: 250, cents: 5900, featured: true, blurb: '10 full 5×5 scans ($5.90 a scan). Covers two 5-keyword territory audits.' },
@@ -99,7 +104,7 @@ export const TOPUPS: (PriceItem & { plan: string })[] = [
 /** The welcome pack as sold before the seats: 25 credits. */
 const WELCOME_25: PriceItem = { ...WELCOME, key: 'welcome', credits: 25 };
 
-export const ALL_ITEMS: PriceItem[] = [WELCOME, ...PROSPECT_PACKS, TOPUP, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS, CLOSER, ...SESSION_PACKS, PLAN_TOPUP, ...BRIEF_PACKS];
+export const ALL_ITEMS: PriceItem[] = [WELCOME, ...PROSPECT_PACKS, TOPUP, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS, CLOSER, ...SESSION_PACKS, PLAN_TOPUP, BOOST, ...BRIEF_PACKS];
 /** The item a key names, for what a paid order brings. */
 export const itemByKey = (key: string | null | undefined) => ALL_ITEMS.find((i) => i.key === key);
 
@@ -129,14 +134,13 @@ export function currentPlan(paid: { item?: string | null; credits: number; creat
  * always, a top-up while it holds a seat, and the white-label setup while it has fewer than 10
  * client seats and has not bought it. An admin also gets the $1 payment test.
  */
-export function itemsFor(state: { admin?: boolean; /** Has never paid for anything. */ firstPurchase?: boolean; /** Client seats (Scout, Command and Dominator) now. */ seats?: number; /** The white-label setup is already paid for. */ whiteLabel?: boolean; /** Sold the account plans rather than seats. */ newPlans?: boolean; /** On an account plan (Scout, Agency or Scale) now. */ plan?: boolean; /** Closer Packs already bought. */ closers?: number }): PriceItem[] {
+export function itemsFor(state: { admin?: boolean; /** Has never paid for anything. */ firstPurchase?: boolean; /** Client seats (Scout, Command and Dominator) now. */ seats?: number; /** The white-label setup is already paid for. */ whiteLabel?: boolean; /** Sold the account plans rather than seats. */ newPlans?: boolean; /** On an account plan (Scout, Agency, Scale or Agency Max) now. */ plan?: boolean; /** On a plan with under BOOST_BELOW of its month's sessions left. */ boost?: boolean; /** Proof Packs (once Closer Packs) already bought. */ closers?: number }): PriceItem[] {
   const seats = state.seats ?? 0;
   if (state.newPlans) {
-    // With the account plans: the Closer Pack (twice at most), and the session packs and brief credits
-    // for every account, on a plan or not; an account on a plan also gets the plan top-up. An account
-    // still on seats keeps its own price for 100 sessions.
-    const sessions = seats > 0 && !state.plan ? [TOPUP, ...SESSION_PACKS.filter((p) => p.credits > TOPUP.credits)] : SESSION_PACKS;
-    const out = [...((state.closers ?? 0) < CLOSER_LIMIT ? [CLOSER] : []), ...(state.plan ? [PLAN_TOPUP] : []), ...sessions, ...BRIEF_PACKS];
+    // With the account plans: the Live 5G Proof Pack (once per account), the Boost for a plan holder
+    // running low, and brief credits. Sessions are otherwise bought as a plan: the session packs are
+    // no longer sold. An account still on seats keeps its own price for 100 sessions.
+    const out = [...((state.closers ?? 0) < CLOSER_LIMIT ? [CLOSER] : []), ...(state.boost ? [BOOST] : []), ...(seats > 0 && !state.plan ? [TOPUP] : []), ...BRIEF_PACKS];
     return state.admin ? [...out, ADMIN_TEST] : out;
   }
   const items: PriceItem[] = [
@@ -155,7 +159,7 @@ export function itemsFor(state: { admin?: boolean; /** Has never paid for anythi
 export function paidMessage(d: { refunded?: boolean; item?: string | null; plan?: string | null; credits?: number; briefs?: number }): string {
   if (d.refunded)
     return d.item === CLOSER.key
-      ? `The Closer Pack is limited to ${CLOSER_LIMIT} per account, and this account already has ${CLOSER_LIMIT}. Your payment was refunded in full; nothing was added.`
+      ? `The ${CLOSER.name} is ${CLOSER_LIMIT === 1 ? 'one' : CLOSER_LIMIT} per account, and this account already has ${CLOSER_LIMIT === 1 ? 'one' : CLOSER_LIMIT}. Your payment was refunded in full; nothing was added.`
       : 'The first audit is one per account and per card, and this one has already been used. Your payment was refunded in full; no phone sessions were added.';
   const credits = Number(d.credits) || 0, briefs = Number(d.briefs) || 0;
   if (d.plan) return `You are on the ${d.plan} plan: ${credits.toLocaleString('en-US')} phone sessions added, and the same every month until you cancel.`;
@@ -168,7 +172,7 @@ export function paymentNotice(p: { buyer: string; credits: number; cents: number
   const item = itemOf(p);
   if (p.refunded)
     return p.item === CLOSER.key
-      ? { subject: `${p.sandbox ? '[Test] ' : ''}Refunded: Closer Pack past the limit, ${p.buyer}`, lines: [`${p.buyer} paid ${usd(p.cents)} for a Closer Pack, but this account already has ${CLOSER_LIMIT}, the most one account can buy. The payment was refunded and nothing was added.`, `Stripe checkout ${p.orderId}, payment ${p.captureId}.`] }
+      ? { subject: `${p.sandbox ? '[Test] ' : ''}Refunded: ${CLOSER.name} past the limit, ${p.buyer}`, lines: [`${p.buyer} paid ${usd(p.cents)} for a ${CLOSER.name}, but this account already has ${CLOSER_LIMIT}, the most one account can buy. The payment was refunded and nothing was added.`, `Stripe checkout ${p.orderId}, payment ${p.captureId}.`] }
       : { subject: `${p.sandbox ? '[Test] ' : ''}Refunded: second first audit, ${p.buyer}`, lines: [`${p.buyer} paid ${usd(p.cents)} for the first audit, but this account or this card has already had one. The payment was refunded and no phone sessions were added.`, `Stripe checkout ${p.orderId}, payment ${p.captureId}.`] };
   const name = item?.name ?? p.credits + ' phone sessions';
   const what = p.credits ? ` (${p.credits.toLocaleString('en-US')} phone sessions). Their balance is now ${p.balance.toLocaleString('en-US')}.` : '.';

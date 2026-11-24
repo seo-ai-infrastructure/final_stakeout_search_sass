@@ -15,7 +15,9 @@ import { requestKeyValid } from '@stakeout/core/requestKey';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { asSpeed, schedulePlan } from '@stakeout/core/speed';
 import { db } from '@stakeout/db';
-import { WELCOME } from '@/lib/pricing';
+import { CLOSER, WELCOME } from '@/lib/pricing';
+import { accountPlanNow } from '@/lib/gbpBilling';
+import { activePlan } from '@/lib/creditSub';
 import { errorResponse } from '@/lib/api';
 import { redis } from '@stakeout/core/redis';
 import { knownSite } from '@/lib/businessSite';
@@ -23,6 +25,16 @@ import { googleIdField } from '@/lib/googleId';
 
 // Preparing proxy lists for every city in a new grid can take many Proxy-Seller calls.
 export const maxDuration = 300;
+
+/** An account on no plan whose only purchases are the Live 5G Proof Pack: its scans are Proof audits. */
+async function proofAccount(userId: string): Promise<boolean> {
+  const [plan, credit, paid] = await Promise.all([
+    accountPlanNow(userId),
+    activePlan(userId).catch(() => null),
+    db.paymentOrder.findMany({ where: { userId, captureId: { not: null }, refundedAt: null }, select: { item: true } }),
+  ]);
+  return !plan && !credit && paid.length > 0 && paid.every((o) => o.item === CLOSER.key);
+}
 
 export async function POST(req: Request) {
   try {
@@ -38,10 +50,20 @@ export async function POST(req: Request) {
       const placed = placedPins({ lat: s.centerLat, lng: s.centerLng }, body.points, OFFERED_GRID_SIZES);
       if (placed) s.gridSize = placed.gridSize;
       const settings = await getSettings();
+      const proof = u.role !== 'ADMIN' && s.targetType !== 'desktop_aimode' && (await proofAccount(u.id));
       if (s.isps.some((v: string) => !ispAllowed(v, settings))) throw new InputError('That ISP is not available here. Choose another.');
-      // The network is ours to choose, not the customer's (nor an admin's on Automatic): home internet
-      // while Proxy-Seller has room for the scan, then mobile data for good (networkChoice.ts).
-      if (u.role !== 'ADMIN' || body.network === 'auto') {
+      // A Live 5G Proof audit (an account on no plan whose only purchase is the Proof Pack): its points
+      // run on the unlimited 5G lines only, never spilling over to another network, so the audit is what
+      // the pack promises. Without a 5G line connected it cannot start.
+      if (proof) {
+        const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
+        if (!health?.mobileLanes) throw new InputError('Live 5G audits are paused for a few minutes. Try again shortly.', 503);
+        s.network = 'mobile';
+        s.ispMode = 'any';
+        s.isps = [];
+      } else if (u.role !== 'ADMIN' || body.network === 'auto') {
+        // The network is ours to choose, not the customer's (nor an admin's on Automatic): home internet
+        // while Proxy-Seller has room for the scan, then mobile data for good (networkChoice.ts).
         s.network = await chooseNetwork(s.gridSize * s.gridSize, s.targetType, { internal: u.role === 'ADMIN' });
         if (s.network !== 'residential') {
           s.ispMode = 'any';
@@ -69,14 +91,18 @@ export async function POST(req: Request) {
     if (s.targetType !== 'desktop_aimode') {
       // A mobile scan's points go out on the unlimited lines; the phones the lines can't take pick
       // points up on home internet while Proxy-Seller's prepaid data lasts (mobileOverflowTown). A
-      // town Proxy-Seller does not know never stops a mobile scan.
+      // town Proxy-Seller does not know never stops a mobile scan. A Proof audit never spills over: no town.
       if (s.network === 'mobile') {
+        if (proof) {
+          // nothing to set up: the 5G lines only
+        } else {
         const left = skippedPoints(body.skip, s.gridSize);
         const places = (placed?.pins ?? buildGrid(s)).filter((p) => !left.has(p.rowIdx + '_' + p.colIdx)).map((p) => ({ city: p.city, stateCode: p.stateCode }));
         const town = await mobileOverflowTown(s.centerLat, s.centerLng, places);
         if (town) {
           s.proxyRegion = town.region;
           s.proxyCity = town.city;
+        }
         }
       } else if (listsEnabled()) {
         // Prepare the residential proxies BEFORE the grid is queued: for the centre
@@ -122,7 +148,7 @@ export async function POST(req: Request) {
     const freeRescanAt = firstAudit ? new Date((runAt ?? new Date()).getTime() + 7 * 86400000) : undefined;
     // A yearly plan's new month is added before the scan is charged.
     await catchUpPlanMonths(u.id).catch(() => false);
-    const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins, { cron, speed, runAt, freeRescanAt });
+    const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins, { cron, speed, runAt, freeRescanAt, laneOnly: s.network === 'mobile' && proof });
     await wakeWorker('new scan');
     // A customer just started a scan: if the worker has gone quiet, the admins hear about it now.
     await flushAlerts().catch(() => {});

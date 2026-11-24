@@ -412,7 +412,7 @@ body{width:auto;max-width:none}
   </div>
 </section>
 
-<footer><div class="wrap"><div class="logo" id="footlogo"><span class="mark"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></div><span>Every number has a real-device receipt or a Google source.</span></div></footer>
+<footer><div class="wrap"><div class="logo" id="footlogo"><span class="mark"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></div><span id="footnote">Verified on real phones by Stakeout Search. Every number has a real-device receipt or a Google source.</span></div></footer>
 </main>
 <script type="module">
 const $ = (s) => document.querySelector(s);
@@ -466,7 +466,7 @@ function title() {
   document.title = D.business + ' · Local search and revenue brief';
   // Under the agency's white label: its logo (or name) at the top and the foot, never ours.
   const mark = D.brand?.logo ? `<img src="${esc(D.brand.logo)}" alt="${esc(D.brand.name)}">` : D.brand?.name ? `<span><b>${esc(D.brand.name)}</b></span>` : '';
-  if (mark) { $('#logo').innerHTML = mark; $('#footlogo').innerHTML = mark; }
+  if (mark) { $('#logo').innerHTML = mark; $('#footlogo').innerHTML = mark; $('#footnote').textContent = 'Every number has a real-device receipt or a Google source.'; }
 }
 
 /* ---- Ledger ---- */

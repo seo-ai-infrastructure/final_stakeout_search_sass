@@ -2,15 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { pushAlert } from '@stakeout/core/alerts';
-import { ACCOUNT_PLANS, AGENT_ADDON, ANNUAL_MONTHS_PAID, LINES, LINE_ORDER, PLANS, accountPlanOf, addMonths, addonOn, annualKey, clientSeats, dollars, hasLegacySeats, isAccountPlan, isPlan, monthIndex, monthWindow, monthlyCents, monthlyPoints, planNow, quantityPlan, seatBriefs, seatGrant, settlePending, stripeTiers, yearlyLine, type AccountPlan, type BillingInterval, type Line, type Plan } from '@stakeout/core/gbpPlans';
+import { ACCOUNT_PLANS, AGENT_ADDON, ANNUAL_MONTHS_PAID, LINES, LINE_ORDER, PLANS, accountPlanOf, addMonths, addonOn, annualKey, clientSeats, dollars, hasLegacySeats, isAccountPlan, isPlan, monthIndex, monthWindow, monthlyCents, monthlyPoints, nextPlan, planNow, quantityPlan, rolloverMonths, seatBriefs, seatGrant, settlePending, stripeTiers, yearCents, yearlyLine, type AccountPlan, type BillingInterval, type Line, type Plan } from '@stakeout/core/gbpPlans';
 import { claimFounding, foundingLeft, isFounding } from '@stakeout/core/founding';
 import { briefGrant, briefsLeft } from '@stakeout/core/briefWallet';
 import { getSettings, newPlansFor } from '@stakeout/core/settings';
-import { PACK_REASONS, endPlan, renewPlan, topUpPlan } from '@stakeout/core/creditPlan';
+import { PACK_REASONS, endPlan, planRemaining, renewPlan, topUpPlan } from '@stakeout/core/creditPlan';
 import { stripe, stripeTestMode } from '@/lib/stripe';
 import { postproxy } from '@/lib/postproxy';
 import { flushAlerts } from '@/lib/alerts';
-import { BONUS_POINTS, FIRST_AUDIT_COUPON, WELCOME, promoLive } from '@/lib/pricing';
+import { BONUS_POINTS, BOOST, BOOST_BELOW, FIRST_AUDIT_COUPON, WELCOME, promoLive } from '@/lib/pricing';
 
 /**
  * The monthly subscription: one Stripe subscription per account with one line per seat type. A
@@ -120,7 +120,7 @@ export async function applySub(s: Sub, userId?: string) {
   await db.gbpSub.upsert({ where: { userId: owner }, create: { userId: owner, ...data }, update: data });
   if (ended) await db.gbpPlan.deleteMany({ where: { userId: owner } });
   // A plan paid for: one of the founding spots, while any are left (never in Stripe's test mode).
-  if (!ended && data.accountPlan && PAYING_NOW.has(s.status) && !stripeTestMode()) await claimFounding(owner).catch((e) => console.error('[founding] not claimed:', (e as Error).message));
+  if (!ended && data.accountPlan && ACCOUNT_PLANS[data.accountPlan].founding && PAYING_NOW.has(s.status) && !stripeTestMode()) await claimFounding(owner).catch((e) => console.error('[founding] not claimed:', (e as Error).message));
   return owner;
 }
 
@@ -423,7 +423,8 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
   const invoice = invoiceId ? await stripe<Invoice>('/invoices/' + encodeURIComponent(invoiceId)).catch(() => null) : typeof s.latest_invoice === 'object' ? s.latest_invoice : null;
   const counts = seatsOn(s.items?.data ?? []);
   // A plan paid for takes a founding spot before its first month is counted, so that month has the bonus too.
-  if (!ended && accountPlanOf(counts) && PAYING_NOW.has(s.status) && !stripeTestMode()) await claimFounding(userId).catch((e) => console.error('[founding] not claimed:', (e as Error).message));
+  const planNowOn = accountPlanOf(counts);
+  if (!ended && planNowOn && ACCOUNT_PLANS[planNowOn].founding && PAYING_NOW.has(s.status) && !stripeTestMode()) await claimFounding(userId).catch((e) => console.error('[founding] not claimed:', (e as Error).message));
   const monthlyBriefs = ended ? 0 : seatBriefs(counts);
   const { start, end } = periodOf(s);
   const yearly = intervalOf(s) === 'year';
@@ -459,8 +460,11 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
     const share = w.to > w.from ? (w.to - paidAt) / (w.to - w.from) : 1;
     const g = seatGrant(invoice.billing_reason, monthly, row.grantedPoints, share);
     if (!g) return;
-    // The plan's briefs: a new month brings them and carries last month's unused ones over once.
-    const b = briefGrant(invoice.billing_reason, monthlyBriefs, { plan: row.briefPlan, carry: row.briefCarry, granted: row.grantedBriefs });
+    // How much of last month a renewal keeps: the plan's rollover, in months' worth (none on Scout paid monthly).
+    const keepMonths = rolloverMonths(planNowOn, yearly ? 'year' : 'month');
+    // The plan's briefs: a new month brings them and carries last month's unused ones over once (when the plan rolls over at all).
+    const bg = briefGrant(invoice.billing_reason, monthlyBriefs, { plan: row.briefPlan, carry: row.briefCarry, granted: row.grantedBriefs });
+    const b = bg && keepMonths === 0 && invoice.billing_reason === 'subscription_cycle' ? { ...bg, carry: 0 } : bg;
     if (b) await tx.gbpSub.update({ where: { userId }, data: { briefPlan: b.plan, briefCarry: b.carry, grantedBriefs: b.granted } });
     // Black Friday: a first seat started before the offer ends brings 5 prospect audits, once per
     // account. Added first, as points of the account's own, never the seats'.
@@ -471,7 +475,7 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
       state.bought += BONUS_POINTS;
     }
     if (g.renew) {
-      const r = renewPlan(state, g.points);
+      const r = renewPlan(state, g.points, keepMonths * g.points);
       if (r.lapse > 0) await tx.creditLedger.create({ data: { userId, amount: -r.lapse, reason: 'SEAT_POINTS_LAPSE', externalEventId: key + ':lapse' } });
       await tx.creditLedger.create({ data: { userId, amount: r.grant, reason: 'SEAT_POINTS', externalEventId: key } });
       await tx.user.update({ where: { id: userId }, data: { creditBalance: { increment: r.grant - r.lapse } } });
@@ -533,8 +537,10 @@ export async function grantPlanMonths(userId?: string, now = new Date()): Promis
           : 0;
         const state = { balance: user.creditBalance, bucket: row.bucket, packFloor: row.packFloor, bought };
         const monthly = monthlyPoints(counts, Boolean(user.foundingNo));
-        const b = briefGrant('subscription_cycle', seatBriefs(counts), { plan: row.briefPlan, carry: row.briefCarry, granted: row.grantedBriefs });
-        const r = renewPlan(state, monthly);
+        const keepMonths = rolloverMonths(accountPlanOf(counts), 'year');
+        const bg = briefGrant('subscription_cycle', seatBriefs(counts), { plan: row.briefPlan, carry: row.briefCarry, granted: row.grantedBriefs });
+        const b = bg && keepMonths === 0 ? { ...bg, carry: 0 } : bg;
+        const r = renewPlan(state, monthly, keepMonths * monthly);
         if (r.lapse > 0) await tx.creditLedger.create({ data: { userId: d.userId, amount: -r.lapse, reason: 'SEAT_POINTS_LAPSE', externalEventId: key + ':lapse' } });
         await tx.creditLedger.create({ data: { userId: d.userId, amount: r.grant, reason: 'SEAT_POINTS', externalEventId: key } });
         await tx.user.update({ where: { id: d.userId }, data: { creditBalance: { increment: r.grant - r.lapse } } });
@@ -552,6 +558,63 @@ export async function grantPlanMonths(userId?: string, now = new Date()): Promis
     }
   }
   return months;
+}
+
+/**
+ * An account plan's sessions this month: what the month brings (with the founding bonus), what is
+ * left of the plan's share of the balance, and when its billing month began and ends (a yearly
+ * plan's current month). Null without a paying account plan.
+ */
+export async function planMonth(userId: string, now = new Date()) {
+  const row = await db.gbpSub.findUnique({ where: { userId } });
+  if (!row?.subscriptionId || !isAccountPlan(row.accountPlan) || !['active', 'trialing', 'past_due'].includes(row.status)) return null;
+  const plan = row.accountPlan;
+  const [user, listings, bought] = await Promise.all([
+    db.user.findUnique({ where: { id: userId }, select: { creditBalance: true, foundingNo: true } }),
+    db.gbpPlan.count({ where: { userId, plan: 'LISTING', status: 'ACTIVE' } }),
+    row.grantAt
+      ? db.creditLedger.aggregate({ where: { userId, reason: { in: PACK_REASONS }, createdAt: { gt: row.grantAt }, amount: { gt: 0 } }, _sum: { amount: true } }).then((a) => a._sum.amount ?? 0)
+      : Promise.resolve(0),
+  ]);
+  if (!user) return null;
+  const counts: Partial<Record<Line, number>> = { [plan]: 1, LISTING: listings };
+  const monthly = monthlyPoints(counts, Boolean(user.foundingNo));
+  const left = planRemaining({ balance: user.creditBalance, bucket: row.bucket, packFloor: row.packFloor, bought });
+  const yearly = row.billingInterval === 'year';
+  const start = row.periodStart ? Math.floor(row.periodStart.getTime() / 1000) : 0;
+  const end = row.periodEnd ? Math.floor(row.periodEnd.getTime() / 1000) : 0;
+  const at = Math.floor(now.getTime() / 1000);
+  const month = yearly && end > start ? monthWindow(start, end, at) : { from: start, to: end };
+  return { plan, yearly, monthly, left, founding: Boolean(user.foundingNo), listings, start, end, monthFrom: month.from, monthTo: month.to };
+}
+
+/**
+ * The Boost (250 sessions, $39) for an account on a plan: on sale while under BOOST_BELOW of the
+ * month's sessions are left. A second Boost in the same billing month is met with what moving up
+ * one plan costs now instead: Stripe charges the price difference for the rest of the period, and
+ * the month's extra sessions come for the rest of this month (as an upgrade is counted, see
+ * grantPoints), against the same sessions bought as Boosts. Figures are close estimates; Stripe's
+ * proration is the exact charge.
+ */
+export async function boostOffer(userId: string, now = new Date()) {
+  const m = await planMonth(userId, now);
+  if (!m) return null;
+  const eligible = m.monthly > 0 && m.left < m.monthly * BOOST_BELOW;
+  const boosts = await db.paymentOrder.count({ where: { userId, item: BOOST.key, captureId: { not: null }, refundedAt: null, createdAt: { gte: new Date((m.monthFrom || 0) * 1000) } } });
+  const to = nextPlan(m.plan);
+  let upgrade: { to: AccountPlan; name: string; chargeCents: number; sessionsNow: number; boostCents: number; savingsCents: number; monthlyAfter: number; priceAfter: string } | null = null;
+  if (to && m.end > m.start) {
+    const at = Math.floor(now.getTime() / 1000);
+    const periodLeft = Math.min(1, Math.max(0, (m.end - at) / (m.end - m.start)));
+    const monthLeft = m.monthTo > m.monthFrom ? Math.min(1, Math.max(0, (m.monthTo - at) / (m.monthTo - m.monthFrom))) : periodLeft;
+    const priceNow = (p: AccountPlan) => (m.yearly ? yearCents(p) : ACCOUNT_PLANS[p].tiers[0].cents);
+    const chargeCents = Math.round((priceNow(to) - priceNow(m.plan)) * periodLeft);
+    const after = monthlyPoints({ [to]: 1, LISTING: m.listings }, m.founding);
+    const sessionsNow = Math.max(0, Math.round((after - m.monthly) * monthLeft));
+    const boostCents = Math.round((sessionsNow * BOOST.cents) / BOOST.credits);
+    upgrade = { to, name: ACCOUNT_PLANS[to].name, chargeCents, sessionsNow, boostCents, savingsCents: boostCents - chargeCents, monthlyAfter: after, priceAfter: m.yearly ? `${dollars(yearCents(to))} a year` : `${dollars(ACCOUNT_PLANS[to].tiers[0].cents)} a month` };
+  }
+  return { eligible, left: m.left, monthly: m.monthly, boosts, upgrade, monthFrom: m.monthFrom };
 }
 
 /** Brings a yearly plan's months up to date before the account's balance is shown or spent (one quick look when nothing is due). */
@@ -690,6 +753,7 @@ export async function billingSummary(userId: string) {
     P_SCOUT: plan === 'P_SCOUT' ? 1 : 0,
     P_AGENCY: plan === 'P_AGENCY' ? 1 : 0,
     P_SCALE: plan === 'P_SCALE' ? 1 : 0,
+    P_MAX: plan === 'P_MAX' ? 1 : 0,
   };
   const [user, settings, spots] = await Promise.all([db.user.findUnique({ where: { id: userId }, select: { email: true, role: true, briefBalance: true, foundingNo: true } }), getSettings(), foundingLeft().catch(() => 0)]);
   const paying = Boolean(mine?.subscriptionId) && ['active', 'trialing', 'past_due'].includes(mine?.status ?? '');

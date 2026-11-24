@@ -109,9 +109,11 @@ async function execute(job: Job, token?: string) {
       // METERED_WAIT_MS goes out on metered mobile data instead (spillTo). Each point records where
       // it went out (proxySource).
       const waitedMs = job.data.laneWaitSince ? Date.now() - Number(job.data.laneWaitSince) : 0;
+      // A Live 5G Proof audit runs on the 5G lines only: it never spills over, it waits for a line.
+      const laneOnly = Boolean(pin.scan.laneOnly);
       const to = spillTo({
-        homeReady: await homeOverflowReady(pin.scan),
-        internal: await internalScan(pin.scan.userId),
+        homeReady: !laneOnly && (await homeOverflowReady(pin.scan)),
+        internal: laneOnly || (await internalScan(pin.scan.userId)),
         meteredReady: overflowReady(),
         waitedMs,
         waitMs: METERED_WAIT_MS,

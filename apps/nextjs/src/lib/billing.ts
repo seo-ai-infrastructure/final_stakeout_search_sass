@@ -3,7 +3,7 @@ import { stripe, stripeTestMode } from './stripe';
 import { InputError } from '@stakeout/core/grid';
 import { CLOSER, CLOSER_LIMIT, WELCOME, WHITE_LABEL_ITEM, itemByKey, itemsFor, paymentNotice, type PriceItem } from './pricing';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
-import { accountPlanNow, clientSeatCount } from './gbpBilling';
+import { accountPlanNow, boostOffer, clientSeatCount } from './gbpBilling';
 import { getSettings, newPlansFor } from '@stakeout/core/settings';
 
 /**
@@ -11,11 +11,12 @@ import { getSettings, newPlansFor } from '@stakeout/core/settings';
  * a top-up while it holds a seat, and the white-label setup below 10 seats. Prices live in lib/pricing.ts.
  */
 export async function catalogFor(user: { id: string; role: string; createdAt: Date; email?: string }): Promise<PriceItem[]> {
-  const [paid, seats, plan, settings] = await Promise.all([
+  const [paid, seats, plan, settings, boost] = await Promise.all([
     db.paymentOrder.findMany({ where: { userId: user.id, captureId: { not: null }, refundedAt: null }, select: { item: true } }),
     clientSeatCount(user.id),
     accountPlanNow(user.id),
     getSettings(),
+    boostOffer(user.id).catch(() => null),
   ]);
   return itemsFor({
     admin: user.role === 'ADMIN',
@@ -24,6 +25,8 @@ export async function catalogFor(user: { id: string; role: string; createdAt: Da
     whiteLabel: paid.some((o) => o.item === WHITE_LABEL_ITEM.key),
     newPlans: newPlansFor(user, settings),
     plan: Boolean(plan),
+    // The Boost: only while the plan's month is nearly used up (checked here too, so it cannot be bought otherwise).
+    boost: Boolean(plan && boost?.eligible),
     closers: paid.filter((o) => o.item === CLOSER.key).length,
   });
 }
