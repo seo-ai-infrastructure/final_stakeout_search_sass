@@ -36,7 +36,9 @@ import { pull, push, shell, transportFor } from './deviceShell';
 import { readBundle, readBundleFile } from './bundle';
 import { stateTimezone } from '@stakeout/core/fleetHealth';
 import { HUNT_FOOTER, SKIP_FOOTER_HUNT, locationKey, locationPathOf, nextLocationRuns, skipFooterHunt, withEvidence, type Evidence, type LocationRun, type Marks } from '@stakeout/core/runLog';
-import { parsePinXmlBundle, parseWebResults } from './xmlParser';
+import { parseAppleMaps, parsePinXmlBundle, parseWebResults } from './xmlParser';
+import { appleStartUrl } from '@stakeout/core/appleMaps';
+import { businessKey } from '@stakeout/core/locations';
 import { shellQuote, RUN_PIN_SH_V2 } from '@stakeout/core/runner';
 import {
   cityMatches,
@@ -1046,6 +1048,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     mobile_maps: 'maps',
     mobile_google: 'google',
     mobile_chrome: 'chrome',
+    mobile_apple: 'apple',
   };
   if (!app[scan.targetType]) throw new Error('UNSUPPORTED_SURFACE');
   // Where this attempt's evidence went: carried on any error, so a rejected search can be watched.
@@ -1153,6 +1156,13 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
   const knowsSkip = Boolean(tpl?.vars.some((v) => v.key === 'location_skip_class'));
   const hunt = knowsSkip ? skipFooterHunt(await locationRuns(d.imageId)) : { skip: false, probe: false };
   if (knowsSkip) Object.assign(proof, { locationSkip: hunt.skip, ...(hunt.probe ? { locationProbe: true } : {}) });
+  // Apple Maps searches the part of the map on screen, not the phone's GPS: the template opens the
+  // map on this point (its start_url). A template without that variable would search wherever the
+  // proxy's address happens to be, which is not a measurement at this point: it is not run.
+  const appleUrl = surface === 'apple' ? appleStartUrl(p.lat, p.lng) : null;
+  if (surface === 'apple' && rpaMode && !tpl?.vars.some((v) => v.key === 'start_url'))
+    throw new Error('RPA_TEMPLATE_NO_START_URL the Apple Maps template has no start_url variable, so it cannot open the map on a grid point');
+  if (appleUrl) Object.assign(proof, { appleCenter: `${p.lat.toFixed(6)},${p.lng.toFixed(6)}` });
   if (rpaMode) {
     // The recorder only records while the template runs, then reads the results list.
     await ensureObserverInstalled(d);
@@ -1282,7 +1292,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
         keyword: scan.keyword,
         pinId: tag,
         businessName: scan.targetBusiness,
-        vars: knowsSkip ? { location_skip_class: hunt.skip ? SKIP_FOOTER_HUNT : HUNT_FOOTER } : undefined,
+        vars: { ...(knowsSkip ? { location_skip_class: hunt.skip ? SKIP_FOOTER_HUNT : HUNT_FOOTER } : {}), ...(appleUrl ? { start_url: appleUrl } : {}) },
         name: 'stakeout-' + p.id + '-' + tagBase,
         timeoutMs: rpaSecs * 1000,
         onAdded: () => void (run.marks.added = Date.now()),
@@ -1456,7 +1466,14 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     const result =
       (surface === 'chrome' || surface === 'google') && b.final
         ? parseWebResults(b.final, b.scroll, aiDumps, scan.targetBusiness)
-        : { ...parsePinXmlBundle(b.final ? [...b.scroll, b.final] : b.scroll, aiDumps, scan.targetBusiness), locationSource: null, locationFromIp: false };
+        : surface === 'apple'
+          ? {
+              // Apple's name for a business can differ a little from Google's (LLC, "&" and "and").
+              ...parseAppleMaps(b.final ? [...b.scroll, b.final] : b.scroll, scan.targetBusiness, (x, y) => businessKey(x) === businessKey(y)),
+              locationSource: null,
+              locationFromIp: false,
+            }
+          : { ...parsePinXmlBundle(b.final ? [...b.scroll, b.final] : b.scroll, aiDumps, scan.targetBusiness), locationSource: null, locationFromIp: false };
     // Google said it located this search by IP, so the pin's GPS was not used:
     // the result is not a measurement at this coordinate. Fail (and refund) it.
     // The Local Finder snapshot can lack Google's location line; the results page of the same search has it.
@@ -1609,7 +1626,7 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
       });
       // "Position zero": named in the answer's opening sentences, ahead of any list.
       if (b.aiCopy) Object.assign(proof, { aiLead: aiNamesFirst(b.aiCopy, scan.targetBusiness, scan.targetKgmid) });
-    } else Object.assign(proof, { rankSource: 'maps_list' });
+    } else Object.assign(proof, { rankSource: surface === 'apple' ? 'apple_maps_list' : 'maps_list' });
     // The capture of the AI Overview (capture schema): its sentences and their citations, each
     // business by where it was matched (featured, with its placement: a card or a sentence
     // recommending it by Google's link on its name; its listing cited as a source; its website cited,

@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { surfaceLabel } from '@stakeout/core/appleMaps';
 import { usePolling } from '@/lib/usePolling';
 import Link from 'next/link';
 import { AdminRuns } from './AdminRuns';
@@ -153,7 +154,7 @@ export function AdminOps() {
                       {s.keyword}
                     </Link>
                     <p className="text-xs text-slate-400">
-                      {s.targetBusiness} · {s.gridSize}×{s.gridSize} · {s.targetType.replaceAll('_', ' ')} · {s.owner} · started {new Date(s.createdAt).toLocaleTimeString()}
+                      {s.targetBusiness} · {s.gridSize}×{s.gridSize} · {surfaceLabel(s.targetType)} · {s.owner} · started {new Date(s.createdAt).toLocaleTimeString()}
                     </p>
                     <p className="text-xs text-slate-300">
                       {s.completedPins}/{s.totalPins} done · {s.failedPins} failed · {left} to go

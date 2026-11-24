@@ -1,5 +1,5 @@
 /** Pure rules for running the search step through DuoPlus RPA templates. */
-export type RpaSurface = 'chrome' | 'maps' | 'google';
+export type RpaSurface = 'chrome' | 'maps' | 'google' | 'apple';
 export type TemplateVar = { key: string; type: string; required: boolean; desc: string; value?: unknown };
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -27,12 +27,14 @@ const SURFACE_NAME: Record<RpaSurface, RegExp> = {
   chrome: /chrome/i,
   maps: /maps?\b/i,
   google: /google[ _-]?app|gsa|search[ _-]?app/i,
+  apple: /apple/i,
 };
 
 /** The template for a surface: an explicit id, else a "Stakeout … Chrome/Maps" name, else any name for that surface. */
 export function pickTemplate(list: { id: string; name: string }[], surface: RpaSurface, envId?: string) {
   if (envId) return list.find((t) => t.id === envId) ?? null;
-  const forSurface = list.filter((t) => SURFACE_NAME[surface].test(t.name));
+  // An "Apple Maps" template is never taken for the Google Maps app's.
+  const forSurface = list.filter((t) => SURFACE_NAME[surface].test(t.name) && (surface === 'apple' || !SURFACE_NAME.apple.test(t.name)));
   return forSurface.find((t) => /stakeout/i.test(t.name)) ?? forSurface[0] ?? null;
 }
 

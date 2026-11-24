@@ -274,3 +274,77 @@ export function parseWebResults(
     ...parseAiPanels(ai, target),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Apple Maps (maps.apple.com in Firefox Focus)
+// ---------------------------------------------------------------------------
+const appleHours = /^(open|closed|closes|opens)\b/i;
+const appleRating = /^(?:[0-5](?:\.\d)?\s*\([\d,.]+\s*[kK]?\)(?:\s+on\s+\S.*)?|\d{1,3}%(?:\s*\([\d,.]+\s*[kK]?\))?)$/;
+const appleAddress = /^\d[\w-]*\s+\S.*,\s*\S/;
+/** The page's own words, never a business. */
+const appleChrome = /^(search|apple maps|maps|guides|directions|open now|sort by .*|recently searched|find nearby|beta|close|share|privacy|terms|legal|imagery|toggle sidebar|have a business on maps\??|manage your business)$/i;
+export type AppleCard = { name: string; category: string | null; rating: string | null; hours: string | null; address: string | null; ad: boolean };
+
+/**
+ * One snapshot's Apple Maps result cards, in the order shown. On maps.apple.com each result is a
+ * link named after the business, followed by its lines: the name again, the category, then any of
+ * opening hours, rating ("4.5 (13) on Yelp", "92% (120)") and address. A card is read only where
+ * that shape is found (the name twice, then at least one line of its own), so the page's own
+ * buttons and headings are never taken for businesses.
+ */
+export function appleCards(xml: string): AppleCard[] {
+  const cards: AppleCard[] = [];
+  for (const root of trees(xml)) {
+    const labels = walk(root).map(label).filter(Boolean);
+    const starts: number[] = [];
+    for (let i = 0; i + 1 < labels.length; i++) if (labels[i] === labels[i + 1] && labels[i].length <= 180 && !appleChrome.test(labels[i])) starts.push(i);
+    starts.forEach((at, k) => {
+      const lines = labels.slice(at + 2, Math.min(starts[k + 1] ?? labels.length, at + 9));
+      const pick = (re: RegExp) => lines.find((l) => re.test(l)) ?? null;
+      const hours = pick(appleHours), rating = pick(appleRating), address = pick(appleAddress);
+      const first = lines[0] ?? null;
+      const category = first && !appleHours.test(first) && !appleRating.test(first) && !appleAddress.test(first) && !appleChrome.test(first) ? first : null;
+      // A real card has a line of its own; a heading printed twice has none.
+      if (!category && !hours && !rating && !address) return;
+      cards.push({ name: labels[at], category, rating, hours, address, ad: lines.some((l) => /^(ad|sponsored)$/i.test(l)) });
+    });
+  }
+  return cards;
+}
+
+/**
+ * The Apple Maps result of one point: the businesses in Apple's order ("Best Match"), read from
+ * every snapshot the template took while scrolling the list (a business counts once, where it was
+ * first seen), and where the tracked business ranks. Its name on Apple Maps can differ a little
+ * from Google's ("LLC", "&" and "and"), so those differences are ignored.
+ */
+export function parseAppleMaps(dumps: string[], target: string, sameBusiness: (a: string, b: string) => boolean = (a, b) => normalize(a) === normalize(b)) {
+  if (!dumps.length) throw new Error('NO_RESULT_DUMPS');
+  const names: string[] = [], seen = new Set<string>(), cards: AppleCard[] = [];
+  const ads: { name: string; kind: 'sponsored' | 'local_services'; position: number }[] = [];
+  let matchedDumpIndex: number | null = null, noResults = false, onAppleMaps = false;
+  dumps.forEach((xml, index) => {
+    for (const root of trees(xml))
+      for (const n of walk(root)) {
+        const t = label(n);
+        if (/^no results\b/i.test(t)) noResults = true;
+        if (/^apple maps$/i.test(t) || /maps\.apple\.com/i.test(t)) onAppleMaps = true;
+      }
+    for (const c of appleCards(xml)) {
+      const key = normalize(c.name);
+      if (c.ad) {
+        if (!ads.some((a) => normalize(a.name) === key)) ads.push({ name: c.name, kind: 'sponsored', position: names.length + ads.length + 1 });
+        continue;
+      }
+      if (seen.has(key) || names.length >= 25) continue;
+      seen.add(key);
+      names.push(c.name);
+      cards.push(c);
+      if (matchedDumpIndex === null && sameBusiness(c.name, target)) matchedDumpIndex = index;
+    }
+  });
+  // No card read: only a page that says so itself counts as "no results"; anything else is retried.
+  if (!names.length && !(noResults && onAppleMaps)) throw new Error('UNRECOGNIZED_RESULT_LAYOUT');
+  const rank = names.findIndex((n) => sameBusiness(n, target));
+  return { orderedBusinesses: names, targetRank: rank < 0 ? null : rank + 1, matchedDumpIndex, ads, appleCards: cards, ...parseAiPanels([], target) };
+}

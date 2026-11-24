@@ -3,7 +3,7 @@ import { InputError } from './grid';
 import { GOOGLE_ID_HELP, googleIdOf } from './businessIds';
 import { siteDomain } from './businessSite';
 
-const TARGET_TYPES = ['mobile_chrome', 'mobile_maps', 'mobile_google', 'desktop_aimode'] as const;
+const TARGET_TYPES = ['mobile_chrome', 'mobile_maps', 'mobile_google', 'mobile_apple', 'desktop_aimode'] as const;
 type BusinessInput = {
   name: string;
   centerLabel: string;

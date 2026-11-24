@@ -58,6 +58,7 @@ export function TestPointCard() {
               <option value="mobile_chrome">Google Chrome</option>
               <option value="mobile_maps">Google Maps app</option>
               <option value="mobile_google">Google app</option>
+              <option value="mobile_apple">Apple Maps</option>
             </select>
           </label>
           <label className="text-sm text-slate-300">Network

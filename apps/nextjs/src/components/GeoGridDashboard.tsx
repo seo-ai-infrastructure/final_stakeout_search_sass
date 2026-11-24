@@ -23,6 +23,7 @@ import { PinEvidenceCard } from './PinEvidenceCard';
 import { MarketInsights } from './MarketInsights';
 import { buyingPower, nearWins, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
 import EmbedReport from './EmbedReport';
+import { surfaceLabel } from '@stakeout/core/appleMaps';
 import { gridColumns, rankColor, rankTextColor, RANK_SCALE, columnColor, COLUMN_SCALE, RANK_KEYS, rankKey, ADS_SCALE, adsColor, NA_COLOR, ONE_BOX_COLOR, type RankKey } from '../lib/gridColumns';
 import { oneBoxOf } from '@stakeout/core/localRank';
 import {
@@ -746,7 +747,7 @@ export function GeoGridDashboard({
           <h1 className="text-2xl font-bold">{scan.targetBusiness}</h1>
           <p className="text-slate-300">
             {scan.keyword} · {scan.gridSize} × {scan.gridSize} ·{' '}
-            {scan.targetType.replaceAll('_', ' ')}
+            {surfaceLabel(scan.targetType)}
             {scan.network === 'mobile' ? ' · Mobile Network' : scan.network === 'mix' ? ' · Mobile & Residential Networks' : ''}
           </p>
           {/* An unbranded shared report carries ours. */}

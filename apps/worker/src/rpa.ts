@@ -71,7 +71,7 @@ export async function rpaTemplate(surface: RpaSurface): Promise<Template> {
 
 /** Logged at startup so the template and its keyword variable can be confirmed. */
 export async function describeRpaTemplates() {
-  for (const surface of ['chrome', 'maps', 'google'] as RpaSurface[]) {
+  for (const surface of ['chrome', 'maps', 'google', 'apple'] as RpaSurface[]) {
     try {
       const t = await rpaTemplate(surface);
       console.log(

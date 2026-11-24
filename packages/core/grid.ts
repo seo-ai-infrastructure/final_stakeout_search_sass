@@ -81,10 +81,11 @@ export function parseSpec(input: Record<string, unknown>) {
       'mobile_maps',
       'mobile_chrome',
       'mobile_google',
+      'mobile_apple',
       ...(process.env.DESKTOP_ENABLED === 'true' ? ['desktop_aimode'] : []),
     ].includes(targetType)
   )
-    throw new InputError('Choose a supported Android surface.');
+    throw new InputError('Choose a supported search surface.');
   if (!['once', 'daily', 'weekly', 'biweekly'].includes(scheduleType))
     throw new InputError('Invalid schedule.');
   // Optional: the business's own website, kept as a bare domain. Anything given must be readable as one.
@@ -107,8 +108,9 @@ export function parseSpec(input: Record<string, unknown>) {
     gridSize,
     spacingKm,
     // AI Overviews are captured on every scan that can show one, at no extra credit; what the
-    // caller sends is ignored. The Maps app's AI answers ("Ask Maps") are not captured yet.
-    trackAiOverviews: targetType !== 'mobile_maps',
+    // caller sends is ignored. The Maps app's AI answers ("Ask Maps") are not captured yet, and
+    // Apple Maps has none.
+    trackAiOverviews: targetType !== 'mobile_maps' && targetType !== 'mobile_apple',
     targetType,
     scheduleType,
     phoneBrand,
