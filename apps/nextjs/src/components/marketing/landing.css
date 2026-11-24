@@ -111,7 +111,7 @@
   .lp-actions { display: grid; grid-template-columns: auto auto; justify-content: start; gap: 8px; }
   .lp .lp-actions a { padding: 12px 10px; gap: 6px; font-size: 13px; white-space: nowrap; }
 }
-@media (max-width: 359px) {
+@media (max-width: 440px) {
   .lp-actions { grid-template-columns: 1fr; justify-content: stretch; }
 }
 
