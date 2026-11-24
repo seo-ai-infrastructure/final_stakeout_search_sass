@@ -33,7 +33,7 @@ import { powerTick, powerReport } from './power';
 import { forceIdle, idleProxyReport, idleProxyTick, leftIdle } from './idleProxy';
 import { phoneTailKey } from '@stakeout/core/idleProxy';
 import { enterLane, laneExit, laneNote, lanesOn, laneWave, leaveLane } from './lane';
-import { laneConfigs } from '@stakeout/core/lane';
+import { laneConfigs, spillTo } from '@stakeout/core/lane';
 import { nudgeAlerts, pushAlert } from '@stakeout/core/alerts';
 import { internalScan } from './internal';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficByHour, trafficHourKey, trafficLow, type TrafficHour, type TrafficReading } from '@stakeout/core/proxyWait';
@@ -103,22 +103,34 @@ async function execute(job: Job, token?: string) {
     // lane's wave is under way it waits here, holding nothing.
     lanePoint = lanesOn() && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'mobile';
     if (lanePoint && !closing && (await enterLane(pin.id)) === null) {
-      // Every lane's wave is full or under way: an idle phone picks the point up, first on home
-      // internet while Proxy-Seller's prepaid data lasts (the scan's town set up for it), then, for
-      // a customer's scan only, on metered mobile data. Otherwise it waits for a line. Each point
-      // records where it went out (proxySource).
-      if (await homeOverflowReady(pin.scan)) {
+      // Every lane's wave is full or under way: an idle phone picks the point up on home internet
+      // while Proxy-Seller's prepaid data lasts (the scan's town set up for it). Otherwise the point
+      // waits for the next round on a line, holding nothing; a customer's point that has waited
+      // METERED_WAIT_MS goes out on metered mobile data instead (spillTo). Each point records where
+      // it went out (proxySource).
+      const waitedMs = job.data.laneWaitSince ? Date.now() - Number(job.data.laneWaitSince) : 0;
+      const to = spillTo({
+        homeReady: await homeOverflowReady(pin.scan),
+        internal: await internalScan(pin.scan.userId),
+        meteredReady: overflowReady(),
+        waitedMs,
+        waitMs: METERED_WAIT_MS,
+      });
+      if (to === 'home') {
         lanePoint = false;
         pin.scan = { ...pin.scan, network: 'residential' };
         console.log('[lane] point', pin.id, 'overflows to home internet (Proxy-Seller): every lane is busy');
-      } else if (!(await internalScan(pin.scan.userId)) && overflowReady()) {
+      } else if (to === 'metered') {
         lanePoint = false;
-        console.log('[lane] point', pin.id, 'overflows to metered mobile data: every lane is busy');
+        console.log('[lane] point', pin.id, 'overflows to metered mobile data after', Math.round(waitedMs / 1000) + 's without a place on a line');
       } else {
+        if (!job.data.laneWaitSince) await job.updateData({ ...job.data, laneWaitSince: Date.now() });
         await job.moveToDelayed(Date.now() + 7000 + Math.floor(Math.random() * 5000), token);
         throw new DelayedError();
       }
     }
+    // Out of the wait (a place on a line, or a spill-over): a later try of this point waits afresh.
+    if (job.data.laneWaitSince) await job.updateData({ ...job.data, laneWaitSince: undefined });
     // A phone already on this point's Proxy-Seller list is preferred (home internet only).
     const preferred = pin.scan.proxyRegion && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'residential' ? (await listsForPin(pin.scan, proxyPlace(pin)))[0]?.id : null;
     // A retry goes to another phone when one is free (the phone it failed on is tried last).
@@ -620,6 +632,12 @@ let templatesReadAt = Date.now(),
  */
 const homeOverflowReady = async (scan: { proxyRegion: string | null }) =>
   Boolean(scan.proxyRegion) && listsEnabled() && homeHasRoom(traffic) && !(await proxyOutageSince(scan.proxyRegion as string));
+
+/**
+ * How long a customer's mobile point waits for a place on an unlimited line before it goes out on
+ * metered mobile data (MOBILE_OVERFLOW_WAIT_SECONDS, default 2 minutes; 0 sends it at once).
+ */
+const METERED_WAIT_MS = Math.max(0, Number(process.env.MOBILE_OVERFLOW_WAIT_SECONDS ?? 120) || 0) * 1000;
 
 /** Metered mobile data can take an overflow point: set up, and more than half a GB left (or not read yet). */
 const overflowReady = () => Boolean(mobileProvider()) && (mobileTraffic?.leftBytes == null || mobileTraffic.leftBytes > 0.5e9);

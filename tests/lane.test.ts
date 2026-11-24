@@ -81,3 +81,16 @@ test('a lane exit is judged without the state rule, and only hosting or data-cen
   assert.equal(judgeExit(lookups('AS16509', 'Amazon.com, Inc.') as any, { stateCode: 'FL', anyState: true, policy: 'deny' }).ok, false);
   assert.equal(judgeExit(lookups('AS21928', 'T-Mobile USA, Inc.', true) as any, { stateCode: 'FL', anyState: true, policy: 'deny' }).ok, false);
 });
+
+test('a busy line: home internet at once, metered mobile data only after the wait, never for admin runs', async () => {
+  const { spillTo } = await import('../packages/core/lane');
+  const base = { homeReady: false, internal: false, meteredReady: true, waitedMs: 0, waitMs: 120000 };
+  assert.equal(spillTo({ ...base, homeReady: true }), 'home', 'Proxy-Seller first, no wait');
+  assert.equal(spillTo({ ...base, homeReady: true, internal: true }), 'home', 'admin runs may use home internet');
+  assert.equal(spillTo(base), 'wait', 'a customer point waits for the next round first');
+  assert.equal(spillTo({ ...base, waitedMs: 119000 }), 'wait');
+  assert.equal(spillTo({ ...base, waitedMs: 120000 }), 'metered', 'then VoidMob');
+  assert.equal(spillTo({ ...base, waitedMs: 600000, internal: true }), 'wait', 'admin runs never use VoidMob');
+  assert.equal(spillTo({ ...base, waitedMs: 600000, meteredReady: false }), 'wait', 'VoidMob low or off: keep waiting');
+  assert.equal(spillTo({ ...base, waitMs: 0 }), 'metered', 'no wait set: at once');
+});
