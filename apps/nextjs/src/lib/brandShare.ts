@@ -18,14 +18,19 @@ export async function ownerBrand(userId: string | null): Promise<ReportBrand | n
 }
 
 /**
- * The brand a shared report is shown under, and whether this host may show it at all.
- * On a customer's domain: that domain's brand, and only for reports of the account that owns the
- * domain. On our own address: the owner's brand when they have one, otherwise none.
+ * The brand an account's report is shown under on this host, and whether this host may show it at
+ * all. On a customer's domain: that domain's brand, and only for reports of the account that owns
+ * the domain. On our own address: the account's brand when it has one, otherwise none.
  */
+export async function brandOnHost(ownerId: string | null, host: string): Promise<{ allowed: boolean; brand: ReportBrand | null }> {
+  const custom = Boolean(host) && !isPrimaryHost(host);
+  const b: Brand | null = custom ? await brandForHost(host) : ownerId ? await brandForUser(ownerId) : null;
+  if (custom && (!b || !ownerId || b.userId !== ownerId)) return { allowed: false, brand: null };
+  return { allowed: true, brand: b ? reportBrand(b) : null };
+}
+
+/** The same for a scan's share link. */
 export async function brandForShare(token: string, host: string): Promise<{ allowed: boolean; brand: ReportBrand | null }> {
   const owner = await db.gridScan.findFirst({ where: { shareToken: token }, select: { userId: true } });
-  const custom = Boolean(host) && !isPrimaryHost(host);
-  const b: Brand | null = custom ? await brandForHost(host) : owner ? await brandForUser(owner.userId) : null;
-  if (custom && (!b || !owner || b.userId !== owner.userId)) return { allowed: false, brand: null };
-  return { allowed: true, brand: b ? reportBrand(b) : null };
+  return brandOnHost(owner?.userId ?? null, host);
 }

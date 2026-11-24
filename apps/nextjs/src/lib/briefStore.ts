@@ -1,3 +1,4 @@
+import { brandOnHost, ownerBrand } from './brandShare';
 import { randomBytes } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
@@ -165,7 +166,8 @@ async function newestFor(row: { userId: string; scanId: string; business: string
 export async function briefFor(id: string, me: Me) {
   const row = await mine(id, me);
   const [next, wallet, shareGoogle] = await Promise.all([newestFor(row), me.role === 'ADMIN' ? null : walletOf(me.id), shareGoogleOn(row.scanId)]);
-  return view(row, '/reports/visibility.html?scan=' + encodeURIComponent(row.scanId), true, { admin: me.role === 'ADMIN', next, left: wallet?.left ?? 0, shareGoogle });
+  // A compiled brief shows the account's white label as it is now, not as it was when compiled.
+  return { ...view(row, '/reports/visibility.html?scan=' + encodeURIComponent(row.scanId), true, { admin: me.role === 'ADMIN', next, left: wallet?.left ?? 0, shareGoogle }), brand: await ownerBrand(row.userId) };
 }
 
 /**
@@ -212,15 +214,18 @@ async function rebuild(row: Awaited<ReturnType<typeof mine>>, me: Me, target: st
 }
 
 /** A compiled brief by its share link: read-only, and its receipts link only when the scan is shared too. */
-export async function briefByToken(token: string) {
+export async function briefByToken(token: string, host = '') {
   if (!/^[a-f0-9]{48}$/.test(token)) throw new InputError('Brief unavailable.', 404);
   const row = await db.brief.findUnique({ where: { shareToken: token } });
   if (!row) throw new InputError('Brief unavailable.', 404);
+  // A white-label domain opens only its own account's briefs, under its own name and logo.
+  const { allowed, brand } = await brandOnHost(row.userId, host);
+  if (!allowed) throw new InputError('Brief unavailable.', 404);
   const [scan, google] = await Promise.all([db.gridScan.findUnique({ where: { id: row.scanId }, select: { shareToken: true } }), shareGoogleOn(row.scanId)]);
   // With "Include Google data" off on its scan, the link gets the copy built without the business's Google data.
   const stored = row.data as Stored;
   const data = !google && stored.withoutGoogle ? { ...stored.withoutGoogle, updatedAt: stored.updatedAt } : stored;
-  return view({ ...row, data }, scan?.shareToken ? '/reports/visibility.html?share=' + encodeURIComponent(scan.shareToken) : null, false);
+  return { ...view({ ...row, data }, scan?.shareToken ? '/reports/visibility.html?share=' + encodeURIComponent(scan.shareToken) : null, false), brand };
 }
 
 /**
