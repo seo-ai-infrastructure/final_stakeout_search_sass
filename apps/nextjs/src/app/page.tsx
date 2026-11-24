@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import '@/components/marketing/siteFonts';
 import Landing from '@/components/marketing/Landing';
-import { CLOSER, promoLive, usd } from '@/lib/pricing';
+import { WELCOME, promoLive, usd } from '@/lib/pricing';
 import { ACCOUNT_PLANS } from '@stakeout/core/gbpPlans';
 import { getSettings } from '@stakeout/core/settings';
 
@@ -10,11 +10,16 @@ export const revalidate = 60;
 
 export async function generateMetadata(): Promise<Metadata> {
   const plans = (await getSettings().catch(() => null))?.newPlansLive;
+  const title = 'Local Rank Tracking on Real Android Phones | Stakeout Search';
+  const description = 'See the local pack, organic results and AI Overviews on real Android phones. Open a map pin to replay the search. ' +
+    (plans ? `Plans from ${usd(ACCOUNT_PLANS.P_SCOUT.tiers[0].cents)}/month.` : `Run your first audit for ${usd(WELCOME.cents)}.`);
   return {
-    title: 'Stakeout Search | Local Rank Tracking and AI Overviews on Real Phones',
-    description: plans
-      ? `Show clients where they appear in Google’s AI Overviews and local results, on real phones with a recording at every point. Plans from ${usd(ACCOUNT_PLANS.P_SCOUT.tiers[0].cents)} a month; the ${usd(CLOSER.cents)} ${CLOSER.name} runs two 5×5 audits on our 5G lines, with a revenue brief.`
-      : 'Show clients where they appear in Google’s AI Overviews and local results. Get 25 real-phone searches, recordings and a shareable report in your first $5 audit.',
+    title,
+    description,
+    openGraph: {
+      title, description, type: 'website',
+      images: [{ url: 'https://www.stakeoutsearch.com/media/demo/top25-combined-map.jpg', width: 978, height: 518, alt: 'Stuart’s Plumbing local rankings and AI Overview appearances across 25 Lakeland searches' }],
+    },
   };
 }
 

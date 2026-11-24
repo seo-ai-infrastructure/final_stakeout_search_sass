@@ -114,3 +114,20 @@
 @media (max-width: 359px) {
   .lp-actions { grid-template-columns: 1fr; justify-content: stretch; }
 }
+
+.lp-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.lp-stats > div + div { padding-left: 12px; }
+.lp-stats > div:last-child strong { color: #ffac7d; }
+.lp-record-text strong { color: var(--ink); }
+.lp-evidence-links { display: flex; flex-wrap: wrap; column-gap: 22px; }
+.lp-listings { margin-top: 28px; padding-top: 18px; border-top: 1px solid var(--line); }
+.lp-listings h3 { font-size: 17px; }
+.lp-listings p a { display: inline-flex; align-items: center; gap: 3px; color: #ffa87a; text-decoration: underline; text-underline-offset: 3px; }
+.lp-close-copy { flex: 1 1 580px; }
+@media (min-width: 761px) {
+  .lp-account-plans { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1080px) {
+  .lp-account-plans { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.lp a.lp-proof-link { color: #ffc19d; text-decoration: underline; text-underline-offset: 3px; }
