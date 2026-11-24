@@ -589,7 +589,7 @@ export function AdminOps() {
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-200">
               <input type="checkbox" className="h-4 w-4" checked={form.mobileFirst} onChange={(e) => setForm({ ...form, mobileFirst: e.target.checked, mobileFirstTouched: true })} />
-              New scans run on Mobile Network (turns on by itself when Proxy-Seller runs low; off: home internet first)
+              New scans run on Mobile Network (always while an unlimited line is connected; turns on by itself when Proxy-Seller runs low)
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-200 sm:col-span-2">
               <input type="checkbox" className="h-4 w-4" checked={form.aiFlags} onChange={(e) => setForm({ ...form, aiFlags: e.target.checked })} />

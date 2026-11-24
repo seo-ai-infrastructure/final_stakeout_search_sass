@@ -24,6 +24,7 @@ import { pinNetwork } from '@stakeout/core/network';
 import { decodoEndpoint, decodoLadder, decodoMobileLadder, decodoServes, decodoUser, proxyProviders } from '@stakeout/core/decodo';
 import { mobileHubs, mobileProvider, voidmobEndpoint, voidmobUser } from '@stakeout/core/voidmob';
 import { voidmobLogin } from './voidmobLogin';
+import { internalScan } from './internal';
 import { clearProxyOutage } from './proxyOutage';
 import { OBSERVE_SH } from '@stakeout/core/observer';
 import type { RpaSurface } from '@stakeout/core/rpaRules';
@@ -805,6 +806,9 @@ async function provision(device: LeasedDevice, p: Pin) {
       if (w) Object.assign(got, w);
       return got;
     }
+    // Internal (admin) runs never use metered mobile data: without a place on the unlimited line the
+    // point waits for one (a proxy problem, so it is tried again).
+    if (await internalScan(p.scan.userId)) throw new Error('PROXY_MOBILE_LANE_ONLY admin test runs use only the unlimited mobile line');
     const provider = mobileProvider();
     if (!provider) throw new Error('MOBILE_DATA_NOT_CONFIGURED set VOIDMOB_API_KEY and VOIDMOB_PROXY_ID (or VOIDMOB_USERNAME and VOIDMOB_PASSWORD, or the Decodo mobile login) on the worker');
     if (transportFor(device) !== 'adb') throw new Error('PROXY_MOBILE_NEEDS_ADB_PHONE');

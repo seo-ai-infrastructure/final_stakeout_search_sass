@@ -33,6 +33,8 @@ import { forceIdle, idleProxyReport, idleProxyTick, leftIdle } from './idleProxy
 import { phoneTailKey } from '@stakeout/core/idleProxy';
 import { enterLane, laneExit, laneNote, lanesOn, laneWave, leaveLane } from './lane';
 import { laneConfigs } from '@stakeout/core/lane';
+import { nudgeAlerts, pushAlert } from '@stakeout/core/alerts';
+import { internalScan } from './internal';
 import { isProxyProblem, outageKey, pinOutageKey, proxyRetryDelay, trafficByHour, trafficHourKey, trafficLow, type TrafficHour, type TrafficReading } from '@stakeout/core/proxyWait';
 import { pinNetwork } from '@stakeout/core/network';
 import { proxyProviders } from '@stakeout/core/decodo';
@@ -100,8 +102,16 @@ async function execute(job: Job, token?: string) {
     // lane's wave is under way it waits here, holding nothing.
     lanePoint = lanesOn() && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'mobile';
     if (lanePoint && !closing && (await enterLane(pin.id)) === null) {
-      await job.moveToDelayed(Date.now() + 7000 + Math.floor(Math.random() * 5000), token);
-      throw new DelayedError();
+      // Every lane's wave is full or under way (the unlimited line is saturated): a customer's point
+      // overflows to metered mobile data while it has room; an internal (admin) point never does,
+      // it waits for the line.
+      if (!(await internalScan(pin.scan.userId)) && overflowReady()) {
+        lanePoint = false;
+        console.log('[lane] point', pin.id, 'overflows to metered mobile data: every lane is busy');
+      } else {
+        await job.moveToDelayed(Date.now() + 7000 + Math.floor(Math.random() * 5000), token);
+        throw new DelayedError();
+      }
     }
     // A phone already on this point's Proxy-Seller list is preferred (home internet only).
     const preferred = pin.scan.proxyRegion && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'residential' ? (await listsForPin(pin.scan, proxyPlace(pin)))[0]?.id : null;
@@ -597,6 +607,9 @@ let templatesReadAt = Date.now(),
   mobileTrafficAt = 0,
   mobileTraffic: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null; at: string } | null = null;
 
+/** Metered mobile data can take an overflow point: set up, and more than half a GB left (or not read yet). */
+const overflowReady = () => Boolean(mobileProvider()) && (mobileTraffic?.leftBytes == null || mobileTraffic.leftBytes > 0.5e9);
+
 async function openProxyOutages() {
   const open = await db.gridScan.findMany({
     where: { status: { in: ['QUEUED', 'RUNNING'] } },
@@ -650,6 +663,20 @@ async function reportHealth() {
     const v = t?.vars.find((x) => x.key === 'template_version')?.value;
     return t ? { id: t.id, name: t.name, version: v == null || v === '' ? null : String(v) } : null;
   };
+  const mobileLow = trafficLow(mobileTraffic, Number(process.env.MOBILE_TRAFFIC_WARN_GB ?? 2));
+  if (mobileLow && mobileTraffic) {
+    // Metered mobile data (the overflow for the unlimited line) is running low: one email every 12 hours at most.
+    const left = mobileTraffic.leftBytes === null ? 'an unknown amount' : (mobileTraffic.leftBytes / 1e9).toFixed(2) + ' GB';
+    const fresh = await pushAlert('mobile-data-low', {
+      subject: `Stakeout: VoidMob mobile data is low (${left} left)`,
+      lines: [
+        `VoidMob, the overflow for the unlimited mobile line, has ${left} left. Customer points overflow to it only while it has more than half a GB; after that they wait for the line, and new scans fall back to home internet when no line is connected.`,
+        'Top it up in the VoidMob dashboard, on the package the worker uses (VOIDMOB_PROXY_ID).',
+      ],
+      path: '/admin/devices',
+    }, 12 * 3600).catch(() => false);
+    if (fresh) await nudgeAlerts().catch(() => {});
+  }
   const health = {
     at: new Date().toISOString(),
     proxySellerKey: Boolean(process.env.PROXY_SELLER_API_KEY),
@@ -671,8 +698,8 @@ async function reportHealth() {
     // Where the VoidMob login comes from: "package prx_..." (read from VoidMob) or "VOIDMOB_USERNAME".
     mobileLogin: mobileProvider() === 'voidmob' ? voidmobLoginNote() || null : null,
     mobileTraffic,
-    // Under MOBILE_TRAFFIC_WARN_GB (half a GB unless set), or less than a day at today's pace.
-    mobileTrafficLow: trafficLow(mobileTraffic, Number(process.env.MOBILE_TRAFFIC_WARN_GB ?? 0.5)),
+    // Under MOBILE_TRAFFIC_WARN_GB (2 GB unless set), or less than a day at today's pace.
+    mobileTrafficLow: mobileLow,
     templates: { chrome: await template('chrome'), maps: await template('maps'), google: await template('google') },
     // DuoPlus allows about one request a second for the whole account: how busy that line is.
     duoplus: duoplusSlotStats(),

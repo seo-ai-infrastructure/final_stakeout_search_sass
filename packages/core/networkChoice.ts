@@ -3,10 +3,12 @@ import { redis } from './redis';
 import { getSettings, saveSettings } from './settings';
 
 /**
- * The network a scan runs on when we choose it (every customer scan; an admin's on Automatic):
- * home internet (Proxy-Seller) while its package has room for the whole scan, then mobile data
- * (VoidMob) for good. The first scan home internet can't fit turns mobileFirst on in the settings,
- * so a later top-up of Proxy-Seller doesn't bring home internet back (an admin can, in Ops).
+ * The network a scan runs on when we choose it (every customer scan; an admin's on Automatic).
+ * Mobile data is the default once it's on (mobileFirst) or an unlimited mobile line is connected:
+ * the line first, metered VoidMob data for its overflow (the worker), home internet when neither
+ * can take the scan. Until then home internet (Proxy-Seller) runs while its package has room for
+ * the whole scan; the first scan it can't fit turns mobileFirst on for good (an admin can turn it
+ * off in Ops). Internal (admin) runs never use metered mobile data: the line or home internet.
  */
 
 /** Data a point is allowed for when choosing (measured: about 20 MB on home internet, 22–28 MB on mobile). */
@@ -18,6 +20,10 @@ const MOBILE_RESERVE = 1e9;
 export type NetworkHealth = {
   traffic?: { leftBytes: number | null; expires?: string | null } | null;
   mobileData?: boolean;
+  /** The unlimited mobile line(s) connected to the worker, described; null when none. */
+  mobileLanes?: string | null;
+  /** The metered mobile data provider set up on the worker (VoidMob), if any. */
+  mobileProvider?: string | null;
   mobileTraffic?: { leftBytes: number | null } | null;
   mobileTrafficLow?: boolean;
 } | null;
@@ -34,12 +40,21 @@ export function packageEnds(v: string | null | undefined): number | null {
  * becomes the network for good. Desktop scans stay on home internet (mobile data is for phones).
  * With mobile data off, not ready, low, or short of room for the scan, home internet is kept.
  */
-export function pickNetwork(h: NetworkHealth, s: { mobileForCustomers: boolean; mobileFirst: boolean }, points: number, targetType: string, now = Date.now()): { network: 'residential' | 'mobile'; switchNow: boolean } {
+export function pickNetwork(
+  h: NetworkHealth,
+  s: { mobileForCustomers: boolean; mobileFirst: boolean },
+  points: number,
+  targetType: string,
+  opts: { internal?: boolean } = {},
+  now = Date.now(),
+): { network: 'residential' | 'mobile'; switchNow: boolean } {
   if (targetType.startsWith('desktop_')) return { network: 'residential', switchNow: false };
   const need = points * BYTES_PER_POINT;
+  const line = Boolean(h?.mobileLanes);
   const mobileLeft = h?.mobileTraffic?.leftBytes;
-  const mobileOk = s.mobileForCustomers && Boolean(h?.mobileData) && !h?.mobileTrafficLow && (typeof mobileLeft !== 'number' || mobileLeft >= need + MOBILE_RESERVE);
-  if (s.mobileFirst) return { network: mobileOk ? 'mobile' : 'residential', switchNow: false };
+  const metered = Boolean(h?.mobileProvider) && !h?.mobileTrafficLow && (typeof mobileLeft !== 'number' || mobileLeft >= need + MOBILE_RESERVE);
+  const mobileOk = opts.internal ? line : s.mobileForCustomers && (line || metered);
+  if (s.mobileFirst || line) return { network: mobileOk ? 'mobile' : 'residential', switchNow: false };
   const home = h?.traffic;
   const ends = packageEnds(home?.expires);
   const homeOk = !(ends !== null && ends <= now) && (typeof home?.leftBytes !== 'number' || home.leftBytes >= need + HOME_RESERVE);
@@ -50,7 +65,7 @@ export function pickNetwork(h: NetworkHealth, s: { mobileForCustomers: boolean; 
 const gbText = (b: number | null | undefined) => (typeof b === 'number' ? (b / 1e9).toFixed(b < 10e9 ? 2 : 1) + ' GB' : 'an unknown amount');
 
 /** pickNetwork with today's settings and the worker's health report; keeps the switch and tells the admins once. */
-export async function chooseNetwork(points: number, targetType: string): Promise<'residential' | 'mobile'> {
+export async function chooseNetwork(points: number, targetType: string, opts: { internal?: boolean } = {}): Promise<'residential' | 'mobile'> {
   const [settings, health] = await Promise.all([
     getSettings(),
     redis()
@@ -58,7 +73,7 @@ export async function chooseNetwork(points: number, targetType: string): Promise
       .then((v) => (v ? (JSON.parse(v) as NetworkHealth) : null))
       .catch(() => null),
   ]);
-  const pick = pickNetwork(health, settings, points, targetType);
+  const pick = pickNetwork(health, settings, points, targetType, opts);
   if (pick.switchNow) {
     await saveSettings({ mobileFirst: true }).catch((e) => console.warn('[network] the switch to mobile data was not saved:', (e as Error).message));
     console.log('[network] new scans run on mobile data from now on: Proxy-Seller has', gbText(health?.traffic?.leftBytes), 'left');

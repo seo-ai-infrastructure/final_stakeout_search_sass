@@ -40,11 +40,15 @@ export async function POST(req: Request) {
       // The network is ours to choose, not the customer's (nor an admin's on Automatic): home internet
       // while Proxy-Seller has room for the scan, then mobile data for good (networkChoice.ts).
       if (u.role !== 'ADMIN' || body.network === 'auto') {
-        s.network = await chooseNetwork(s.gridSize * s.gridSize, s.targetType);
+        s.network = await chooseNetwork(s.gridSize * s.gridSize, s.targetType, { internal: u.role === 'ADMIN' });
         if (s.network !== 'residential') {
           s.ispMode = 'any';
           s.isps = [];
         }
+      } else if (s.network !== 'residential') {
+        // An admin's own test runs never use metered mobile data: only the unlimited mobile line.
+        const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
+        if (!health?.mobileLanes) throw new InputError('Admin test runs use only the unlimited mobile line, and none is connected. Choose Automatic or Residential.');
       }
       // The mobile network (on its own or in a mix): admins only until it is switched on for customers.
       if (s.network !== 'residential' && u.role !== 'ADMIN' && !settings.mobileForCustomers) throw new InputError('The mobile network is not available yet. Choose Residential Network.');
