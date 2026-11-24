@@ -130,10 +130,9 @@ export function currentPlan(paid: { item?: string | null; credits: number; creat
 export function itemsFor(state: { admin?: boolean; /** Has never paid for anything. */ firstPurchase?: boolean; /** Client seats (Scout, Command and Dominator) now. */ seats?: number; /** The white-label setup is already paid for. */ whiteLabel?: boolean; /** Sold the account plans rather than seats. */ newPlans?: boolean; /** On an account plan (Scout, Agency or Scale) now. */ plan?: boolean; /** Closer Packs already bought. */ closers?: number }): PriceItem[] {
   const seats = state.seats ?? 0;
   if (state.newPlans) {
-    // With the account plans: the Closer Pack (twice at most), sessions for a plan holder, briefs for anyone.
-    // An account still on seats keeps its own top-up price.
-    const plan = state.plan || seats > 0;
-    const sessions = seats > 0 && !state.plan ? [TOPUP] : plan ? SESSION_PACKS : [];
+    // With the account plans: the Closer Pack (twice at most), and the session packs and brief credits
+    // for every account, on a plan or not. An account still on seats keeps its own price for 100 sessions.
+    const sessions = seats > 0 && !state.plan ? [TOPUP, ...SESSION_PACKS.filter((p) => p.credits > TOPUP.credits)] : SESSION_PACKS;
     const out = [...((state.closers ?? 0) < CLOSER_LIMIT ? [CLOSER] : []), ...sessions, ...BRIEF_PACKS];
     return state.admin ? [...out, ADMIN_TEST] : out;
   }

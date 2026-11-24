@@ -54,14 +54,15 @@ export function CreditTopUpModal(p: Props) {
       fetch('/api/billing/checkout')
         .then((r) => r.json())
         .then((d) => {
-          // The item asked for, if it is on offer; else the first audit (a first purchase) or a top-up; else 5 prospect audits.
+          // The item asked for, if it is on offer; else the first audit (a first purchase); without a plan the Closer Pack
+          // while it can be bought; else the featured session pack, a top-up, or 5 prospect audits.
           const list: Item[] = d.packs ?? [];
           setItems(list);
           setReady(d.ready !== false);
           setLoaded(true);
           setAccountPlan(d.accountPlan ?? null);
           setBriefs(typeof d.briefs === 'number' ? d.briefs : null);
-          choose((list.find((k) => k.key === p.want) ?? list.find((k) => k.key === 'welcome') ?? list.find((k) => k.featured && k.key.startsWith('sessions-')) ?? list.find((k) => k.key === 'closer') ?? list.find((k) => k.key.startsWith('topup')) ?? list.find((k) => k.key === 'prospect-5') ?? list[0])?.key ?? '');
+          choose((list.find((k) => k.key === p.want) ?? list.find((k) => k.key === 'welcome') ?? (d.accountPlan ? undefined : list.find((k) => k.key === 'closer')) ?? list.find((k) => k.featured && k.key.startsWith('sessions-')) ?? list.find((k) => k.key === 'closer') ?? list.find((k) => k.key.startsWith('topup')) ?? list.find((k) => k.key === 'prospect-5') ?? list[0])?.key ?? '');
         })
         .catch(() => { setLoaded(true); setError('Unable to load the price list.'); });
   }, [p.isOpen, p.want]);
