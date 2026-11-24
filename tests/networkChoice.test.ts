@@ -53,3 +53,12 @@ test('internal (admin) runs never use metered mobile data: the line or home inte
   assert.equal(pickNetwork(health(6.4, 0, { mobileLanes: LINE }), on, 25, 'mobile_chrome', { internal: true }, now).network, 'mobile', 'the line');
   assert.equal(pickNetwork(health(0.5, 5.9), on, 25, 'mobile_chrome', { internal: true }, now).switchNow, false, 'an admin run never flips the switch on VoidMob');
 });
+
+test("Proxy-Seller's prepaid data takes overflow points while it has room and hasn't ended", async () => {
+  const { homeHasRoom } = await import('../packages/core/networkChoice');
+  const at = Date.UTC(2026, 10, 24, 18);
+  assert.equal(homeHasRoom({ leftBytes: 6.4e9, expires: '22.12.2026 23:59:59' }, at), true);
+  assert.equal(homeHasRoom({ leftBytes: 0.4e9, expires: '22.12.2026 23:59:59' }, at), false, 'under half a GB');
+  assert.equal(homeHasRoom({ leftBytes: 6.4e9, expires: '22.12.2026 23:59:59' }, Date.UTC(2026, 11, 23)), false, 'ended');
+  assert.equal(homeHasRoom(null, at), true, 'not read yet');
+});

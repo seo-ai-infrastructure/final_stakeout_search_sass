@@ -62,6 +62,16 @@ export function pickNetwork(
   return { network: 'mobile', switchNow: true };
 }
 
+/**
+ * Proxy-Seller's prepaid home-internet package can still take points (the overflow when every
+ * unlimited line is busy): more than half a GB left, or not read yet, and not ended.
+ */
+export function homeHasRoom(t: { leftBytes: number | null; expires?: string | null } | null | undefined, now = Date.now(), minBytes = 0.5e9) {
+  if (typeof t?.leftBytes === 'number' && t.leftBytes <= minBytes) return false;
+  const ends = packageEnds(t?.expires);
+  return !(ends !== null && ends <= now);
+}
+
 const gbText = (b: number | null | undefined) => (typeof b === 'number' ? (b / 1e9).toFixed(b < 10e9 ? 2 : 1) + ' GB' : 'an unknown amount');
 
 /** pickNetwork with today's settings and the worker's health report; keeps the switch and tells the admins once. */

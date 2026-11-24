@@ -18,7 +18,8 @@ import { WAKE_CHANNEL, mayRest } from '@stakeout/core/wake';
 import { r2DryRunDaily } from './r2Report';
 import { cloneScheduledRun, settlePin, startFreeRescans, stopScan, RERUN_MARKER } from '@stakeout/core/scans';
 import { queuePriority } from '@stakeout/core/speed';
-import { listsForPin, proxyPlace, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
+import { listsEnabled, listsForPin, proxyPlace, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
+import { homeHasRoom } from '@stakeout/core/networkChoice';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
 import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, nightlyRestartTick, reopenAdb, restartStuckAtStart, restartStuckPhone, type LeasedDevice } from './duoplus';
@@ -102,10 +103,15 @@ async function execute(job: Job, token?: string) {
     // lane's wave is under way it waits here, holding nothing.
     lanePoint = lanesOn() && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'mobile';
     if (lanePoint && !closing && (await enterLane(pin.id)) === null) {
-      // Every lane's wave is full or under way (the unlimited line is saturated): a customer's point
-      // overflows to metered mobile data while it has room; an internal (admin) point never does,
-      // it waits for the line.
-      if (!(await internalScan(pin.scan.userId)) && overflowReady()) {
+      // Every lane's wave is full or under way: an idle phone picks the point up, first on home
+      // internet while Proxy-Seller's prepaid data lasts (the scan's town set up for it), then, for
+      // a customer's scan only, on metered mobile data. Otherwise it waits for a line. Each point
+      // records where it went out (proxySource).
+      if (homeOverflowReady(pin.scan)) {
+        lanePoint = false;
+        pin.scan = { ...pin.scan, network: 'residential' };
+        console.log('[lane] point', pin.id, 'overflows to home internet (Proxy-Seller): every lane is busy');
+      } else if (!(await internalScan(pin.scan.userId)) && overflowReady()) {
         lanePoint = false;
         console.log('[lane] point', pin.id, 'overflows to metered mobile data: every lane is busy');
       } else {
@@ -606,6 +612,9 @@ let templatesReadAt = Date.now(),
   traffic: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null = null,
   mobileTrafficAt = 0,
   mobileTraffic: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null; at: string } | null = null;
+
+/** Home internet can take an overflow point: the scan's town is set up on Proxy-Seller and its prepaid package has room. */
+const homeOverflowReady = (scan: { proxyRegion: string | null }) => Boolean(scan.proxyRegion) && listsEnabled() && homeHasRoom(traffic);
 
 /** Metered mobile data can take an overflow point: set up, and more than half a GB left (or not read yet). */
 const overflowReady = () => Boolean(mobileProvider()) && (mobileTraffic?.leftBytes == null || mobileTraffic.leftBytes > 0.5e9);

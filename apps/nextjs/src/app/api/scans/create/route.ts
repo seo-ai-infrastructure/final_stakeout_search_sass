@@ -1,4 +1,4 @@
-import { chooseNetwork } from '@stakeout/core/networkChoice';
+import { chooseNetwork, homeHasRoom } from '@stakeout/core/networkChoice';
 import { flushAlerts } from '@/lib/alerts';
 import { wakeWorker } from '@stakeout/core/wake';
 import { randomUUID } from 'node:crypto';
@@ -65,9 +65,25 @@ export async function POST(req: Request) {
       throw new InputError('That search surface is not available yet. Choose Google Chrome.');
     await assertFleetSupports(s.targetType, s.phoneModel);
     if (s.targetType !== 'desktop_aimode') {
-      // A scan on the mobile network alone uses no home proxies: none are prepared, so a town the
-      // home-proxy provider does not know cannot stop it.
-      if (listsEnabled() && s.network !== 'mobile') {
+      // A mobile scan's points go out on the unlimited lines; the phones the lines can't take pick
+      // points up on home internet while Proxy-Seller's prepaid data lasts, so its lists (any ISP)
+      // are set up too. A town the home-proxy provider does not know never stops a mobile scan:
+      // its overflow goes to metered mobile data instead.
+      if (listsEnabled() && s.network === 'mobile') {
+        const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
+        if (homeHasRoom(health?.traffic)) {
+          try {
+            const center = market(s.centerLat, s.centerLng);
+            const left = skippedPoints(body.skip, s.gridSize);
+            const places = (placed?.pins ?? buildGrid(s)).filter((p) => !left.has(p.rowIdx + '_' + p.colIdx)).map((p) => ({ city: p.city, stateCode: p.stateCode }));
+            const { market: m } = await prepareGridProxies(center, places, []);
+            s.proxyRegion = m.region;
+            s.proxyCity = m.city;
+          } catch (e) {
+            console.warn('[scan] no home-internet overflow for this mobile scan:', (e as Error).message);
+          }
+        }
+      } else if (listsEnabled() && s.network !== 'mobile') {
         // Prepare the residential proxies BEFORE the grid is queued: for the centre
         // city and every other city the grid's points fall in, one list per chosen
         // ISP plus an any-ISP fallback. Lists are saved and reused by later scans.
