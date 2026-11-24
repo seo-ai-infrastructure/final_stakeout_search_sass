@@ -1,3 +1,4 @@
+import { chooseNetwork } from '@stakeout/core/networkChoice';
 import { flushAlerts } from '@/lib/alerts';
 import { wakeWorker } from '@stakeout/core/wake';
 import { randomUUID } from 'node:crypto';
@@ -36,7 +37,15 @@ export async function POST(req: Request) {
       if (placed) s.gridSize = placed.gridSize;
       const settings = await getSettings();
       if (s.isps.some((v: string) => !ispAllowed(v, settings))) throw new InputError('That ISP is not available here. Choose another.');
-      // Mobile data: admins only until it is switched on for customers (admin settings).
+      // The network is ours to choose, not the customer's (nor an admin's on Automatic): home internet
+      // while Proxy-Seller has room for the scan, then mobile data for good (networkChoice.ts).
+      if (u.role !== 'ADMIN' || body.network === 'auto') {
+        s.network = await chooseNetwork(s.gridSize * s.gridSize, s.targetType);
+        if (s.network !== 'residential') {
+          s.ispMode = 'any';
+          s.isps = [];
+        }
+      }
       // The mobile network (on its own or in a mix): admins only until it is switched on for customers.
       if (s.network !== 'residential' && u.role !== 'ADMIN' && !settings.mobileForCustomers) throw new InputError('The mobile network is not available yet. Choose Residential Network.');
       if (s.network !== 'residential' && s.targetType === 'desktop_aimode') throw new InputError('The mobile network is for phone scans.');

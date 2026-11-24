@@ -20,8 +20,13 @@ type Settings = {
   idleOffMinutes: number;
   /** Credits one mobile-data point costs (MOBILE_CREDITS_PER_POINT); a home-internet point costs 1. */
   mobileCreditsPerPoint: number;
-  /** Whether customers, not only admins, can choose mobile data (MOBILE_FOR_CUSTOMERS). */
+  /** Whether customers' scans may run on mobile data (MOBILE_FOR_CUSTOMERS); the network is chosen for them. */
   mobileForCustomers: boolean;
+  /**
+   * New scans run on mobile data (MOBILE_FIRST). Turned on by itself the first time Proxy-Seller's
+   * home-internet package can't fit a scan (networkChoice.ts); home internet is then the fallback.
+   */
+  mobileFirst: boolean;
   /**
    * Whether customers' pages read the AI Overview by the four flags (featured, named, listing cited,
    * website cited) instead of the earlier single reading (AI_FLAGS_FOR_CUSTOMERS). Admins always see
@@ -60,6 +65,7 @@ export const defaultSettings = (env: Record<string, string | undefined> = proces
   idleOffMinutes: num(env.POWER_IDLE_OFF_MINUTES, 10),
   mobileCreditsPerPoint: num(env.MOBILE_CREDITS_PER_POINT, 1),
   mobileForCustomers: env.MOBILE_FOR_CUSTOMERS === 'true',
+  mobileFirst: env.MOBILE_FIRST === 'true',
   aiFlagsForCustomers: env.AI_FLAGS_FOR_CUSTOMERS === 'true',
   pageOneShareForCustomers: env.PAGE_ONE_SHARE_FOR_CUSTOMERS === 'true',
   newPlansLive: env.NEW_PLANS_LIVE === 'true',
@@ -115,6 +121,10 @@ export function cleanSettings(input: Record<string, unknown>): Partial<Settings>
   if ('pageOneShareForCustomers' in input) {
     if (typeof input.pageOneShareForCustomers !== 'boolean') throw new Error('The page-one share for customers must be on or off.');
     out.pageOneShareForCustomers = input.pageOneShareForCustomers;
+  }
+  if ('mobileFirst' in input) {
+    if (typeof input.mobileFirst !== 'boolean') throw new Error('Mobile data first must be on or off.');
+    out.mobileFirst = input.mobileFirst;
   }
   if ('newPlansLive' in input) {
     if (typeof input.newPlansLive !== 'boolean') throw new Error('The new plans must be on or off.');

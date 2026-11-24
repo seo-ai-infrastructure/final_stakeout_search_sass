@@ -78,8 +78,10 @@ export function NewScanWizard() {
   const [detectedCity, setDetectedCity] = useState('Lakeland');
   const [detectedState, setDetectedState] = useState('FL');
   const [ispMode, setIspMode] = useState<IspMode>('any');
-  // Which network the searches go out on: residential, mobile, or a mix of both (no ISP choice).
-  const [network, setNetwork] = useState<ScanNetwork>('residential');
+  // Which network the searches go out on. Automatic: the server chooses (home internet while
+  // Proxy-Seller has room, then mobile data). Only an admin sees the choice, under More options.
+  const [network, setNetwork] = useState<ScanNetwork | 'auto'>('auto');
+  const [admin, setAdmin] = useState(false);
   const [mobileData, setMobileData] = useState<{ available: boolean; ready: boolean; creditsPerPoint: number } | null>(null);
   const [ispSelected, setIspSelected] = useState<string[]>([]);
   const [ispOptions, setIspOptions] = useState<IspOption[]>([]);
@@ -221,8 +223,7 @@ export function NewScanWizard() {
         if (sc.targetType) setTargetType(sc.targetType);
         if (sc.gridSize) setGridSize(offeredSize(sc.gridSize));
         if (sc.spacingKm) setSpacingKm(sc.spacingKm);
-        // The network is not carried over: every new scan starts on home internet (the cheaper
-        // data), and mobile or the mix is chosen on purpose each time.
+        // The network is not carried over: every new scan starts on Automatic (the server chooses).
         setTrackAiOverviews(Boolean(sc.trackAiOverviews));
         const match = list.find((x) => x.name === sc.targetBusiness);
         if (match) setBusinessId(match.id);
@@ -345,6 +346,7 @@ export function NewScanWizard() {
           if (typeof data.creditBalance === 'number') {
             setCreditBalance(data.creditBalance);
           }
+          if (data.role === 'ADMIN') setAdmin(true);
           if (data.mobileData?.available) setMobileData(data.mobileData);
         }
       } catch {}
@@ -431,7 +433,8 @@ export function NewScanWizard() {
     const kept = shape === 'wealth'
       ? placedLayout(previewPoints.filter((p) => !p.skipped), OFFERED_GRID_SIZES).cells
       : previewPoints.filter((p) => !p.skipped && !p.out).map((p) => { const [r, c] = p.key.split('_').map(Number); return { rowIdx: r, colIdx: c }; });
-    const mobilePins = network === 'residential' ? 0 : kept.filter((p) => pinNetwork(network, p.rowIdx, p.colIdx) === 'mobile').length;
+    const net = network === 'auto' ? 'residential' : network;
+    const mobilePins = net === 'residential' ? 0 : kept.filter((p) => pinNetwork(net, p.rowIdx, p.colIdx) === 'mobile').length;
     // One phone session a pin, across the board (a mobile-data point at the admin setting's price, 1 by default).
     const totalCost = isDesktop ? totalPins : totalPins - mobilePins + mobilePins * mobilePrice;
     const costPerPin = isDesktop ? 1 : network === 'mobile' ? mobilePrice : 1;
@@ -817,7 +820,7 @@ export function NewScanWizard() {
           // No ISP targeting: the network choice replaces it.
           ispMode: 'any',
           isps: [],
-          network,
+          network: targetType.startsWith('desktop_') ? 'residential' : network,
           gridSize,
           spacingKm,
           targetType,
@@ -1072,7 +1075,7 @@ export function NewScanWizard() {
                 </> : <p className={styles.hint}>First in line, at the same one phone session a grid point.</p>}
                 {scheduleProblem && <p className={styles.errorText}>{scheduleProblem}</p>}
               </fieldset>
-              {mobileData && <fieldset><legend>Network</legend><div className={styles.networkOptions} role="radiogroup" aria-label="Network">{(['residential', 'mobile', 'mix'] as const).map((id) => <button key={id} type="button" role="radio" aria-checked={network === id} disabled={id !== 'residential' && !mobileData.ready} onClick={() => setNetwork(id)}><span>{NETWORK_LABELS[id]}</span><small>{id === 'residential' || mobileData.creditsPerPoint === 1 ? '1' : id === 'mobile' ? mobileData.creditsPerPoint : `1–${mobileData.creditsPerPoint}`} session / pin</small></button>)}</div>{!mobileData.ready && <p className={styles.hint}>Mobile network currently unavailable.</p>}</fieldset>}
+              {mobileData && admin && <fieldset><legend>Network</legend><div className={styles.networkOptions} role="radiogroup" aria-label="Network">{(['auto', 'residential', 'mobile', 'mix'] as const).map((id) => <button key={id} type="button" role="radio" aria-checked={network === id} disabled={(id === 'mobile' || id === 'mix') && !mobileData.ready} onClick={() => setNetwork(id)}><span>{id === 'auto' ? 'Automatic' : NETWORK_LABELS[id]}</span><small>{id === 'auto' ? 'Home internet until it runs low, then mobile' : `${id === 'residential' || mobileData.creditsPerPoint === 1 ? '1' : id === 'mobile' ? mobileData.creditsPerPoint : `1–${mobileData.creditsPerPoint}`} session / pin`}</small></button>)}</div>{!mobileData.ready && <p className={styles.hint}>Mobile network currently unavailable.</p>}</fieldset>}
               <fieldset><legend>Grid center</legend><div className={styles.dateFields}><label>Latitude<input aria-label="Center latitude" type="number" step="any" min="-85" max="85" value={centerLat} onChange={(e) => setCenterLat(Number(e.target.value))} /></label><label>Longitude<input aria-label="Center longitude" type="number" step="any" min="-180" max="180" value={centerLng} onChange={(e) => setCenterLng(Number(e.target.value))} /></label></div><p className={styles.hint}>You can also drag the orange center marker on the map.</p></fieldset>
               {businessId && <button type="button" className={styles.deleteBusiness} onClick={deleteBusiness}>Delete saved setup</button>}
             </div>}

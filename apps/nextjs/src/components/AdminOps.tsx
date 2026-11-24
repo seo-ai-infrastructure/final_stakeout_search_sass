@@ -11,7 +11,7 @@ type Account = { id: string; email: string; role: string; credits: number; brief
 type Tpl = { id: string; name: string; version: string | null } | null;
 type Ops = {
   at: string;
-  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number; mobileCreditsPerPoint?: number; mobileForCustomers?: boolean; aiFlagsForCustomers?: boolean; pageOneShareForCustomers?: boolean; newPlansLive?: boolean; newPlansPreview?: string[] };
+  settings: { searchGapSeconds: number; ispExclude: string[]; signupsOpen: boolean; costPerPointUsd: number; powerSave?: boolean; idleOffMinutes?: number; mobileCreditsPerPoint?: number; mobileForCustomers?: boolean; mobileFirst?: boolean; aiFlagsForCustomers?: boolean; pageOneShareForCustomers?: boolean; newPlansLive?: boolean; newPlansPreview?: string[] };
   system: { templates?: { chrome: Tpl; maps: Tpl; google?: Tpl }; templatesReadAt?: string; traffic?: { limitBytes: number | null; usedBytes: number | null; leftBytes: number | null; todayBytes: number | null; expires: string | null; at: string } | null; trafficLow?: boolean; proxyDown?: { region: string; since: string }[]; proxyProviders?: string[]; mobileData?: boolean; mobileProvider?: string | null; mobileLogin?: string | null; mobileTraffic?: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null } | null; mobileTrafficLow?: boolean; trafficHours?: { hour: string; residentialBytes: number | null; mobileBytes: number | null; points: number; bytesPerPoint: number | null }[] } | null;
   capacity: {
     completed24h: number; completedLastHour: number; started24h: number; timedPoints: number; medianSeconds: number | null; perPhoneHour: number | null;
@@ -78,7 +78,7 @@ export function AdminOps() {
   const [gift, setGift] = useState({ email: '', amount: '', note: '' });
   const [invite, setInvite] = useState('');
   const [ops, setOps] = useState<Ops | null>(null);
-  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string; mobileCredits: string; mobileCustomers: boolean; aiFlags: boolean; pageOne: boolean; newPlans: boolean; preview: string } | null>(null);
+  const [form, setForm] = useState<{ gap: string; cost: string; isps: string; signups: boolean; powerSave: boolean; idleOff: string; mobileCredits: string; mobileCustomers: boolean; mobileFirst: boolean; mobileFirstTouched: boolean; aiFlags: boolean; pageOne: boolean; newPlans: boolean; preview: string } | null>(null);
 
   const load = useCallback(async () => {
     const r = await fetch('/api/admin/ops', { cache: 'no-store' }).catch(() => null);
@@ -90,7 +90,7 @@ export function AdminOps() {
     if (d.settings && d.capacity) {
       setOps(d);
       // The form is filled once, so a refresh never overwrites what is being typed.
-      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 1), mobileCustomers: Boolean(d.settings.mobileForCustomers), aiFlags: Boolean(d.settings.aiFlagsForCustomers), pageOne: Boolean(d.settings.pageOneShareForCustomers), newPlans: Boolean(d.settings.newPlansLive), preview: (d.settings.newPlansPreview ?? []).join(', ') });
+      setForm((f) => f ?? { gap: String(d.settings.searchGapSeconds), cost: String(d.settings.costPerPointUsd), isps: d.settings.ispExclude.join(', '), signups: d.settings.signupsOpen, powerSave: Boolean(d.settings.powerSave), idleOff: String(d.settings.idleOffMinutes ?? 10), mobileCredits: String(d.settings.mobileCreditsPerPoint ?? 1), mobileCustomers: Boolean(d.settings.mobileForCustomers), mobileFirst: Boolean(d.settings.mobileFirst), mobileFirstTouched: false, aiFlags: Boolean(d.settings.aiFlagsForCustomers), pageOne: Boolean(d.settings.pageOneShareForCustomers), newPlans: Boolean(d.settings.newPlansLive), preview: (d.settings.newPlansPreview ?? []).join(', ') });
     }
   }, []);
   usePolling(load, 15000);
@@ -217,7 +217,7 @@ export function AdminOps() {
                   'Mobile data',
                   ops.system?.mobileData ? (ops.system.mobileProvider === 'decodo' ? 'Decodo mobile' : 'VoidMob') : 'Off',
                   ops.system?.mobileData
-                    ? `${ops.settings.mobileCreditsPerPoint ?? 1} phone sessions a point · ${ops.settings.mobileForCustomers ? 'customers can choose it' : 'admins only'}${ops.system.mobileTraffic ? ' · ' + gb(ops.system.mobileTraffic.leftBytes) + ' left' : ''}${ops.system.mobileLogin ? ' · login: ' + ops.system.mobileLogin : ''}`
+                    ? `${ops.settings.mobileCreditsPerPoint ?? 1} phone sessions a point · ${ops.settings.mobileFirst ? 'new scans run on it' : 'new scans switch to it when Proxy-Seller runs low'}${ops.settings.mobileForCustomers ? '' : ' (admins only)'}${ops.system.mobileTraffic ? ' · ' + gb(ops.system.mobileTraffic.leftBytes) + ' left' : ''}${ops.system.mobileLogin ? ' · login: ' + ops.system.mobileLogin : ''}`
                     : 'set VOIDMOB_API_KEY and VOIDMOB_PROXY_ID on the worker',
                 ],
                 ['Proxy-Seller traffic today', gb(ops.system?.traffic?.todayBytes), ops.system?.traffic ? `${gb(ops.system.traffic.leftBytes)} left of ${gb(ops.system.traffic.limitBytes)}${ops.system.traffic.expires ? ' · expires ' + ops.system.traffic.expires : ''}` : 'not reported by the worker yet'],
@@ -585,7 +585,11 @@ export function AdminOps() {
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-200">
               <input type="checkbox" className="h-4 w-4" checked={form.mobileCustomers} onChange={(e) => setForm({ ...form, mobileCustomers: e.target.checked })} />
-              Customers can choose Mobile Network and the Mix (otherwise admins only)
+              Customers' scans can run on Mobile Network (we choose the network; otherwise home internet only)
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-200">
+              <input type="checkbox" className="h-4 w-4" checked={form.mobileFirst} onChange={(e) => setForm({ ...form, mobileFirst: e.target.checked, mobileFirstTouched: true })} />
+              New scans run on Mobile Network (turns on by itself when Proxy-Seller runs low; off: home internet first)
             </label>
             <label className="flex items-center gap-2 text-sm text-slate-200 sm:col-span-2">
               <input type="checkbox" className="h-4 w-4" checked={form.aiFlags} onChange={(e) => setForm({ ...form, aiFlags: e.target.checked })} />
@@ -611,7 +615,7 @@ export function AdminOps() {
             type="button"
             disabled={busy !== ''}
             className={btn + ' mt-4 bg-emerald-500 text-slate-950 hover:bg-emerald-400'}
-            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups, powerSave: form.powerSave, idleOffMinutes: Number(form.idleOff), mobileCreditsPerPoint: Number(form.mobileCredits), mobileForCustomers: form.mobileCustomers, aiFlagsForCustomers: form.aiFlags, pageOneShareForCustomers: form.pageOne, newPlansLive: form.newPlans, newPlansPreview: form.preview } }, () => 'Settings saved.')}
+            onClick={() => run('settings', { action: 'save_settings', settings: { searchGapSeconds: Number(form.gap), costPerPointUsd: Number(form.cost), ispExclude: form.isps, signupsOpen: form.signups, powerSave: form.powerSave, idleOffMinutes: Number(form.idleOff), mobileCreditsPerPoint: Number(form.mobileCredits), mobileForCustomers: form.mobileCustomers, ...(form.mobileFirstTouched ? { mobileFirst: form.mobileFirst } : {}), aiFlagsForCustomers: form.aiFlags, pageOneShareForCustomers: form.pageOne, newPlansLive: form.newPlans, newPlansPreview: form.preview } }, () => 'Settings saved.')}
           >
             {busy === 'settings' ? 'Saving…' : 'Save settings'}
           </button>

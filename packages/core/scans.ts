@@ -14,6 +14,7 @@ import { ispForPin } from './proxyGeo';
 import { RERUN_MARKER, rerunCharge, rerunIsp } from './rerun';
 import { nudgeAlerts, pushAlert, scanAlert } from './alerts';
 import { creditsPerPoint, getSettings } from './settings';
+import { chooseNetwork } from './networkChoice';
 import { pointPrice, scanCost } from './network';
 import { speedFactor, type Speed } from './speed';
 
@@ -259,7 +260,7 @@ export async function cloneScheduledRun(
     // Each run of a repeating scan is a scheduled run: 1 point a grid point, behind Scan Now.
     return await createScan(
       template.userId,
-      { ...parseSpec(template), scheduleType: 'once' },
+      await withChosenNetwork(template.userId, { ...parseSpec(template), scheduleType: 'once' }, template.pins.length),
       'cron:' + template.id + ':' + occurrenceId,
       undefined,
       template.pins,
@@ -275,6 +276,14 @@ export async function cloneScheduledRun(
   }
 }
 
+/** A customer's next run goes out on the network chosen today (networkChoice.ts), not its first run's; an admin's keeps its own. */
+async function withChosenNetwork(userId: string, spec: ScanSpec, points: number): Promise<ScanSpec> {
+  const owner = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (owner?.role === 'ADMIN') return spec;
+  const network = await chooseNetwork(points, spec.targetType);
+  return network === 'residential' ? { ...spec, network } : { ...spec, network, ispMode: 'any', isps: [] };
+}
+
 /**
  * The free re-runs of first $5 audits that are due: each runs the audit's grid again, free, as a
  * scheduled scan, once (its request key makes a second start impossible). Returns how many started.
@@ -288,7 +297,7 @@ export async function startFreeRescans(now = new Date()) {
   let started = 0;
   for (const scan of due) {
     try {
-      await createScan(scan.userId, { ...parseSpec(scan), scheduleType: 'once' }, 'rescan7:' + scan.id, undefined, scan.pins, { free: true, speed: 'scheduled' });
+      await createScan(scan.userId, await withChosenNetwork(scan.userId, { ...parseSpec(scan), scheduleType: 'once' }, scan.pins.length), 'rescan7:' + scan.id, undefined, scan.pins, { free: true, speed: 'scheduled' });
       started++;
     } catch (e) {
       console.warn('[free-rescan] could not start the re-run of', scan.id, (e as Error).message);

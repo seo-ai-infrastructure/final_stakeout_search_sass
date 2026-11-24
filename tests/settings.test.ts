@@ -4,10 +4,10 @@ import { cleanSettings, creditsPerPoint, defaultSettings, mergeSettings, ispAllo
 
 test('settings: defaults come from the environment, stored values win, bad stored values are ignored', () => {
   const base = defaultSettings({});
-  assert.deepEqual(base, { searchGapSeconds: 120, ispExclude: ['Tillman Fiberco'], signupsOpen: false, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 1, mobileForCustomers: false, aiFlagsForCustomers: false, pageOneShareForCustomers: false, newPlansLive: false, newPlansPreview: [], newPlansLiveAt: null });
+  assert.deepEqual(base, { searchGapSeconds: 120, ispExclude: ['Tillman Fiberco'], signupsOpen: false, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 1, mobileForCustomers: false, mobileFirst: false, aiFlagsForCustomers: false, pageOneShareForCustomers: false, newPlansLive: false, newPlansPreview: [], newPlansLiveAt: null });
   assert.equal(defaultSettings({ SEARCH_GAP_SECONDS: '45', SIGNUPS_OPEN: 'true' }).searchGapSeconds, 45);
   const merged = mergeSettings({ searchGapSeconds: '45', signupsOpen: 'true', ispExclude: '["A","B"]', costPerPointUsd: '"oops"', unknown: '1' }, base);
-  assert.deepEqual(merged, { searchGapSeconds: 45, ispExclude: ['A', 'B'], signupsOpen: true, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 1, mobileForCustomers: false, aiFlagsForCustomers: false, pageOneShareForCustomers: false, newPlansLive: false, newPlansPreview: [], newPlansLiveAt: null });
+  assert.deepEqual(merged, { searchGapSeconds: 45, ispExclude: ['A', 'B'], signupsOpen: true, costPerPointUsd: 0.033, powerSave: false, idleOffMinutes: 10, mobileCreditsPerPoint: 1, mobileForCustomers: false, mobileFirst: false, aiFlagsForCustomers: false, pageOneShareForCustomers: false, newPlansLive: false, newPlansPreview: [], newPlansLiveAt: null });
 });
 
 test('settings: what an admin types is checked', () => {
@@ -32,6 +32,8 @@ test('settings: power saving is off until an admin turns it on, and the idle tim
 
 test('settings: mobile data price and who can choose it', () => {
   assert.deepEqual(cleanSettings({ mobileCreditsPerPoint: 3, mobileForCustomers: true }), { mobileCreditsPerPoint: 3, mobileForCustomers: true });
+  assert.deepEqual(cleanSettings({ mobileFirst: true }), { mobileFirst: true }, 'the switch to mobile data is kept');
+  assert.throws(() => cleanSettings({ mobileFirst: 'yes' }));
   assert.throws(() => cleanSettings({ mobileCreditsPerPoint: 0 }), /1 to 10 phone sessions/);
   assert.throws(() => cleanSettings({ mobileCreditsPerPoint: 2.5 }), /1 to 10 phone sessions/);
   assert.throws(() => cleanSettings({ mobileForCustomers: 'yes' }), /on or off/);
