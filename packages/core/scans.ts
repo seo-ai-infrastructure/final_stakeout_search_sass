@@ -15,6 +15,7 @@ import { RERUN_MARKER, rerunCharge, rerunIsp } from './rerun';
 import { nudgeAlerts, pushAlert, scanAlert } from './alerts';
 import { creditsPerPoint, getSettings } from './settings';
 import { chooseNetwork } from './networkChoice';
+import { queueScanWebhook } from './webhooks';
 import { mobileOverflowTown } from './overflowTown';
 import { pointPrice, scanCost } from './network';
 import { speedFactor, type Speed } from './speed';
@@ -217,6 +218,8 @@ export async function settlePin(
     { timeout: 20000 },
   );
   if (finished) await alertIfScanWentBadly(finished).catch((e) => console.warn('[alert] scan not checked:', (e as Error).message));
+  // Scale and up: the scan's summary to the account's webhook address (sent by the worker, with retries).
+  if (finished) await queueScanWebhook(finished).catch((e) => console.warn('[webhook] not queued:', (e as Error).message));
 }
 
 /** A scan that finished with many points failed (not stopped by its owner): one email to the admins. */

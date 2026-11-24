@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import TeamSeats from './TeamSeats';
 import WhiteLabelSettings from './WhiteLabelSettings';
+import WebhookSettings from './WebhookSettings';
 import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, ANNUAL_MONTHS_PAID, FOUNDING, FOUNDING_PLANS, LINES, SEATS, addedCents, dollars, lineCents, monthlyCents, monthlyPoints, rolloverMonths, yearCents, type AccountPlan, type Line, type Plan } from '@stakeout/core/gbpPlans';
 
 type Loc = { id: string; name: string; plan: string | null };
@@ -319,6 +320,8 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
                     <li>{d.locations === null ? 'Unlimited tracked businesses' : `Up to ${d.locations} tracked businesses a month`}</li>
                     <li>{d.seats === null ? 'Unlimited team seats' : d.seats === 1 ? 'One seat (just you)' : `${d.seats} team seats, you included`}</li>
                     {d.priority && <li>Priority queue: first to the phones and the 5G lines</li>}
+                    {d.embeds && <li>Live report embeds for client dashboards</li>}
+                    {d.webhooks && <li>Webhooks when a scan finishes</li>}
                     <li>{rolloverText(p, year)}</li>
                   </ul>
                   <div className="mt-3">
@@ -336,6 +339,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
       )}
       {newPlans && <TeamSeats />}
       {newPlans && <WhiteLabelSettings />}
+      {newPlans && <WebhookSettings />}
       {onSeats && <div className={card}>
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="text-lg font-semibold">Your seats</h2>

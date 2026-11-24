@@ -12,6 +12,7 @@ import { InputError, scheduleCron } from '@stakeout/core/grid';
 import { scanBridge } from '@stakeout/core/upgradeTriggers';
 import { LINES, dollars, unitCents } from '@stakeout/core/gbpPlans';
 import { sellsAddon } from '@/lib/gbpBilling';
+import { assertLocationRoom } from '@/lib/locationLimits';
 import { gbpOpen, paidLocations } from '@/lib/gbpAccess';
 import { requestRerun, stopScan } from '@stakeout/core/scans';
 import { deleteScanFiles } from '@stakeout/core/r2';
@@ -108,6 +109,9 @@ export async function POST(req: Request, c: C) {
     const cron = s.scheduleType === 'once' ? null : (s.scheduleCron ?? '').replace(/^PAUSED:/, '') || scheduleCron(s.scheduleType);
     if (!cron || !['pause', 'resume'].includes(action))
       throw new InputError('Invalid schedule action.');
+    // Resuming a paused repeating scan tracks its business again: within the plan's businesses a month.
+    if (action === 'resume' && s.scheduleCron?.startsWith('PAUSED:') && me.role !== 'ADMIN')
+      await assertLocationRoom(userId, { business: s.targetBusiness, googleId: s.targetPlaceId || s.targetKgmid, lat: s.centerLat, lng: s.centerLng });
     await db.gridScan.update({
       where: { id },
       data: { scheduleCron: action === 'pause' ? 'PAUSED:' + cron : cron },

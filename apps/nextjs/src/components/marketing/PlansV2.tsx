@@ -76,6 +76,8 @@ export function PlanCards({ style, yearly = false, foundingLeft = 0 }: { style?:
           d.whiteLabel ? 'White-label reports on your own domain' : 'Share links with the Stakeout badge',
           seatText(p),
           ...(d.priority ? ['Priority queue: first to the phones and the 5G lines'] : []),
+          ...(d.embeds ? ['Live report embeds for client dashboards'] : []),
+          ...(d.webhooks ? ['Webhooks when a scan finishes'] : []),
           `Unused sessions ${rollover(p, yearly)}`,
         ];
         return (
@@ -129,6 +131,8 @@ function CompareTable({ yearly }: { yearly: boolean }) {
     ['Google Maps, mobile organic and AI Overviews', all('All in one session')],
     ['Screen recording at every point', all('Included')],
     ['Client reports', ACCOUNT_PLAN_ORDER.map((p) => (ACCOUNT_PLANS[p].whiteLabel ? 'White-label on your own domain' : 'Share links with the Stakeout badge'))],
+    ['Live report embeds (an iframe for client dashboards)', ACCOUNT_PLAN_ORDER.map((p) => (ACCOUNT_PLANS[p].embeds ? 'Included' : '—'))],
+    ['Webhooks when a scan finishes (Zapier, Make, GoHighLevel)', ACCOUNT_PLAN_ORDER.map((p) => (ACCOUNT_PLANS[p].webhooks ? 'Included' : '—'))],
     ['Unused sessions', ACCOUNT_PLAN_ORDER.map((p) => (p === 'P_SCOUT' ? `${cap(rollover(p, false))} (one month rolls over on yearly)` : cap(rollover(p, yearly))))],
     ['Print, PDF and offline copies of reports', all('Included')],
   ];
@@ -266,6 +270,8 @@ export const PLANS_FAQ: FaqItem[] = [
   ['What is a revenue brief?', 'A finished client report built from your scans: the local visibility score, where the business wins and loses on the map, the rivals’ ads above it, and what that visibility is worth at live county Google Ads prices. A brief credit compiles one, and it is kept as it is: it never recalculates when opened. Spend another brief credit to update it with your newest scan; the share link stays the same. Reopening it, sharing it or changing the close-rate inputs is free.'],
   ['What is a tracked business?', `A business you scan: Scout tracks up to ${ACCOUNT_PLANS.P_SCOUT.locations} a billing month, Agency ${ACCOUNT_PLANS.P_AGENCY.locations}, Scale ${ACCOUNT_PLANS.P_SCALE.locations} and Agency Max as many as you like. Scanning the same business again, with any keyword or grid, never counts twice, and every business with a repeating scan stays tracked. Once the month’s are in use, a new business waits for next month or a bigger plan.`],
   ['How do team seats work?', `Add people by email on the Plan and billing page. They sign in with their own email and password and work in your account: they run scans and open reports, using its phone sessions. The plan, billing and API keys stay with you, and you can take anyone off at any time. Agency has ${ACCOUNT_PLANS.P_AGENCY.seats} seats, Scale ${ACCOUNT_PLANS.P_SCALE.seats} and Agency Max no limit, you included; Scout is for one person.`],
+  ['What is a live report embed?', 'One line of code (an iframe) you paste into a client dashboard such as GoHighLevel, AgencyAnalytics or Notion, or into any web page. It always shows the newest finished scan of that business, keyword and grid, with your white label. It comes with Agency, Scale and Agency Max. Embeds you have made keep working if you move to Scout, with the Stakeout badge in place of your brand.'],
+  ['What do webhooks send?', 'When a scan finishes, its summary goes as JSON to an address you choose: the business, keyword and grid, average rank, share of local voice, points in the top 3, the AI Overview and links to the report. Each delivery is signed, and tried again for half an hour if your address does not answer. Paste a Zapier, Make or GoHighLevel inbound webhook to pass results on. Webhooks come with Scale and Agency Max.'],
   ['What does the listing add-on add?', `For ${usd(ADDON.tiers[0].cents)} a month per Google listing, on top of any plan: the listing tools (safe edits, posts, review replies, the change watchdog, rival gaps), AI agents that work on the listing, ${n(ADDON.points)} more phone sessions and ${ADDON.briefs} more brief credit a month.`],
   ['Can I try it before a plan?', `Yes: the ${CLOSER.name} is ${usd(CLOSER.cents)} once, no subscription. ${n(CLOSER.credits)} phone sessions run on our 5G lines (two 5×5 audits) and ${CLOSER.briefs} brief credit, which never expire. One per account.`],
   ['Can I change or cancel my plan?', 'Any time. A bigger plan charges the difference for the rest of the month (or year, on a yearly plan) straight away. A smaller one takes effect at once: nothing is refunded on a monthly plan, and on a yearly plan the unused part of the year comes off your next renewal. A cancelled plan works until the end of the month or year you paid for.'],

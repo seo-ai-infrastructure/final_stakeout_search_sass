@@ -20,6 +20,7 @@ import { cloneScheduledRun, settlePin, startFreeRescans, stopScan, RERUN_MARKER 
 import { queuePriority } from '@stakeout/core/speed';
 import { listsEnabled, listsForPin, proxyPlace, releaseIdleProxyLists, residentPackage } from '@stakeout/core/proxyLists';
 import { homeHasRoom } from '@stakeout/core/networkChoice';
+import { nextWebhookDue, sendDueWebhooks } from '@stakeout/core/webhooks';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
 import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, nightlyRestartTick, reopenAdb, restartStuckAtStart, restartStuckPhone, type LeasedDevice } from './duoplus';
@@ -400,11 +401,13 @@ const jobOptions = {
 /** When the next scheduled scan or free re-run is due (ms), so a resting worker wakes for it. */
 let nextDue = Infinity;
 async function readNextDue() {
-  const [run, rescan] = await Promise.all([
+  const [run, rescan, hook] = await Promise.all([
     db.gridScan.findFirst({ where: { status: 'SCHEDULED', runAt: { not: null } }, orderBy: { runAt: 'asc' }, select: { runAt: true } }),
     db.gridScan.findFirst({ where: { freeRescanAt: { not: null } }, orderBy: { freeRescanAt: 'asc' }, select: { freeRescanAt: true } }),
+    // A webhook waiting to be tried again wakes a resting worker too.
+    nextWebhookDue(),
   ]);
-  nextDue = Math.min(run?.runAt?.getTime() ?? Infinity, rescan?.freeRescanAt?.getTime() ?? Infinity);
+  nextDue = Math.min(run?.runAt?.getTime() ?? Infinity, rescan?.freeRescanAt?.getTime() ?? Infinity, hook?.getTime() ?? Infinity);
 }
 
 async function dispatch() {
@@ -839,6 +842,21 @@ async function startReruns() {
   }
 }
 
+// Scan-finished webhooks: sent, or tried again later (a resting worker wakes for a retry that is due).
+let webhooksBusy = false;
+function sendWebhooks() {
+  if (webhooksBusy) return;
+  webhooksBusy = true;
+  void sendDueWebhooks()
+    .then(async (tried) => {
+      if (!tried) return;
+      const h = await nextWebhookDue();
+      if (h) nextDue = Math.min(nextDue, h.getTime());
+    })
+    .catch((e) => console.warn('[webhook] send skipped:', (e as Error).message))
+    .finally(() => { webhooksBusy = false; });
+}
+
 let startupRestartsDone = false;
 async function tick() {
   if (busy) return;
@@ -865,6 +883,8 @@ async function tick() {
     lastFull = Date.now();
     await dispatch();
     await startReruns();
+    // Scan-finished webhooks that are due (Scale and up), sent beside this loop so a slow address never holds up scans.
+    sendWebhooks();
     // Every 10 minutes: free re-runs of first audits that are due, and when the next scheduled work is.
     if (Date.now() - lastFreeRescans > 10 * 60000 || Date.now() >= nextDue) {
       lastFreeRescans = Date.now();

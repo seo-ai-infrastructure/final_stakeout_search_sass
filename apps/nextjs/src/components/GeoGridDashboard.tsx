@@ -22,6 +22,7 @@ import { paintSplitPin } from '../lib/combinedPin';
 import { PinEvidenceCard } from './PinEvidenceCard';
 import { MarketInsights } from './MarketInsights';
 import { buyingPower, nearWins, passesFilters, pointShares, NO_FILTERS, type BuyingPowerFilters } from '../lib/buyingPower';
+import EmbedReport from './EmbedReport';
 import { gridColumns, rankColor, rankTextColor, RANK_SCALE, columnColor, COLUMN_SCALE, RANK_KEYS, rankKey, ADS_SCALE, adsColor, NA_COLOR, ONE_BOX_COLOR, type RankKey } from '../lib/gridColumns';
 import { oneBoxOf } from '@stakeout/core/localRank';
 import {
@@ -232,6 +233,8 @@ export function GeoGridDashboard({
     [selected, select] = useState<string | null>(initialPin),
     [error, setError] = useState(''),
     [share, setShare] = useState(''),
+    // The live embed panel (Agency and up: an iframe for client dashboards).
+    [embedOpen, setEmbedOpen] = useState(false),
     // Whether the share link's visibility report carries Google's numbers (null: as the scan says).
     [googleOnShare, setGoogleOnShare] = useState<boolean | null>(null),
     [projected, project] = useState<CompetitorMarketStat | null>(null),
@@ -779,6 +782,7 @@ export function GeoGridDashboard({
               Include Google data
             </label>
             <button onClick={() => changeShare('revoke')}>Revoke link</button>
+            <button type="button" aria-expanded={embedOpen} onClick={() => setEmbedOpen((v) => !v)}>Embed live report</button>
             {/* The Local & AI visibility report: this scan with the business's other scans, printable. */}
             <a href={'/reports/visibility.html?scan=' + encodeURIComponent(scan.id)} target="_blank" rel="noopener" className="rounded-lg border border-orange-400/60 px-3 py-2 text-sm font-semibold text-orange-200 hover:bg-orange-400/10">
               Visibility report
@@ -814,6 +818,7 @@ export function GeoGridDashboard({
           </label>
         </div>
       )}
+      {!shared && embedOpen && <EmbedReport scanId={scan.id} />}
       {error && <p role="alert">{error}</p>}
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <p>

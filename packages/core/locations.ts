@@ -2,12 +2,13 @@
  * Tracked locations: the distinct businesses an account scans. A plan tracks up to so many a
  * billing month (Scout 5, Agency 20, Scale 50, Agency Max no limit; see ACCOUNT_PLANS.locations).
  * Two scans are of the same business when they carry the same Google ID, or (without one on both)
- * the same name within SAME_PLACE_KM of each other, so re-centring a grid or a small typo in the
- * suffix (LLC, Inc.) never counts as a new client.
+ * the same name within SAME_PLACE_KM (25 km, about 15 miles) of each other, so suburb grids across
+ * one metro, a re-centred grid or a different suffix (LLC, Inc.) never count as a new client.
  */
 export type ScanPlace = { business: string; googleId?: string | null; lat: number; lng: number };
 
-export const SAME_PLACE_KM = 5;
+/** Same name this close together: one business (an agency's suburb grids across one metro stay one client). */
+export const SAME_PLACE_KM = 25;
 
 /** A business name as compared: lower case, letters and digits only, without company suffixes. */
 export function businessKey(name: string): string {

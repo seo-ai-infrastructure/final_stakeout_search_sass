@@ -631,3 +631,51 @@ model ServiceOrder {
   @@index([userId, createdAt])
   @@map("service_orders")
 }
+
+/// A live report embed: an iframe that always shows the newest finished scan of one business,
+/// keyword and grid (the scan it was made from fixes which). Made on Agency and up; it keeps working
+/// after a move down, with our badge in place of the account's brand.
+model ReportEmbed {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  scanId    String
+  keyword   String
+  business  String
+  gridSize  Int
+  centerLat Float
+  centerLng Float
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@index([userId])
+}
+
+/// Where an account's scan-finished webhooks go (Scale and up), and the secret they are signed with.
+model WebhookEndpoint {
+  userId    String   @id
+  url       String
+  secret    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// One webhook to send: tried at once, then again 1, 5 and 30 minutes later (four tries in all).
+model WebhookDelivery {
+  id         String    @id @default(cuid())
+  userId     String
+  scanId     String?
+  event      String
+  payload    Json
+  /// PENDING, SENT, FAILED (every try used) or SKIPPED (no endpoint, or the plan no longer has webhooks).
+  status     String    @default("PENDING")
+  attempts   Int       @default(0)
+  nextAt     DateTime  @default(now())
+  lastStatus Int?
+  lastError  String?
+  createdAt  DateTime  @default(now())
+  sentAt     DateTime?
+
+  @@index([status, nextAt])
+  @@index([userId, createdAt])
+}

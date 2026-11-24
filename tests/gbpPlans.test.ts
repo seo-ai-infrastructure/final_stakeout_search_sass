@@ -534,3 +534,12 @@ test('tracked businesses: the same business never counts twice; caps by plan', a
   assert.equal(places.length, 2);
   assert.equal(places[0].googleId, '/g/9', 'the Google ID learned from a later scan');
 });
+
+test('tracked businesses: suburb grids of one client across a metro stay one business (25 km)', async () => {
+  const { samePlace, SAME_PLACE_KM } = await import('../packages/core/locations');
+  assert.equal(SAME_PLACE_KM, 25);
+  const downtown = { business: 'Cofer & Connelly', lat: 30.2672, lng: -97.7431 };
+  assert.ok(samePlace(downtown, { business: 'Cofer and Connelly PLLC', lat: 30.4394, lng: -97.62 }), 'a Pflugerville grid, about 22 km away: one client');
+  assert.ok(samePlace(downtown, { business: 'Cofer & Connelly', lat: 30.1897, lng: -97.6170 }), 'the airport side of town: one client');
+  assert.ok(!samePlace(downtown, { business: 'Cofer & Connelly', lat: 30.8, lng: -97.7 }), 'Georgetown and beyond (60 km): another location');
+});
