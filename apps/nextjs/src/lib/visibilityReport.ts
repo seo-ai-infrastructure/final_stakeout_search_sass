@@ -1,3 +1,4 @@
+import { ownerBrand } from './brandShare';
 import { db } from '@stakeout/db';
 import { pinAi } from '@stakeout/core/aiFlags';
 import { oneBoxOf } from '@stakeout/core/localRank';
@@ -369,14 +370,14 @@ async function build(main: Report, more: { r: Report; link: string }[], mainLink
   };
 }
 
-/** For someone signed in: their own scan (an admin: any scan, with its owner's other scans). */
+/** For someone signed in: their own scan (an admin: any scan, with its owner's other scans), under the owner's white label when it has one. */
 export async function visibilityForScan(id: string, me: { id: string; role: string }) {
   const admin = me.role === 'ADMIN';
   const main = await report({ id, ...(admin ? {} : { userId: me.id }) }, { admin });
   const owner = admin ? ((await db.gridScan.findUnique({ where: { id }, select: { userId: true } }))?.userId ?? null) : me.id;
   const list = owner ? await others(owner, main) : [];
   const more = (await Promise.all(list.map((o) => report({ id: o.id }, { admin }).then((r) => ({ r, link: '/scans/' + o.id })).catch(() => null)))).filter((x): x is { r: Report; link: string } => Boolean(x));
-  return build(main, more, '/scans/' + id, owner, null, true, await shareGoogleOn(id));
+  return build(main, more, '/scans/' + id, owner, await ownerBrand(owner), true, await shareGoogleOn(id));
 }
 
 /**

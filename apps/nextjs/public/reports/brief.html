@@ -412,7 +412,7 @@ body{width:auto;max-width:none}
   </div>
 </section>
 
-<footer><div class="wrap"><div class="logo"><span class="mark"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></div><span>Every number has a real-device receipt or a Google source.</span></div></footer>
+<footer><div class="wrap"><div class="logo" id="footlogo"><span class="mark"></span><span><b>STAKEOUT</b><small>SEARCH</small></span></div><span>Every number has a real-device receipt or a Google source.</span></div></footer>
 </main>
 <script type="module">
 const $ = (s) => document.querySelector(s);
@@ -464,8 +464,9 @@ function title() {
   $('#mastdate').textContent = dayLong(D.built);
   $('#ver').textContent = 'Scoring version ' + D.version;
   document.title = D.business + ' · Local search and revenue brief';
-  if (D.brand?.logo) $('#logo').innerHTML = `<img src="${esc(D.brand.logo)}" alt="${esc(D.brand.name)}">`;
-  else if (D.brand?.name) $('#logo').innerHTML = `<span><b>${esc(D.brand.name)}</b></span>`;
+  // Under the agency's white label: its logo (or name) at the top and the foot, never ours.
+  const mark = D.brand?.logo ? `<img src="${esc(D.brand.logo)}" alt="${esc(D.brand.name)}">` : D.brand?.name ? `<span><b>${esc(D.brand.name)}</b></span>` : '';
+  if (mark) { $('#logo').innerHTML = mark; $('#footlogo').innerHTML = mark; }
 }
 
 /* ---- Ledger ---- */
@@ -619,7 +620,7 @@ function exhibitA() {
     ${rivals ? '<span><i class="sw" style="background:#2a2218;border:2px dashed #e3a857"></i>A rival’s single listing</span>' : ''}${ai1 ? `<span><span class="aik">AI 1st</span>Named first in Google’s AI answer</span>` : ''}${showAd ? '<span><span class="adk">AD</span>Local Services Ads ran here</span>' : ''}</div></div>
     <div><h5>Median household income</h5><div class="ramp">${INCOME.map((c) => `<i style="background:${c};opacity:.75"></i>`).join('')}</div><div class="ramp-l"><span>Under $40k</span><span>$150k+</span></div></div><div></div>`;
   const legacy = M.pins.some((p) => p.reading === 'named');
-  $('#asrc').innerHTML = `<b>Source:</b> Stakeout Search, ${M.points} searches on real phones, ${esc(dayLong(M.at))}, ${esc(timeEt(M.at))}, points ${M.km ? (M.km / 1.609344).toFixed(1).replace(/\.0$/, '') + ' mile' + (Math.round(M.km / 1.609344) === 1 ? '' : 's') + ' apart' : 'on a grid'}. ${M.lsaPoints ? `Local Services Ads ran at ${M.lsaPoints} of the ${M.points} points; the after-ads figures count them. ` : ''}${legacy ? 'That run’s AI answers were read the earlier way, by whether the business was named, not card by card. ' : ''}Scores and the income weighting are explained under How this was measured.`;
+  $('#asrc').innerHTML = `<b>Source:</b> ${esc(D.brand?.name || 'Stakeout Search')}, ${M.points} searches on real phones, ${esc(dayLong(M.at))}, ${esc(timeEt(M.at))}, points ${M.km ? (M.km / 1.609344).toFixed(1).replace(/\.0$/, '') + ' mile' + (Math.round(M.km / 1.609344) === 1 ? '' : 's') + ' apart' : 'on a grid'}. ${M.lsaPoints ? `Local Services Ads ran at ${M.lsaPoints} of the ${M.points} points; the after-ads figures count them. ` : ''}${legacy ? 'That run’s AI answers were read the earlier way, by whether the business was named, not card by card. ' : ''}Scores and the income weighting are explained under How this was measured.`;
   initMap();
 }
 function drawPins() {

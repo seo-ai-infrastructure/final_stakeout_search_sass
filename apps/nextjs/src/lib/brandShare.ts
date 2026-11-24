@@ -2,7 +2,20 @@ import { db } from '@stakeout/db';
 import { brandForHost, brandForUser, type Brand } from '@stakeout/core/brands';
 import { isPrimaryHost } from '@stakeout/core/brandHost';
 
-type ReportBrand = { name: string; accent: string | null; logo: string | null };
+export type ReportBrand = { name: string; accent: string | null; logo: string | null };
+
+/** How a brand shows in a report: its name, colour and logo (the logo served by this site). */
+export const reportBrand = (b: Brand): ReportBrand => ({ name: b.name, accent: b.accent, logo: b.hasLogo ? '/api/brand/logo?d=' + encodeURIComponent(b.domain) : null });
+
+/**
+ * An account's own brand on its own reports when it has a white label: the report it opens signed
+ * in, and so what it prints and the offline copies it saves (an admin reading it sees the same).
+ */
+export async function ownerBrand(userId: string | null): Promise<ReportBrand | null> {
+  if (!userId) return null;
+  const b = await brandForUser(userId).catch(() => null);
+  return b ? reportBrand(b) : null;
+}
 
 /**
  * The brand a shared report is shown under, and whether this host may show it at all.
@@ -14,5 +27,5 @@ export async function brandForShare(token: string, host: string): Promise<{ allo
   const custom = Boolean(host) && !isPrimaryHost(host);
   const b: Brand | null = custom ? await brandForHost(host) : owner ? await brandForUser(owner.userId) : null;
   if (custom && (!b || !owner || b.userId !== owner.userId)) return { allowed: false, brand: null };
-  return { allowed: true, brand: b ? { name: b.name, accent: b.accent, logo: b.hasLogo ? '/api/brand/logo?d=' + encodeURIComponent(b.domain) : null } : null };
+  return { allowed: true, brand: b ? reportBrand(b) : null };
 }

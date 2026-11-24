@@ -225,7 +225,11 @@ footer .wrap{display:grid;gap:6px}
 @media (max-width:1040px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.two{grid-template-columns:1fr}.actions{grid-template-columns:1fr}}
 @media (max-width:620px){.hero .sub{display:grid;gap:2px}.hero .sub span+span::before{content:none}.kpis{grid-template-columns:1fr}.gdata{grid-template-columns:1fr}.topbar nav{display:none}.hero .snap{text-align:left}.row{grid-template-columns:96px minmax(0,1fr)}.face{padding:18px 4%}}
 @media print{
-  .topbar,.print,.controls,.pills,.btnlink,#csv{display:none!important}
+  .topbar nav,.print,.controls,.pills,.btnlink,#csv{display:none!important}
+  .topbar{position:static;background:#fff;color:var(--ink);border-bottom:1px solid var(--line)}
+  .hero{background:#fff;color:var(--ink);border-top:0}
+  .hero .sub,.hero .snap{color:var(--dim)}
+  .hero .snap b{color:var(--ink)}
   body{background:#fff}
   .card,.mapbox{break-inside:avoid}
   details.scan{display:block}
@@ -332,7 +336,7 @@ footer .wrap{display:grid;gap:6px}
   </section>
 
   <section id="google" data-needs-data>
-    <div class="sec-head"><div><h2>Google data</h2><p>Only what is connected to Stakeout. Nothing here is estimated.</p></div><label id="gshare" hidden style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);cursor:pointer"><input type="checkbox" id="gsharebox"> Include on the share link</label></div>
+    <div class="sec-head"><div><h2>Google data</h2><p>Only what the connected Google account reports. Nothing here is estimated.</p></div><label id="gshare" hidden style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim);cursor:pointer"><input type="checkbox" id="gsharebox"> Include on the share link</label></div>
     <div class="gdata">
       <div class="card gcard" id="gprofilecard"></div>
       <div class="card gcard" id="gsearchcard"></div>
@@ -476,7 +480,7 @@ function header() {
   if (brand) {
     const b = $('#brand');
     b.setAttribute('aria-label', brand.name);
-    b.innerHTML = brand.logo ? `<img src="${esc(brand.logo)}" alt="${esc(brand.name)}" style="max-height:30px;max-width:180px;display:block">` : `<span><b>${esc(brand.name)}</b></span>`;
+    b.innerHTML = brand.logo ? `<img src="${esc(brand.logo)}" alt="${esc(brand.name)}" style="max-height:30px;max-width:180px;display:block;background:#fff;border-radius:6px;padding:3px 6px">` : `<span><b>${esc(brand.name)}</b></span>`;
     $('#footbrand').textContent = brand.name + ' · every number comes with a real-device receipt.';
     if (/^#[0-9a-f]{6}$/i.test(brand.accent || '')) {
       document.documentElement.style.setProperty('--accent', brand.accent);
@@ -1227,11 +1231,23 @@ function receiptsTable() {
 // A copy of this page that carries its own data: opens anywhere, without a sign-in or the network.
 const saveBtn = $('#savecopy');
 if (saveBtn) saveBtn.hidden = false;
-saveBtn?.addEventListener('click', () => {
+/** The brand's logo as data inside the copy, so a saved copy shows it without the network (its name if the logo can't be read). */
+async function logoInside(brand) {
+  if (!brand?.logo || /^data:/.test(brand.logo)) return brand;
+  const logo = await fetch(brand.logo)
+    .then((r) => (r.ok ? r.blob() : null))
+    .then((b) => b && new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(fr.result); fr.onerror = () => ok(null); fr.readAsDataURL(b); }))
+    .catch(() => null);
+  return { ...brand, logo: typeof logo === 'string' ? logo : null };
+}
+saveBtn?.addEventListener('click', async () => {
+  const data = DATA.brand ? { ...DATA, brand: await logoInside(DATA.brand) } : DATA;
   const page = document.documentElement.cloneNode(true);
   page.querySelectorAll('[data-wxt-integrated], #savecopy, #gshare').forEach((x) => x.remove());
+  const img = page.querySelector('#brand img');
+  if (img) data.brand?.logo ? img.setAttribute('src', data.brand.logo) : img.remove();
   const keep = document.createElement('script');
-  keep.textContent = 'window.__REPORT_DATA__ = ' + JSON.stringify(DATA).replace(/</g, '\\u003c') + ';';
+  keep.textContent = 'window.__REPORT_DATA__ = ' + JSON.stringify(data).replace(/</g, '\\u003c') + ';';
   page.querySelector('head').appendChild(keep);
   const blob = new Blob(['<!DOCTYPE html>\n' + page.outerHTML], { type: 'text/html' });
   const a = document.createElement('a');
