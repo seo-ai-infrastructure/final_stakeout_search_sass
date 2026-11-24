@@ -82,11 +82,12 @@ test('a lane exit is judged without the state rule, and only hosting or data-cen
   assert.equal(judgeExit(lookups('AS21928', 'T-Mobile USA, Inc.', true) as any, { stateCode: 'FL', anyState: true, policy: 'deny' }).ok, false);
 });
 
-test('a busy line: home internet at once, metered mobile data only after the wait, never for admin runs', async () => {
+test('a busy line: the point waits for a line first; then home internet if on, else metered mobile data, never metered for admin runs', async () => {
   const { spillTo } = await import('../packages/core/lane');
   const base = { homeReady: false, internal: false, meteredReady: true, waitedMs: 0, waitMs: 120000 };
-  assert.equal(spillTo({ ...base, homeReady: true }), 'home', 'Proxy-Seller first, no wait');
-  assert.equal(spillTo({ ...base, homeReady: true, internal: true }), 'home', 'admin runs may use home internet');
+  assert.equal(spillTo({ ...base, homeReady: true }), 'wait', 'the lines get first use of the phones');
+  assert.equal(spillTo({ ...base, homeReady: true, waitedMs: 120000 }), 'home', 'Proxy-Seller before VoidMob, after the wait');
+  assert.equal(spillTo({ ...base, homeReady: true, internal: true, waitedMs: 120000 }), 'home', 'admin runs may use home internet');
   assert.equal(spillTo(base), 'wait', 'a customer point waits for the next round first');
   assert.equal(spillTo({ ...base, waitedMs: 119000 }), 'wait');
   assert.equal(spillTo({ ...base, waitedMs: 120000 }), 'metered', 'then VoidMob');

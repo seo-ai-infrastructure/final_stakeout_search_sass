@@ -436,6 +436,15 @@ async function leaseCandidates(phoneModel: string) {
   return devices;
 }
 
+/** Whether a phone could take a point right now: in service, not resting, not held by another point. */
+export async function phoneFree(phoneModel: string): Promise<boolean> {
+  const now = new Date();
+  const open = (await leaseCandidates(phoneModel)).filter((d) => !(d.cooldownUntil > now));
+  if (!open.length) return false;
+  const held = await redis().mget(open.map((d) => 'lock:duoplus:' + d.imageId)).catch(() => null);
+  return !held || held.some((h) => h === null);
+}
+
 type LeaseResult =
   | { device: LeasedDevice }
   | { reason: 'BUSY' | 'NO_COMPATIBLE_DEVICE' };

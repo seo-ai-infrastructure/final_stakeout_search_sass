@@ -102,13 +102,14 @@ export function laneLeave(s: LaneState, pinId: string, now: number): LaneState {
 }
 
 /**
- * Where a mobile point goes when every lane's wave is full or under way: home internet at once
- * while Proxy-Seller's prepaid data lasts; otherwise it waits for the next round on a line, and a
- * customer's point that has waited `waitMs` goes out on metered mobile data instead, so VoidMob
- * takes real overload only. An internal (admin) point never goes on metered data.
+ * Where a mobile point goes when every lane's wave is full or under way: it waits for the next
+ * round on a line first, so the lines get first use of the phones. Once it has waited `waitMs`:
+ * home internet while Proxy-Seller's spill-over is on and its prepaid data lasts; otherwise a
+ * customer's point goes out on metered mobile data, so VoidMob takes real overload only. An
+ * internal (admin) point never goes on metered data.
  */
 export function spillTo(o: { homeReady: boolean; internal: boolean; meteredReady: boolean; waitedMs: number; waitMs: number }): 'home' | 'metered' | 'wait' {
-  if (o.homeReady) return 'home';
+  if (o.homeReady && o.waitedMs >= o.waitMs) return 'home';
   if (!o.internal && o.meteredReady && o.waitedMs >= o.waitMs) return 'metered';
   return 'wait';
 }

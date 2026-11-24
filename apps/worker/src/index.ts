@@ -23,7 +23,7 @@ import { homeHasRoom } from '@stakeout/core/networkChoice';
 import { nextWebhookDue, sendDueWebhooks } from '@stakeout/core/webhooks';
 import { describeRpaTemplates, rpaTemplate, clearTemplateCache } from './rpa';
 import { getSettings } from '@stakeout/core/settings';
-import { acquireDeviceLease, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, nightlyRestartTick, reopenAdb, restartStuckAtStart, restartStuckPhone, type LeasedDevice } from './duoplus';
+import { acquireDeviceLease, phoneFree, autoResumePhones, autoResumeSettings, recordDeviceOutcome, syncDuoPlusDevicePool, phonePowerStatus, ensureAdbWhitelist, readyPhoneCount, nightlyRestartTick, reopenAdb, restartStuckAtStart, restartStuckPhone, type LeasedDevice } from './duoplus';
 import { targetConcurrency } from '@stakeout/core/concurrency';
 import { measureDesktop } from './desktop';
 import { measureMobile } from './mobile';
@@ -103,6 +103,13 @@ async function execute(job: Job, token?: string) {
     // Mobile lanes: a mobile point takes its place in a wave before it takes a phone. While every
     // lane's wave is under way it waits here, holding nothing.
     lanePoint = lanesOn() && pinNetwork(pin.scan.network, pin.rowIdx, pin.colIdx) === 'mobile';
+    // No phone is free: the point stays away from the lines, so a wave is never used up by points
+    // that cannot run (an empty wave costs the line an IP change).
+    if (lanePoint && !closing && !(await phoneFree(pin.scan.phoneModel).catch(() => true))) {
+      lanePoint = false;
+      await job.moveToDelayed(Date.now() + 8000 + Math.floor(Math.random() * 6000), token);
+      throw new DelayedError();
+    }
     if (lanePoint && !closing && (await enterLane(pin.id)) === null) {
       // Every lane's wave is full or under way: an idle phone picks the point up on home internet
       // while Proxy-Seller's prepaid data lasts (the scan's town set up for it). Otherwise the point
@@ -122,7 +129,7 @@ async function execute(job: Job, token?: string) {
       if (to === 'home') {
         lanePoint = false;
         pin.scan = { ...pin.scan, network: 'residential' };
-        console.log('[lane] point', pin.id, 'overflows to home internet (Proxy-Seller): every lane is busy');
+        console.log('[lane] point', pin.id, 'overflows to home internet (Proxy-Seller) after', Math.round(waitedMs / 1000) + 's without a place on a line');
       } else if (to === 'metered') {
         lanePoint = false;
         console.log('[lane] point', pin.id, 'overflows to metered mobile data after', Math.round(waitedMs / 1000) + 's without a place on a line');
@@ -638,7 +645,9 @@ let templatesReadAt = Date.now(),
  * the last failure, so the spill-over goes back to it on its own).
  */
 const homeOverflowReady = async (scan: { proxyRegion: string | null }) =>
-  Boolean(scan.proxyRegion) && listsEnabled() && homeHasRoom(traffic) && !(await proxyOutageSince(scan.proxyRegion as string));
+  // Off unless MOBILE_HOME_OVERFLOW=on: on 24 Nov 2026 its exits kept changing mid-search, and the
+  // failed tries held the phones the 5G lines needed.
+  process.env.MOBILE_HOME_OVERFLOW === 'on' && Boolean(scan.proxyRegion) && listsEnabled() && homeHasRoom(traffic) && !(await proxyOutageSince(scan.proxyRegion as string));
 
 /**
  * How long a customer's mobile point waits for a place on an unlimited line before it goes out on
