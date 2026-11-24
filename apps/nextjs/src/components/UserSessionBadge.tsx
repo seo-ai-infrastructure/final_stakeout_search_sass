@@ -7,7 +7,7 @@ import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 import { paidMessage } from '@/lib/pricing';
 import { trackPurchase } from '@/lib/googleTag';
 import styles from './UserSessionBadge.module.css';
-type SessionUser = { email: string; name?: string | null; creditBalance: number; /** A plan nearly used up this month (see /api/user/me). */ boost?: { due: boolean; left: number; monthly: number; month: number } | null };
+type SessionUser = { email: string; name?: string | null; creditBalance: number; /** A plan nearly used up this month (see /api/user/me). */ boost?: { due: boolean; left: number; monthly: number; month: number } | null; /** Signed in as a team member: who, and whose account (paused: no seat for them now). */ team?: { email: string; owner: string | null; paused: boolean } | null };
 /** The Boost offer is shown once per billing month in this browser (storage can be missing or refuse: then once per visit). */
 const offerKey = (month: number) => 'stakeout:boost-offer:' + month;
 function offerSeen(month: number) { try { return window.localStorage.getItem(offerKey(month)) === '1'; } catch { return false; } }
@@ -106,8 +106,8 @@ export function UserSessionBadge({ initialUser }: { initialUser?: SessionUser } 
       />
       <div className={styles.identity}>
         <User className="h-3.5 w-3.5 text-slate-500" />
-        <span>
-          {user.name || user.email}
+        <span title={user.team?.paused ? 'The account that added you has no seat for you on its plan right now.' : undefined}>
+          {user.team ? (user.team.owner && !user.team.paused ? `${user.team.email} · in ${user.team.owner}’s account` : `${user.team.email} · team access paused`) : user.name || user.email}
         </span>
       </div>
       <button

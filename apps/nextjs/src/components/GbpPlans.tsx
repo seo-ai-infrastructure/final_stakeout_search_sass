@@ -1,12 +1,13 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import TeamSeats from './TeamSeats';
 import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, ANNUAL_MONTHS_PAID, FOUNDING, FOUNDING_PLANS, LINES, SEATS, addedCents, dollars, lineCents, monthlyCents, monthlyPoints, rolloverMonths, yearCents, type AccountPlan, type Line, type Plan } from '@stakeout/core/gbpPlans';
 
 type Loc = { id: string; name: string; plan: string | null };
 type Profile = { id: string; name: string; status: string; problem: string | null; locations: Loc[] };
 type Account = { id: string; profile: string | null; name: string | null };
 type Row = { location: string; profile: string; title: string | null; plan: string; status: string; endsAt: string | null; on: boolean };
-type Billing = { ready: boolean; listings: Row[]; sub: { status: string; periodEnd: string | null; running: boolean } | null; counts: Record<Line, number>; seats: number; pointsPerMonth: number; monthlyCents: number; newPlans?: boolean; legacy?: boolean; plan?: AccountPlan | null; briefs?: { plan: number; carry: number; bought: number; left: number; perMonth: number }; interval?: 'month' | 'year'; periodCents?: number; founding?: number | null; foundingLeft?: number };
+type Billing = { ready: boolean; listings: Row[]; sub: { status: string; periodEnd: string | null; running: boolean } | null; counts: Record<Line, number>; seats: number; pointsPerMonth: number; monthlyCents: number; newPlans?: boolean; legacy?: boolean; plan?: AccountPlan | null; briefs?: { plan: number; carry: number; bought: number; left: number; perMonth: number }; interval?: 'month' | 'year'; periodCents?: number; founding?: number | null; foundingLeft?: number; /** Signed in as a team member: the plan is shown, not changed. */ teamMember?: boolean };
 
 /** The seats a listing can be put on before the account plans. */
 const LISTING_SEATS: Plan[] = ['COMMAND', 'DOMINATOR'];
@@ -273,11 +274,12 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
   return (
     <div className="space-y-5">
       {newPlans && (
-        <div className={card}>
+        <div className={card} id="plans">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
-            <h2 className="text-lg font-semibold">Your plan</h2>
-            {billing?.sub && <button type="button" onClick={portal} disabled={busy === 'portal'} className={btn}>Card, invoices and cancelling</button>}
+            <h2 className="text-lg font-semibold">{billing?.teamMember ? 'The account’s plan' : 'Your plan'}</h2>
+            {billing?.sub && !billing.teamMember && <button type="button" onClick={portal} disabled={busy === 'portal'} className={btn}>Card, invoices and cancelling</button>}
           </div>
+          {billing?.teamMember && <p className="mt-2 text-sm text-slate-400">You work in this account as a team member: the owner chooses and pays for the plan.</p>}
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Plan</p><p className="mt-1 text-2xl font-bold">{billing?.plan ? ACCOUNT_PLANS[billing.plan].name : 'None yet'}</p><p className="text-xs text-slate-500">{counts.LISTING ? `${counts.LISTING} listing add-on${counts.LISTING === 1 ? '' : 's'}` : 'No listing add-ons'}</p></div>
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Phone sessions a month</p><p className="mt-1 text-2xl font-bold tabular-nums">{(billing?.pointsPerMonth ?? 0).toLocaleString()}</p><p className="text-xs text-slate-500">{billing?.founding && billing.plan && ACCOUNT_PLANS[billing.plan].founding ? `Founding member #${billing.founding}: ${FOUNDING.bonus * 100}% more plan sessions` : billing?.plan ? rolloverText(billing.plan, billing.interval === 'year') : 'Pick a plan below'}</p></div>
@@ -289,7 +291,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
               <span className="font-semibold">Founding members:</span> the first {FOUNDING.seats} accounts to start {foundingNames} get {FOUNDING.bonus * 100}% more phone sessions every month, for as long as they stay on one of them. {billing?.foundingLeft} of {FOUNDING.seats} spots left.
             </p>
           )}
-          {!billing?.sub?.running && (
+          {!billing?.sub?.running && !billing?.teamMember && (
             <div role="group" aria-label="Billing" className="mt-4 inline-flex rounded-lg border border-slate-700 p-1 text-sm">
               <button type="button" aria-pressed={!yearly} onClick={() => setYearly(false)} className={'rounded-md px-3 py-1.5 ' + (!yearly ? 'bg-slate-700 font-semibold text-white' : 'text-slate-300 hover:text-white')}>Monthly</button>
               <button type="button" aria-pressed={yearly} onClick={() => setYearly(true)} className={'rounded-md px-3 py-1.5 ' + (yearly ? 'bg-slate-700 font-semibold text-white' : 'text-slate-300 hover:text-white')}>Yearly: 2 months free</button>
@@ -312,20 +314,23 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
                     <li>{founding && billing?.founding ? `${more.toLocaleString()} phone sessions a month (founding)` : `${d.points.toLocaleString()} phone sessions a month (${Math.floor(d.points / 25)} 5×5 scans)`}{founding && !billing?.founding ? `, ${more.toLocaleString()} as a founding member` : ''}</li>
                     <li>{d.briefs} brief credit{d.briefs === 1 ? '' : 's'} a month</li>
                     <li>{d.whiteLabel ? 'White-label reports: your logo, name and color, on your own domain' : 'Share links with the Stakeout badge'}</li>
+                    <li>{d.seats === null ? 'Unlimited team seats' : d.seats === 1 ? 'One seat (just you)' : `${d.seats} team seats, you included`}</li>
                     <li>{rolloverText(p, year)}</li>
                   </ul>
                   <div className="mt-3">
                     {mine
-                      ? <span className="text-sm font-semibold text-emerald-300">Your plan</span>
+                      ? <span className="text-sm font-semibold text-emerald-300">{billing?.teamMember ? 'This account’s plan' : 'Your plan'}</span>
+                      : billing?.teamMember ? null
                       : <button type="button" onClick={() => choosePlan(p)} disabled={busy === 'plan' || billing?.ready === false} className={billing?.plan ? btn : go}>{busy === 'plan' ? 'Working…' : billing?.plan ? `Switch to ${d.name}` : `Choose ${d.name}`}</button>}
                   </div>
                 </div>
               );
             })}
           </div>
-          <p className="mt-3 text-xs text-slate-500">Every phone session is one real phone run at one grid point, with the map results, the AI Overview, the ads and a screen recording. Yearly plans are paid once a year ({ANNUAL_MONTHS_PAID} months’ price for 12); their phone sessions and brief credits still come every month. Add the listing add-on ({dollars(LINES.LISTING.tiers[0].cents)} a month per Google listing) for the listing tools, AI agents, {LINES.LISTING.points} more phone sessions and {LINES.LISTING.briefs} more brief credit a month.{billing?.plan ? ' ' : ''}{billing?.plan && <button type="button" onClick={() => choosePlan(null)} disabled={busy === 'plan'} className="text-slate-400 underline hover:text-rose-300">End my plan</button>}</p>
+          <p className="mt-3 text-xs text-slate-500">Every phone session is one real phone run at one grid point, with the map results, the AI Overview, the ads and a screen recording. Yearly plans are paid once a year ({ANNUAL_MONTHS_PAID} months’ price for 12); their phone sessions and brief credits still come every month. Add the listing add-on ({dollars(LINES.LISTING.tiers[0].cents)} a month per Google listing) for the listing tools, AI agents, {LINES.LISTING.points} more phone sessions and {LINES.LISTING.briefs} more brief credit a month.{billing?.plan && !billing.teamMember ? ' ' : ''}{billing?.plan && !billing.teamMember && <button type="button" onClick={() => choosePlan(null)} disabled={busy === 'plan'} className="text-slate-400 underline hover:text-rose-300">End my plan</button>}</p>
         </div>
       )}
+      {newPlans && <TeamSeats />}
       {onSeats && <div className={card}>
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h2 className="text-lg font-semibold">Your seats</h2>

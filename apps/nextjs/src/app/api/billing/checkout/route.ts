@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { assertAccountOwner, getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { catalogFor } from '@/lib/billing';
 import { stripe, stripeConfigured } from '@/lib/stripe';
@@ -42,7 +42,10 @@ export async function POST(req: Request) {
     const origin = new URL(req.url).origin,
       back = origin + safePath(returnTo);
     // { portal: true }: Stripe's page for the plan's card, invoices and cancelling.
-    if (portal === true) return Response.json({ url: await planPortal(u.id, back) });
+    if (portal === true) {
+      await assertAccountOwner();
+      return Response.json({ url: await planPortal(u.id, back) });
+    }
     if (!item) throw new InputError('That is not available for this account.');
     const briefs = item.briefs ? ` and ${item.briefs === 1 ? '1 brief credit' : item.briefs + ' brief credits'}` : '';
     const what = item.credits ? `${item.credits.toLocaleString('en-US')} phone sessions${briefs}${item.validityDays ? `, valid for ${item.validityDays} days` : ''}. 1 phone session = 1 real phone run at 1 grid point.` : item.blurb;

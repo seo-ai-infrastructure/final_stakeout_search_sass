@@ -2,7 +2,7 @@ import { issueToken } from './emailTokens';
 import { appUrl, mailerConfigured, sendNoticeEmail } from './mailer';
 
 /** Emails a link to choose a password. Returns the link, for an admin to pass on by hand. */
-export async function sendPasswordLink(user: { id: string; email: string }, opts: { days: number; invited: boolean }) {
+export async function sendPasswordLink(user: { id: string; email: string }, opts: { days: number; invited: boolean; /** Added to a team: who added them (their name or email). */ team?: string }) {
   const token = await issueToken('SET_PASSWORD', user.email, { userId: user.id }, opts.days * 86400000);
   const url = appUrl('/set-password?token=' + token);
   let emailed = false;
@@ -10,8 +10,10 @@ export async function sendPasswordLink(user: { id: string; email: string }, opts
     const life = opts.days === 1 ? '24 hours' : opts.days + ' days';
     await sendNoticeEmail(
       user.email,
-      opts.invited ? 'Your Stakeout Search account is ready' : 'Set your Stakeout Search password',
-      opts.invited
+      opts.team ? `${opts.team} added you to their Stakeout Search account` : opts.invited ? 'Your Stakeout Search account is ready' : 'Set your Stakeout Search password',
+      opts.team
+        ? [`${opts.team} added you to their Stakeout Search account, so you can run scans and open reports in it.`, `Choose your password with the link below, then sign in with ${user.email}. The link works once and expires in ${life}.`]
+        : opts.invited
         ? ['An account has been created for you at Stakeout Search.', `Choose your password with the link below. It works once and expires in ${life}.`]
         : ['Use the link below to choose a new password for your Stakeout Search account.', `It works once and expires in ${life}. If you did not ask for this, ignore this email: your password has not changed.`],
       { label: 'Choose your password', url },

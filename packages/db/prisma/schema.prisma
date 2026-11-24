@@ -21,12 +21,18 @@ model User {
   briefBalance  Int            @default(0)
   /// Founding member number (1 to 15): the first accounts to start a plan get 25% more plan sessions every month.
   foundingNo    Int?           @unique
+  /// A team member: the account (its owner's id) they sign in to work in, while its plan has a seat for them.
+  teamOf        String?
+  /// When they were added: the earliest added keep their seats if the plan gets smaller.
+  teamAddedAt   DateTime?
   emailVerifiedAt DateTime?
   scans         GridScan[]
   ledger        CreditLedger[]
   businesses    SavedBusiness[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+
+  @@index([teamOf])
 }
 
 model CreditLedger {

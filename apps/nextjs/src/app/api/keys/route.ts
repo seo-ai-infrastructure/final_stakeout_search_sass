@@ -1,5 +1,5 @@
 import { InputError } from '@stakeout/core/grid';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { assertAccountOwner, getAuthenticatedUser } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { isAgent } from '@/lib/acting';
 import { createKey, listKeys, revokeKey } from '@/lib/apiKeys';
@@ -23,6 +23,8 @@ export async function GET() {
 /** POST /api/keys { name }: makes a key and shows it once. */
 export async function POST(req: Request) {
   try {
+    // An API key outlives a team member's seat: only the owner makes or revokes them.
+    await assertAccountOwner();
     const u = await person();
     // A key is only worth having with agent access: without it, none is made.
     if (!(await agentOpen(u))) throw new InputError(AGENT_CLOSED, 402);
@@ -36,6 +38,8 @@ export async function POST(req: Request) {
 /** DELETE /api/keys?id=: revokes a key at once. */
 export async function DELETE(req: Request) {
   try {
+    // An API key outlives a team member's seat: only the owner makes or revokes them.
+    await assertAccountOwner();
     await revokeKey((await person()).id, String(new URL(req.url).searchParams.get('id') ?? ''));
     return Response.json({ ok: true });
   } catch (e) {

@@ -1,6 +1,6 @@
 // apps/nextjs/src/app/api/user/me/route.ts
 import { NextResponse } from 'next/server';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getAuthenticatedUser, teamSession } from '@/lib/auth';
 import { db } from '@stakeout/db';
 import { settleIfDue } from '@/lib/creditSub';
 import { boostOffer, catchUpPlanMonths } from '@/lib/gbpBilling';
@@ -39,6 +39,8 @@ export async function GET() {
       mobileData,
       // A plan nearly used up this month: the app offers the Boost once per billing month (month: when that month began).
       boost: await boostOffer(user.id).then((b) => (b?.eligible ? { due: true, left: b.left, monthly: b.monthly, month: b.monthFrom } : null)).catch(() => null),
+      // A team member signed in: who they are and whose account this is (paused: no seat for them on the owner's plan now).
+      team: await teamSession().then((t) => (t ? { email: t.member.email, owner: t.owner ? t.owner.name || t.owner.email : null, paused: t.paused } : null)).catch(() => null),
     });
   } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

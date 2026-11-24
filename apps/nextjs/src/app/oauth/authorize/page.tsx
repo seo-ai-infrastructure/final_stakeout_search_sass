@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { isAppScheme, isLoopback, redirectHost } from '@stakeout/core/oauth';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getAuthenticatedUser, teamSession } from '@/lib/auth';
 import { agentOpen } from '@/lib/gbpAccess';
 import { consentTicket, originOf } from '@/lib/oauth';
 import { readAsk } from '@/lib/oauthAsk';
@@ -46,6 +46,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     for (const [k, v] of Object.entries(q)) for (const x of Array.isArray(v) ? v : v === undefined ? [] : [v]) again.append(k, x);
     redirect('/login?next=' + encodeURIComponent('/oauth/authorize?' + again.toString()));
   }
+
+  // A team member works in the account but does not connect apps to it: those outlive their seat.
+  const team = await teamSession().catch(() => null);
+  if (team && !team.paused) return <Stopped why="Only the account owner can connect apps to this account. Ask them to connect it from their own sign-in." />;
 
   const { ask, client } = r;
   const open = await agentOpen(user).catch(() => false);

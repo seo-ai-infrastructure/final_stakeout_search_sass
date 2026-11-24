@@ -1,6 +1,6 @@
 import { InputError } from '@stakeout/core/grid';
 import { ACCOUNT_PLANS, LINES, isAccountPlan, isInterval, isPlan } from '@stakeout/core/gbpPlans';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { assertAccountOwner, getAuthenticatedUser, teamSession } from '@/lib/auth';
 import { errorResponse } from '@/lib/api';
 import { target } from '@/lib/gbpAdmin';
 import { activate, addAddon, addListings, billingSummary, catchUpPlanMonths, portalUrl, removeAddon, removeListing, setAccountPlan, setScoutSeats, type Pick } from '@/lib/gbpBilling';
@@ -13,7 +13,9 @@ export async function GET() {
   try {
     const u = await getAuthenticatedUser();
     await catchUpPlanMonths(u.id);
-    return Response.json({ ready: stripeConfigured(), admin: u.role === 'ADMIN', plans: LINES, accountPlans: ACCOUNT_PLANS, ...(await billingSummary(u.id)) });
+    // A team member sees the plan but cannot change it: billing is the owner's.
+    const team = await teamSession();
+    return Response.json({ ready: stripeConfigured(), admin: u.role === 'ADMIN', plans: LINES, accountPlans: ACCOUNT_PLANS, teamMember: Boolean(team && !team.paused), ...(await billingSummary(u.id)) });
   } catch (e) {
     return errorResponse(e);
   }
@@ -35,6 +37,8 @@ export async function POST(req: Request) {
   try {
     const u = await getAuthenticatedUser();
     const b = (await req.json()) as { add?: unknown; remove?: unknown; confirm?: unknown; portal?: unknown; addon?: unknown; scout?: unknown; plan?: unknown; interval?: unknown };
+    // Plans, add-ons and the card are the owner's: a team member only finishes a checkout already paid.
+    if (typeof b.confirm !== 'string') await assertAccountOwner();
     // { addon: true | false }: the AI agents add-on, on or off.
     if (b.addon === true) return Response.json({ ...(await addAddon(u, new URL(req.url).origin)), ...(await billingSummary(u.id)) });
     if (b.addon === false) { await removeAddon(u.id); return Response.json(await billingSummary(u.id)); }

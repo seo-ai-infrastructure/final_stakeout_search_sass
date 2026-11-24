@@ -1,5 +1,5 @@
 import { canonicalResource, challengeOk, redirectMatches } from '@stakeout/core/oauth';
-import { getAuthenticatedUser } from '@/lib/auth';
+import { getAuthenticatedUser, teamSession } from '@/lib/auth';
 import { approve, clientOf, originOf, ticketOk, type Ask } from '@/lib/oauth';
 import { answer } from '@/lib/oauthAsk';
 
@@ -16,6 +16,9 @@ export async function POST(req: Request) {
   if (!origin) return page(404, 'Not found');
   const user = await getAuthenticatedUser().catch(() => null);
   if (!user) return page(401, 'Sign in and start again from the app.');
+  // An app's access outlives a team member's seat: only the account owner connects apps.
+  const team = await teamSession().catch(() => null);
+  if (team && !team.paused) return page(403, 'Only the account owner can connect apps to this account. Ask them to connect it.');
   const f = await req.formData().catch(() => null);
   const s = (k: string) => { const v = f?.get(k); return typeof v === 'string' ? v : ''; };
   const ask: Ask = { clientId: s('client_id'), redirectUri: s('redirect_uri'), challenge: s('code_challenge'), resource: s('resource'), scope: s('scope'), state: s('state') };

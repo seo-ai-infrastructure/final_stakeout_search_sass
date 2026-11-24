@@ -496,3 +496,9 @@ test('renewal: a plan keeps what it says of last month, none on Scout monthly, t
   const packs = { balance: 1200, bucket: 2000, packFloor: 500, bought: 0 }; // 700 plan, 500 bought
   assert.equal(renewPlan(packs, 800, 0).balance, 500 + 800, 'bought sessions are never touched');
 });
+
+test('team seats: the owner and members, Agency 5, Scale 15, Agency Max no limit, Scout and no plan the owner alone', async () => {
+  const { ACCOUNT_PLANS, memberSeats } = await import('../packages/core/gbpPlans');
+  assert.deepEqual([ACCOUNT_PLANS.P_SCOUT.seats, ACCOUNT_PLANS.P_AGENCY.seats, ACCOUNT_PLANS.P_SCALE.seats, ACCOUNT_PLANS.P_MAX.seats], [1, 5, 15, null]);
+  assert.deepEqual([memberSeats(null), memberSeats('P_SCOUT'), memberSeats('P_AGENCY'), memberSeats('P_SCALE'), memberSeats('P_MAX')], [0, 0, 4, 14, Infinity], 'members besides the owner');
+});
