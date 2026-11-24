@@ -36,7 +36,7 @@ import { pull, push, shell, transportFor } from './deviceShell';
 import { readBundle, readBundleFile } from './bundle';
 import { stateTimezone } from '@stakeout/core/fleetHealth';
 import { HUNT_FOOTER, SKIP_FOOTER_HUNT, locationKey, locationPathOf, nextLocationRuns, skipFooterHunt, withEvidence, type Evidence, type LocationRun, type Marks } from '@stakeout/core/runLog';
-import { parseAppleMaps, parsePinXmlBundle, parseWebResults } from './xmlParser';
+import { parseAppleMaps, parsePinXmlBundle, parseWebResults, screenDigest } from './xmlParser';
 import { appleStartUrl } from '@stakeout/core/appleMaps';
 import { businessKey } from '@stakeout/core/locations';
 import { shellQuote, RUN_PIN_SH_V2 } from '@stakeout/core/runner';
@@ -1163,6 +1163,9 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
   if (surface === 'apple' && rpaMode && !tpl?.vars.some((v) => v.key === 'start_url'))
     throw new Error('RPA_TEMPLATE_NO_START_URL the Apple Maps template has no start_url variable, so it cannot open the map on a grid point');
   if (appleUrl) Object.assign(proof, { appleCenter: `${p.lat.toFixed(6)},${p.lng.toFixed(6)}` });
+  // Apple Maps runs in Firefox Focus: a phone without it cannot do the search (the point goes to another phone).
+  if (surface === 'apple' && !(await shell(d, 'pm path org.mozilla.focus 2>/dev/null | head -n 1').catch(() => 'unknown')).trim())
+    throw new Error('PHONE_APP_MISSING Firefox Focus (org.mozilla.focus) is not installed on phone ' + d.imageId);
   if (rpaMode) {
     // The recorder only records while the template runs, then reads the results list.
     await ensureObserverInstalled(d);
@@ -1252,6 +1255,9 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
     try {
       const sb = await readBundleFile(local, tag, dir);
       ev.locationPath = locationPathOf(sb.meta);
+      // What the phone showed when the template gave up (first and last snapshot), for the log.
+      const shots = [sb.scroll[0], sb.final].filter((x): x is string => Boolean(x));
+      shots.slice(0, 2).forEach((x, i) => console.log('[screen]', tag, i === 0 ? 'first:' : 'last:', screenDigest(x)));
       if (sb.video.length) {
         await put(prefix + '/video.mp4', sb.video, 'video/mp4');
         ev.video = prefix + '/video.mp4';

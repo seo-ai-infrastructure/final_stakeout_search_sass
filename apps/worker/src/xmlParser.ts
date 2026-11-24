@@ -348,3 +348,18 @@ export function parseAppleMaps(dumps: string[], target: string, sameBusiness: (a
   const rank = names.findIndex((n) => sameBusiness(n, target));
   return { orderedBusinesses: names, targetRank: rank < 0 ? null : rank + 1, matchedDumpIndex, ads, appleCards: cards, ...parseAiPanels([], target) };
 }
+
+/**
+ * What a snapshot's screen says, in a line: the app in front and the first words on it. Logged when
+ * a template run fails, so the cause can be read without opening the bundle.
+ */
+export function screenDigest(xml: string, max = 700): string {
+  try {
+    const nodes = trees(xml).flatMap(walk);
+    const apps = [...new Set(nodes.map((x) => String(x.package ?? '')).filter(Boolean))].slice(0, 3).join(', ');
+    const words = [...new Set(nodes.map(label).filter(Boolean).map((t) => t.replace(/\s+/g, ' ').slice(0, 60)))];
+    return `${apps || 'no app'} · ${words.length} label(s): ${words.join(' | ')}`.slice(0, max);
+  } catch (e) {
+    return 'unreadable snapshot (' + (e as Error).message + ')';
+  }
+}

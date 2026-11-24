@@ -264,7 +264,10 @@ async function execute(job: Job, token?: string) {
       await recordDeviceOutcome(d.imageId, null).catch(() => {});
     } catch (e) {
       pinError = e;
-      await recordDeviceOutcome(d.imageId, failureCode(e), failureKind(e)).catch(() => {});
+      // Apple Maps is a new kind of scan: while its template and reader are being fitted, a page it
+      // could not use is not held against the phone (a phone is paused for failing Google searches).
+      const appleFit = pin.scan.targetType === 'mobile_apple' && /^(RPA_|UNRECOGNIZED_RESULT_LAYOUT|NO_RESULT_DUMPS|PHONE_APP_MISSING)/.test(failureCode(e));
+      if (!appleFit) await recordDeviceOutcome(d.imageId, failureCode(e), failureKind(e)).catch(() => {});
       // Every search that ran and was rejected is listed for the admin page, with its video.
       if (searched(e) && !/^CANCELLED/.test(e instanceof Error ? e.message : '')) {
         await noteRefused(pin, d, e, job.attemptsMade + 1, attemptStart).catch((err) => console.warn('[refused] not listed:', (err as Error).message));
