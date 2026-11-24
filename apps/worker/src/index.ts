@@ -88,6 +88,8 @@ async function execute(job: Job, token?: string) {
   });
   if (!pin || pin.status !== 'PENDING') return;
   let lanePoint = false;
+  // This try went out on metered mobile data (the spill-over from a busy line).
+  let onMetered = false;
   try {
     if (pin.scan.targetType === 'desktop_aimode') {
       await settlePin(pin.id, { data: await measureDesktop(pin) });
@@ -122,7 +124,7 @@ async function execute(job: Job, token?: string) {
       const to = spillTo({
         homeReady: !laneOnly && (await homeOverflowReady(pin.scan)),
         internal: laneOnly || (await internalScan(pin.scan.userId)),
-        meteredReady: overflowReady(),
+        meteredReady: overflowReady() && !(await meteredRefused(pin.scan.stateCode)),
         waitedMs,
         waitMs: METERED_WAIT_MS,
       });
@@ -132,6 +134,7 @@ async function execute(job: Job, token?: string) {
         console.log('[lane] point', pin.id, 'overflows to home internet (Proxy-Seller) after', Math.round(waitedMs / 1000) + 's without a place on a line');
       } else if (to === 'metered') {
         lanePoint = false;
+        onMetered = true;
         console.log('[lane] point', pin.id, 'overflows to metered mobile data after', Math.round(waitedMs / 1000) + 's without a place on a line');
       } else {
         if (!job.data.laneWaitSince) await job.updateData({ ...job.data, laneWaitSince: Date.now() });
@@ -323,6 +326,9 @@ async function execute(job: Job, token?: string) {
     // a proxy works. The ladder (own town, nearest towns, then anywhere in the state) is tried
     // anew each time. Only after PROXY_WAIT_HOURS is the point given up.
     if (isProxyProblem(msg)) {
+      // Metered mobile data has no usable exit for this state (wrong state, refused): for 20
+      // minutes its points wait for a 5G line instead of taking phones for tries that cannot work.
+      if (onMetered && msg.startsWith('PROXY_GATE_REJECTED')) await noteMeteredRefused(pin.scan.stateCode);
       const since = Number(job.data.proxyWaitSince) || Date.now();
       if (Date.now() - since < PROXY_WAIT_MS) {
         const waits = (Number(job.data.proxyWaits) || 0) + 1;
@@ -654,6 +660,13 @@ const homeOverflowReady = async (scan: { proxyRegion: string | null }) =>
  * metered mobile data (MOBILE_OVERFLOW_WAIT_SECONDS, default 2 minutes; 0 sends it at once).
  */
 const METERED_WAIT_MS = Math.max(0, Number(process.env.MOBILE_OVERFLOW_WAIT_SECONDS ?? 120) || 0) * 1000;
+
+const meteredOffKey = (state: string | null) => 'stakeout:meteredoff:' + (state || 'US');
+const meteredRefused = async (state: string | null) => Boolean(await redis().exists(meteredOffKey(state)).catch(() => 0));
+async function noteMeteredRefused(state: string | null) {
+  const first = await redis().set(meteredOffKey(state), new Date().toISOString(), 'EX', 1200, 'NX').catch(() => null);
+  if (first) console.warn('[lane] metered mobile data has no usable exit for', state || 'US', '- its points wait for a 5G line for 20 minutes');
+}
 
 /** Metered mobile data can take an overflow point: set up, and more than half a GB left (or not read yet). */
 const overflowReady = () => Boolean(mobileProvider()) && (mobileTraffic?.leftBytes == null || mobileTraffic.leftBytes > 0.5e9);
