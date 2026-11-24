@@ -439,3 +439,41 @@ test('a repeating scan at a set time of day', () => {
   assert.deepEqual(toolCall('compare_scans', { scanA: 'cmwnut6r60004k8zvvyx2rgp6', scanB: 'cmwntwpvy0004siqf50wazp2c' }), { route: 'compare', method: 'OP', body: { a: 'cmwnut6r60004k8zvvyx2rgp6', b: 'cmwntwpvy0004siqf50wazp2c', timezone: 'UTC' } });
   assert.match(String(toolCall('compare_scans', { scanA: '../x', scanB: 'y' })), /two scan ids/);
 });
+
+test('founding members: 25% more plan sessions a month, never on the listing add-on', async () => {
+  const { FOUNDING, foundingBonus, monthlyPoints } = await import('../packages/core/gbpPlans');
+  assert.deepEqual([FOUNDING.seats, FOUNDING.bonus], [15, 0.25]);
+  assert.equal(monthlyPoints({ P_SCOUT: 1 }, true), 375);
+  assert.equal(monthlyPoints({ P_AGENCY: 1 }, true), 1250);
+  assert.equal(monthlyPoints({ P_SCALE: 1 }, true), 3750);
+  assert.equal(monthlyPoints({ P_AGENCY: 1 }, false), 1000, 'not a founding member: the plan as sold');
+  assert.equal(monthlyPoints({ P_AGENCY: 1, LISTING: 2 }, true), 1250 + 100, 'the add-on keeps its 50 a listing');
+  assert.equal(foundingBonus({ LISTING: 3 }), 0);
+});
+
+test('yearly plans: twelve months for the price of ten, at the same monthly sessions', async () => {
+  const { ANNUAL_MONTHS_PAID, annualKey, yearCents, yearlyLine } = await import('../packages/core/gbpPlans');
+  assert.equal(ANNUAL_MONTHS_PAID, 10);
+  assert.deepEqual([yearCents('P_SCOUT'), yearCents('P_AGENCY'), yearCents('P_SCALE')], [39000, 129000, 299000], '$390 / $1,290 / $2,990');
+  assert.equal(annualKey('stakeout_plan_scout_v3'), 'stakeout_plan_scout_v3_annual');
+  assert.ok(yearlyLine('P_AGENCY') && yearlyLine('LISTING'));
+  assert.ok(!yearlyLine('COMMAND') && !yearlyLine('SCOUT'), 'the old seats stay monthly');
+});
+
+test("a yearly plan's months follow Stripe's billing day, short months included", async () => {
+  const { addMonths, monthIndex, monthWindow } = await import('../packages/core/gbpPlans');
+  const t = (iso: string) => Date.parse(iso) / 1000;
+  const iso = (s: number) => new Date(s * 1000).toISOString().slice(0, 10);
+  const start = t('2026-01-31T15:00:00Z');
+  assert.equal(iso(addMonths(start, 1)), '2026-02-28', 'the 31st falls back to the last day');
+  assert.equal(iso(addMonths(start, 2)), '2026-03-31', 'and comes back where it can');
+  assert.equal(iso(addMonths(start, 12)), '2027-01-31');
+  assert.equal(monthIndex(start, start), 0);
+  assert.equal(monthIndex(start, t('2026-02-28T14:59:59Z')), 0, 'until the second the month turns');
+  assert.equal(monthIndex(start, t('2026-02-28T15:00:00Z')), 1);
+  assert.equal(monthIndex(start, t('2026-12-31T15:00:00Z')), 11, 'the twelfth month');
+  const end = addMonths(start, 12);
+  const w = monthWindow(start, end, t('2026-06-15T00:00:00Z'));
+  assert.deepEqual([iso(w.from), iso(w.to), w.k], ['2026-05-31', '2026-06-30', 4]);
+  assert.equal(monthWindow(start, end, end - 1).to, end, 'the last month ends with the year');
+});

@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { pushAlert } from '@stakeout/core/alerts';
-import { ACCOUNT_PLANS, AGENT_ADDON, LINES, LINE_ORDER, PLANS, accountPlanOf, addonOn, clientSeats, dollars, hasLegacySeats, isAccountPlan, isPlan, monthlyCents, planNow, quantityPlan, seatBriefs, seatGrant, seatPoints, settlePending, stripeTiers, type AccountPlan, type Line, type Plan } from '@stakeout/core/gbpPlans';
+import { ACCOUNT_PLANS, AGENT_ADDON, ANNUAL_MONTHS_PAID, LINES, LINE_ORDER, PLANS, accountPlanOf, addMonths, addonOn, annualKey, clientSeats, dollars, hasLegacySeats, isAccountPlan, isPlan, monthIndex, monthWindow, monthlyCents, monthlyPoints, planNow, quantityPlan, seatBriefs, seatGrant, settlePending, stripeTiers, yearlyLine, type AccountPlan, type BillingInterval, type Line, type Plan } from '@stakeout/core/gbpPlans';
+import { claimFounding, foundingLeft, isFounding } from '@stakeout/core/founding';
 import { briefGrant, briefsLeft } from '@stakeout/core/briefWallet';
 import { getSettings, newPlansFor } from '@stakeout/core/settings';
 import { PACK_REASONS, endPlan, renewPlan, topUpPlan } from '@stakeout/core/creditPlan';
@@ -18,15 +19,19 @@ import { BONUS_POINTS, FIRST_AUDIT_COUPON, WELCOME, promoLive } from '@/lib/pric
  * off lowers it without a refund (a listing keeps working until the month that was paid for ends).
  * Every paid invoice adds the seats' points to the account (see grantPoints).
  */
-type Item = { id: string; quantity?: number; current_period_end?: number; current_period_start?: number; price?: { id: string; lookup_key?: string | null } };
+type Item = { id: string; quantity?: number; current_period_end?: number; current_period_start?: number; price?: { id: string; lookup_key?: string | null; recurring?: { interval?: string } | null } };
 type Invoice = { id: string; status?: string; billing_reason?: string | null; created?: number; subscription?: string | null; parent?: { subscription_details?: { subscription?: string | null } | null } | null; hosted_invoice_url?: string | null };
 type Sub = { id: string; status: string; customer: string; /** A change held back until its payment clears. */ pending_update?: unknown | null; latest_invoice?: Invoice | string | null; cancel_at_period_end?: boolean; current_period_end?: number; current_period_start?: number; items?: { data?: Item[] }; metadata?: Record<string, string> };
 type Session = { id: string; url?: string; mode?: string; status?: string; payment_status?: string; client_reference_id?: string; customer?: string | null; subscription?: string | null; metadata?: Record<string, string>; amount_total?: number | null };
 export type Pick = { profile: string; location: string; plan: Plan };
 
 const ENDED = new Set(['canceled', 'unpaid', 'incomplete_expired']);
-const lineOfItem = (i: Item): Line | null => LINE_ORDER.find((l) => LINES[l].lookupKey === i.price?.lookup_key) ?? null;
-const isAddon = (i: Item) => i.price?.lookup_key === AGENT_ADDON.lookupKey;
+// A line's monthly or yearly price (yearly ones carry the same key with _annual on the end).
+const lineOfItem = (i: Item): Line | null => LINE_ORDER.find((l) => LINES[l].lookupKey === i.price?.lookup_key || annualKey(LINES[l].lookupKey) === i.price?.lookup_key) ?? null;
+const isAddon = (i: Item) => i.price?.lookup_key === AGENT_ADDON.lookupKey || i.price?.lookup_key === annualKey(AGENT_ADDON.lookupKey);
+/** How often Stripe bills the subscription: every item of one shares it. */
+const intervalOf = (s: Sub): BillingInterval => ((s.items?.data ?? []).some((i) => i.price?.recurring?.interval === 'year') ? 'year' : 'month');
+const PAYING_NOW = new Set(['active', 'trialing']);
 const periodOf = (s: Sub) => ({ start: s.current_period_start ?? s.items?.data?.[0]?.current_period_start ?? 0, end: s.current_period_end ?? s.items?.data?.[0]?.current_period_end ?? 0 });
 const periodEnd = (s: Sub) => { const t = periodOf(s).end; return t ? new Date(t * 1000) : null; };
 const invoiceSub = (i: Invoice) => i.subscription ?? i.parent?.subscription_details?.subscription ?? null;
@@ -37,47 +42,56 @@ function seatsOn(items: Item[]): Partial<Record<Line, number>> {
   return out;
 }
 
-/** Stripe's price for each seat type asked for, made the first time it is needed and found by its lookup key after that. */
-async function prices(lines: Line[]): Promise<Partial<Record<Line, string>>> {
+/**
+ * Stripe's price for each seat type asked for, made the first time it is needed and found by its
+ * lookup key after that. Yearly (`interval` 'year'): twelve months for the price of
+ * ANNUAL_MONTHS_PAID, for the account plans and the listing add-on only.
+ */
+async function prices(lines: Line[], interval: BillingInterval = 'month'): Promise<Partial<Record<Line, string>>> {
   if (!lines.length) return {};
-  const keys = lines.map((l) => LINES[l].lookupKey);
+  const keyOf = (l: Line) => (interval === 'year' ? annualKey(LINES[l].lookupKey) : LINES[l].lookupKey);
+  const keys = lines.map(keyOf);
   const found = await stripe<{ data: { id: string; lookup_key: string | null }[] }>('/prices?active=true&limit=20&' + keys.map((k, i) => `lookup_keys[${i}]=${encodeURIComponent(k)}`).join('&'));
   const out: Partial<Record<Line, string>> = {};
   for (const l of lines) {
-    const had = found.data.find((x) => x.lookup_key === LINES[l].lookupKey);
+    const had = found.data.find((x) => x.lookup_key === keyOf(l));
     if (had) { out[l] = had.id; continue; }
     if (!LINES[l].available) throw new InputError(`${LINES[l].name} is no longer sold.`);
+    if (interval === 'year' && !yearlyLine(l)) throw new InputError(`${LINES[l].name} is billed monthly only.`);
+    const yearly = interval === 'year' ? ' (yearly)' : '';
     out[l] = (
       await stripe<{ id: string }>(
         '/prices',
         'POST',
         {
           currency: 'usd',
-          recurring: { interval: 'month' },
+          recurring: { interval },
           billing_scheme: 'tiered',
           tiers_mode: LINES[l].graduated ? 'graduated' : 'volume',
-          tiers: stripeTiers(l),
-          lookup_key: LINES[l].lookupKey,
-          metadata: { points_per_seat: String(LINES[l].points), briefs_per_month: String(LINES[l].briefs ?? 0) },
+          tiers: stripeTiers(l).map((t) => ({ ...t, unit_amount: interval === 'year' ? t.unit_amount * ANNUAL_MONTHS_PAID : t.unit_amount })),
+          lookup_key: keyOf(l),
+          metadata: { points_per_seat: String(LINES[l].points), briefs_per_month: String(LINES[l].briefs ?? 0), interval },
           // What the customer reads on Stripe's pages and invoices: a plan per account, the add-on per listing, a seat per client.
           product_data: isAccountPlan(l)
-            ? { name: `Stakeout Search · ${LINES[l].name} plan`, unit_label: 'account' }
+            ? { name: `Stakeout Search · ${LINES[l].name} plan${yearly}`, unit_label: 'account' }
             : l === 'LISTING'
-              ? { name: 'Stakeout Search · Listing add-on', unit_label: 'listing' }
+              ? { name: `Stakeout Search · Listing add-on${yearly}`, unit_label: 'listing' }
               : { name: `Stakeout Search · ${LINES[l].name} seat`, unit_label: 'client' },
         },
-        'price-' + LINES[l].lookupKey,
+        'price-' + keyOf(l),
       )
     ).id;
   }
   return out;
 }
 
-/** Stripe's price for the AI agents add-on: one flat amount a month, made the first time it is needed. */
-async function addonPrice(): Promise<string> {
-  const found = await stripe<{ data: { id: string }[] }>('/prices?active=true&limit=1&lookup_keys[0]=' + encodeURIComponent(AGENT_ADDON.lookupKey));
+/** Stripe's price for the AI agents add-on: one flat amount a month (or a year, at ANNUAL_MONTHS_PAID months), made the first time it is needed. */
+async function addonPrice(interval: BillingInterval = 'month'): Promise<string> {
+  const key = interval === 'year' ? annualKey(AGENT_ADDON.lookupKey) : AGENT_ADDON.lookupKey;
+  const found = await stripe<{ data: { id: string }[] }>('/prices?active=true&limit=1&lookup_keys[0]=' + encodeURIComponent(key));
   if (found.data[0]) return found.data[0].id;
-  return (await stripe<{ id: string }>('/prices', 'POST', { currency: 'usd', unit_amount: AGENT_ADDON.cents, recurring: { interval: 'month' }, lookup_key: AGENT_ADDON.lookupKey, product_data: { name: 'Stakeout Search · AI agents add-on' } }, 'price-' + AGENT_ADDON.lookupKey)).id;
+  const cents = interval === 'year' ? AGENT_ADDON.cents * ANNUAL_MONTHS_PAID : AGENT_ADDON.cents;
+  return (await stripe<{ id: string }>('/prices', 'POST', { currency: 'usd', unit_amount: cents, recurring: { interval }, lookup_key: key, product_data: { name: `Stakeout Search · AI agents add-on${interval === 'year' ? ' (yearly)' : ''}` } }, 'price-' + key)).id;
 }
 
 const readSub = (id: string) => stripe<Sub>('/subscriptions/' + encodeURIComponent(id));
@@ -100,9 +114,13 @@ export async function applySub(s: Sub, userId?: string) {
     agentAddon: !ended && items.some(isAddon),
     scoutSeats: ended ? 0 : seatsOn(items).SCOUT ?? 0,
     accountPlan: ended ? null : accountPlanOf(seatsOn(items)),
+    billingInterval: intervalOf(s),
+    periodStart: periodOf(s).start ? new Date(periodOf(s).start * 1000) : null,
   };
   await db.gbpSub.upsert({ where: { userId: owner }, create: { userId: owner, ...data }, update: data });
   if (ended) await db.gbpPlan.deleteMany({ where: { userId: owner } });
+  // A plan paid for: one of the founding spots, while any are left (never in Stripe's test mode).
+  if (!ended && data.accountPlan && PAYING_NOW.has(s.status) && !stripeTestMode()) await claimFounding(owner).catch((e) => console.error('[founding] not claimed:', (e as Error).message));
   return owner;
 }
 
@@ -129,13 +147,16 @@ async function followSeats(userId: string, monthly: number, grew: boolean, brief
 async function syncStripe(userId: string, charge: boolean, scout?: number, account?: AccountPlan | null): Promise<{ pay?: string | null }> {
   const mine = await db.gbpSub.findUnique({ where: { userId } });
   if (!mine?.subscriptionId) return {};
-  const [s, rows] = await Promise.all([readSub(mine.subscriptionId), db.gbpPlan.findMany({ where: { userId }, select: { plan: true, status: true } })]);
+  const [s, rows, founding] = await Promise.all([readSub(mine.subscriptionId), db.gbpPlan.findMany({ where: { userId }, select: { plan: true, status: true } }), isFounding(userId)]);
   const items = s.items?.data ?? [];
   const q = quantityPlan(rows, seatsOn(items), scout, account);
+  const interval = intervalOf(s);
+  // Less on a yearly subscription: the unused part of the year comes off its next invoice (a monthly one is never refunded).
+  const smaller = interval === 'year' ? 'create_prorations' : 'none';
   if (q.empty && items.some(isAddon)) {
     // No seat left, but the add-on stays: the subscription carries on with it alone.
     const seats = items.filter((i) => lineOfItem(i) && (i.quantity ?? 0) > 0).map((i) => ({ id: i.id, quantity: 0 }));
-    if (seats.length || s.cancel_at_period_end) await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { ...(seats.length ? { items: seats } : {}), cancel_at_period_end: false, proration_behavior: 'none' }, randomUUID()), userId);
+    if (seats.length || s.cancel_at_period_end) await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { ...(seats.length ? { items: seats } : {}), cancel_at_period_end: false, proration_behavior: smaller }, randomUUID()), userId);
     await followSeats(userId, 0, false, 0);
     return {};
   }
@@ -146,7 +167,7 @@ async function syncStripe(userId: string, charge: boolean, scout?: number, accou
   }
   if (q.same && !s.cancel_at_period_end) return {};
   const needed = LINE_ORDER.filter((l) => q.want[l] > 0 && !items.some((i) => lineOfItem(i) === l));
-  const price = await prices(needed);
+  const price = await prices(needed, interval);
   const change: Record<string, unknown>[] = [];
   for (const l of LINE_ORDER) {
     const had = items.find((i) => lineOfItem(i) === l);
@@ -155,8 +176,8 @@ async function syncStripe(userId: string, charge: boolean, scout?: number, accou
   }
   const bill = charge && q.grows;
   if (!bill) {
-    await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { items: change, cancel_at_period_end: false, proration_behavior: 'none' }, randomUUID()), userId);
-    await followSeats(userId, seatPoints(q.want), q.grows, seatBriefs(q.want));
+    await applySub(await stripe<Sub>('/subscriptions/' + s.id, 'POST', { items: change, cancel_at_period_end: false, proration_behavior: smaller }, randomUUID()), userId);
+    await followSeats(userId, monthlyPoints(q.want, founding), q.grows, seatBriefs(q.want));
     return {};
   }
   // A change that waits on its payment may only carry the seats and how they are charged, so a
@@ -197,10 +218,10 @@ async function firstAuditCoupon(userId: string, hadSub: boolean): Promise<string
 }
 
 /** Stripe's checkout page for a first subscription with these seats. */
-async function checkout(u: { id: string; email: string }, mine: { customerId: string } | null, seats: Partial<Record<Line, number>>, origin: string, back: string): Promise<{ url: string }> {
+async function checkout(u: { id: string; email: string }, mine: { customerId: string } | null, seats: Partial<Record<Line, number>>, origin: string, back: string, interval: BillingInterval = 'month'): Promise<{ url: string }> {
   const lines = LINE_ORDER.filter((l) => (seats[l] ?? 0) > 0);
   if (!lines.length) throw new InputError('Choose at least one seat.');
-  const price = await prices(lines);
+  const price = await prices(lines, interval);
   const coupon = await firstAuditCoupon(u.id, Boolean(mine));
   const meta = { kind: 'gbp', userId: u.id };
   const join = back.includes('?') ? '&' : '?';
@@ -214,7 +235,7 @@ async function checkout(u: { id: string; email: string }, mine: { customerId: st
       client_reference_id: u.id,
       ...(mine?.customerId ? { customer: mine.customerId } : { customer_email: u.email }),
       metadata: meta,
-      subscription_data: { metadata: meta, description: lines.some((l) => isAccountPlan(l)) ? 'Stakeout Search plan' : 'Stakeout Search seats' },
+      subscription_data: { metadata: meta, description: lines.some((l) => isAccountPlan(l)) ? `Stakeout Search plan${interval === 'year' ? ', billed yearly' : ''}` : 'Stakeout Search seats' },
       line_items: lines.map((l) => ({ price: price[l], quantity: seats[l] })),
       success_url: origin + back + join + 'plan={CHECKOUT_SESSION_ID}',
       cancel_url: origin + back + join + 'plan=cancelled',
@@ -330,19 +351,21 @@ async function sellable(u: { id: string; email?: string; role: string }, lines: 
  * upgrade charges the rest of the month now, a downgrade takes effect at once with no refund. Without
  * one, the answer is Stripe's checkout page.
  */
-export async function setAccountPlan(u: { id: string; email: string; role: string }, plan: AccountPlan | null, origin: string): Promise<{ url?: string; done?: boolean; pay?: string | null }> {
+export async function setAccountPlan(u: { id: string; email: string; role: string }, plan: AccountPlan | null, origin: string, interval?: BillingInterval): Promise<{ url?: string; done?: boolean; pay?: string | null }> {
   if (u.role === 'ADMIN') throw new InputError('Admin accounts do not need a plan.');
   if (plan !== null && !isAccountPlan(plan)) throw new InputError('Unknown plan.');
   if (plan) await sellable(u, [plan]);
   const mine = await db.gbpSub.findUnique({ where: { userId: u.id } });
   if (mine?.subscriptionId) {
+    // A running subscription keeps how it is billed: monthly and yearly are chosen at the first checkout.
+    if (interval && plan && interval !== mine.billingInterval) throw new InputError(mine.billingInterval === 'year' ? 'Your plan is billed yearly. To go monthly, end it and choose monthly when the year is over.' : 'Your plan is billed monthly. To pay yearly, write to support@stakeoutsearch.com and we will switch it for you.');
     if (plan === null && (await db.gbpPlan.count({ where: { userId: u.id, plan: 'LISTING', status: 'ACTIVE' } }))) throw new InputError('Take the listing add-ons off first: they go on top of a plan.');
     const grows = plan !== null && (!isAccountPlan(mine.accountPlan) || ACCOUNT_PLANS[plan].tiers[0].cents > ACCOUNT_PLANS[mine.accountPlan].tiers[0].cents);
     const r = await syncStripe(u.id, grows, undefined, plan);
     return r.pay !== undefined ? { pay: r.pay } : { done: true };
   }
   if (!plan) return { done: true };
-  return checkout(u, mine, { [plan]: 1 }, origin, '/profiles?tab=plan');
+  return checkout(u, mine, { [plan]: 1 }, origin, '/profiles?tab=plan', interval ?? 'month');
 }
 
 /** The account plan an account pays for now (a failed card keeps it while Stripe retries), or null. */
@@ -368,10 +391,14 @@ export async function activate(sessionId: string, userId?: string): Promise<{ on
   const points = await grantPoints(sub.id).catch((e) => (console.error('[seats] points not added yet:', (e as Error).message), 0));
   if (fresh.count || points) {
     const counts = seatsOn(sub.items?.data ?? []);
-    const buyer = await db.user.findUnique({ where: { id: owner }, select: { email: true } });
+    const buyer = await db.user.findUnique({ where: { id: owner }, select: { email: true, foundingNo: true } });
+    const yearly = intervalOf(sub) === 'year';
     await pushAlert('gbp-sub:' + sub.id, {
-      subject: `${stripeTestMode() ? '[TEST] ' : ''}Stakeout: new subscription, ${dollars(monthlyCents(counts))} a month`,
-      lines: [`${buyer?.email ?? 'An account'} started ${LINE_ORDER.filter((l) => counts[l]).map((l) => `${counts[l]} ${LINES[l].name}`).join(', ')}: ${seatPoints(counts).toLocaleString('en-US')} phone sessions and ${seatBriefs(counts)} brief credits a month.`],
+      subject: `${stripeTestMode() ? '[TEST] ' : ''}Stakeout: new subscription, ${yearly ? `${dollars(monthlyCents(counts) * ANNUAL_MONTHS_PAID)} a year` : `${dollars(monthlyCents(counts))} a month`}`,
+      lines: [
+        `${buyer?.email ?? 'An account'} started ${LINE_ORDER.filter((l) => counts[l]).map((l) => `${counts[l]} ${LINES[l].name}`).join(', ')}${yearly ? ', billed yearly' : ''}: ${monthlyPoints(counts, Boolean(buyer?.foundingNo)).toLocaleString('en-US')} phone sessions and ${seatBriefs(counts)} brief credits a month.`,
+        ...(buyer?.foundingNo ? [`Founding member #${buyer.foundingNo} of 15: 25% more plan sessions every month.`] : []),
+      ],
       path: '/admin/devices',
     }, 60).catch(() => {});
     await flushAlerts().catch(() => {});
@@ -394,15 +421,19 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
   if (!userId) return 0;
   const ended = ENDED.has(s.status);
   const invoice = invoiceId ? await stripe<Invoice>('/invoices/' + encodeURIComponent(invoiceId)).catch(() => null) : typeof s.latest_invoice === 'object' ? s.latest_invoice : null;
-  const monthly = ended ? 0 : seatPoints(seatsOn(s.items?.data ?? []));
-  const monthlyBriefs = ended ? 0 : seatBriefs(seatsOn(s.items?.data ?? []));
+  const counts = seatsOn(s.items?.data ?? []);
+  // A plan paid for takes a founding spot before its first month is counted, so that month has the bonus too.
+  if (!ended && accountPlanOf(counts) && PAYING_NOW.has(s.status) && !stripeTestMode()) await claimFounding(userId).catch((e) => console.error('[founding] not claimed:', (e as Error).message));
+  const monthlyBriefs = ended ? 0 : seatBriefs(counts);
   const { start, end } = periodOf(s);
+  const yearly = intervalOf(s) === 'year';
   let added = 0;
   await db.$transaction(async (tx) => {
     const row = await tx.gbpSub.findUnique({ where: { userId } });
     // An older subscription's news must not disturb the one that replaced it.
     if (!row || (row.subscriptionId && row.subscriptionId !== s.id)) return;
-    const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { creditBalance: true } });
+    const user = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { creditBalance: true, foundingNo: true } });
+    const monthly = ended ? 0 : monthlyPoints(counts, Boolean(user.foundingNo));
     // Points bought since the seats' points were last counted: those are never the seats'.
     const bought = row.grantAt
       ? (await tx.creditLedger.aggregate({ where: { userId, reason: { in: PACK_REASONS }, createdAt: { gt: row.grantAt }, amount: { gt: 0 } }, _sum: { amount: true } }))._sum.amount ?? 0
@@ -423,7 +454,9 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
     const key = 'stripe-inv:' + invoice.id;
     if (await tx.creditLedger.findUnique({ where: { externalEventId: key } })) return;
     const paidAt = (invoice.created ?? Math.floor(Date.now() / 1000));
-    const share = end > start ? (end - paidAt) / (end - start) : 1;
+    // A change mid-way is shared out over what is left of the month (a yearly plan's billing month, not its year).
+    const w = yearly && end > start ? monthWindow(start, end, paidAt) : { from: start, to: end };
+    const share = w.to > w.from ? (w.to - paidAt) / (w.to - w.from) : 1;
     const g = seatGrant(invoice.billing_reason, monthly, row.grantedPoints, share);
     if (!g) return;
     // The plan's briefs: a new month brings them and carries last month's unused ones over once.
@@ -442,7 +475,9 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
       if (r.lapse > 0) await tx.creditLedger.create({ data: { userId, amount: -r.lapse, reason: 'SEAT_POINTS_LAPSE', externalEventId: key + ':lapse' } });
       await tx.creditLedger.create({ data: { userId, amount: r.grant, reason: 'SEAT_POINTS', externalEventId: key } });
       await tx.user.update({ where: { id: userId }, data: { creditBalance: { increment: r.grant - r.lapse } } });
-      await tx.gbpSub.update({ where: { userId }, data: { bucket: r.bucket, packFloor: r.packFloor, grantAt: new Date(), grantedPoints: g.granted } });
+      // A yearly plan's other eleven months come from grantPlanMonths, the first one month after the period began.
+      const next = yearly ? addMonths(start, 1) : 0;
+      await tx.gbpSub.update({ where: { userId }, data: { bucket: r.bucket, packFloor: r.packFloor, grantAt: new Date(), grantedPoints: g.granted, nextGrantAt: yearly && next < end ? new Date(next * 1000) : null } });
     } else {
       const t = topUpPlan(state, g.points);
       await tx.creditLedger.create({ data: { userId, amount: g.points, reason: 'SEAT_POINTS', externalEventId: key } });
@@ -456,6 +491,74 @@ export async function grantPoints(subscriptionId: string, invoiceId?: string): P
     throw e;
   });
   return added;
+}
+
+/**
+ * A yearly plan's months: Stripe bills once a year, and that invoice brings the first month's points
+ * and briefs (grantPoints). Each later month of the year brings them again, as a monthly renewal
+ * would (last month's unused ones roll over once, older ones lapse). Runs from the daily schedule
+ * and whenever the account's balance is read (catchUpPlanMonths), for one account or every one that
+ * is due. Each month counts once. Returns how many months were added.
+ */
+export async function grantPlanMonths(userId?: string, now = new Date()): Promise<number> {
+  const due = await db.gbpSub.findMany({ where: { ...(userId ? { userId } : {}), billingInterval: 'year', subscriptionId: { not: null }, nextGrantAt: { lte: now } }, select: { userId: true, subscriptionId: true } });
+  let months = 0;
+  for (const d of due) {
+    try {
+      const s = await readSub(d.subscriptionId!);
+      if (s.metadata?.kind !== 'gbp' || ENDED.has(s.status) || intervalOf(s) !== 'year') continue;
+      // A card that failed at the yearly renewal: no new month until Stripe's retries get it paid.
+      if (!PAYING_NOW.has(s.status)) continue;
+      const { start, end } = periodOf(s);
+      const at = Math.floor(now.getTime() / 1000);
+      const k = monthIndex(start, Math.min(at, end - 1));
+      const next = addMonths(start, k + 1);
+      const nextGrantAt = next < end ? new Date(next * 1000) : null;
+      if (k < 1) {
+        await db.gbpSub.update({ where: { userId: d.userId }, data: { nextGrantAt } });
+        continue;
+      }
+      const counts = seatsOn(s.items?.data ?? []);
+      const key = `plan-month:${s.id}:${start}:${k}`;
+      await db.$transaction(async (tx) => {
+        const row = await tx.gbpSub.findUnique({ where: { userId: d.userId } });
+        if (!row || row.subscriptionId !== s.id) return;
+        if (await tx.creditLedger.findUnique({ where: { externalEventId: key } })) {
+          await tx.gbpSub.update({ where: { userId: d.userId }, data: { nextGrantAt } });
+          return;
+        }
+        const user = await tx.user.findUniqueOrThrow({ where: { id: d.userId }, select: { creditBalance: true, foundingNo: true } });
+        const bought = row.grantAt
+          ? (await tx.creditLedger.aggregate({ where: { userId: d.userId, reason: { in: PACK_REASONS }, createdAt: { gt: row.grantAt }, amount: { gt: 0 } }, _sum: { amount: true } }))._sum.amount ?? 0
+          : 0;
+        const state = { balance: user.creditBalance, bucket: row.bucket, packFloor: row.packFloor, bought };
+        const monthly = monthlyPoints(counts, Boolean(user.foundingNo));
+        const b = briefGrant('subscription_cycle', seatBriefs(counts), { plan: row.briefPlan, carry: row.briefCarry, granted: row.grantedBriefs });
+        const r = renewPlan(state, monthly);
+        if (r.lapse > 0) await tx.creditLedger.create({ data: { userId: d.userId, amount: -r.lapse, reason: 'SEAT_POINTS_LAPSE', externalEventId: key + ':lapse' } });
+        await tx.creditLedger.create({ data: { userId: d.userId, amount: r.grant, reason: 'SEAT_POINTS', externalEventId: key } });
+        await tx.user.update({ where: { id: d.userId }, data: { creditBalance: { increment: r.grant - r.lapse } } });
+        await tx.gbpSub.update({
+          where: { userId: d.userId },
+          data: { bucket: r.bucket, packFloor: r.packFloor, grantAt: new Date(), grantedPoints: monthly, nextGrantAt, ...(b ? { briefPlan: b.plan, briefCarry: b.carry, grantedBriefs: b.granted } : {}) },
+        });
+        months++;
+      }).catch((e: unknown) => {
+        // The same month counted twice at once: the ledger let one through.
+        if ((e as { code?: string })?.code !== 'P2002') throw e;
+      });
+    } catch (e) {
+      console.error('[plan-months] not added for', d.userId, (e as Error).message);
+    }
+  }
+  return months;
+}
+
+/** Brings a yearly plan's months up to date before the account's balance is shown or spent (one quick look when nothing is due). */
+export async function catchUpPlanMonths(userId: string): Promise<boolean> {
+  const row = await db.gbpSub.findUnique({ where: { userId }, select: { billingInterval: true, nextGrantAt: true, subscriptionId: true } }).catch(() => null);
+  if (!row?.subscriptionId || row.billingInterval !== 'year' || !row.nextGrantAt || row.nextGrantAt > new Date()) return false;
+  return (await grantPlanMonths(userId).catch(() => 0)) > 0;
 }
 
 /** Takes a listing off its seat. It keeps working until the month that was paid for ends; nothing is refunded. */
@@ -483,10 +586,10 @@ export async function addAddon(u: { id: string; email: string; role: string }, o
   if (u.role === 'ADMIN') throw new InputError('Admin accounts already have agent access.');
   const mine = await db.gbpSub.findUnique({ where: { userId: u.id } });
   if (await db.gbpPlan.count({ where: { userId: u.id, status: 'ACTIVE' } })) throw new InputError('Agent access already comes with your listings on Command or Dominator: there is nothing to add.', 409);
-  const price = await addonPrice();
   if (mine?.subscriptionId) {
     const s = await readSub(mine.subscriptionId);
     if ((s.items?.data ?? []).some(isAddon)) { await applySub(s, u.id); return { done: true }; }
+    const price = await addonPrice(intervalOf(s));
     if (s.cancel_at_period_end) await stripe<Sub>('/subscriptions/' + s.id, 'POST', { cancel_at_period_end: false });
     const next = await stripe<Sub>('/subscriptions/' + s.id, 'POST', { items: [{ price, quantity: 1 }], proration_behavior: 'always_invoice', payment_behavior: 'pending_if_incomplete', expand: ['latest_invoice'] }, randomUUID());
     await applySub(next, u.id);
@@ -495,6 +598,7 @@ export async function addAddon(u: { id: string; email: string; role: string }, o
   }
   // A listing checkout left unfinished is forgotten: only the add-on is being bought here.
   await db.gbpPlan.deleteMany({ where: { userId: u.id, status: 'PENDING' } });
+  const price = await addonPrice();
   const meta = { kind: 'gbp', userId: u.id };
   const session = await stripe<Session>('/checkout/sessions', 'POST', {
     mode: 'subscription',
@@ -587,8 +691,9 @@ export async function billingSummary(userId: string) {
     P_AGENCY: plan === 'P_AGENCY' ? 1 : 0,
     P_SCALE: plan === 'P_SCALE' ? 1 : 0,
   };
-  const [user, settings] = await Promise.all([db.user.findUnique({ where: { id: userId }, select: { email: true, role: true, briefBalance: true } }), getSettings()]);
+  const [user, settings, spots] = await Promise.all([db.user.findUnique({ where: { id: userId }, select: { email: true, role: true, briefBalance: true, foundingNo: true } }), getSettings(), foundingLeft().catch(() => 0)]);
   const paying = Boolean(mine?.subscriptionId) && ['active', 'trialing', 'past_due'].includes(mine?.status ?? '');
+  const yearly = Boolean(mine?.subscriptionId) && mine?.billingInterval === 'year';
   return {
     /** Sold the account plans (Scout, Agency, Scale) rather than seats. */
     newPlans: user ? newPlansFor(user, settings) : false,
@@ -600,8 +705,14 @@ export async function billingSummary(userId: string) {
     sub: mine ? { status: mine.status, periodEnd: mine.periodEnd?.toISOString() ?? null, running: Boolean(mine.subscriptionId) } : null,
     counts,
     seats: clientSeats(counts),
-    pointsPerMonth: seatPoints(counts),
+    pointsPerMonth: monthlyPoints(counts, Boolean(user?.foundingNo)),
     addon: { on: addonOn(mine), cents: AGENT_ADDON.cents },
     monthlyCents: monthlyCents(counts) + (addonOn(mine) ? AGENT_ADDON.cents : 0),
+    /** How the running subscription is billed, and what each bill is (a yearly one: ANNUAL_MONTHS_PAID months). */
+    interval: (yearly ? 'year' : 'month') as BillingInterval,
+    periodCents: (monthlyCents(counts) + (addonOn(mine) ? AGENT_ADDON.cents : 0)) * (yearly ? ANNUAL_MONTHS_PAID : 1),
+    /** Founding member number, or null; and how many founding spots are left. */
+    founding: user?.foundingNo ?? null,
+    foundingLeft: spots,
   };
 }

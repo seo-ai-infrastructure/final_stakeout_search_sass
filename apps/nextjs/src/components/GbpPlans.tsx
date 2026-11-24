@@ -1,18 +1,20 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, LINES, SEATS, addedCents, dollars, lineCents, monthlyCents, type AccountPlan, type Line, type Plan } from '@stakeout/core/gbpPlans';
+import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, ANNUAL_MONTHS_PAID, FOUNDING, LINES, SEATS, addedCents, dollars, lineCents, monthlyCents, monthlyPoints, yearCents, type AccountPlan, type Line, type Plan } from '@stakeout/core/gbpPlans';
 
 type Loc = { id: string; name: string; plan: string | null };
 type Profile = { id: string; name: string; status: string; problem: string | null; locations: Loc[] };
 type Account = { id: string; profile: string | null; name: string | null };
 type Row = { location: string; profile: string; title: string | null; plan: string; status: string; endsAt: string | null; on: boolean };
-type Billing = { ready: boolean; listings: Row[]; sub: { status: string; periodEnd: string | null; running: boolean } | null; counts: Record<Line, number>; seats: number; pointsPerMonth: number; monthlyCents: number; newPlans?: boolean; legacy?: boolean; plan?: AccountPlan | null; briefs?: { plan: number; carry: number; bought: number; left: number; perMonth: number } };
+type Billing = { ready: boolean; listings: Row[]; sub: { status: string; periodEnd: string | null; running: boolean } | null; counts: Record<Line, number>; seats: number; pointsPerMonth: number; monthlyCents: number; newPlans?: boolean; legacy?: boolean; plan?: AccountPlan | null; briefs?: { plan: number; carry: number; bought: number; left: number; perMonth: number }; interval?: 'month' | 'year'; periodCents?: number; founding?: number | null; foundingLeft?: number };
 
 /** The seats a listing can be put on before the account plans. */
 const LISTING_SEATS: Plan[] = ['COMMAND', 'DOMINATOR'];
 /** What a listing can be put on for this account: the listing add-on with the account plans (seats too for an account that has them). */
 const listingSeats = (b: Billing | null): Plan[] => (!b?.newPlans ? LISTING_SEATS : b.legacy ? (b.plan ? ['LISTING', ...LISTING_SEATS] : LISTING_SEATS) : ['LISTING']);
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
+/** The listing add-on's price as this account pays it: a yearly plan's add-ons are billed with it, yearly. */
+const addonPrice = (b: Billing | null) => (b?.interval === 'year' ? `${dollars(LINES.LISTING.tiers[0].cents * ANNUAL_MONTHS_PAID)} a year` : `${dollars(LINES.LISTING.tiers[0].cents)} a month`);
 const btn = 'rounded-lg border border-slate-700 px-3 py-2 text-sm hover:border-slate-500 disabled:opacity-40';
 const go = 'rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40';
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '');
@@ -54,7 +56,7 @@ export function UpgradeCard({ profile, location, name, what, onDone }: { profile
     <div className={card}>
       <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Listing add-on</p>
       <h3 className="mt-1 text-lg font-semibold">{what} comes with the listing add-on</h3>
-      <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. The listing add-on is everything about the Google listing itself, with AI agents, {LINES.LISTING.points} phone sessions and {LINES.LISTING.briefs} brief credit a month, for {dollars(LINES.LISTING.tiers[0].cents)} a month per listing on top of your plan:</p>
+      <p className="mt-2 text-sm text-slate-400">Your website’s Search Console and Analytics are free. The listing add-on is everything about the Google listing itself, with AI agents, {LINES.LISTING.points} phone sessions and {LINES.LISTING.briefs} brief credit a month, for {addonPrice(billing)} per listing on top of your plan:</p>
       <ul className="mt-3 grid gap-1.5 text-sm text-slate-300 sm:grid-cols-2">
         <li>Calls, directions and searches, straight from Google</li>
         <li>Edit hours, description, services and attributes</li>
@@ -65,7 +67,7 @@ export function UpgradeCard({ profile, location, name, what, onDone }: { profile
       </ul>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         {billing?.plan
-          ? <button type="button" onClick={upgrade} disabled={busy || billing?.ready === false} className={go}>{busy ? 'Working…' : `Add ${name} · ${dollars(LINES.LISTING.tiers[0].cents)} a month`}</button>
+          ? <button type="button" onClick={upgrade} disabled={busy || billing?.ready === false} className={go}>{busy ? 'Working…' : `Add ${name} · ${addonPrice(billing)}`}</button>
           : <a href="/profiles?tab=plan" className={go}>Choose a plan first</a>}
         <span className="text-xs text-slate-500">{billing?.plan ? (running ? 'Added to your subscription; the rest of this month is charged to your card now.' : 'Monthly. Cancel any time.') : 'The add-on goes on top of Scout, Agency or Scale.'}</span>
       </div>
@@ -157,7 +159,7 @@ export function GbpPicker({ profiles, onClose, onDone }: { profiles: Profile[]; 
               <div role="group" aria-label="Seat for the ticked listings" className="inline-flex overflow-hidden rounded-lg border border-slate-700 text-sm">
                 {listingSeats(billing).map((p) => <button key={p} type="button" aria-pressed={plan === p} onClick={() => setPlan(p)} className={'px-3 py-2 ' + (plan === p ? 'bg-slate-700 font-semibold text-white' : 'text-slate-400 hover:text-slate-200')}>{LINES[p].name} · {dollars(LINES[p].tiers[0].cents)}</button>)}
               </div>
-              <p className="text-sm text-slate-400">{LINES[plan].blurb} {plan === 'LISTING' ? `${dollars(LINES.LISTING.tiers[0].cents)} a month per listing.` : `${LINES[plan].points.toLocaleString()} phone sessions a month per listing.`}</p>
+              <p className="text-sm text-slate-400">{LINES[plan].blurb} {plan === 'LISTING' ? `${addonPrice(billing)} per listing.` : `${LINES[plan].points.toLocaleString()} phone sessions a month per listing.`}</p>
               {needsPlan && <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">The listing add-on goes on top of a plan. <a href="/profiles?tab=plan" className="font-semibold underline">Choose Scout, Agency or Scale</a> first, then come back to switch listings on.</p>}
               {all.length > 1 && (
                 <div className="flex flex-wrap items-center gap-3">
@@ -193,6 +195,9 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
   const [plan, setPlan] = useState<Plan>('COMMAND');
   const [scout, setScout] = useState<number | null>(null);
   const [find, setFind] = useState('');
+  // Monthly or yearly, for the first checkout (a running plan keeps how it is billed). A link from the pricing page can ask for yearly.
+  const [yearly, setYearly] = useState(false);
+  useEffect(() => { if (new URLSearchParams(window.location.search).get('billing') === 'annual') setYearly(true); }, []);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [note, setNote] = useState('');
@@ -241,9 +246,13 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
   const choosePlan = (want: AccountPlan | null) => run('plan', async () => {
     const now = billing?.plan ?? null;
     const price = (p: AccountPlan) => ACCOUNT_PLANS[p].tiers[0].cents;
-    if (now && want && !window.confirm(price(want) > price(now) ? `Switch to ${ACCOUNT_PLANS[want].name} (${dollars(price(want))} a month)? The difference for the rest of this month is charged to your card now.` : `Switch to ${ACCOUNT_PLANS[want].name} (${dollars(price(want))} a month)? It takes effect now; nothing is refunded.`)) return;
-    if (now && !want && !window.confirm(`End your ${ACCOUNT_PLANS[now].name} plan? It keeps working until the month you paid for ends; nothing is refunded.`)) return;
-    const r = await call<Billing & { url?: string; pay?: string | null }>('/api/billing/gbp', 'POST', { plan: want });
+    const year = billing?.interval === 'year';
+    const priced = (p: AccountPlan) => (year ? `${dollars(yearCents(p))} a year` : `${dollars(price(p))} a month`);
+    if (now && want && !window.confirm(price(want) > price(now)
+      ? `Switch to ${ACCOUNT_PLANS[want].name} (${priced(want)})? The difference for the rest of this ${year ? 'year' : 'month'} is charged to your card now.`
+      : `Switch to ${ACCOUNT_PLANS[want].name} (${priced(want)})? It takes effect now; ${year ? 'the unused part of this year comes off your next renewal' : 'nothing is refunded'}.`)) return;
+    if (now && !want && !window.confirm(`End your ${ACCOUNT_PLANS[now].name} plan? It keeps working until the ${year ? 'year' : 'month'} you paid for ends; nothing is refunded.`)) return;
+    const r = await call<Billing & { url?: string; pay?: string | null }>('/api/billing/gbp', 'POST', { plan: want, ...(now || !want || billing?.sub?.running ? {} : { interval: yearly ? 'year' : 'month' }) });
     if (r.url) { window.location.assign(r.url); return; }
     if (r.pay !== undefined) { setBilling(r); setPayLink(r.pay ?? ''); return; }
     setBilling(r); setNote(want ? `You are on ${ACCOUNT_PLANS[want].name}.` : 'Your plan ends with the month already paid for.'); onChanged();
@@ -268,20 +277,35 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           </div>
           <div className="mt-3 grid gap-3 sm:grid-cols-4">
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Plan</p><p className="mt-1 text-2xl font-bold">{billing?.plan ? ACCOUNT_PLANS[billing.plan].name : 'None yet'}</p><p className="text-xs text-slate-500">{counts.LISTING ? `${counts.LISTING} listing add-on${counts.LISTING === 1 ? '' : 's'}` : 'No listing add-ons'}</p></div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Phone sessions a month</p><p className="mt-1 text-2xl font-bold tabular-nums">{(billing?.pointsPerMonth ?? 0).toLocaleString()}</p><p className="text-xs text-slate-500">Unused ones roll over for one month</p></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Phone sessions a month</p><p className="mt-1 text-2xl font-bold tabular-nums">{(billing?.pointsPerMonth ?? 0).toLocaleString()}</p><p className="text-xs text-slate-500">{billing?.founding ? `Founding member #${billing.founding}: ${FOUNDING.bonus * 100}% more plan sessions` : 'Unused ones roll over for one month'}</p></div>
             <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">Brief credits left</p><p className="mt-1 text-2xl font-bold tabular-nums">{billing?.briefs?.left ?? 0}</p><p className="text-xs text-slate-500">{billing?.briefs?.perMonth ? `${billing.briefs.perMonth} a month` : 'None a month'}{billing?.briefs?.bought ? ` · ${billing.briefs.bought} bought` : ''}</p></div>
-            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">This month</p><p className="mt-1 text-2xl font-bold tabular-nums">{dollars(billing?.monthlyCents ?? 0)}</p><p className="text-xs text-slate-500">{billing?.sub?.periodEnd ? `Renews ${day(billing.sub.periodEnd)}` : 'Monthly, cancel any time'}</p></div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-4"><p className="text-xs text-slate-500">{billing?.interval === 'year' ? 'This year' : 'This month'}</p><p className="mt-1 text-2xl font-bold tabular-nums">{dollars(billing?.periodCents ?? billing?.monthlyCents ?? 0)}</p><p className="text-xs text-slate-500">{billing?.sub?.periodEnd && billing.sub.running ? `Renews ${day(billing.sub.periodEnd)}` : 'Monthly or yearly, cancel any time'}</p></div>
           </div>
+          {!billing?.plan && (billing?.foundingLeft ?? 0) > 0 && (
+            <p className="mt-4 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-100">
+              <span className="font-semibold">Founding members:</span> the first {FOUNDING.seats} accounts to start a plan get {FOUNDING.bonus * 100}% more phone sessions every month, for as long as they have a plan. {billing?.foundingLeft} of {FOUNDING.seats} spots left.
+            </p>
+          )}
+          {!billing?.sub?.running && (
+            <div role="group" aria-label="Billing" className="mt-4 inline-flex rounded-lg border border-slate-700 p-1 text-sm">
+              <button type="button" aria-pressed={!yearly} onClick={() => setYearly(false)} className={'rounded-md px-3 py-1.5 ' + (!yearly ? 'bg-slate-700 font-semibold text-white' : 'text-slate-300 hover:text-white')}>Monthly</button>
+              <button type="button" aria-pressed={yearly} onClick={() => setYearly(true)} className={'rounded-md px-3 py-1.5 ' + (yearly ? 'bg-slate-700 font-semibold text-white' : 'text-slate-300 hover:text-white')}>Yearly: 2 months free</button>
+            </div>
+          )}
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             {ACCOUNT_PLAN_ORDER.map((p) => {
               const d = ACCOUNT_PLANS[p];
               const mine = billing?.plan === p;
+              // Prices as this account would pay them: a running plan's own billing, otherwise the switch.
+              const year = billing?.sub?.running ? billing.interval === 'year' : yearly;
+              const founding = Boolean(billing?.founding) || (!billing?.plan && (billing?.foundingLeft ?? 0) > 0);
+              const more = monthlyPoints({ [p]: 1 }, true);
               return (
                 <div key={p} className={'rounded-lg border p-4 ' + (mine ? 'border-emerald-500/60 bg-emerald-500/5' : 'border-slate-800 bg-slate-950')}>
-                  <div className="flex items-baseline justify-between gap-2"><p className="font-semibold text-slate-100">{d.name}</p><p className="text-lg font-bold tabular-nums">{dollars(d.tiers[0].cents)}<span className="text-xs font-normal text-slate-500"> a month</span></p></div>
-                  <p className="mt-1 text-xs text-slate-500">{d.bestFor}</p>
+                  <div className="flex items-baseline justify-between gap-2"><p className="font-semibold text-slate-100">{d.name}</p><p className="text-lg font-bold tabular-nums">{year ? dollars(yearCents(p)) : dollars(d.tiers[0].cents)}<span className="text-xs font-normal text-slate-500">{year ? ' a year' : ' a month'}</span></p></div>
+                  <p className="mt-1 text-xs text-slate-500">{year ? `${dollars(Math.round(yearCents(p) / 12))} a month, ${12 - ANNUAL_MONTHS_PAID} months free · ` : ''}{d.bestFor}</p>
                   <ul className="mt-3 space-y-1 text-sm text-slate-300">
-                    <li>{d.points.toLocaleString()} phone sessions a month ({Math.floor(d.points / 25)} 5×5 scans)</li>
+                    <li>{billing?.founding ? `${more.toLocaleString()} phone sessions a month (founding)` : `${d.points.toLocaleString()} phone sessions a month (${Math.floor(d.points / 25)} 5×5 scans)`}{founding && !billing?.founding ? `, ${more.toLocaleString()} as a founding member` : ''}</li>
                     <li>{d.briefs} brief credit{d.briefs === 1 ? '' : 's'} a month</li>
                     <li>{d.whiteLabel ? 'Your logo, name and brand color on shared reports' : 'Stakeout share links and offline copies'}</li>
                   </ul>
@@ -294,7 +318,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
               );
             })}
           </div>
-          <p className="mt-3 text-xs text-slate-500">Every phone session is one real phone run at one grid point, with the map results, the AI Overview, the ads and a screen recording. Add the listing add-on ({dollars(LINES.LISTING.tiers[0].cents)} a month per Google listing) for the listing tools, AI agents, {LINES.LISTING.points} more phone sessions and {LINES.LISTING.briefs} more brief credit a month.{billing?.plan ? ' ' : ''}{billing?.plan && <button type="button" onClick={() => choosePlan(null)} disabled={busy === 'plan'} className="text-slate-400 underline hover:text-rose-300">End my plan</button>}</p>
+          <p className="mt-3 text-xs text-slate-500">Every phone session is one real phone run at one grid point, with the map results, the AI Overview, the ads and a screen recording. Yearly plans are paid once a year ({ANNUAL_MONTHS_PAID} months’ price for 12); their phone sessions and brief credits still come every month. Add the listing add-on ({dollars(LINES.LISTING.tiers[0].cents)} a month per Google listing) for the listing tools, AI agents, {LINES.LISTING.points} more phone sessions and {LINES.LISTING.briefs} more brief credit a month.{billing?.plan ? ' ' : ''}{billing?.plan && <button type="button" onClick={() => choosePlan(null)} disabled={busy === 'plan'} className="text-slate-400 underline hover:text-rose-300">End my plan</button>}</p>
         </div>
       )}
       {onSeats && <div className={card}>
@@ -340,7 +364,7 @@ export default function GbpPlans({ profiles, accounts, onChanged }: { profiles: 
           <h2 className="text-lg font-semibold">Google listings</h2>
           {all.length > 8 && <input className="w-56 rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm outline-none focus:border-emerald-500" placeholder="Search listings" value={find} onChange={(e) => setFind(e.target.value)} />}
         </div>
-        <p className="mt-1 text-sm text-slate-400">{addon ? `The listing add-on puts a Google listing to work: edits, posts, review alerts and replies, the change watchdog, rival gaps and AI agents, with ${LINES.LISTING.points} phone sessions and ${LINES.LISTING.briefs} brief credit a month, for ${dollars(LINES.LISTING.tiers[0].cents)} a month per listing on top of your plan.` : 'A listing on Command or Dominator is a client seat with the listing tools: edits, posts, review alerts and replies, the change watchdog, rival gaps and AI agents.'}</p>
+        <p className="mt-1 text-sm text-slate-400">{addon ? `The listing add-on puts a Google listing to work: edits, posts, review alerts and replies, the change watchdog, rival gaps and AI agents, with ${LINES.LISTING.points} phone sessions and ${LINES.LISTING.briefs} brief credit a month, for ${addonPrice(billing)} per listing on top of your plan.` : 'A listing on Command or Dominator is a client seat with the listing tools: edits, posts, review alerts and replies, the change watchdog, rival gaps and AI agents.'}</p>
         {addon && !billing?.plan && all.length > 0 && <p className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">Choose a plan above first: the listing add-on goes on top of it.</p>}
         {all.length === 0 ? <p className="mt-2 text-sm text-slate-400">Connect a Google account below to see its listings here.</p> : (
           <ul className="mt-3 divide-y divide-slate-800 rounded-lg border border-slate-800">

@@ -6,7 +6,7 @@ import { errorResponse } from '@/lib/api';
 import { catalogFor } from '@/lib/billing';
 import { stripe, stripeConfigured } from '@/lib/stripe';
 import { activePlan, planPortal, settleIfDue } from '@/lib/creditSub';
-import { accountPlanNow } from '@/lib/gbpBilling';
+import { accountPlanNow, catchUpPlanMonths } from '@/lib/gbpBilling';
 import { walletOf } from '@/lib/briefStore';
 
 /** What this account can buy, and whether checkout is switched on. */
@@ -14,6 +14,7 @@ export async function GET() {
   try {
     const u = await getAuthenticatedUser();
     await settleIfDue(u.id);
+    await catchUpPlanMonths(u.id);
     const plan = await activePlan(u.id);
     const [accountPlan, wallet] = await Promise.all([accountPlanNow(u.id), walletOf(u.id)]);
     return Response.json({ packs: await catalogFor(u), ready: stripeConfigured(), plan: plan ? { ...plan, periodEnd: plan.periodEnd?.toISOString() ?? null } : null, accountPlan, briefs: wallet.left });

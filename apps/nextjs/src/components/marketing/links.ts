@@ -12,6 +12,8 @@ export const HREF = {
   closer: signUp('/new-scan?buy=closer'),
   /** A plan (Scout, Agency, Scale) is chosen on the Plan and billing page. */
   plans: signUp('/profiles?tab=plan'),
+  /** The same, with yearly billing picked. */
+  plansYearly: signUp('/profiles?tab=plan&billing=annual'),
   /** A prospect audit pack, by its price list key. */
   prospects: (key: string) => signUp('/scans?buy=' + key),
   login: '/login',

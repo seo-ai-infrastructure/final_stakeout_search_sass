@@ -48,6 +48,8 @@ export const SESSION_PACKS: PriceItem[] = [
   { key: 'sessions-250', name: '250 phone sessions', credits: 250, cents: 5900, featured: true, blurb: '10 full 5×5 scans ($5.90 a scan). Covers two 5-keyword territory audits.' },
   { key: 'sessions-500', name: '500 phone sessions', credits: 500, cents: 9900, blurb: '20 full 5×5 scans ($4.95 a scan). For multi-keyword or 7×7 prospecting runs.' },
 ];
+/** Only for accounts on a plan (Scout, Agency or Scale): more sessions at 15¢ each, below every pack. */
+export const PLAN_TOPUP: PriceItem = { key: 'sessions-plan-200', name: 'Plan top-up: 200 phone sessions', credits: 200, cents: 3000, blurb: 'For plan holders: 8 full 5×5 scans ($3.75 a scan). Never expire.' };
 export const BRIEF_PACKS: PriceItem[] = [
   { key: 'briefs-1', name: '1 brief credit', credits: 0, briefs: 1, cents: 900, blurb: 'Compile a client revenue brief, or update one with a newer scan.' },
   { key: 'briefs-5', name: '5 brief credits', credits: 0, briefs: 5, cents: 3500, blurb: '$7 a credit: 22% off, for prospecting runs and monthly updates.' },
@@ -97,7 +99,7 @@ export const TOPUPS: (PriceItem & { plan: string })[] = [
 /** The welcome pack as sold before the seats: 25 credits. */
 const WELCOME_25: PriceItem = { ...WELCOME, key: 'welcome', credits: 25 };
 
-export const ALL_ITEMS: PriceItem[] = [WELCOME, ...PROSPECT_PACKS, TOPUP, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS, CLOSER, ...SESSION_PACKS, ...BRIEF_PACKS];
+export const ALL_ITEMS: PriceItem[] = [WELCOME, ...PROSPECT_PACKS, TOPUP, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS, CLOSER, ...SESSION_PACKS, PLAN_TOPUP, ...BRIEF_PACKS];
 /** The item a key names, for what a paid order brings. */
 export const itemByKey = (key: string | null | undefined) => ALL_ITEMS.find((i) => i.key === key);
 
@@ -131,9 +133,10 @@ export function itemsFor(state: { admin?: boolean; /** Has never paid for anythi
   const seats = state.seats ?? 0;
   if (state.newPlans) {
     // With the account plans: the Closer Pack (twice at most), and the session packs and brief credits
-    // for every account, on a plan or not. An account still on seats keeps its own price for 100 sessions.
+    // for every account, on a plan or not; an account on a plan also gets the plan top-up. An account
+    // still on seats keeps its own price for 100 sessions.
     const sessions = seats > 0 && !state.plan ? [TOPUP, ...SESSION_PACKS.filter((p) => p.credits > TOPUP.credits)] : SESSION_PACKS;
-    const out = [...((state.closers ?? 0) < CLOSER_LIMIT ? [CLOSER] : []), ...sessions, ...BRIEF_PACKS];
+    const out = [...((state.closers ?? 0) < CLOSER_LIMIT ? [CLOSER] : []), ...(state.plan ? [PLAN_TOPUP] : []), ...sessions, ...BRIEF_PACKS];
     return state.admin ? [...out, ADMIN_TEST] : out;
   }
   const items: PriceItem[] = [

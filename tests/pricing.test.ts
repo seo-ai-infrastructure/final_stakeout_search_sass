@@ -173,10 +173,14 @@ test('pricing: with the account plans, the Closer Pack (twice at most), and sess
   assert.deepEqual(keys({ newPlans: true, firstPurchase: true }), ['closer', ...packs], 'an account without a plan buys session packs too');
   assert.deepEqual(keys({ newPlans: true, closers: 1 }), ['closer', ...packs], 'a second Closer Pack');
   assert.deepEqual(keys({ newPlans: true, closers: 2 }), packs, 'never a third Closer Pack; the session packs stay on sale');
-  assert.deepEqual(keys({ newPlans: true, plan: true, closers: 2 }), packs, 'a plan holder tops up with the session packs');
+  assert.deepEqual(keys({ newPlans: true, plan: true, closers: 2 }), ['sessions-plan-200', ...packs], 'a plan holder also gets the plan top-up, before the packs');
+  assert.ok(!keys({ newPlans: true, closers: 2 }).includes('sessions-plan-200'), 'never without a plan');
+  assert.ok(!keys({ newPlans: true, seats: 3, closers: 2 }).includes('sessions-plan-200'), 'never on seats alone');
   assert.deepEqual(keys({ newPlans: true, seats: 3, closers: 2 }), ['topup-100', 'sessions-250', 'sessions-500', 'briefs-1', 'briefs-5'], 'an account on seats keeps its own price for 100 sessions');
   assert.equal(itemsFor({ newPlans: true, admin: true }).at(-1)?.key, 'admin-test');
-  for (const k of ['closer', 'sessions-250', 'briefs-5']) assert.ok(itemByKey(k), 'a paid order finds its item: ' + k);
+  for (const k of ['closer', 'sessions-250', 'sessions-plan-200', 'briefs-5']) assert.ok(itemByKey(k), 'a paid order finds its item: ' + k);
+  const top = itemByKey('sessions-plan-200')!;
+  assert.deepEqual([top.credits, top.cents], [200, 3000], '200 sessions for $30 (15¢ each)');
   // The old catalog is untouched until the switch.
   assert.deepEqual(keys({ firstPurchase: true }).slice(0, 1), ['welcome']);
 });

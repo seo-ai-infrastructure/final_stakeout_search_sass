@@ -5,6 +5,7 @@ import PricingPageV2 from '@/components/marketing/PlansV2';
 import { CLOSER, promoLive, usd } from '@/lib/pricing';
 import { ACCOUNT_PLANS, LINES } from '@stakeout/core/gbpPlans';
 import { getSettings } from '@stakeout/core/settings';
+import { foundingLeft } from '@stakeout/core/founding';
 
 // Rebuilt every minute, so a dated offer leaves the page when it ends and the plans switch shows quickly.
 export const revalidate = 60;
@@ -21,5 +22,5 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Pricing() {
   const plans = Boolean((await getSettings().catch(() => null))?.newPlansLive);
-  return plans ? <PricingPageV2 live={promoLive()} /> : <PricingPage live={promoLive()} />;
+  return plans ? <PricingPageV2 live={promoLive()} foundingLeft={await foundingLeft().catch(() => 0)} /> : <PricingPage live={promoLive()} />;
 }

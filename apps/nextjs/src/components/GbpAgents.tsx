@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { PLAYBOOKS, TOOLS, WRITES, playbookText } from '@stakeout/core/agentTools';
-import { AGENT_ADDON, dollars } from '@stakeout/core/gbpPlans';
+import { AGENT_ADDON, ANNUAL_MONTHS_PAID, dollars } from '@stakeout/core/gbpPlans';
 
 type Key = { id: string; name: string; prefix: string; createdAt: string; lastUsedAt: string | null };
 const card = 'rounded-xl border border-slate-800 bg-slate-900 p-5';
@@ -24,7 +24,7 @@ export default function GbpAgents({ admin, addon = false }: { admin: boolean; ad
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   // Customers: whether the AI agents add-on is on (admins always have access), and how to pay for it.
-  type Addon = { ready: boolean; counts?: { MANAGE: number; AGENT: number }; addon?: { on: boolean; cents: number }; sub?: { running: boolean; periodEnd: string | null } | null };
+  type Addon = { ready: boolean; counts?: { MANAGE: number; AGENT: number }; addon?: { on: boolean; cents: number }; sub?: { running: boolean; periodEnd: string | null } | null; interval?: 'month' | 'year' };
   const [bill, setBill] = useState<Addon | null>(null);
   const [payLink, setPayLink] = useState<string | null>(null);
   useEffect(() => { if (!admin) call<Addon>('/api/billing/gbp').then(setBill).catch(() => {}); }, [admin]);
@@ -96,10 +96,10 @@ export default function GbpAgents({ admin, addon = false }: { admin: boolean; ad
           <p className="text-xs font-semibold uppercase tracking-wider text-emerald-400">Two ways to switch it on</p>
           <h2 className="mt-1 text-lg font-semibold">Included with Command and Dominator</h2>
           <p className="mt-2 text-sm text-slate-300">{addon ? 'Add the listing add-on to any Google listing' : 'Put any Google listing on a Command seat'} and agent access comes with it at no extra cost: your agent can then do the everyday work on that listing (posts, review replies, hours, descriptions, services and attributes) as well as run scans and read Search Console and Analytics. <a href="/profiles?tab=plan" className="font-semibold text-emerald-300 underline">{addon ? 'Add the listing add-on' : 'Put a listing on Command'}</a></p>
-          <p className="mt-3 text-sm text-slate-400">No listing to manage? The add-on gives your agent your scans, Search Console and Analytics for {dollars(AGENT_ADDON.cents)} a month.</p>
+          <p className="mt-3 text-sm text-slate-400">No listing to manage? The add-on gives your agent your scans, Search Console and Analytics for {bill.sub?.running && bill.interval === 'year' ? `${dollars(AGENT_ADDON.cents * ANNUAL_MONTHS_PAID)} a year` : `${dollars(AGENT_ADDON.cents)} a month`}.</p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button type="button" onClick={buy} disabled={busy || bill.ready === false} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{busy ? 'Working…' : `Add AI agents · ${dollars(AGENT_ADDON.cents)} a month`}</button>
-            <span className="text-xs text-slate-500">{bill.sub?.running ? 'Added to your subscription; the rest of this month is charged to your card now.' : 'Monthly. You pay on the next page; cancel any time.'}</span>
+            <button type="button" onClick={buy} disabled={busy || bill.ready === false} className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-40">{busy ? 'Working…' : `Add AI agents · ${bill.sub?.running && bill.interval === 'year' ? `${dollars(AGENT_ADDON.cents * ANNUAL_MONTHS_PAID)} a year` : `${dollars(AGENT_ADDON.cents)} a month`}`}</button>
+            <span className="text-xs text-slate-500">{bill.sub?.running ? `Added to your subscription; the rest of this ${bill.interval === 'year' ? 'year' : 'month'} is charged to your card now.` : 'Monthly. You pay on the next page; cancel any time.'}</span>
           </div>
           {payLink !== null && <p className="mt-3 text-sm text-amber-200">Your bank wants you to confirm this charge; the add-on switches on as soon as it goes through. {payLink ? <a href={payLink} target="_blank" rel="noreferrer" className="font-semibold underline">Confirm the payment</a> : 'Open “Card, invoices and cancelling” on the Plan and billing tab to finish it.'}</p>}
           {bill.ready === false && <p className="mt-2 text-xs text-amber-300">Checkout is being set up. Email sass@stakeoutsearch.com and we will sort it out.</p>}

@@ -19,6 +19,8 @@ model User {
   creditBalance Int            @default(0)
   /// Briefs bought (packs, the Closer Pack): they never expire. A plan's briefs are on GbpSub.
   briefBalance  Int            @default(0)
+  /// Founding member number (1 to 15): the first accounts to start a plan get 25% more plan sessions every month.
+  foundingNo    Int?           @unique
   emailVerifiedAt DateTime?
   scans         GridScan[]
   ledger        CreditLedger[]
@@ -438,6 +440,12 @@ model GbpSub {
   grantedBriefs  Int       @default(0)
   /// The account plan on the subscription (P_SCOUT, P_AGENCY, P_SCALE), if any.
   accountPlan    String?
+  /// 'month' or 'year': how often Stripe bills the subscription. A yearly one still gets its points and briefs each month.
+  billingInterval String   @default("month")
+  /// When the period Stripe last billed began (a yearly one's months are counted from it).
+  periodStart    DateTime?
+  /// A yearly subscription: when its next month's points and briefs are due (null once the yearly invoice will bring them).
+  nextGrantAt    DateTime?
 }
 
 /// A monthly credit plan as a subscription. `bucket`: the plan credits held right after the last

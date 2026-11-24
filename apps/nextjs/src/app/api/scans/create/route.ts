@@ -4,6 +4,7 @@ import { flushAlerts } from '@/lib/alerts';
 import { wakeWorker } from '@stakeout/core/wake';
 import { randomUUID } from 'node:crypto';
 import { createScan } from '@stakeout/core/scans';
+import { catchUpPlanMonths } from '@/lib/gbpBilling';
 import { parseSpec, market, buildGrid, placedPins, InputError, OFFERED_GRID_SIZES, fixedCron } from '@stakeout/core/grid';
 import { skippedPoints } from '@stakeout/core/gridSizes';
 import { getSettings, ispAllowed } from '@stakeout/core/settings';
@@ -119,6 +120,8 @@ export async function POST(req: Request) {
     const firstAudit = s.gridSize === 5 && !(await db.gridScan.count({ where: { userId: u.id } })) &&
       Boolean(await db.paymentOrder.findFirst({ where: { userId: u.id, item: WELCOME.key, captureId: { not: null }, refundedAt: null }, select: { id: true } }));
     const freeRescanAt = firstAudit ? new Date((runAt ?? new Date()).getTime() + 7 * 86400000) : undefined;
+    // A yearly plan's new month is added before the scan is charged.
+    await catchUpPlanMonths(u.id).catch(() => false);
     const scan = await createScan(u.id, s, u.id + ':' + key, undefined, pins, { cron, speed, runAt, freeRescanAt });
     await wakeWorker('new scan');
     // A customer just started a scan: if the worker has gone quiet, the admins hear about it now.

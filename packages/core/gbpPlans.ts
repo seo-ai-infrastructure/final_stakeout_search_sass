@@ -171,6 +171,49 @@ export const clientSeats = (counts: Partial<Record<Line, number>>) => SEATS.redu
 
 /** Phone sessions a month for these seats. */
 export const seatPoints = (counts: Partial<Record<Line, number>>) => LINE_ORDER.reduce((n, l) => n + Math.max(0, counts[l] ?? 0) * LINES[l].points, 0);
+/**
+ * Founding members: the first `seats` accounts to start a plan get `bonus` more of their plan's
+ * phone sessions every month, for as long as they have a plan (the listing add-on's are not raised).
+ */
+export const FOUNDING = { seats: 15, bonus: 0.25 };
+/** The founding bonus a month for these lines. */
+export const foundingBonus = (counts: Partial<Record<Line, number>>) => ACCOUNT_PLAN_ORDER.reduce((n, l) => n + Math.max(0, counts[l] ?? 0) * Math.round(LINES[l].points * FOUNDING.bonus), 0);
+/** Phone sessions a month for these lines, with the founding bonus when the account has it. */
+export const monthlyPoints = (counts: Partial<Record<Line, number>>, founding: boolean) => seatPoints(counts) + (founding ? foundingBonus(counts) : 0);
+
+/** Paying for a year: twelve months for the price of this many. */
+export const ANNUAL_MONTHS_PAID = 10;
+export type BillingInterval = 'month' | 'year';
+export const isInterval = (v: unknown): v is BillingInterval => v === 'month' || v === 'year';
+/** Stripe's lookup key for the yearly price of a line (or of the AI agents add-on). */
+export const annualKey = (lookupKey: string) => lookupKey + '_annual';
+/** Lines that can be paid for a year at a time: the account plans and the listing add-on. */
+export const yearlyLine = (l: Line) => isAccountPlan(l) || l === 'LISTING';
+/** A year of a plan, in cents. */
+export const yearCents = (plan: AccountPlan) => ACCOUNT_PLANS[plan].tiers[0].cents * ANNUAL_MONTHS_PAID;
+
+/**
+ * `k` months after `t` (Unix seconds, UTC), as Stripe counts a billing month: the same day of the
+ * month, or the month's last day when it is shorter (the 31st, then the 28th or 29th, 31st...).
+ */
+export function addMonths(t: number, k: number): number {
+  const d = new Date(t * 1000);
+  const y = d.getUTCFullYear(), m = d.getUTCMonth() + k;
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  return Math.floor(Date.UTC(y, m, Math.min(d.getUTCDate(), last), d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds()) / 1000);
+}
+/** Which month of a yearly period starting at `start` the moment `at` falls in: 0 for the first. */
+export function monthIndex(start: number, at: number): number {
+  let k = 0;
+  while (k < 1200 && addMonths(start, k + 1) <= at) k++;
+  return k;
+}
+/** The billing month of a yearly period (start, end) that `at` falls in, as Unix seconds. */
+export function monthWindow(start: number, end: number, at: number): { from: number; to: number; k: number } {
+  const k = monthIndex(start, at);
+  return { from: addMonths(start, k), to: Math.min(addMonths(start, k + 1), end), k };
+}
+
 /** Briefs a month for these lines (an account plan's, plus one for each listing add-on). */
 export const seatBriefs = (counts: Partial<Record<Line, number>>) => LINE_ORDER.reduce((n, l) => n + Math.max(0, counts[l] ?? 0) * LINES[l].briefs, 0);
 /** The account plan on a subscription, from its lines. */
