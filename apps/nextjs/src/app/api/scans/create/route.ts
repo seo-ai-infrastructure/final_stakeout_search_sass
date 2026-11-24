@@ -1,4 +1,5 @@
-import { chooseNetwork, homeHasRoom } from '@stakeout/core/networkChoice';
+import { chooseNetwork } from '@stakeout/core/networkChoice';
+import { mobileOverflowTown } from '@stakeout/core/overflowTown';
 import { flushAlerts } from '@/lib/alerts';
 import { wakeWorker } from '@stakeout/core/wake';
 import { randomUUID } from 'node:crypto';
@@ -66,24 +67,17 @@ export async function POST(req: Request) {
     await assertFleetSupports(s.targetType, s.phoneModel);
     if (s.targetType !== 'desktop_aimode') {
       // A mobile scan's points go out on the unlimited lines; the phones the lines can't take pick
-      // points up on home internet while Proxy-Seller's prepaid data lasts, so its lists (any ISP)
-      // are set up too. A town the home-proxy provider does not know never stops a mobile scan:
-      // its overflow goes to metered mobile data instead.
-      if (listsEnabled() && s.network === 'mobile') {
-        const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
-        if (homeHasRoom(health?.traffic)) {
-          try {
-            const center = market(s.centerLat, s.centerLng);
-            const left = skippedPoints(body.skip, s.gridSize);
-            const places = (placed?.pins ?? buildGrid(s)).filter((p) => !left.has(p.rowIdx + '_' + p.colIdx)).map((p) => ({ city: p.city, stateCode: p.stateCode }));
-            const { market: m } = await prepareGridProxies(center, places, []);
-            s.proxyRegion = m.region;
-            s.proxyCity = m.city;
-          } catch (e) {
-            console.warn('[scan] no home-internet overflow for this mobile scan:', (e as Error).message);
-          }
+      // points up on home internet while Proxy-Seller's prepaid data lasts (mobileOverflowTown). A
+      // town Proxy-Seller does not know never stops a mobile scan.
+      if (s.network === 'mobile') {
+        const left = skippedPoints(body.skip, s.gridSize);
+        const places = (placed?.pins ?? buildGrid(s)).filter((p) => !left.has(p.rowIdx + '_' + p.colIdx)).map((p) => ({ city: p.city, stateCode: p.stateCode }));
+        const town = await mobileOverflowTown(s.centerLat, s.centerLng, places);
+        if (town) {
+          s.proxyRegion = town.region;
+          s.proxyCity = town.city;
         }
-      } else if (listsEnabled() && s.network !== 'mobile') {
+      } else if (listsEnabled()) {
         // Prepare the residential proxies BEFORE the grid is queued: for the centre
         // city and every other city the grid's points fall in, one list per chosen
         // ISP plus an any-ISP fallback. Lists are saved and reused by later scans.
@@ -93,7 +87,7 @@ export async function POST(req: Request) {
         const { market: m } = await prepareGridProxies(center, places, s.isps);
         s.proxyRegion = m.region;
         s.proxyCity = m.city;
-      } else if (s.network !== 'mobile' && s.ispMode !== 'any' && s.isps.some((i) => !targetableIspCodes().includes(i))) {
+      } else if (s.ispMode !== 'any' && s.isps.some((i) => !targetableIspCodes().includes(i))) {
         throw new InputError('That ISP cannot be targeted yet. Choose "Any ISP".');
       }
     }

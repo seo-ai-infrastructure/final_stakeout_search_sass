@@ -2,6 +2,7 @@ import { db } from '@stakeout/db';
 import { buildGrid, market, parseSpec } from '@stakeout/core/grid';
 import { listsEnabled, prepareGridProxies } from '@stakeout/core/proxyLists';
 import { createScan } from '@stakeout/core/scans';
+import { mobileOverflowTown } from '@stakeout/core/overflowTown';
 
 /**
  * A one-off: run a finished scan again around a different centre, for the same account, with the
@@ -35,6 +36,12 @@ export async function rescanAt() {
     const { market: mk } = await prepareGridProxies(market(s.centerLat, s.centerLng), buildGrid(s).map((p) => ({ city: p.city, stateCode: p.stateCode })), s.isps);
     s.proxyRegion = mk.region;
     s.proxyCity = mk.city;
+  } else if (s.network === 'mobile') {
+    const town = await mobileOverflowTown(s.centerLat, s.centerLng, buildGrid(s).map((p) => ({ city: p.city, stateCode: p.stateCode })));
+    if (town) {
+      s.proxyRegion = town.region;
+      s.proxyCity = town.city;
+    }
   }
   const made = await createScan(old.userId, s, `${old.userId}:rescan:${scanId}:${lat},${lng}`, undefined, undefined, { free: true });
   console.log(`[rescan] ${scanId} run again around ${lat},${lng} as ${made.id} (${made.totalPins} points, ${made.creditsCharged} credits, ${made.status})`);

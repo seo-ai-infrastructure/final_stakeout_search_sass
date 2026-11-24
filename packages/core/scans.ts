@@ -15,6 +15,7 @@ import { RERUN_MARKER, rerunCharge, rerunIsp } from './rerun';
 import { nudgeAlerts, pushAlert, scanAlert } from './alerts';
 import { creditsPerPoint, getSettings } from './settings';
 import { chooseNetwork } from './networkChoice';
+import { mobileOverflowTown } from './overflowTown';
 import { pointPrice, scanCost } from './network';
 import { speedFactor, type Speed } from './speed';
 
@@ -260,7 +261,7 @@ export async function cloneScheduledRun(
     // Each run of a repeating scan is a scheduled run: 1 point a grid point, behind Scan Now.
     return await createScan(
       template.userId,
-      await withChosenNetwork(template.userId, { ...parseSpec(template), scheduleType: 'once' }, template.pins.length),
+      await withChosenNetwork(template.userId, { ...parseSpec(template), scheduleType: 'once' }, template.pins),
       'cron:' + template.id + ':' + occurrenceId,
       undefined,
       template.pins,
@@ -276,12 +277,24 @@ export async function cloneScheduledRun(
   }
 }
 
-/** A customer's next run goes out on the network chosen today (networkChoice.ts), not its first run's; an admin's keeps its own. */
-async function withChosenNetwork(userId: string, spec: ScanSpec, points: number): Promise<ScanSpec> {
+/**
+ * A customer's next run goes out on the network chosen today (networkChoice.ts), not its first
+ * run's; an admin's keeps its own. A mobile run without a home-internet town (its first run was
+ * mobile too) gets one, so the phones the unlimited lines can't take can use Proxy-Seller's
+ * prepaid data (overflowTown.ts).
+ */
+async function withChosenNetwork(userId: string, spec: ScanSpec, pins: { city: string; stateCode: string }[]): Promise<ScanSpec> {
   const owner = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
-  if (owner?.role === 'ADMIN') return spec;
-  const network = await chooseNetwork(points, spec.targetType);
-  return network === 'residential' ? { ...spec, network } : { ...spec, network, ispMode: 'any', isps: [] };
+  let out = spec;
+  if (owner?.role !== 'ADMIN') {
+    const network = await chooseNetwork(pins.length, spec.targetType);
+    out = network === 'residential' ? { ...spec, network } : { ...spec, network, ispMode: 'any', isps: [] };
+  }
+  if (out.network === 'mobile' && !out.proxyRegion) {
+    const town = await mobileOverflowTown(out.centerLat, out.centerLng, pins);
+    if (town) out = { ...out, proxyRegion: town.region, proxyCity: town.city };
+  }
+  return out;
 }
 
 /**
@@ -297,7 +310,7 @@ export async function startFreeRescans(now = new Date()) {
   let started = 0;
   for (const scan of due) {
     try {
-      await createScan(scan.userId, await withChosenNetwork(scan.userId, { ...parseSpec(scan), scheduleType: 'once' }, scan.pins.length), 'rescan7:' + scan.id, undefined, scan.pins, { free: true, speed: 'scheduled' });
+      await createScan(scan.userId, await withChosenNetwork(scan.userId, { ...parseSpec(scan), scheduleType: 'once' }, scan.pins), 'rescan7:' + scan.id, undefined, scan.pins, { free: true, speed: 'scheduled' });
       started++;
     } catch (e) {
       console.warn('[free-rescan] could not start the re-run of', scan.id, (e as Error).message);

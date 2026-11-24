@@ -107,7 +107,7 @@ async function execute(job: Job, token?: string) {
       // internet while Proxy-Seller's prepaid data lasts (the scan's town set up for it), then, for
       // a customer's scan only, on metered mobile data. Otherwise it waits for a line. Each point
       // records where it went out (proxySource).
-      if (homeOverflowReady(pin.scan)) {
+      if (await homeOverflowReady(pin.scan)) {
         lanePoint = false;
         pin.scan = { ...pin.scan, network: 'residential' };
         console.log('[lane] point', pin.id, 'overflows to home internet (Proxy-Seller): every lane is busy');
@@ -613,8 +613,13 @@ let templatesReadAt = Date.now(),
   mobileTrafficAt = 0,
   mobileTraffic: { leftBytes: number | null; todayBytes: number | null; limitBytes: number | null; at: string } | null = null;
 
-/** Home internet can take an overflow point: the scan's town is set up on Proxy-Seller and its prepaid package has room. */
-const homeOverflowReady = (scan: { proxyRegion: string | null }) => Boolean(scan.proxyRegion) && listsEnabled() && homeHasRoom(traffic);
+/**
+ * Home internet can take an overflow point: the scan's town is set up on Proxy-Seller, its prepaid
+ * package has room, and the town's lists are not marked down (that mark lapses 15 minutes after
+ * the last failure, so the spill-over goes back to it on its own).
+ */
+const homeOverflowReady = async (scan: { proxyRegion: string | null }) =>
+  Boolean(scan.proxyRegion) && listsEnabled() && homeHasRoom(traffic) && !(await proxyOutageSince(scan.proxyRegion as string));
 
 /** Metered mobile data can take an overflow point: set up, and more than half a GB left (or not read yet). */
 const overflowReady = () => Boolean(mobileProvider()) && (mobileTraffic?.leftBytes == null || mobileTraffic.leftBytes > 0.5e9);

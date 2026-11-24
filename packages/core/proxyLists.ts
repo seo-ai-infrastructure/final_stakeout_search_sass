@@ -280,15 +280,16 @@ export async function listsForPin(
  * Proxy-Seller bills bandwidth whenever a phone still points at a list, even while idle. Phones
  * move to their own idle proxy between points (the worker's idleProxy), and this is the backstop:
  * a list no open scan needs is deleted 3 minutes after its last use (PROXY_LIST_KEEP_MINUTES; see
- * listsToRelease), in Proxy-Seller and here, so nothing can stay on it. Home-internet scans only:
- * a mobile-data scan uses no list. The next scan creates fresh lists (ensureList, or listsForPin
+ * listsToRelease), in Proxy-Seller and here, so nothing can stay on it. A running mobile scan with a
+ * home-internet town keeps that town's lists too: the phones the unlimited lines can't take use
+ * them (overflowTown.ts). The next scan creates fresh lists (ensureList, or listsForPin
  * above). `minIdleMs` 0 deletes at once (a phone could not be moved off its paid proxy).
  * Returns how many were deleted.
  */
 export async function releaseIdleProxyLists(minIdleMs = Number(process.env.PROXY_LIST_KEEP_MINUTES ?? 3) * 60000) {
   const open = async () => {
     const scans = await db.gridScan.findMany({
-      where: { status: { in: ['QUEUED', 'RUNNING'] }, network: { not: 'mobile' }, proxyRegion: { not: null } },
+      where: { status: { in: ['QUEUED', 'RUNNING'] }, proxyRegion: { not: null } },
       select: { proxyRegion: true, createdAt: true },
     });
     return {
