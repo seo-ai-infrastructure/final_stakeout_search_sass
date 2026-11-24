@@ -1399,6 +1399,15 @@ export async function measureMobile(p: Pin, d: LeasedDevice, run: RunContext) {
   // How the template refreshed Google's location on this run (v3.42+), remembered per phone. A
   // skip counts only when the template confirms it skipped the hunt.
   ev.locationPath = locationPathOf(b.meta);
+  // Where the template's time went on this run (the recorder notes both): the warm-up searches and
+  // location refresh before the keyword is typed, then the real search. One line per point, so two
+  // template versions can be compared.
+  {
+    const num = (k: string) => { const m = new RegExp('^' + k + '=(\\d+)', 'm').exec(b.meta); return m ? Number(m[1]) : null; };
+    const warm = num('rec_wait'), search = num('rpa_end_t');
+    if (warm !== null || search !== null)
+      console.log('[script] point', `${p.rowIdx + 1},${p.colIdx + 1}`, 'on', d.imageId, '· v' + (tpl?.vars.find((v) => v.key === 'template_version')?.value ?? '?'), '· before the keyword', (warm ?? '?') + 's', '· the search', (search ?? '?') + 's', '· location', ev.locationPath ?? 'none');
+  }
   if (ev.locationPath) Object.assign(proof, { locationPath: ev.locationPath });
   if (knowsSkip) {
     const skipped = hunt.skip && /^hunt_skipped=1/m.test(b.meta);
