@@ -705,6 +705,9 @@ model PocketTest {
   refundWhy   String?
   /// When the buyer was emailed how it ended: the video is ready, or the $1 went back.
   notifiedAt  DateTime?
+  /// A correction email is owed (set by hand when a result we showed was wrong and has been put right), and when it went.
+  correctionAt     DateTime?
+  correctionSentAt DateTime?
   /// For the limit of two tests in 30 days: a hash of the buyer's IP, and Stripe's fingerprint of the card.
   ipHash          String?
   cardFingerprint String?

@@ -194,7 +194,38 @@ export async function settlePockets(): Promise<{ told: number }> {
     const after = await closePocket(row, stage === 'done').catch((e) => (console.error('[pocket] not closed:', row.id, (e as Error).message), row));
     if (after.notifiedAt) told++;
   }
+  told += await sendCorrections();
   return { told };
+}
+
+/**
+ * Correction emails that are owed (correctionAt set by hand on a test whose result we first showed
+ * wrong and have since put right): the buyer is told what was wrong and what the phone really found.
+ * Once each. Only for a finished test with a business named and a rank to report.
+ */
+async function sendCorrections(): Promise<number> {
+  if (!mailerConfigured()) return 0;
+  const owed = await db.pocketTest.findMany({ where: { correctionAt: { not: null }, correctionSentAt: null, scanId: { not: null }, refundedAt: null }, take: 10 });
+  let sent = 0;
+  for (const row of owed) {
+    const pin = await db.gridPin.findFirst({ where: { scanId: row.scanId!, status: 'COMPLETED' }, select: { rankFound: true, topCompetitors: true } });
+    if (!row.business || !pin?.rankFound) continue;
+    const mine = await db.pocketTest.updateMany({ where: { id: row.id, correctionSentAt: null }, data: { correctionSentAt: new Date() } });
+    if (!mine.count) continue;
+    const names = Array.isArray(pin.topCompetitors) ? (pin.topCompetitors as unknown[]).filter((n): n is string => typeof n === 'string') : [];
+    const shown = names[pin.rankFound - 1];
+    const why = shown && shown !== row.business ? `Google lists the business as “${shown}”, and we failed to match it to the name you typed.` : 'we failed to match the listing to the name you typed.';
+    await sendNoticeEmail(
+      row.email,
+      `Correction: ${row.business} is #${pin.rankFound} for “${row.keyword}”`,
+      [`${row.paidAt && Date.now() - row.paidAt.getTime() < 20 * 3600000 ? 'Earlier today' : 'Earlier'} your pocket test page said our phone did not find ${row.business}. That was our mistake: ${why}`, `The search itself was right. Our phone found you at #${pin.rankFound} in the map results at your spot, and your page now shows that, with the same video.`],
+      { label: 'See your corrected result', url: appUrl('/pocket-test/' + row.token) },
+    ).then(() => { sent++; console.log('[pocket] correction sent:', row.id); }).catch(async (e) => {
+      console.error('[pocket] correction not sent:', (e as Error).message);
+      await db.pocketTest.updateMany({ where: { id: row.id }, data: { correctionSentAt: null } });
+    });
+  }
+  return sent;
 }
 
 /** The account a pocket test made, while nobody has chosen its password: only the buyer's browser is in it. */
