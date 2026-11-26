@@ -1,11 +1,11 @@
-import { ArrowUpRight, MapPin } from 'lucide-react';
+import { ArrowUpRight, Check, MapPin, X } from 'lucide-react';
 import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, LINES, type AccountPlan, type Line } from '@stakeout/core/gbpPlans';
 import { DEMO, scanStats, shareReportUrl } from '@/lib/demo-real-scans';
 import { CLOSER, WELCOME, usd } from '@/lib/pricing';
 import { Arrow, OfferBanner, SiteFoot, SiteNav } from './SiteKit';
 import { HREF } from './links';
 import { RecordedSearchLink } from './RecordedSearchLink';
-import PocketBanner from '../pocket/PocketBanner';
+import PocketBanner, { PocketOpenButton } from '../pocket/PocketBanner';
 import './site.css';
 import './landing.css';
 
@@ -33,12 +33,22 @@ const planCopy: Record<AccountPlan, string> = {
   P_MAX: 'Check five keywords at thirty locations twice a month on 21-pin circle grids. Give every account manager a seat.',
 };
 
+/** Why a grid from real phones differs from a simulated one (the section under the hero). */
+const whyCards: { tag: string; title: string; body: string }[] = [
+  { tag: 'THE SCRAPER CRACKDOWN', title: 'Maps API ≠ The Real Local Pack', body: 'Recent Google anti-scraping updates locked traditional scrapers out of live search pages. To keep their grids running, most rank trackers quietly switched to querying raw Maps-only API feeds. That’s NOT the real Google Search 3-Pack—and it leaves you completely blind to mobile AI Overviews and sponsored ads shoving your client below the fold.' },
+  { tag: 'THE “MOBILE” ILLUSION', title: 'Resizing a Desktop Scraper Isn’t Mobile', body: 'Slapping a mobile user-agent onto a data-center server and shrinking the window width doesn’t fool Google. Headless browsers and spoofed GPS coordinates fail modern browser and GPU checks immediately—returning stripped-down desktop fallbacks instead of what a real buyer on a cellular network actually sees.' },
+  { tag: 'HARDWARE ATTESTATION', title: 'Real Android Hardware on Live 5G', body: 'Google gates true mobile SERP features behind hardware-level device checks like the Google Play Integrity API—something that is virtually impossible to pass with headless scrapers or emulators. Stakeout Search is the only local tracker running physical Android devices on real 5G lines, recording video receipts of every search.' },
+];
+const whyLegacy = ['Pushed into Maps-only API endpoints after Google’s scraper crackdown', 'Data-center IPs + spoofed “mobile” browser headers', 'Fails Google Play Integrity hardware attestation', 'Blind to real mobile AI Overviews & true 3-Pack displacement'];
+const whyStakeout = ['Real Google Search & Maps captured on physical Android hardware', 'Live 5G cellular lines—never data-center proxies', 'Passes Play Integrity API natively with real device silicon', 'Video receipt + AI Overview + real Local Pack on every pin'];
+
 export default function Landing({ live, plans }: { live: boolean; plans?: boolean }) {
+  // The $1 pocket test (POCKET_TEST=off on the website takes it down, and its buttons with it).
+  const pocket = process.env.POCKET_TEST !== 'off';
   return (
     <div id="top" className="so lp">
       <SiteNav page="home" plans={plans} />
-      {/* The $1 pocket test (POCKET_TEST=off on the website takes it down). */}
-      {process.env.POCKET_TEST !== 'off' && <PocketBanner />}
+      {pocket && <PocketBanner />}
       <main>
         <section className="lp-hero" aria-labelledby="lp-title">
           <div className="lp-wrap lp-hero-layout">
@@ -69,6 +79,46 @@ export default function Landing({ live, plans }: { live: boolean; plans?: boolea
                 <div><strong>{result.notFoundButNamed}<small> / {result.n}</small></strong><span>AI mention without a local rank</span></div>
               </div>
             </figure>
+          </div>
+        </section>
+
+        <section id="real-hardware" className="lp-band lp-why" aria-labelledby="lp-why-title">
+          <div className="lp-wrap">
+            <p className="lp-kicker"><span className="lp-signal" /> REAL HARDWARE VS. SIMULATED GRIDS</p>
+            <h2 id="lp-why-title">Why We Are the Only Accurate Local Map Grid on the Market</h2>
+            <p>Just because a rank tracker says “mobile results” doesn’t mean it’s actually pulling mobile results.</p>
+            <div className="lp-why-cards">
+              {whyCards.map((c) => (
+                <article key={c.tag} className="lp-why-card">
+                  <p className="lp-why-tag">{c.tag}</p>
+                  <h3>{c.title}</h3>
+                  <p>{c.body}</p>
+                </article>
+              ))}
+            </div>
+            <div className="lp-why-versus">
+              <div className="lp-why-col lp-why-legacy">
+                <h3>Legacy Map Grid Trackers</h3>
+                <ul>{whyLegacy.map((t) => <li key={t}><X size={17} aria-hidden="true" /><span>{t}</span></li>)}</ul>
+              </div>
+              <div className="lp-why-col lp-why-us">
+                <h3>Stakeout Search</h3>
+                <ul>{whyStakeout.map((t) => <li key={t}><Check size={17} aria-hidden="true" /><span>{t}</span></li>)}</ul>
+              </div>
+            </div>
+            <div className="lp-why-cta">
+              {pocket ? (
+                <>
+                  <p>Skeptical? Good. Pull out your phone and fact-check our real Android hardware against your own pocket right now.</p>
+                  <PocketOpenButton className="lp-why-button">Test Your Location Live for $1 <Arrow size={17} /></PocketOpenButton>
+                </>
+              ) : (
+                <>
+                  <p>See the search behind every pin on real Android phones.</p>
+                  <AuditLink plans={plans} />
+                </>
+              )}
+            </div>
           </div>
         </section>
 

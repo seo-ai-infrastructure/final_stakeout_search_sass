@@ -4,6 +4,13 @@ import { Smartphone, X } from 'lucide-react';
 import PocketTestForm from './PocketTestForm';
 import './pocket.css';
 
+const POCKET_OPEN = 'stakeout:pocket-open';
+
+/** A button anywhere on the homepage that opens the pocket test's panel (the one the banner owns). */
+export function PocketOpenButton({ className, children }: { className?: string; children: React.ReactNode }) {
+  return <button type="button" className={className} onClick={() => window.dispatchEvent(new Event(POCKET_OPEN))}>{children}</button>;
+}
+
 /**
  * The strip under the site's header that dares a visitor to check us against the phone in their
  * hand, and the panel it opens with the $1 pocket test's form (so nobody leaves the page to start).
@@ -17,6 +24,12 @@ export default function PocketBanner() {
     if (open && !d.open) d.showModal();
     if (!open && d.open) d.close();
   }, [open]);
+  // Other buttons on the page (PocketOpenButton) open the same panel.
+  useEffect(() => {
+    const show = () => setOpen(true);
+    window.addEventListener(POCKET_OPEN, show);
+    return () => window.removeEventListener(POCKET_OPEN, show);
+  }, []);
   return (
     <>
       <aside className="pk-banner" aria-label="The $1 Pocket Test">
