@@ -1,4 +1,5 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import { businessKey } from '@stakeout/core/locations';
 type Node = { node?: Node[]; [attribute: string]: unknown };
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -17,6 +18,12 @@ const normalize = (s: string) =>
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
+/**
+ * The same business by name: the exact name, or the name without what a customer rarely types the
+ * way Google shows it: the company ending ("L.L.C.", "Inc", "Co"), "&" for "and", "The", accents
+ * and punctuation. "D & M Master Electric" is "D & M Master Electric L.L.C.".
+ */
+export const sameBusinessName = (a: string, b: string) => normalize(a) === normalize(b) || businessKey(a) === businessKey(b);
 function walk(n: Node): Node[] {
   return [n, ...(n.node ?? []).flatMap(walk)];
 }
@@ -97,7 +104,7 @@ export function parsePinXmlBundle(
           } else if (!seen.has(normalize(c.name)) && names.length < 20) {
             seen.add(normalize(c.name));
             names.push(c.name);
-            if (normalize(c.name) === normalize(target)) matchedDumpIndex = index;
+            if (sameBusinessName(c.name, target)) matchedDumpIndex = index;
           }
         }
       }
@@ -129,7 +136,7 @@ export function parsePinXmlBundle(
           continue;
         seen.add(normalize(name));
         names.push(name);
-        if (normalize(name) === normalize(target)) matchedDumpIndex = index;
+        if (sameBusinessName(name, target)) matchedDumpIndex = index;
       }
     }
   });
@@ -138,8 +145,7 @@ export function parsePinXmlBundle(
   // A recognised Maps results list is a result even when only ads were on screen.
   if (!names.length && !noResults && !hasAiOverview && !(mapsList && ads.length))
     throw new Error('UNRECOGNIZED_RESULT_LAYOUT');
-  const targetKey = normalize(target);
-  const rank = names.findIndex((n) => normalize(n) === targetKey);
+  const rank = names.findIndex((n) => sameBusinessName(n, target));
   return {
     orderedBusinesses: names,
     targetRank: rank < 0 ? null : rank + 1,
@@ -177,9 +183,10 @@ function parseAiPanels(ai: string[], target: string) {
   const targetKey = normalize(target);
   return {
     hasAiOverview,
+    // Named as typed, or without its company ending and punctuation (as in sameBusinessName).
     targetCitedInAi:
       hasAiOverview &&
-      (' ' + normalize(aiOverviewText) + ' ').includes(' ' + targetKey + ' '),
+      ((' ' + normalize(aiOverviewText) + ' ').includes(' ' + targetKey + ' ') || (' ' + businessKey(aiOverviewText) + ' ').includes(' ' + businessKey(target) + ' ')),
     aiOverviewText,
     aiCitations: [...citations].slice(0, 100),
   };
@@ -248,8 +255,7 @@ export function parseWebResults(
   // ("no local results"), not an error. Only an unrecognisable page is rejected.
   if (!organic.length && !ads.length && !noResults && !locationSource)
     throw new Error('UNRECOGNIZED_RESULT_LAYOUT');
-  const targetKey = normalize(target);
-  const rank = organic.findIndex((n) => normalize(n) === targetKey);
+  const rank = organic.findIndex((n) => sameBusinessName(n, target));
   // First positional dump in which the target was actually on screen.
   let matchedDumpIndex: number | null = null;
   if (rank >= 0)
@@ -257,7 +263,7 @@ export function parseWebResults(
       const onScreen = trees(xml).some((root) =>
         walk(root).some(
           (n) =>
-            normalize(label(n)) === targetKey &&
+            sameBusinessName(label(n), target) &&
             String(n.bounds ?? '') !== '[0,0][0,0]',
         ),
       );

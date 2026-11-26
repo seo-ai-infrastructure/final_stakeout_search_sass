@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseWebResults } from '../apps/worker/src/xmlParser';
+import { parseWebResults, sameBusinessName } from '../apps/worker/src/xmlParser';
 
 // A real Chrome UI dump ("plumber near me", Mt. Juliet, TN), taken at the bottom
 // of the business list after scrolling. 974 of its 1,078 nodes are off screen.
@@ -39,4 +39,16 @@ test('reads how Google located the search and flags IP-based location', () => {
 test('finds the screen on which the target was actually visible', () => {
   const r = parseWebResults(finder, [finder.replaceAll('Champion Plumbing', 'Someone Else'), finder], [], 'Champion Plumbing');
   assert.equal(r.matchedDumpIndex, 1);
+});
+
+test('the business is matched without its company ending: customers rarely type it the way Google shows it', () => {
+  // A real case: the customer typed the name without "L.L.C." and was shown as not found at a point where it was #1.
+  assert.equal(sameBusinessName('D & M Master Electric L.L.C.', 'D & M Master Electric'), true);
+  for (const [shown, typed] of [['Elite Electrical Contractors, LLC', 'Elite Electrical Contractors'], ['A-Z ELECTRIC INC', 'A-Z Electric'], ['Smith & Sons Plumbing Co.', 'Smith and Sons Plumbing'], ['The Drain Doctor', 'Drain Doctor'], ['Joe’s Pizza', "Joe's Pizza"], ['Peña Law, P.C.', 'Pena Law PC']])
+    assert.equal(sameBusinessName(shown, typed), true, shown + ' / ' + typed);
+  // Still a different business: another word in the name, or only part of it.
+  for (const [shown, typed] of [['D & M Master Electric L.L.C.', 'D & M Electric'], ['Walcheski Electric', 'Kith Electric'], ['First Class Electric', 'First Class Electric of Queens'], ['R Benimadho & Sons Electrical', 'Benimadho Electrical']])
+    assert.equal(sameBusinessName(shown, typed), false, shown + ' / ' + typed);
+  assert.equal(parseWebResults(finder, [], [], 'Champion Plumbing LLC').targetRank, 10, 'typed with an ending Google does not show');
+  assert.equal(parseWebResults(finder, [], [], 'Mt Juliet Plumbing & Leak Detection, Inc.').targetRank, 1);
 });
