@@ -62,25 +62,19 @@ export async function POST(req: Request) {
         s.network = 'mobile';
         s.ispMode = 'any';
         s.isps = [];
-      } else if (u.role !== 'ADMIN' || body.network === 'auto') {
-        // The network is ours to choose, not the customer's (nor an admin's on Automatic): home internet
-        // while Proxy-Seller has room for the scan, then mobile data for good (networkChoice.ts).
+      } else {
+        // Every phone scan runs on mobile data over our 5G lines (networkChoice.ts): the network is
+        // not a choice, for a customer or an admin. Home internet is no longer offered.
         s.network = await chooseNetwork(s.gridSize * s.gridSize, s.targetType, { internal: u.role === 'ADMIN' });
         if (s.network !== 'residential') {
           s.ispMode = 'any';
           s.isps = [];
         }
-      } else if (s.network !== 'residential') {
-        // An admin's own test runs never use metered mobile data: only the unlimited mobile line.
-        const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
-        if (!health?.mobileLanes) throw new InputError('Admin test runs use only the unlimited mobile line, and none is connected. Choose Automatic or Residential.');
       }
-      // The mobile network (on its own or in a mix): admins only until it is switched on for customers.
-      if (s.network !== 'residential' && u.role !== 'ADMIN' && !settings.mobileForCustomers) throw new InputError('The mobile network is not available yet. Choose Residential Network.');
-      if (s.network !== 'residential' && s.targetType === 'desktop_aimode') throw new InputError('The mobile network is for phone scans.');
-      if (s.network !== 'residential') {
+      if (s.network !== 'residential' && !proof) {
         const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
-        if (!health?.mobileData) throw new InputError('The mobile network is not available right now. Choose Residential Network.');
+        // An admin's own runs never use metered mobile data: they need a line.
+        if (u.role === 'ADMIN' ? !health?.mobileLanes : !health?.mobileData) throw new InputError('Scans are paused for a few minutes while our 5G lines reconnect. Try again shortly.', 503);
       }
     const key = req.headers.get('Idempotency-Key') ?? randomUUID();
     if (!requestKeyValid(key))

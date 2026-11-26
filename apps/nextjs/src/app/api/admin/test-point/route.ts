@@ -35,11 +35,12 @@ export async function POST(req: Request) {
       isps: [],
       trackAiOverviews: true,
       scheduleType: 'once',
-      network: b.network === 'mobile' ? 'mobile' : 'residential',
+      // Like every phone scan: mobile data on the 5G lines (an admin's run never uses metered data).
+      network: 'mobile',
     });
     if (s.network === 'mobile') {
       const health = await redis().get('stakeout:health').then((h) => (h ? JSON.parse(h) : null)).catch(() => null);
-      if (!health?.mobileData) throw new InputError('Mobile data is not set up: add VOIDMOB_API_KEY and VOIDMOB_PROXY_ID to the worker.');
+      if (!health?.mobileLanes) throw new InputError('No 5G line is connected to the worker right now. Try again in a few minutes.', 503);
     }
     const phone = typeof b.imageId === 'string' && /^[A-Za-z0-9]{3,20}$/.test(b.imageId) ? b.imageId : '';
     if (phone) {

@@ -285,18 +285,15 @@ export async function cloneScheduledRun(
 }
 
 /**
- * A customer's next run goes out on the network chosen today (networkChoice.ts), not its first
- * run's; an admin's keeps its own. A mobile run without a home-internet town (its first run was
+ * A next run goes out on the network chosen today (networkChoice.ts: mobile data for every phone
+ * scan), not its first run's, so a repeat that began on home internet moves to the 5G lines. A mobile run without a home-internet town (its first run was
  * mobile too) gets one, so the phones the unlimited lines can't take can use Proxy-Seller's
  * prepaid data (overflowTown.ts).
  */
 async function withChosenNetwork(userId: string, spec: ScanSpec, pins: { city: string; stateCode: string }[]): Promise<ScanSpec> {
   const owner = await db.user.findUnique({ where: { id: userId }, select: { role: true } });
-  let out = spec;
-  if (owner?.role !== 'ADMIN') {
-    const network = await chooseNetwork(pins.length, spec.targetType);
-    out = network === 'residential' ? { ...spec, network } : { ...spec, network, ispMode: 'any', isps: [] };
-  }
+  const network = await chooseNetwork(pins.length, spec.targetType, { internal: owner?.role === 'ADMIN' });
+  let out: ScanSpec = network === 'residential' ? { ...spec, network } : { ...spec, network, ispMode: 'any', isps: [] };
   if (out.network === 'mobile' && !out.proxyRegion) {
     const town = await mobileOverflowTown(out.centerLat, out.centerLng, pins);
     if (town) out = { ...out, proxyRegion: town.region, proxyCity: town.city };

@@ -18,7 +18,7 @@ import {
   Globe,
 } from 'lucide-react';
 import { type IspMode, type IspOption } from '@/components/IspSelectorDropdown';
-import { NETWORK_LABELS, pinNetwork, placedLayout, type ScanNetwork } from '@stakeout/core/network';
+import { placedLayout } from '@stakeout/core/network';
 import { CreditTopUpModal } from '@/components/CreditTopUpModal';
 import { stateTimezone } from '@stakeout/core/fleetHealth';
 import { SCHEDULE_LEAD_MS, zonedMoment } from '@stakeout/core/speed';
@@ -78,9 +78,8 @@ export function NewScanWizard() {
   const [detectedCity, setDetectedCity] = useState('Lakeland');
   const [detectedState, setDetectedState] = useState('FL');
   const [ispMode, setIspMode] = useState<IspMode>('any');
-  // Which network the searches go out on. Automatic: the server chooses (home internet while
-  // Proxy-Seller has room, then mobile data). Only an admin sees the choice, under More options.
-  const [network, setNetwork] = useState<ScanNetwork | 'auto'>('auto');
+  // The network is not a choice: the server runs every phone scan on mobile data over the 5G lines.
+  const network = 'auto';
   const [admin, setAdmin] = useState(false);
   const [mobileData, setMobileData] = useState<{ available: boolean; ready: boolean; creditsPerPoint: number } | null>(null);
   const [ispSelected, setIspSelected] = useState<string[]>([]);
@@ -433,11 +432,11 @@ export function NewScanWizard() {
     const kept = shape === 'wealth'
       ? placedLayout(previewPoints.filter((p) => !p.skipped), OFFERED_GRID_SIZES).cells
       : previewPoints.filter((p) => !p.skipped && !p.out).map((p) => { const [r, c] = p.key.split('_').map(Number); return { rowIdx: r, colIdx: c }; });
-    const net = network === 'auto' ? 'residential' : network;
-    const mobilePins = net === 'residential' ? 0 : kept.filter((p) => pinNetwork(net, p.rowIdx, p.colIdx) === 'mobile').length;
+    // Every phone scan runs on mobile data (the 5G lines): each pin is a mobile-data point.
+    const mobilePins = isDesktop ? 0 : kept.length;
     // One phone session a pin, across the board (a mobile-data point at the admin setting's price, 1 by default).
     const totalCost = isDesktop ? totalPins : totalPins - mobilePins + mobilePins * mobilePrice;
-    const costPerPin = isDesktop ? 1 : network === 'mobile' ? mobilePrice : 1;
+    const costPerPin = isDesktop ? 1 : mobilePrice;
     const spanMiles = ((gridSize - 1) * spacingKm * 0.621371).toFixed(1);
     return {
       totalPins,
@@ -1076,7 +1075,6 @@ export function NewScanWizard() {
                 </> : <p className={styles.hint}>First in line, at the same one phone session a grid point.</p>}
                 {scheduleProblem && <p className={styles.errorText}>{scheduleProblem}</p>}
               </fieldset>
-              {mobileData && admin && <fieldset><legend>Network</legend><div className={styles.networkOptions} role="radiogroup" aria-label="Network">{(['auto', 'residential', 'mobile', 'mix'] as const).map((id) => <button key={id} type="button" role="radio" aria-checked={network === id} disabled={(id === 'mobile' || id === 'mix') && !mobileData.ready} onClick={() => setNetwork(id)}><span>{id === 'auto' ? 'Automatic' : NETWORK_LABELS[id]}</span><small>{id === 'auto' ? 'Unlimited mobile line, else home internet' : `${id === 'residential' || mobileData.creditsPerPoint === 1 ? '1' : id === 'mobile' ? mobileData.creditsPerPoint : `1–${mobileData.creditsPerPoint}`} session / pin`}</small></button>)}</div>{!mobileData.ready && <p className={styles.hint}>Mobile network currently unavailable.</p>}</fieldset>}
               <fieldset><legend>Grid center</legend><div className={styles.dateFields}><label>Latitude<input aria-label="Center latitude" type="number" step="any" min="-85" max="85" value={centerLat} onChange={(e) => setCenterLat(Number(e.target.value))} /></label><label>Longitude<input aria-label="Center longitude" type="number" step="any" min="-180" max="180" value={centerLng} onChange={(e) => setCenterLng(Number(e.target.value))} /></label></div><p className={styles.hint}>You can also drag the orange center marker on the map.</p></fieldset>
               {businessId && <button type="button" className={styles.deleteBusiness} onClick={deleteBusiness}>Delete saved setup</button>}
             </div>}

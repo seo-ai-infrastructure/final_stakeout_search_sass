@@ -3,12 +3,10 @@ import { redis } from './redis';
 import { getSettings, saveSettings } from './settings';
 
 /**
- * The network a scan runs on when we choose it (every customer scan; an admin's on Automatic).
- * Mobile data is the default once it's on (mobileFirst) or an unlimited mobile line is connected:
- * the line first, metered VoidMob data for its overflow (the worker), home internet when neither
- * can take the scan. Until then home internet (Proxy-Seller) runs while its package has room for
- * the whole scan; the first scan it can't fit turns mobileFirst on for good (an admin can turn it
- * off in Ops). Internal (admin) runs never use metered mobile data: the line or home internet.
+ * The network a scan runs on: mobile data for every phone scan, on our 5G lines, with metered
+ * VoidMob data for a line's overflow (the worker). Home internet (Proxy-Seller) was the first
+ * network and is no longer given to a scan. Internal (admin) runs never use metered mobile data:
+ * they wait for a line.
  */
 
 /** Data a point is allowed for when choosing (measured: about 20 MB on home internet, 22–28 MB on mobile). */
@@ -36,30 +34,20 @@ export function packageEnds(v: string | null | undefined): number | null {
 }
 
 /**
- * The choice itself. switchNow: this is the scan home internet first can't fit, so mobile data
- * becomes the network for good. Desktop scans stay on home internet (mobile data is for phones).
- * With mobile data off, not ready, low, or short of room for the scan, home internet is kept.
+ * The choice itself: every phone scan runs on mobile data, on our 5G lines first (the worker sends a
+ * line's overflow to metered data). Home internet is no longer a network a scan can be given. A
+ * desktop scan is not a phone scan and is not on a line. (h, s and points are kept for the callers;
+ * switchNow is always false now.)
  */
 export function pickNetwork(
-  h: NetworkHealth,
-  s: { mobileForCustomers: boolean; mobileFirst: boolean },
-  points: number,
+  _h: NetworkHealth,
+  _s: { mobileForCustomers: boolean; mobileFirst: boolean },
+  _points: number,
   targetType: string,
-  opts: { internal?: boolean } = {},
-  now = Date.now(),
+  _opts: { internal?: boolean } = {},
+  _now = Date.now(),
 ): { network: 'residential' | 'mobile'; switchNow: boolean } {
-  if (targetType.startsWith('desktop_')) return { network: 'residential', switchNow: false };
-  const need = points * BYTES_PER_POINT;
-  const line = Boolean(h?.mobileLanes);
-  const mobileLeft = h?.mobileTraffic?.leftBytes;
-  const metered = Boolean(h?.mobileProvider) && !h?.mobileTrafficLow && (typeof mobileLeft !== 'number' || mobileLeft >= need + MOBILE_RESERVE);
-  const mobileOk = opts.internal ? line : s.mobileForCustomers && (line || metered);
-  if (s.mobileFirst || line) return { network: mobileOk ? 'mobile' : 'residential', switchNow: false };
-  const home = h?.traffic;
-  const ends = packageEnds(home?.expires);
-  const homeOk = !(ends !== null && ends <= now) && (typeof home?.leftBytes !== 'number' || home.leftBytes >= need + HOME_RESERVE);
-  if (homeOk || !mobileOk) return { network: 'residential', switchNow: false };
-  return { network: 'mobile', switchNow: true };
+  return { network: targetType.startsWith('desktop_') ? 'residential' : 'mobile', switchNow: false };
 }
 
 /**

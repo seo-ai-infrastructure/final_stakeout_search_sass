@@ -95,6 +95,9 @@ async function execute(job: Job, token?: string) {
       await settlePin(pin.id, { data: await measureDesktop(pin) });
       return;
     }
+    // Home internet is no longer a scan network: a phone scan stored with it (made before the change,
+    // or a re-run of one) runs on mobile data over the 5G lines like every other.
+    if (pin.scan.network !== 'mobile') pin.scan = { ...pin.scan, network: 'mobile', ispMode: 'any', isps: [] };
     // While this state's proxies are all down, one point at a time checks whether they are back;
     // the rest wait here, without taking a phone or calling DuoPlus.
     const region = pinOutageKey(pin);

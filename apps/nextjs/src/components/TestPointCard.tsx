@@ -22,7 +22,6 @@ export function TestPointCard() {
   const [keyword, setKeyword] = useState('');
   const [phone, setPhone] = useState('');
   const [surface, setSurface] = useState('mobile_chrome');
-  const [network, setNetwork] = useState('residential');
   const [state, setState] = useState<{ busy: boolean; scanId?: string; error?: string }>({ busy: false });
   // Where the search is made from: the business's centre unless another place is chosen here.
   const [spot, setSpot] = useState<Spot | null>(null);
@@ -76,7 +75,7 @@ export function TestPointCard() {
     const res = await fetch('/api/admin/test-point', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keyword: keyword.trim(), targetBusiness: biz.name, targetKgmid: biz.kgmid ?? undefined, targetDomain: biz.domain ?? undefined, centerLat: spot?.lat ?? biz.centerLat, centerLng: spot?.lng ?? biz.centerLng, targetType: surface, network, imageId: phone || undefined }),
+      body: JSON.stringify({ keyword: keyword.trim(), targetBusiness: biz.name, targetKgmid: biz.kgmid ?? undefined, targetDomain: biz.domain ?? undefined, centerLat: spot?.lat ?? biz.centerLat, centerLng: spot?.lng ?? biz.centerLng, targetType: surface, imageId: phone || undefined }),
     });
     const d = await res.json().catch(() => ({}));
     setState(res.ok ? { busy: false, scanId: d.scanId } : { busy: false, error: d.error ?? 'Could not start the test point.' });
@@ -84,11 +83,11 @@ export function TestPointCard() {
   return (
     <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
       <h2 className="text-base font-bold">Test one point</h2>
-      <p className="mt-1 text-sm text-slate-400">One free search, set up exactly like a real scan, at the business’s centre or at any place you choose. Use it to test a template in a few minutes.</p>
+      <p className="mt-1 text-sm text-slate-400">One free search on a 5G line, set up exactly like a real scan, at the business’s centre or at any place you choose. Use it to test a template in a few minutes.</p>
       {!list.length ? (
         <p className="mt-4 text-sm text-slate-400">Save a business in New scan first.</p>
       ) : (
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_170px_150px_160px_auto] md:items-end">
+        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_1fr_170px_160px_auto] md:items-end">
           <label className="text-sm text-slate-300">Business
             <select value={bizId} onChange={(e) => { setBizId(e.target.value); setKeyword(list.find((b) => b.id === e.target.value)?.keywords[0] ?? ''); }} className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-white">
               {list.map((b) => <option key={b.id} value={b.id}>{b.name}{b.centerLabel ? ' · ' + b.centerLabel : ''}</option>)}
@@ -104,12 +103,6 @@ export function TestPointCard() {
               <option value="mobile_maps">Google Maps app</option>
               <option value="mobile_google">Google app</option>
               <option value="mobile_apple">Apple Maps</option>
-            </select>
-          </label>
-          <label className="text-sm text-slate-300">Network
-            <select value={network} onChange={(e) => setNetwork(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-sm text-white">
-              <option value="residential">Home internet</option>
-              <option value="mobile">Mobile data</option>
             </select>
           </label>
           <label className="text-sm text-slate-300">Phone
