@@ -74,6 +74,24 @@
 .lp-why-button:hover { filter: brightness(1.1); }
 @media (max-width: 900px) { .lp-why-cards { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .lp-why-versus { grid-template-columns: 1fr; } }
+/* The founder's story: the narrative, the video card and the pocket-test bar under both. */
+.lp-founder-layout { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 72px); align-items: start; }
+.lp main .lp-founder-story > p:not(.lp-kicker) { margin-top: 16px; max-width: 62ch; }
+.lp main .lp-founder-quote { margin: 22px 0 6px; padding: 4px 0 4px 20px; border-left: 3px solid var(--orange); color: #f4f5f7; font-size: clamp(18px, 1.6vw, 21px); line-height: 1.5; font-weight: 550; max-width: 58ch; }
+.lp-founder-card { border: 1px solid #344353; border-radius: 14px; padding: clamp(14px, 1.8vw, 22px); background: #151e29; }
+.lp main .lp-founder-badge { display: flex; align-items: center; gap: 8px; color: #ffc19d; font: 500 11px/1.6 'JetBrains Mono', monospace; letter-spacing: .08em; }
+.lp main .lp-founder-card h3 { margin-top: 8px; font-size: 19px; line-height: 1.3; font-weight: 650; letter-spacing: -.02em; text-wrap: balance; }
+.lp-founder-frame { position: relative; margin-top: 14px; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: #000; }
+.lp-founder-frame iframe, .lp-founder-frame button, .lp-founder-frame img { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.lp-founder-frame button { padding: 0; background: #000; cursor: pointer; }
+.lp-founder-frame img { object-fit: cover; opacity: .86; }
+.lp-founder-frame button:hover img { opacity: 1; }
+.lp-founder-play { position: absolute; left: 50%; top: 50%; translate: -50% -50%; display: grid; place-items: center; width: 68px; height: 68px; border-radius: 999px; background: #ff641e; color: #15100d; box-shadow: 0 6px 24px rgba(0, 0, 0, .55); }
+.lp-founder-play svg { margin-left: 3px; }
+.lp main .lp-founder-card figcaption { margin-top: 12px; color: #b5c1cf; font-size: 14px; line-height: 1.6; }
+.lp-founder .lp-why-cta { margin-top: clamp(28px, 4vw, 44px); }
+.lp a.lp-why-button { color: #15100d; }
+@media (max-width: 900px) { .lp-founder-layout { grid-template-columns: 1fr; } }
 .lp-plans { background: #0f161f; }
 .lp-seats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 32px; }
 .lp-seat { border: 1px solid #344353; border-radius: 12px; padding: clamp(18px, 2.3vw, 30px); background: #151e29; }

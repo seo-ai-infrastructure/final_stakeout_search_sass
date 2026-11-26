@@ -1,10 +1,11 @@
-import { ArrowUpRight, Check, MapPin, X } from 'lucide-react';
+import { ArrowUpRight, Check, MapPin, Video, X } from 'lucide-react';
 import { ACCOUNT_PLANS, ACCOUNT_PLAN_ORDER, LINES, type AccountPlan, type Line } from '@stakeout/core/gbpPlans';
 import { DEMO, scanStats, shareReportUrl } from '@/lib/demo-real-scans';
 import { CLOSER, WELCOME, usd } from '@/lib/pricing';
 import { Arrow, OfferBanner, SiteFoot, SiteNav } from './SiteKit';
 import { HREF } from './links';
 import { RecordedSearchLink } from './RecordedSearchLink';
+import { FounderVideo } from './FounderVideo';
 import PocketBanner, { PocketOpenButton } from '../pocket/PocketBanner';
 import './site.css';
 import './landing.css';
@@ -35,12 +36,15 @@ const planCopy: Record<AccountPlan, string> = {
 
 /** Why a grid from real phones differs from a simulated one (the section under the hero). */
 const whyCards: { tag: string; title: string; body: string }[] = [
-  { tag: 'THE SCRAPER CRACKDOWN', title: 'Maps API ≠ The Real Local Pack', body: 'Recent Google anti-scraping updates locked traditional scrapers out of live search pages. To keep their grids running, most rank trackers quietly switched to querying raw Maps-only API feeds. That’s NOT the real Google Search 3-Pack—and it leaves you completely blind to mobile AI Overviews and sponsored ads shoving your client below the fold.' },
-  { tag: 'THE “MOBILE” ILLUSION', title: 'Resizing a Desktop Scraper Isn’t Mobile', body: 'Slapping a mobile user-agent onto a data-center server and shrinking the window width doesn’t fool Google. Headless browsers and spoofed GPS coordinates fail modern browser and GPU checks immediately—returning stripped-down desktop fallbacks instead of what a real buyer on a cellular network actually sees.' },
-  { tag: 'HARDWARE ATTESTATION', title: 'Real Android Hardware on Live 5G', body: 'Google gates true mobile SERP features behind hardware-level device checks like the Google Play Integrity API—something that is virtually impossible to pass with headless scrapers or emulators. Stakeout Search is the only local tracker running physical Android devices on real 5G lines, recording video receipts of every search.' },
+  { tag: 'THE SCRAPER CRACKDOWN', title: 'Maps API ≠ The Real Local Pack', body: 'Recent Google anti-scraping updates locked traditional scrapers out of live search pages. Most grid trackers quietly pivoted to raw Maps-only API feeds—meaning you’re measuring a desktop word-association map, NOT the real Google Search 3-Pack where mobile buyers actually tap and call.' },
+  { tag: 'THE “MOBILE” ILLUSION', title: 'Headless Browsers Get Filtered', body: 'Shoving a mobile user-agent into a headless Chromium server doesn’t make it a phone, and legacy UULE coordinate tricks routinely snap back to the city center on “near me” keywords. Google flags synthetic browsers immediately and serves stripped-down fallback layouts.' },
+  { tag: 'HARDWARE ATTESTATION', title: 'Real Android Silicon on Live 5G', body: 'True mobile SERP features—especially dynamic mobile AI Overviews and real carrier-level Local Packs—sit behind hardware attestation (Google Play Integrity API) that is virtually impossible to pass without a physical phone. Stakeout is the only tracker running real Android hardware over live 5G lines.' },
 ];
-const whyLegacy = ['Pushed into Maps-only API endpoints after Google’s scraper crackdown', 'Data-center IPs + spoofed “mobile” browser headers', 'Fails Google Play Integrity hardware attestation', 'Blind to real mobile AI Overviews & true 3-Pack displacement'];
-const whyStakeout = ['Real Google Search & Maps captured on physical Android hardware', 'Live 5G cellular lines—never data-center proxies', 'Passes Play Integrity API natively with real device silicon', 'Video receipt + AI Overview + real Local Pack on every pin'];
+const whyLegacy = ['Pushed into Maps-only API feeds after Google’s scraper crackdown', 'Headless data-center browsers + spoofed UULE coordinates', 'Cannot pass Google Play Integrity hardware attestation', 'Blind to live mobile AI Overviews shoving the 3-Pack off-screen'];
+const whyStakeout = ['Live Google Search & Local Pack captured on physical Android phones', 'Real 5G cellular lines—zero data-center proxies', 'Passes Play Integrity API natively on real device hardware', 'Video receipt + AI Overview + true Map Pack on every pin'];
+
+/** The founder's story (the section under it), and the video it points to. */
+const FOUNDER_VIDEO_TITLE = 'When Measurement Becomes Noisy, Optimization Becomes Superstition.';
 
 export default function Landing({ live, plans }: { live: boolean; plans?: boolean }) {
   // The $1 pocket test (POCKET_TEST=off on the website takes it down, and its buttons with it).
@@ -106,18 +110,34 @@ export default function Landing({ live, plans }: { live: boolean; plans?: boolea
                 <ul>{whyStakeout.map((t) => <li key={t}><Check size={17} aria-hidden="true" /><span>{t}</span></li>)}</ul>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section id="founder-story" className="lp-band lp-founder" aria-labelledby="lp-founder-title">
+          <div className="lp-wrap">
+            <div className="lp-founder-layout">
+              <div className="lp-founder-story">
+                <p className="lp-kicker"><span className="lp-signal" /> WHY WE BUILT STAKEOUT SEARCH</p>
+                <h2 id="lp-founder-title">Bright Green Grids Nearly Cost Me Everything.</h2>
+                <p>Before building Stakeout Search, I converted my traditional SEO agency into a 100% performance lead-generation business. No retainers to hide behind—if the phones didn’t ring, my family didn’t eat.</p>
+                <p>Three months in, the phones went dead silent. Overnight, my revenue hit zero.</p>
+                <p>When I opened the three different rank-tracking tools I was paying hundreds of dollars a month to run, I didn’t see red. Across every single location, my dashboards were glowing with bright green grids.</p>
+                <blockquote className="lp-founder-quote">“On paper, three separate rank trackers swore we were dominating every neighborhood. In reality, the phones weren’t ringing—and I came within inches of losing my house, my cars, and everything I built for my family.”</blockquote>
+                <p>Out of pure necessity, I went down the rabbit hole to prove what was really happening. When measurement becomes noisy, optimization becomes superstition. I put the top rank trackers head-to-head against real phones at the exact same coordinates and caught them completely missing mobile reality and AI local packs.</p>
+                <p>I built Stakeout Search on real Android hardware and live 5G lines so a fake green grid could never blindside my livelihood again. Now you can run the exact same hardware for yours.</p>
+              </div>
+              <figure className="lp-founder-card">
+                <p className="lp-founder-badge"><Video size={14} aria-hidden="true" /> RECORDED BEFORE STAKEOUT EXISTED • UNFILTERED BREAKDOWN</p>
+                <h3>“{FOUNDER_VIDEO_TITLE}”</h3>
+                <FounderVideo title={FOUNDER_VIDEO_TITLE} />
+                <figcaption>Watch the original side-by-side breakdown: Putting traditional map grids up against real mobile phones on the exact same keyword, coordinates, and timestamp—exposing Maps API distortions and live mobile AI local packs that scrapers miss completely.</figcaption>
+              </figure>
+            </div>
             <div className="lp-why-cta">
-              {pocket ? (
-                <>
-                  <p>Skeptical? Good. Pull out your phone and fact-check our real Android hardware against your own pocket right now.</p>
-                  <PocketOpenButton className="lp-why-button">Test Your Location Live for $1 <Arrow size={17} /></PocketOpenButton>
-                </>
-              ) : (
-                <>
-                  <p>See the search behind every pin on real Android phones.</p>
-                  <AuditLink plans={plans} />
-                </>
-              )}
+              <p>Don’t take our word for it—and definitely don’t take your current tracker’s word for it. Pull out your phone and check us against your own pocket right now.</p>
+              {pocket
+                ? <PocketOpenButton className="lp-why-button">Run the $1 Pocket Test Live <Arrow size={17} /></PocketOpenButton>
+                : <a className="lp-why-button so-btn" href="#pricing">See plans and pricing <Arrow size={17} /></a>}
             </div>
           </div>
         </section>
