@@ -104,7 +104,15 @@ export const TOPUPS: (PriceItem & { plan: string })[] = [
 /** The welcome pack as sold before the seats: 25 credits. */
 const WELCOME_25: PriceItem = { ...WELCOME, key: 'welcome', credits: 25 };
 
-export const ALL_ITEMS: PriceItem[] = [WELCOME, ...PROSPECT_PACKS, TOPUP, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS, CLOSER, ...SESSION_PACKS, PLAN_TOPUP, BOOST, ...BRIEF_PACKS];
+/**
+ * The $1 pocket test: one live phone search on our 5G lines at the buyer's own spot, bought from the
+ * homepage without an account (lib/pocket.ts; never on the signed-in price list). Its $1 comes off
+ * the first month of a first plan (POCKET_COUPON).
+ */
+export const POCKET: PriceItem = { key: 'pocket', name: 'Pocket Test', credits: 0, cents: 100, blurb: 'One live phone search at your exact spot, with its video.' };
+export const POCKET_COUPON = 'stakeout_pocket_test_1';
+
+export const ALL_ITEMS: PriceItem[] = [POCKET, WELCOME, ...PROSPECT_PACKS, TOPUP, WHITE_LABEL_ITEM, ADMIN_TEST, ONBOARDING, ...PACKS, ...PLANS, ...PREPAID, ...TOPUPS, CLOSER, ...SESSION_PACKS, PLAN_TOPUP, BOOST, ...BRIEF_PACKS];
 /** The item a key names, for what a paid order brings. */
 export const itemByKey = (key: string | null | undefined) => ALL_ITEMS.find((i) => i.key === key);
 

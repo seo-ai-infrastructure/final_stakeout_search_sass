@@ -679,3 +679,37 @@ model WebhookDelivery {
   @@index([status, nextAt])
   @@index([userId, createdAt])
 }
+
+/// A $1 pocket test: one live phone search at the buyer's own spot, bought from the homepage without
+/// an account. The row is made before Stripe's checkout; the account and the one-point scan when it is paid.
+model PocketTest {
+  id          String    @id @default(cuid())
+  /// The secret in the result page's address.
+  token       String    @unique
+  email       String
+  keyword     String
+  business    String
+  lat         Float
+  lng         Float
+  placeLabel  String?
+  /// Stripe's checkout session, and after payment its customer (whose saved card a plan checkout offers).
+  checkoutId  String?   @unique
+  customerId  String?
+  paidAt      DateTime?
+  userId      String?
+  /// This purchase made the account (it had none): the buyer's browser is signed in to it on return.
+  madeAccount Boolean   @default(false)
+  scanId      String?   @unique
+  /// The $1 went back (the search could not be completed, or the account is closed), and why.
+  refundedAt  DateTime?
+  refundWhy   String?
+  /// For the limit of two tests in 30 days: a hash of the buyer's IP, and Stripe's fingerprint of the card.
+  ipHash          String?
+  cardFingerprint String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([email, createdAt])
+  @@index([ipHash, createdAt])
+  @@index([cardFingerprint])
+}

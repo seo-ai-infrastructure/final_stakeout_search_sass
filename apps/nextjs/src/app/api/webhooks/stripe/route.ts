@@ -2,6 +2,7 @@ import { db } from '@stakeout/db';
 import { InputError } from '@stakeout/core/grid';
 import { errorResponse } from '@/lib/api';
 import { fulfill } from '@/lib/billing';
+import { fulfilPocket } from '@/lib/pocket';
 import { activate, grantPoints, subscriptionEvent } from '@/lib/gbpBilling';
 import { settle } from '@/lib/creditSub';
 import { confirmService, serviceSubEvent } from '@/lib/services';
@@ -43,8 +44,14 @@ export async function POST(req: Request) {
         await confirmService(id).catch((err) => {
           if (!(err instanceof InputError && err.status === 409)) throw err;
         });
+      // A $1 pocket test: its account and its one-point search (the buyer coming back does the same).
+      const pocket = e.data?.object?.metadata?.kind === 'pocket';
+      if (typeof id === 'string' && pocket)
+        await fulfilPocket(id).catch((err) => {
+          if (!(err instanceof InputError && (err.status === 409 || err.status === 404))) throw err;
+        });
       // A session still waiting on a slow payment method is reported again when it is paid.
-      if (typeof id === 'string' && (await db.paymentOrder.findUnique({ where: { id } })))
+      if (typeof id === 'string' && !pocket && (await db.paymentOrder.findUnique({ where: { id } })))
         await fulfill(id).catch((err) => {
           if (!(err instanceof InputError && err.status === 409)) throw err;
         });

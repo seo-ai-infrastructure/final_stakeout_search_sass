@@ -1,0 +1,105 @@
+/* The $1 pocket test: the banner under the header, its panel and form, and the result page. */
+.so .pk-banner, .so .pk-banner *, .so .pk-drawer, .so .pk-drawer *, .so .pk-page, .so .pk-page * { box-sizing: border-box; }
+.so .pk-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 18px; padding: 10px clamp(16px, 3vw, 32px); background: #1a0f08; border-bottom: 1px solid rgba(255, 112, 45, .4); color: #ffe3d1; font-size: 14px; line-height: 1.45; }
+.so .pk-banner p { display: flex; gap: 9px; align-items: flex-start; margin: 0; max-width: 78ch; color: inherit; font-size: inherit; }
+.so .pk-banner p svg { flex: none; margin-top: 2px; color: #ff702d; }
+.so .pk-banner strong { color: #fff; }
+.so .pk-banner-cta { flex: none; min-height: 38px; padding: 8px 15px; border: 0; border-radius: 8px; background: #ff641e; color: #15100d; font: 700 14px/1.2 inherit; cursor: pointer; }
+.so .pk-banner-cta:hover { filter: brightness(1.1); }
+
+.so .pk-drawer { margin: 0 0 0 auto; width: min(100vw, 520px); height: 100dvh; max-height: 100dvh; max-width: 100vw; padding: 0; border: 0; border-left: 1px solid #2a3542; background: #0e141c; color: #f4f5f7; }
+.so .pk-drawer::backdrop { background: rgba(3, 6, 10, .72); }
+.so .pk-drawer-in { padding: 20px clamp(16px, 4vw, 26px) 32px; }
+.so .pk-drawer header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.so .pk-drawer h2 { margin: 0; font-size: 22px; letter-spacing: -.03em; }
+.so .pk-close { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid #2a3542; border-radius: 8px; background: transparent; color: #cbd5e1; cursor: pointer; }
+.so .pk-lede { margin: 10px 0 18px; color: #b5c1cf; font-size: 15px; line-height: 1.55; }
+
+.so .pk-form { display: grid; gap: 14px; }
+.so .pk-field { display: grid; gap: 6px; color: #dbe3ec; font-size: 14px; font-weight: 600; }
+.so .pk-form input { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #3a4757; border-radius: 8px; background: #0a0f15; color: #f4f5f7; font: 400 16px/1.3 inherit; }
+.so .pk-form input::placeholder { color: #6f7d8d; }
+.so .pk-form input:focus-visible, .so .pk-form button:focus-visible, .so .pk-plan:focus-visible, .so .pk-link:focus-visible { outline: 3px solid #ff702d; outline-offset: 2px; }
+.so .pk-where { display: grid; gap: 10px; margin: 0; padding: 14px; border: 1px solid #2a3542; border-radius: 10px; min-width: 0; }
+.so .pk-where legend { padding: 0 6px; color: #dbe3ec; font-size: 14px; font-weight: 600; }
+.so .pk-locate { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 14px; border: 1px solid #ff702d; border-radius: 8px; background: rgba(255, 112, 45, .12); color: #ffd3bd; font: 650 15px/1.2 inherit; cursor: pointer; }
+.so .pk-locate:disabled { opacity: .6; cursor: default; }
+.so .pk-search { display: flex; gap: 8px; }
+.so .pk-search input { flex: 1; min-width: 0; }
+.so .pk-search button, .so .pk-hits button { min-height: 44px; padding: 8px 14px; border: 1px solid #3a4757; border-radius: 8px; background: #131b25; color: #e6ebf1; font: 600 14px/1.2 inherit; cursor: pointer; }
+.so .pk-search button:disabled { opacity: .5; cursor: default; }
+.so .pk-hits { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.so .pk-hits button { width: 100%; text-align: left; font-weight: 500; }
+.so .pk-map { height: 230px; border: 1px solid #2a3542; border-radius: 10px; overflow: hidden; background: #0a0f15; }
+.so .pk-map-wait { display: grid; place-items: center; color: #8b98a8; font-size: 14px; }
+.so .pk-spot { margin: 0; color: #e6ebf1; font-size: 14px; }
+.so .pk-spot span { color: #8b98a8; font-variant-numeric: tabular-nums; margin-left: 6px; }
+.so .pk-tip, .so .pk-pay, .so .pk-fine { margin: 0; color: #9aa8b8; font-size: 13px; line-height: 1.5; }
+.so .pk-note { margin: 0; color: #ffd08a; font-size: 14px; }
+.so .pk-error { margin: 0; padding: 10px 12px; border: 1px solid #7f1d1d; border-radius: 8px; background: #2a0f12; color: #fecaca; font-size: 14px; }
+.so .pk-run { min-height: 50px; padding: 12px 18px; border: 0; border-radius: 9px; background: #ff641e; color: #15100d; font: 750 17px/1.2 inherit; cursor: pointer; }
+.so .pk-run:disabled { opacity: .5; cursor: default; }
+.so .pk-run:not(:disabled):hover { filter: brightness(1.1); }
+.so .pk-run-link { display: inline-flex; align-items: center; text-decoration: none; }
+.so .pk-guarantee { margin: 0; padding: 12px 14px; border-left: 3px solid #ff702d; background: #131b25; border-radius: 0 8px 8px 0; color: #c5d0dc; font-size: 13px; line-height: 1.55; }
+.so .pk-guarantee strong { color: #fff; }
+.so .pk-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.so .pk-pin { display: grid; place-items: center; border-radius: 999px; font: 700 13px/1 Inter, system-ui, sans-serif; }
+.so .pk-pin-me { width: 22px; height: 22px; background: #ff641e; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(255, 100, 30, .28); cursor: grab; }
+.so .pk-pin-open { min-width: 40px; height: 40px; padding: 0 8px; background: #16a34a; border: 3px solid #fff; color: #fff; font-size: 15px; box-shadow: 0 2px 10px rgba(0, 0, 0, .5); }
+.so .pk-pin-locked { width: 30px; height: 30px; background: rgba(19, 27, 37, .92); border: 1.5px solid #6b7888; color: #c5d0dc; }
+
+.so .pk-page { width: min(100% - 36px, 640px); margin-inline: auto; padding-block: clamp(32px, 6vw, 64px); color: #f4f5f7; }
+.so .pk-page-wide { width: min(100% - 36px, 1080px); }
+.so .pk-page h1 { margin: 8px 0 12px; font-size: clamp(28px, 3.6vw, 42px); line-height: 1.1; letter-spacing: -.04em; font-weight: 700; text-wrap: balance; }
+.so .pk-page h2 { margin: 0 0 10px; font-size: 20px; line-height: 1.25; letter-spacing: -.02em; }
+.so .pk-page > .pk-form { margin-top: 22px; }
+.so .pk-kicker { margin: 0; color: #ffc19d; font-size: 13px; font-weight: 600; }
+.so .pk-muted { margin: 0 0 14px; color: #b5c1cf; font-size: 16px; line-height: 1.6; max-width: 68ch; }
+.so .pk-link { color: #ffa87a; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.so .pk-steps { display: grid; gap: 10px; margin: 22px 0; padding: 0; list-style: none; }
+.so .pk-steps li { display: flex; align-items: center; gap: 12px; color: #8b98a8; font-size: 16px; }
+.so .pk-steps li > span:first-child { flex: none; width: 14px; height: 14px; border-radius: 999px; border: 2px solid #4a5868; }
+.so .pk-steps .pk-step-done { color: #c5d0dc; }
+.so .pk-steps .pk-step-done > span:first-child { background: #16a34a; border-color: #16a34a; }
+.so .pk-steps .pk-step-now { color: #fff; font-weight: 600; }
+.so .pk-steps .pk-step-now > span:first-child { border-color: #ff702d; background: #ff702d; animation: pk-pulse 1.4s ease-in-out infinite; }
+@keyframes pk-pulse { 50% { box-shadow: 0 0 0 7px rgba(255, 112, 45, .22); } }
+@media (prefers-reduced-motion: reduce) { .pk-steps .pk-step-now > span:first-child { animation: none; } }
+.so .pk-coach { padding: 18px 20px; border: 1px solid rgba(255, 112, 45, .5); border-radius: 12px; background: #17110d; }
+.so .pk-coach ol { display: grid; gap: 12px; margin: 0; padding-left: 22px; color: #d6dee7; font-size: 15px; line-height: 1.55; }
+.so .pk-coach strong { color: #fff; }
+
+.so .pk-proof { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); gap: clamp(18px, 3vw, 36px); align-items: start; margin-top: 22px; }
+.so .pk-video video { display: block; width: 100%; aspect-ratio: 9 / 19; border: 1px solid #2a3542; border-radius: 14px; background: #000; }
+.so .pk-ranks { display: grid; gap: 4px; margin: 0 0 14px; padding: 0; list-style: none; }
+.so .pk-ranks li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: #d6dee7; font-size: 15px; }
+.so .pk-ranks li > span { flex: none; width: 26px; color: #8b98a8; font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.so .pk-ranks .pk-you { background: rgba(22, 163, 74, .16); color: #fff; font-weight: 650; }
+.so .pk-ranks em { margin-left: auto; padding: 2px 8px; border-radius: 999px; background: #16a34a; color: #fff; font-size: 12px; font-style: normal; font-weight: 700; }
+.so .pk-aio { margin: 0 0 14px; color: #c5d0dc; font-size: 15px; }
+.so .pk-meta { display: grid; gap: 6px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid #2a3542; border-radius: 10px; font-size: 14px; }
+.so .pk-meta div { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; }
+.so .pk-meta dt { color: #8b98a8; }
+.so .pk-meta dd { margin: 0; color: #e6ebf1; font-variant-numeric: tabular-nums; }
+
+.so .pk-blind { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(18px, 3vw, 36px); align-items: center; margin-top: clamp(32px, 5vw, 56px); padding-top: clamp(28px, 4vw, 44px); border-top: 1px solid #2a3542; }
+.so .pk-blind h2 { font-size: clamp(22px, 2.5vw, 30px); line-height: 1.18; letter-spacing: -.035em; text-wrap: balance; }
+.so .pk-blind .pk-map { height: clamp(300px, 38vw, 420px); }
+.so .pk-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 10px; }
+.so .pk-plan { display: grid; gap: 4px; padding: 13px 15px; border: 0; border-radius: 10px; background: #ff641e; color: #15100d; text-align: left; text-decoration: none; cursor: pointer; font: inherit; }
+.so .pk-plan + .pk-plan { background: #131b25; color: #f4f5f7; box-shadow: inset 0 0 0 1px #46566a; }
+.so .pk-plan strong { font-size: 17px; }
+.so .pk-plan span { font-size: 13px; line-height: 1.4; opacity: .9; }
+.so .pk-plan:disabled { opacity: .6; cursor: default; }
+.so .pk-second { margin: 12px 0 0; color: #c5d0dc; font-size: 14px; line-height: 1.5; }
+.so .pk-page > .pk-fine { margin-top: 18px; }
+.so .pk-refund { margin-top: clamp(28px, 4vw, 44px); padding: 16px 18px; border: 1px solid #2a3542; border-radius: 12px; background: #10161e; }
+.so .pk-refund h2 { font-size: 17px; }
+.so .pk-refund p { margin: 0 0 10px; color: #b5c1cf; font-size: 14px; line-height: 1.55; max-width: 76ch; }
+@media (max-width: 760px) {
+  .so .pk-proof, .so .pk-blind, .so .pk-plans { grid-template-columns: 1fr; }
+  .so .pk-video { max-width: 300px; }
+  .so .pk-banner { justify-content: flex-start; }
+}

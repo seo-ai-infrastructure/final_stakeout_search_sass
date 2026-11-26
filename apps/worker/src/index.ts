@@ -139,7 +139,7 @@ async function execute(job: Job, token?: string) {
       } else {
         if (!job.data.laneWaitSince) await job.updateData({ ...job.data, laneWaitSince: Date.now() });
         // The priority queue (Scale, Agency Max) tries the door again sooner, so it is first in when a wave opens.
-        const first = await priorityAccount(pin.scan.userId);
+        const first = Boolean(pin.scan.requestKey?.startsWith('pocket:')) || (await priorityAccount(pin.scan.userId));
         await job.moveToDelayed(Date.now() + (first ? 2000 + Math.floor(Math.random() * 2000) : 7000 + Math.floor(Math.random() * 5000)), token);
         throw new DelayedError();
       }
@@ -446,7 +446,8 @@ async function dispatch() {
       );
     }
     // Scan Now points go first, scheduled ones behind them; Scale and Agency Max ahead of the rest at each speed.
-    const priority = queuePriority(s.speed, await priorityAccount(s.userId));
+    // A $1 pocket test has a buyer watching it live: its one point goes first too.
+    const priority = queuePriority(s.speed, Boolean(s.requestKey?.startsWith('pocket:')) || (await priorityAccount(s.userId)));
     await pins.addBulk(
       s.pins.map((p) => ({
         name: 'measure',

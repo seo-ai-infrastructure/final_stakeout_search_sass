@@ -16,7 +16,7 @@ import { requestKeyValid } from '@stakeout/core/requestKey';
 import { getAuthenticatedUser } from '@/lib/auth';
 import { asSpeed, schedulePlan } from '@stakeout/core/speed';
 import { db } from '@stakeout/db';
-import { CLOSER, WELCOME } from '@/lib/pricing';
+import { CLOSER, POCKET, WELCOME } from '@/lib/pricing';
 import { accountPlanNow } from '@/lib/gbpBilling';
 import { activePlan } from '@/lib/creditSub';
 import { errorResponse } from '@/lib/api';
@@ -27,14 +27,14 @@ import { googleIdField } from '@/lib/googleId';
 // Preparing proxy lists for every city in a new grid can take many Proxy-Seller calls.
 export const maxDuration = 300;
 
-/** An account on no plan whose only purchases are the Live 5G Proof Pack: its scans are Proof audits. */
+/** An account on no plan whose only purchases are the Live 5G Proof Pack (a $1 pocket test beside it changes nothing): its scans are Proof audits. */
 async function proofAccount(userId: string): Promise<boolean> {
   const [plan, credit, paid] = await Promise.all([
     accountPlanNow(userId),
     activePlan(userId).catch(() => null),
     db.paymentOrder.findMany({ where: { userId, captureId: { not: null }, refundedAt: null }, select: { item: true } }),
   ]);
-  return !plan && !credit && paid.length > 0 && paid.every((o) => o.item === CLOSER.key);
+  return !plan && !credit && paid.some((o) => o.item === CLOSER.key) && paid.every((o) => o.item === CLOSER.key || o.item === POCKET.key);
 }
 
 export async function POST(req: Request) {

@@ -11,6 +11,7 @@ import { stripe, stripeTestMode } from '@/lib/stripe';
 import { postproxy } from '@/lib/postproxy';
 import { flushAlerts } from '@/lib/alerts';
 import { BONUS_POINTS, BOOST, BOOST_BELOW, FIRST_AUDIT_COUPON, WELCOME, promoLive } from '@/lib/pricing';
+import { pocketCoupon, pocketCustomer } from '@/lib/pocket';
 
 /**
  * The monthly subscription: one Stripe subscription per account with one line per seat type. A
@@ -222,26 +223,32 @@ async function checkout(u: { id: string; email: string }, mine: { customerId: st
   const lines = LINE_ORDER.filter((l) => (seats[l] ?? 0) > 0);
   if (!lines.length) throw new InputError('Choose at least one seat.');
   const price = await prices(lines, interval);
-  const coupon = await firstAuditCoupon(u.id, Boolean(mine));
+  // $5 off for a first audit, else $1 off for a pocket test: either comes off the first month of a first plan.
+  const coupon = (await firstAuditCoupon(u.id, Boolean(mine))) ?? (await pocketCoupon(u.id, Boolean(mine)));
+  // An account a pocket test made, still only in its buyer's browser: the card Stripe saved then is offered.
+  const saved = mine?.customerId ? null : await pocketCustomer(u.id);
   const meta = { kind: 'gbp', userId: u.id };
   const join = back.includes('?') ? '&' : '?';
-  const session = await stripe<Session>(
-    '/checkout/sessions',
-    'POST',
-    {
-      mode: 'subscription',
-      // The first audit's $5 off the first month; otherwise a box for a promotion code made in the Stripe dashboard.
-      ...(coupon ? { discounts: [{ coupon }] } : { allow_promotion_codes: true }),
-      client_reference_id: u.id,
-      ...(mine?.customerId ? { customer: mine.customerId } : { customer_email: u.email }),
-      metadata: meta,
-      subscription_data: { metadata: meta, description: lines.some((l) => isAccountPlan(l)) ? `Stakeout Search plan${interval === 'year' ? ', billed yearly' : ''}` : 'Stakeout Search seats' },
-      line_items: lines.map((l) => ({ price: price[l], quantity: seats[l] })),
-      success_url: origin + back + join + 'plan={CHECKOUT_SESSION_ID}',
-      cancel_url: origin + back + join + 'plan=cancelled',
-    },
-    randomUUID(),
-  );
+  const body = (who: Record<string, unknown>) => ({
+    mode: 'subscription',
+    // The first audit's $5 (or a pocket test's $1) off the first month; otherwise a box for a promotion code made in the Stripe dashboard.
+    ...(coupon ? { discounts: [{ coupon }] } : { allow_promotion_codes: true }),
+    client_reference_id: u.id,
+    ...who,
+    metadata: meta,
+    subscription_data: { metadata: meta, description: lines.some((l) => isAccountPlan(l)) ? `Stakeout Search plan${interval === 'year' ? ', billed yearly' : ''}` : 'Stakeout Search seats' },
+    line_items: lines.map((l) => ({ price: price[l], quantity: seats[l] })),
+    success_url: origin + back + join + 'plan={CHECKOUT_SESSION_ID}',
+    cancel_url: origin + back + join + 'plan=cancelled',
+  });
+  const usual = mine?.customerId ? { customer: mine.customerId } : { customer_email: u.email };
+  // With the pocket test's saved card on offer; should Stripe refuse that, the usual checkout.
+  const session = saved
+    ? await stripe<Session>('/checkout/sessions', 'POST', body({ customer: saved, saved_payment_method_options: { allow_redisplay_filters: ['always', 'limited', 'unspecified'] } }), randomUUID()).catch((e) => {
+        console.warn('[pocket] plan checkout without the saved card:', (e as Error).message);
+        return stripe<Session>('/checkout/sessions', 'POST', body(usual), randomUUID());
+      })
+    : await stripe<Session>('/checkout/sessions', 'POST', body(usual), randomUUID());
   if (!session.url) throw new InputError('Stripe did not open a checkout page. Try again.', 502);
   return { url: session.url };
 }

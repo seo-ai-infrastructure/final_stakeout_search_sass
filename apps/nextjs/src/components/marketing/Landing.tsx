@@ -5,6 +5,7 @@ import { CLOSER, WELCOME, usd } from '@/lib/pricing';
 import { Arrow, OfferBanner, SiteFoot, SiteNav } from './SiteKit';
 import { HREF } from './links';
 import { RecordedSearchLink } from './RecordedSearchLink';
+import PocketBanner from '../pocket/PocketBanner';
 import './site.css';
 import './landing.css';
 
@@ -36,6 +37,8 @@ export default function Landing({ live, plans }: { live: boolean; plans?: boolea
   return (
     <div id="top" className="so lp">
       <SiteNav page="home" plans={plans} />
+      {/* The $1 pocket test (POCKET_TEST=off on the website takes it down). */}
+      {process.env.POCKET_TEST !== 'off' && <PocketBanner />}
       <main>
         <section className="lp-hero" aria-labelledby="lp-title">
           <div className="lp-wrap lp-hero-layout">
