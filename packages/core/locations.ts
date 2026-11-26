@@ -25,6 +25,26 @@ export function businessKey(name: string): string {
   return k || name.trim().toLowerCase();
 }
 
+/** A listing's name before the descriptor Google lets a business append ("Name - Marketing Agency", "Name | Austin", "Name: Roofing"). */
+const leadName = (name: string) => name.split(/\s+[-–—]\s+|\s*[|•·]\s*|:\s+/)[0];
+/** Long enough to stand for a business by itself (never one short word). */
+const solidKey = (k: string) => k.length >= 6 || k.split(' ').length >= 2;
+
+/**
+ * The same business by name, as a customer types it and as a results list shows it. Ignored: the
+ * company ending however it is written ("L.L.C.", "Inc", "Co"), "&" for "and", "The", accents, case
+ * and punctuation; and a descriptor after the name on either side, so "local contractors marketing"
+ * is "Local Contractors Marketing - Marketing Agency". A different word in the name, or only part of
+ * the name, is still a different business.
+ */
+export function sameBusinessName(a: string, b: string): boolean {
+  const ka = businessKey(a), kb = businessKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  const la = businessKey(leadName(a)), lb = businessKey(leadName(b));
+  return (la === kb && solidKey(kb)) || (lb === ka && solidKey(ka));
+}
+
 function km(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
   const r = Math.PI / 180;
   const dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;

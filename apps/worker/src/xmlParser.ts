@@ -1,5 +1,5 @@
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
-import { businessKey } from '@stakeout/core/locations';
+import { businessKey, sameBusinessName as sameName } from '@stakeout/core/locations';
 type Node = { node?: Node[]; [attribute: string]: unknown };
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -20,10 +20,11 @@ const normalize = (s: string) =>
     .trim();
 /**
  * The same business by name: the exact name, or the name without what a customer rarely types the
- * way Google shows it: the company ending ("L.L.C.", "Inc", "Co"), "&" for "and", "The", accents
- * and punctuation. "D & M Master Electric" is "D & M Master Electric L.L.C.".
+ * way Google shows it (core/locations.ts): the company ending, "&" for "and", punctuation, and a
+ * descriptor after the name. "D & M Master Electric" is "D & M Master Electric L.L.C.";
+ * "local contractors marketing" is "Local Contractors Marketing - Marketing Agency".
  */
-export const sameBusinessName = (a: string, b: string) => normalize(a) === normalize(b) || businessKey(a) === businessKey(b);
+export const sameBusinessName = (a: string, b: string) => normalize(a) === normalize(b) || sameName(a, b);
 function walk(n: Node): Node[] {
   return [n, ...(n.node ?? []).flatMap(walk)];
 }

@@ -46,6 +46,12 @@ test('the business is matched without its company ending: customers rarely type 
   assert.equal(sameBusinessName('D & M Master Electric L.L.C.', 'D & M Master Electric'), true);
   for (const [shown, typed] of [['Elite Electrical Contractors, LLC', 'Elite Electrical Contractors'], ['A-Z ELECTRIC INC', 'A-Z Electric'], ['Smith & Sons Plumbing Co.', 'Smith and Sons Plumbing'], ['The Drain Doctor', 'Drain Doctor'], ['Joe’s Pizza', "Joe's Pizza"], ['Peña Law, P.C.', 'Pena Law PC']])
     assert.equal(sameBusinessName(shown, typed), true, shown + ' / ' + typed);
+  // A real case: Google shows a descriptor after the name; the customer typed the name alone.
+  assert.equal(sameBusinessName('Local Contractors Marketing - Marketing Agency', 'local contractors marketing'), true);
+  for (const [shown, typed] of [['iMedia Audiences - Local Digital Advertising and Social Media', 'iMedia Audiences'], ['Carnegie - Higher Ed Marketing & Enrollment Agency', 'Carnegie'], ['Smith Plumbing | Austin', 'Smith Plumbing LLC'], ['Peak Roofing: Residential & Commercial', 'Peak Roofing'], ['Smith Plumbing', 'Smith Plumbing - Austin']])
+    assert.equal(sameBusinessName(shown, typed), true, shown + ' / ' + typed);
+  for (const [shown, typed] of [['Smith Plumbing - Austin', 'Smith Plumbing - Dallas'], ['A-Z ELECTRIC INC', 'A'], ['Go - Marketing Agency', 'Go'], ['Digital Marketing Stream', 'Digital Marketing All'], ['Local Contractors Marketing - Marketing Agency', 'Marketing Agency']])
+    assert.equal(sameBusinessName(shown, typed), false, shown + ' / ' + typed);
   // Still a different business: another word in the name, or only part of it.
   for (const [shown, typed] of [['D & M Master Electric L.L.C.', 'D & M Electric'], ['Walcheski Electric', 'Kith Electric'], ['First Class Electric', 'First Class Electric of Queens'], ['R Benimadho & Sons Electrical', 'Benimadho Electrical']])
     assert.equal(sameBusinessName(shown, typed), false, shown + ' / ' + typed);

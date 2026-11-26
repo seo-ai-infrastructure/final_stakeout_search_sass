@@ -921,7 +921,6 @@ export function NewScanWizard() {
     { id: 'mobile_maps', title: 'Maps app', sub: 'Local pack & Ask Maps', note: 'The Maps app list, as a customer sees it.', Icon: MapPin },
     { id: 'mobile_chrome', title: 'Chrome', sub: 'Web + AI Overviews', note: 'The local pack on a Google search, plus the AI Overview and the sites it cites.', Icon: Globe },
     { id: 'mobile_google', title: 'Google app', sub: 'Search in the app', note: 'The Google app search.', Icon: Smartphone },
-    { id: 'mobile_apple', title: 'Apple Maps', sub: 'Apple’s local results', note: 'The Apple Maps results list around each grid point, read on maps.apple.com.', Icon: MapPin },
     ...(process.env.NEXT_PUBLIC_DESKTOP_ENABLED === 'true' ? [{ id: 'desktop_aimode', title: 'Desktop AI', sub: 'AI Mode', note: 'Desktop search in AI Mode.', Icon: Monitor }] : []),
   ].map((x) => ({ ...x, live: enabledSurfaces.includes(x.id) || x.id === 'desktop_aimode' })).sort((a, b) => Number(b.live) - Number(a.live));
   // The map opens on a default spot. Until the pin has been moved off it (a search result picked,

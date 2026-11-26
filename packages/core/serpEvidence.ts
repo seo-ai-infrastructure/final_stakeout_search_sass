@@ -5,7 +5,7 @@
  * Pure: no network, no dependencies beyond node:zlib.
  */
 import { gunzipSync } from 'node:zlib';
-import { businessKey } from './locations';
+import { sameBusinessName } from './locations';
 import { googleIdsIn } from './businessIds';
 
 /** Files in a .tar.gz evidence bundle, by path. */
@@ -90,8 +90,8 @@ export function parseCard(label: string): (Omit<Listing, 'ad' | 'pos'> & { organ
 
 const norm = (s: string) =>
   s.toLowerCase().replace(/&/g, ' and ').replace(/\b(llc|inc|co|corp|company|ltd)\b\.?/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
-/** Same business, tolerant of LLC/Inc/punctuation/"&", however the ending is written ("L.L.C.", "P.C."). */
-export const sameBusiness = (a: string, b: string) => (norm(a) === norm(b) && norm(a) !== '') || (businessKey(a) === businessKey(b) && businessKey(a) !== '');
+/** Same business, tolerant of LLC/Inc/punctuation/"&" (however the ending is written) and of a descriptor after the name. */
+export const sameBusiness = (a: string, b: string) => (norm(a) === norm(b) && norm(a) !== '') || sameBusinessName(a, b);
 
 /**
  * Whether a business an AI answer names is the tracked one. With the scan's Google ID, an entry
