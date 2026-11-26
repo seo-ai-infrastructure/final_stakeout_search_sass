@@ -24,7 +24,8 @@ export default function PocketMap({ lat, lng, onMove, locked, label }: { lat: nu
     try {
       m = new maplibregl.Map({
         container: box.current,
-        style: process.env.NEXT_PUBLIC_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/dark',
+        // A light street map (streets, names and buildings are easy to pick out), unlike the app's dark one.
+        style: process.env.NEXT_PUBLIC_POCKET_MAP_STYLE_URL || 'https://tiles.openfreemap.org/styles/liberty',
         center: [lng, lat],
         zoom: locked ? 11.4 : 15.5,
         attributionControl: { compact: true },

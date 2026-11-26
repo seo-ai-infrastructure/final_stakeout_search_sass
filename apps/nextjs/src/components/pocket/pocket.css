@@ -30,8 +30,8 @@
 .so .pk-search button:disabled { opacity: .5; cursor: default; }
 .so .pk-hits { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .so .pk-hits button { width: 100%; text-align: left; font-weight: 500; }
-.so .pk-map { height: 230px; border: 1px solid #2a3542; border-radius: 10px; overflow: hidden; background: #0a0f15; }
-.so .pk-map-wait { display: grid; place-items: center; color: #8b98a8; font-size: 14px; }
+.so .pk-map { height: 260px; border: 1px solid #2a3542; border-radius: 10px; overflow: hidden; background: #e8ecef; }
+.so .pk-map-wait { display: grid; place-items: center; color: #4a5868; font-size: 14px; }
 .so .pk-spot { margin: 0; color: #e6ebf1; font-size: 14px; }
 .so .pk-spot span { color: #8b98a8; font-variant-numeric: tabular-nums; margin-left: 6px; }
 .so .pk-tip, .so .pk-pay, .so .pk-fine { margin: 0; color: #9aa8b8; font-size: 13px; line-height: 1.5; }
@@ -46,9 +46,9 @@
 .so .pk-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 .so .pk-pin { display: grid; place-items: center; border-radius: 999px; font: 700 13px/1 Inter, system-ui, sans-serif; }
-.so .pk-pin-me { width: 22px; height: 22px; background: #ff641e; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(255, 100, 30, .28); cursor: grab; }
-.so .pk-pin-open { min-width: 40px; height: 40px; padding: 0 8px; background: #16a34a; border: 3px solid #fff; color: #fff; font-size: 15px; box-shadow: 0 2px 10px rgba(0, 0, 0, .5); }
-.so .pk-pin-locked { width: 30px; height: 30px; background: rgba(19, 27, 37, .92); border: 1.5px solid #6b7888; color: #c5d0dc; }
+.so .pk-pin-me { width: 24px; height: 24px; background: #ff5500; border: 3px solid #fff; box-shadow: 0 0 0 7px rgba(255, 85, 0, .3), 0 2px 8px rgba(0, 0, 0, .45); cursor: grab; }
+.so .pk-pin-open { min-width: 40px; height: 40px; padding: 0 8px; background: #15803d; border: 3px solid #fff; color: #fff; font-size: 15px; box-shadow: 0 2px 10px rgba(0, 0, 0, .5); }
+.so .pk-pin-locked { width: 30px; height: 30px; background: #1b2532; border: 2px solid #fff; color: #e6ebf1; box-shadow: 0 1px 6px rgba(0, 0, 0, .4); }
 
 .so .pk-page { width: min(100% - 36px, 640px); margin-inline: auto; padding-block: clamp(32px, 6vw, 64px); color: #f4f5f7; }
 .so .pk-page-wide { width: min(100% - 36px, 1080px); }
