@@ -32,9 +32,12 @@ type Session = {
 };
 type Row = NonNullable<Awaited<ReturnType<typeof db.pocketTest.findUnique>>>;
 
+/** What the scan is filed under when the buyer named no business (a scan always has one to look for). */
+const NO_BUSINESS = 'Pocket test (no business named)';
+
 /** One point at the buyer's spot, on mobile data (the spec has a grid size, but only its centre is ever made). */
 const spec = (r: { keyword: string; business: string; lat: number; lng: number }) =>
-  parseSpec({ targetType: 'mobile_chrome', keyword: r.keyword, targetBusiness: r.business, centerLat: r.lat, centerLng: r.lng, gridSize: 3, spacingKm: 1.60934, ispMode: 'any', isps: [], trackAiOverviews: true, scheduleType: 'once', network: 'mobile' });
+  parseSpec({ targetType: 'mobile_chrome', keyword: r.keyword, targetBusiness: r.business || NO_BUSINESS, centerLat: r.lat, centerLng: r.lng, gridSize: 3, spacingKm: 1.60934, ispMode: 'any', isps: [], trackAiOverviews: true, scheduleType: 'once', network: 'mobile' });
 
 const windowStart = () => new Date(Date.now() - POCKET_WINDOW_DAYS * 86400000);
 const OVER = `The pocket test is ${POCKET_LIMIT} per person every ${POCKET_WINDOW_DAYS} days. A plan runs as many searches as you need, at every point of a grid.`;
@@ -161,6 +164,39 @@ export async function refundPocket(row: Row, why: 'failed' | 'closed'): Promise<
   return { ...row, refundedAt: now, refundWhy: why };
 }
 
+/**
+ * A pocket test's search is over: the buyer is told by email, once. Done: the video is ready to
+ * compare. Failed for good (after the worker's retry): the $1 goes back first, then the email says so.
+ */
+async function closePocket(row: Row, done: boolean): Promise<Row> {
+  if (!done && !row.refundedAt) row = await refundPocket(row, 'failed');
+  if (!done && !row.refundedAt) return row; // not refunded yet: tried again on the next call
+  const mine = await db.pocketTest.updateMany({ where: { id: row.id, notifiedAt: null }, data: { notifiedAt: new Date() } });
+  if (!mine.count) return row;
+  if (mailerConfigured() && row.refundWhy !== 'closed') {
+    const send = done
+      ? sendNoticeEmail(row.email, `Your live video receipt for “${row.keyword}” is ready to compare`, [`Our phone finished searching “${row.keyword}” at your spot. The video of the search and what it found are ready.`, 'Open it next to the same search on your own phone, on cellular and in a private tab.'], { label: 'Watch your video receipt', url: appUrl('/pocket-test/' + row.token) })
+      : sendNoticeEmail(row.email, 'Our 5G line hit a snag: we refunded your $1', [`Our phone could not complete the search for “${row.keyword}”, even after trying again, so we sent your $1 back to the card you paid with. You do not need to do anything. Refunds usually show within 5 to 10 business days.`, `Reference: ${pocketRef(row.id)}`], { label: 'Try another pocket test', url: appUrl('/pocket-test') });
+    await send.catch((e) => console.error('[pocket] closing email not sent:', (e as Error).message));
+  }
+  return { ...row, notifiedAt: new Date() };
+}
+
+/** Every pocket test whose search is over and whose buyer has not been told (the worker asks for this the moment one ends). */
+export async function settlePockets(): Promise<{ told: number }> {
+  const open = await db.pocketTest.findMany({ where: { paidAt: { not: null }, scanId: { not: null }, notifiedAt: null, createdAt: { gt: new Date(Date.now() - 7 * 86400000) } }, orderBy: { paidAt: 'asc' }, take: 25 });
+  let told = 0;
+  for (const row of open) {
+    const scan = await db.gridScan.findUnique({ where: { id: row.scanId! }, select: { status: true } });
+    const pin = scan ? await db.gridPin.findFirst({ where: { scanId: row.scanId! }, select: { status: true, startedAt: true } }) : null;
+    const stage = pocketStage({ paid: true, refunded: Boolean(row.refundedAt), scan, pin });
+    if (stage !== 'done' && stage !== 'refunded') continue;
+    const after = await closePocket(row, stage === 'done').catch((e) => (console.error('[pocket] not closed:', row.id, (e as Error).message), row));
+    if (after.notifiedAt) told++;
+  }
+  return { told };
+}
+
 /** The account a pocket test made, while nobody has chosen its password: only the buyer's browser is in it. */
 export async function unclaimedPocketAccount(row: Row): Promise<{ id: string; email: string; role: string } | null> {
   if (!row.madeAccount || !row.userId) return null;
@@ -179,8 +215,8 @@ export async function pocketState(token: string, viewer: string | null) {
   const scan = row.scanId ? await db.gridScan.findUnique({ where: { id: row.scanId }, select: { id: true, status: true, shareToken: true, createdAt: true, completedAt: true } }) : null;
   const pin = scan ? await db.gridPin.findFirst({ where: { scanId: scan.id }, select: { id: true, status: true, startedAt: true, rankFound: true, topCompetitors: true, hasAiOverview: true, targetCitedInAi: true, videoUrl: true, proxyMeta: true, city: true, stateCode: true, zip: true } }) : null;
   let stage = pocketStage({ paid: Boolean(row.paidAt), refunded: Boolean(row.refundedAt), scan, pin });
-  // The search ended without a result: the $1 goes back, here, the first time anyone looks.
-  if (stage === 'refunded' && !row.refundedAt) row = await refundPocket(row, 'failed').catch((e) => (console.error('[pocket] refund failed:', (e as Error).message), row!));
+  // Over (the worker normally says so itself, see settlePockets): the buyer is emailed, and a search that ended without a result is refunded.
+  if ((stage === 'refunded' || stage === 'done') && !row.notifiedAt) row = await closePocket(row, stage === 'done').catch((e) => (console.error('[pocket] not closed:', (e as Error).message), row!));
   if (stage === 'refunded' && !row.refundedAt) stage = 'searching';
   const meta = (pin?.proxyMeta ?? {}) as { locationText?: string; org?: string };
   const top = Array.isArray(pin?.topCompetitors) ? (pin!.topCompetitors as unknown[]).filter((n): n is string => typeof n === 'string').slice(0, 10) : [];
@@ -192,7 +228,7 @@ export async function pocketState(token: string, viewer: string | null) {
     email: row.email,
     refundWhy: row.refundedAt ? (row.refundWhy ?? 'failed') : null,
     keyword: row.keyword,
-    business: row.business,
+    business: row.business || null,
     place: row.placeLabel ?? ([pin?.city, pin?.stateCode].filter(Boolean).join(', ') || null),
     lat: row.lat,
     lng: row.lng,

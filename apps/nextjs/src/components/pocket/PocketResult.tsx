@@ -12,7 +12,7 @@ type State = {
   email: string;
   refundWhy: string | null;
   keyword: string;
-  business: string;
+  business: string | null;
   place: string | null;
   lat: number;
   lng: number;
@@ -145,7 +145,7 @@ export default function PocketResult({ token, paid }: { token: string; paid: str
   return (
     <div className="pk-page pk-page-wide">
       <p className="pk-kicker">Pocket test {s.ref}</p>
-      <h1>{r.rank ? `Our phone found ${s.business} at #${r.rank} for “${s.keyword}”` : `Our phone did not find ${s.business} in the map results for “${s.keyword}”`}</h1>
+      <h1>{!s.business ? `Here is what our phone saw for “${s.keyword}”` : r.rank ? `Our phone found ${s.business} at #${r.rank} for “${s.keyword}”` : `Our phone did not find ${s.business} in the map results for “${s.keyword}”`}</h1>
       <p className="pk-muted">Compare it with the search on your own phone. This is the recording, not a reconstruction.</p>
 
       <section className="pk-proof" aria-label="The recorded search">
@@ -156,10 +156,10 @@ export default function PocketResult({ token, paid }: { token: string; paid: str
           <h2>What the phone saw</h2>
           {r.top.length ? (
             <ol className="pk-ranks">
-              {r.top.map((name, i) => <li key={i + name} className={same(name, s.business) ? 'pk-you' : undefined}><span>{i + 1}</span>{name}{same(name, s.business) && <em>you</em>}</li>)}
+              {r.top.map((name, i) => { const you = Boolean(s.business) && same(name, s.business!); return <li key={i + name} className={you ? 'pk-you' : undefined}><span>{i + 1}</span>{name}{you && <em>you</em>}</li>; })}
             </ol>
           ) : <p className="pk-muted">Google showed no map results for this search here.</p>}
-          <p className="pk-aio">{r.aiOverview ? (r.namedInAiOverview ? 'Google showed an AI Overview, and it named your business.' : 'Google showed an AI Overview. It did not name your business.') : 'Google showed no AI Overview for this search here.'}</p>
+          <p className="pk-aio">{!r.aiOverview ? 'Google showed no AI Overview for this search here.' : !s.business ? 'Google showed an AI Overview for this search here.' : r.namedInAiOverview ? 'Google showed an AI Overview, and it named your business.' : 'Google showed an AI Overview. It did not name your business.'}</p>
           <dl className="pk-meta">
             <div><dt>Recorded</dt><dd>{when(r.finishedAt)}</dd></div>
             <div><dt>Coordinates</dt><dd>{s.lat.toFixed(5)}, {s.lng.toFixed(5)}</dd></div>
@@ -189,7 +189,7 @@ export default function PocketResult({ token, paid }: { token: string; paid: str
             </>
           )}
         </div>
-        <PocketMap lat={s.lat} lng={s.lng} locked label={r.rank ? '#' + r.rank : '–'} />
+        <PocketMap lat={s.lat} lng={s.lng} locked label={r.rank ? '#' + r.rank : s.business ? '–' : '✓'} />
       </section>
 
       {u.signedIn && !u.hasPassword && <p className="pk-fine">You are signed in on this browser. We emailed {s.email} a link to choose a password so you can sign in anywhere.</p>}

@@ -12,7 +12,7 @@ import {
 } from './grid';
 import { ispForPin } from './proxyGeo';
 import { RERUN_MARKER, rerunCharge, rerunIsp } from './rerun';
-import { nudgeAlerts, pushAlert, scanAlert } from './alerts';
+import { nudgeAlerts, pushAlert, scanAlert, nudgePocket } from './alerts';
 import { creditsPerPoint, getSettings } from './settings';
 import { chooseNetwork } from './networkChoice';
 import { queueScanWebhook } from './webhooks';
@@ -219,7 +219,8 @@ export async function settlePin(
   );
   if (finished) await alertIfScanWentBadly(finished).catch((e) => console.warn('[alert] scan not checked:', (e as Error).message));
   // Scale and up: the scan's summary to the account's webhook address (sent by the worker, with retries).
-  if (finished) await queueScanWebhook(finished).catch((e) => console.warn('[webhook] not queued:', (e as Error).message));
+  if (finished) await queueScanWebhook(finished).catch((e) => console.warn('[webhook] not queued:', (e as Error).message));  // A $1 pocket test: its buyer is emailed that the video is ready, or refunded when it failed.
+  if (finished && (await db.gridScan.findUnique({ where: { id: finished }, select: { requestKey: true } }))?.requestKey?.startsWith('pocket:')) await nudgePocket();
 }
 
 /** A scan that finished with many points failed (not stopped by its owner): one email to the admins. */

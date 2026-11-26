@@ -29,6 +29,15 @@ export async function nudgeAlerts() {
   await fetch(url, { method: 'POST', signal: AbortSignal.timeout(15000) }).catch((e) => console.warn('[alert] website not reached:', (e as Error).message));
 }
 
+/**
+ * From the worker: a $1 pocket test's search is over (done, or failed for good). The website, which
+ * holds the mail and Stripe settings, emails the buyer and sends a failed one's $1 back.
+ */
+export async function nudgePocket() {
+  const url = new URL('/api/pocket/settle', process.env.ALERT_URL ?? 'https://www.stakeoutsearch.com').toString();
+  await fetch(url, { method: 'POST', signal: AbortSignal.timeout(20000) }).catch((e) => console.warn('[pocket] website not reached:', (e as Error).message));
+}
+
 /** How a finished scan went, as an alert when it went badly; null when there is nothing to say. */
 export function scanAlert(s: { id: string; keyword: string; targetBusiness: string; totalPins: number; failedPins: number; status: string }, reasons: { code: string; n: number }[]): Omit<Alert, 'at'> | null {
   // Points the owner stopped are not failures.

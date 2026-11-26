@@ -18,8 +18,9 @@ export function checkPocketInput(b: Record<string, unknown>): PocketInput | { er
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 || email.endsWith('@internal.invalid')) return { error: 'Enter the email address to send your result to.' };
   const keyword = clean(b.keyword, 80);
   if (keyword.length < 2 || keyword.length > 80) return { error: 'Enter the search to test, such as “plumber near me”.' };
+  // Optional: with a business named, its place in the results is marked.
   const business = clean(b.business, 100);
-  if (business.length < 2 || business.length > 100) return { error: 'Enter your business name as Google shows it, so we can find it in the results.' };
+  if (business.length > 100 || business.length === 1) return { error: 'Enter the business name as Google shows it, or leave it empty.' };
   const lat = Number(b.lat), lng = Number(b.lng);
   if (typeof b.lat !== 'number' || typeof b.lng !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lng)) return { error: 'Set where you are: use your current location or search for an address.' };
   if (!inUnitedStates(lat, lng)) return { error: 'The pocket test runs in the United States only for now.' };

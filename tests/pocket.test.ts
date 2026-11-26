@@ -6,10 +6,17 @@ const good = { email: ' Owner@Agency.com ', keyword: '  emergency   plumber near
 
 test('the pocket test form: cleaned up, or told what is missing', () => {
   assert.deepEqual(checkPocketInput(good), { email: 'owner@agency.com', keyword: 'emergency plumber near me', business: "Stuart's Plumbing", lat: 28.044712, lng: -81.949812, placeLabel: 'Near 210 E Main St, Lakeland, FL' });
-  for (const [bad, part] of [[{ email: 'nope' }, 'email'], [{ keyword: 'x' }, 'search'], [{ business: '' }, 'business name'], [{ lat: '28.04' }, 'where you are'], [{ lat: undefined }, 'where you are'], [{ lat: 51.5074, lng: -0.1278 }, 'United States'], [{ keyword: 'k'.repeat(81) }, 'search']] as const) {
+  for (const [bad, part] of [[{ email: 'nope' }, 'email'], [{ keyword: 'x' }, 'search'], [{ business: 'x' }, 'business name'], [{ lat: '28.04' }, 'where you are'], [{ lat: undefined }, 'where you are'], [{ lat: 51.5074, lng: -0.1278 }, 'United States'], [{ keyword: 'k'.repeat(81) }, 'search']] as const) {
     const r = checkPocketInput({ ...good, ...bad });
     assert.ok('error' in r && r.error.includes(part), JSON.stringify(bad) + ' → ' + JSON.stringify(r));
   }
+});
+
+test('the business name is optional: a tester with no listing in mind leaves it empty', () => {
+  const r = checkPocketInput({ ...good, business: '   ' });
+  assert.ok(!('error' in r) && r.business === '');
+  const none = checkPocketInput({ ...good, business: undefined });
+  assert.ok(!('error' in none) && none.business === '');
 });
 
 test('US only: the lower 48, Alaska and Hawaii', () => {

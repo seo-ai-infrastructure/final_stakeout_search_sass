@@ -84,8 +84,8 @@ export default function PocketTestForm({ cancelled }: { cancelled?: boolean }) {
       <label className="pk-field">Search to test
         <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="emergency plumber near me" maxLength={80} required autoComplete="off" />
       </label>
-      <label className="pk-field">Your business name, as Google shows it
-        <input value={business} onChange={(e) => setBusiness(e.target.value)} placeholder="Stuart’s Plumbing" maxLength={100} required autoComplete="organization" />
+      <label className="pk-field">Business name <span className="pk-optional">(optional, to highlight your rank)</span>
+        <input value={business} onChange={(e) => setBusiness(e.target.value)} placeholder="Stuart’s Plumbing" maxLength={100} autoComplete="organization" />
       </label>
 
       <fieldset className="pk-where">
@@ -116,7 +116,7 @@ export default function PocketTestForm({ cancelled }: { cancelled?: boolean }) {
       </label>
 
       {error && <p className="pk-error" role="alert">{error}</p>}
-      <button type="submit" className="pk-run" disabled={busy || !keyword.trim() || !business.trim() || !email.trim()}>{busy ? 'Opening checkout…' : 'Run my pocket test · $1'}</button>
+      <button type="submit" className="pk-run" disabled={busy || !keyword.trim() || !email.trim()}>{busy ? 'Opening checkout…' : 'Run my pocket test · $1'}</button>
       <p className="pk-pay">Pay on Stripe with Apple Pay, Google Pay, Link or a card. One search, one dollar, no subscription. It takes about five minutes.</p>
       <p className="pk-guarantee"><strong>The receipt-for-receipt guarantee.</strong> Watch a real Android phone search your keyword on video. Pull out your own phone, on cellular and in a private tab, and check us side by side. If our results aren’t even close, email an uncropped screenshot of your phone within 10 minutes of your scan and we’ll refund your $1.</p>
     </form>
