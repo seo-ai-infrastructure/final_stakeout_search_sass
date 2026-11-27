@@ -17,7 +17,7 @@ const PHONES = { rivalInPacks: 18, lsaPoints: 38, lsaMost: 3 };
 const LATER = { date: 'Nov 25', points: 25, inAi: 25, cardOne: 12, ownSite: 1, topSite: 'rotorooter.com' };
 
 /** Where the tool's own map (cropped to its grid) draws its pins, as a share of the picture. */
-const AT = { x0: 12.37, y0: 12.24, step: 12.555 };
+const AT = { x0: 5.23, y0: 5.15, step: 14.935 };
 const name = (p: DuelPoint) => `R${p.row + 1}·C${p.col + 1}`;
 const band = (n: number) => (n <= 3 ? 'text-emerald-600' : n <= 10 ? 'text-amber-600' : 'text-rose-600');
 
@@ -82,7 +82,7 @@ export function HeadToHead({ duel, pocket, reportUrl }: { duel: Duel; pocket: bo
               <span className="text-rose-300">← A leading rank-grid tool</span>
               <span className="text-emerald-300 text-right">Stakeout · a real phone at each point →</span>
             </div>
-            <div className="relative aspect-square rounded-2xl overflow-hidden border border-[#243444] bg-[#0B1119]" style={{ backgroundImage: 'linear-gradient(to right, rgba(45,62,80,0.28) 1px, transparent 1px), linear-gradient(to bottom, rgba(45,62,80,0.28) 1px, transparent 1px)', backgroundSize: '12.555% 12.555%' }}>
+            <div className="relative aspect-square rounded-2xl overflow-hidden border border-[#243444] bg-[#0B1119]" style={{ backgroundImage: 'linear-gradient(to right, rgba(45,62,80,0.28) 1px, transparent 1px), linear-gradient(to bottom, rgba(45,62,80,0.28) 1px, transparent 1px)', backgroundSize: '14.935% 14.935%' }}>
               {P.map((x, i) => {
                 const v = seen(x, duel.business), on = i === picked;
                 return (
@@ -93,14 +93,14 @@ export function HeadToHead({ duel, pocket, reportUrl }: { duel: Duel; pocket: bo
                     aria-label={`${name(x)}: the tool says #${x.theirs}; the phone recorded: ${v.text}`}
                     onClick={() => setPicked(i)}
                     style={{ left: `${AT.x0 + x.col * AT.step}%`, top: `${AT.y0 + x.row * AT.step}%` }}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 w-[9.6%] aspect-square rounded-full border-2 flex items-center justify-center font-extrabold leading-none text-[9px] sm:text-xs cursor-pointer shadow-md ${v.cls}`}
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 w-[10%] aspect-square rounded-full border-2 flex items-center justify-center font-extrabold leading-none text-[10px] sm:text-sm cursor-pointer shadow-md ${v.cls}`}
                   >
                     {v.label}
                   </button>
                 );
               })}
-              <img src="/home/legacy-grid-7x7.jpg" alt={`A leading rank-grid tool’s 7 by 7 map for the same keyword and business: a rank number at every one of the ${P.length} points.`} width={760} height={760} loading="lazy" className="absolute inset-0 w-full h-full pointer-events-none select-none" style={{ clipPath: `inset(0 ${100 - reveal}% 0 0)` }} />
-              <span aria-hidden="true" className="absolute -translate-x-1/2 -translate-y-1/2 w-[12%] aspect-square rounded-full border-[3px] border-[#FF6A28] shadow-[0_0_0_2px_rgba(9,14,20,0.85)] pointer-events-none" style={{ left: `${AT.x0 + p.col * AT.step}%`, top: `${AT.y0 + p.row * AT.step}%` }} />
+              <img src="/home/legacy-grid-7x7.jpg" alt={`A leading rank-grid tool’s 7 by 7 map for the same keyword and business: a rank number at every one of the ${P.length} points.`} width={1242} height={1242} loading="lazy" className="absolute inset-0 w-full h-full pointer-events-none select-none" style={{ clipPath: `inset(0 ${100 - reveal}% 0 0)` }} />
+              <span aria-hidden="true" className="absolute -translate-x-1/2 -translate-y-1/2 w-[10.4%] aspect-square rounded-full border-[3px] border-[#FF6A28] shadow-[0_0_0_2px_rgba(9,14,20,0.85)] pointer-events-none" style={{ left: `${AT.x0 + p.col * AT.step}%`, top: `${AT.y0 + p.row * AT.step}%` }} />
               <div aria-hidden="true" className="absolute inset-y-0 w-0.5 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.35)] pointer-events-none" style={{ left: `${reveal}%` }}>
                 <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white text-slate-900 text-xs font-black flex items-center justify-center shadow-lg">↔</span>
               </div>
