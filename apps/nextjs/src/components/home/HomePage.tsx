@@ -10,7 +10,6 @@ import { Bet } from './Bet';
 import { ClientReports } from './ClientReports';
 import { FounderFacade } from './FounderFacade';
 import { HeadToHead, type Duel } from './HeadToHead';
-import { REPORT_URL } from './data';
 import { HeroReport } from './HeroReport';
 import { Pricing, type PlanCard } from './Pricing';
 import { WinRetainers } from './WinRetainers';
@@ -147,7 +146,7 @@ export default function HomePage({ live, pocket }: { live: boolean; pocket: bool
           </div>
         </section>
 
-        <HeadToHead duel={DUEL} pocket={pocket} reportUrl={REPORT_URL} />
+        <HeadToHead duel={DUEL} pocket={pocket} />
 
         <section id="why-trackers-lie" className="scroll-mt-16 py-20 lg:py-24 border-b border-[#1E2B38] bg-[#0B1119]">
           <Was ids={['real-hardware']} />
