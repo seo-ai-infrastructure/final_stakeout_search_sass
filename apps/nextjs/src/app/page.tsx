@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import '@/components/marketing/siteFonts';
 import Landing from '@/components/marketing/Landing';
+import HomePage from '@/components/home/HomePage';
 import { WELCOME, promoLive, usd } from '@/lib/pricing';
 import { ACCOUNT_PLANS } from '@stakeout/core/gbpPlans';
 import { getSettings } from '@stakeout/core/settings';
@@ -25,5 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Home() {
   const plans = Boolean((await getSettings().catch(() => null))?.newPlansLive);
+  // The plans-era homepage; the $1 pocket test (POCKET_TEST=off takes it down, and its buttons with it).
+  if (plans) return <HomePage live={promoLive()} pocket={process.env.POCKET_TEST !== 'off'} />;
   return <Landing live={promoLive()} plans={plans} />;
 }

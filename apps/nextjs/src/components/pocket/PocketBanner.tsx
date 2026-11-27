@@ -14,8 +14,9 @@ export function PocketOpenButton({ className, children }: { className?: string; 
 /**
  * The strip under the site's header that dares a visitor to check us against the phone in their
  * hand, and the panel it opens with the $1 pocket test's form (so nobody leaves the page to start).
+ * With `bar` off only the panel is rendered, for a page that draws its own dare.
  */
-export default function PocketBanner() {
+export default function PocketBanner({ bar = true }: { bar?: boolean }) {
   const dialog = useRef<HTMLDialogElement | null>(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -32,10 +33,12 @@ export default function PocketBanner() {
   }, []);
   return (
     <>
-      <aside className="pk-banner" aria-label="The $1 Pocket Test">
-        <p><Smartphone size={17} aria-hidden="true" /> <span><strong>The $1 Pocket Test:</strong> Bet $1 our live 5G phone matches the phone in your hand—or get your buck back.</span></p>
-        <button type="button" className="pk-banner-cta" onClick={() => setOpen(true)}>Take the $1 Bet <ArrowRight size={15} aria-hidden="true" /></button>
-      </aside>
+      {bar && (
+        <aside className="pk-banner" aria-label="The $1 Pocket Test">
+          <p><Smartphone size={17} aria-hidden="true" /> <span><strong>The $1 Pocket Test:</strong> Bet $1 our live 5G phone matches the phone in your hand—or get your buck back.</span></p>
+          <button type="button" className="pk-banner-cta" onClick={() => setOpen(true)}>Take the $1 Bet <ArrowRight size={15} aria-hidden="true" /></button>
+        </aside>
+      )}
       <dialog ref={dialog} className="pk-drawer" aria-labelledby="pk-drawer-title" onClose={() => setOpen(false)} onClick={(e) => { if (e.target === dialog.current) setOpen(false); }}>
         <div className="pk-drawer-in">
           <header>
