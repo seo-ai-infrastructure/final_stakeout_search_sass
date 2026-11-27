@@ -195,3 +195,7 @@
 @media (max-width: 760px) {
   .lp .lp-intro-bet .lp-actions a.lp-secondary { min-height: 44px; height: 46px; padding-block: 0; }
 }
+/* While the $1 bar is showing, the header's own button steps back so the top of the page has one orange action. */
+@media (max-width: 1239px) {
+  .lp a.lp-mobile-audit.is-quiet { background: #131a24; color: #f1f5f9; border: 1px solid #425060; font-weight: 650; }
+}

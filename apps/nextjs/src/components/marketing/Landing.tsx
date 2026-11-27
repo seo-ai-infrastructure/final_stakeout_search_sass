@@ -50,7 +50,7 @@ export default function Landing({ live, plans }: { live: boolean; plans?: boolea
   const pocket = process.env.POCKET_TEST !== 'off';
   return (
     <div id="top" className="so lp">
-      <SiteNav page="home" plans={plans} />
+      <SiteNav page="home" plans={plans} quiet={pocket} />
       {pocket && <PocketBanner />}
       <main>
         <section className="lp-hero" aria-labelledby="lp-title">

@@ -77,8 +77,11 @@ const NAV: [string, string][] = [
 
 const ctaSmall = { display: 'inline-flex', alignItems: 'center', minHeight: 44, boxSizing: 'border-box', background: ACCENT, color: '#0B1017', fontWeight: 700, padding: '10px 18px', borderRadius: 10, fontSize: 14, lineHeight: 1.3, whiteSpace: 'nowrap' } as const;
 
+const ctaQuiet = { ...ctaSmall, background: '#131a24', color: '#f1f5f9', border: '1px solid #425060', fontWeight: 650 } as const;
+
 /** The sticky header. On the home page its links scroll; elsewhere they lead to the home page. */
-export function SiteNav({ page, plans }: { page: 'home' | 'pricing'; plans?: boolean }) {
+/** `quiet` turns the header's own button into a dark outline, for pages whose $1 bar under it carries the one orange button. */
+export function SiteNav({ page, plans, quiet }: { page: 'home' | 'pricing'; plans?: boolean; quiet?: boolean }) {
   const [open, setOpen] = useState(false);
   const home = page === 'home';
   const links = NAV.map(([id, label]) => ({
@@ -104,11 +107,11 @@ export function SiteNav({ page, plans }: { page: 'home' | 'pricing'; plans?: boo
         <div className="so-wide" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <a href={HREF.login} style={{ padding: '13px 14px', fontSize: 14, lineHeight: 1.4, color: '#CBD5E1' }}>Log in</a>
           {/* On the pricing page the plans come first: the Proof Pack is a link under them. */}
-          <a className="so-btn" href={plans ? (page === 'pricing' ? HREF.plans : HREF.closer) : HREF.firstAudit} style={ctaSmall}>{plans ? (page === 'pricing' ? 'Choose a plan' : `Live 5G Proof · ${usd(CLOSER.cents)}`) : `Run my ${usd(WELCOME.cents)} audit`}</a>
+          <a className="so-btn" href={plans ? (page === 'pricing' ? HREF.plans : HREF.closer) : HREF.firstAudit} style={quiet ? ctaQuiet : ctaSmall}>{plans ? (page === 'pricing' ? 'Choose a plan' : `Live 5G Proof · ${usd(CLOSER.cents)}`) : `Run my ${usd(WELCOME.cents)} audit`}</a>
         </div>
         {home && (plans
-          ? <a className="lp-mobile-audit so-btn" href={HREF.closer} aria-label={CLOSER.name + ', ' + usd(CLOSER.cents)}>{usd(CLOSER.cents)} proof</a>
-          : <a className="lp-mobile-audit so-btn" href={HREF.firstAudit} aria-label={'Run my ' + usd(WELCOME.cents) + ' audit'}>{usd(WELCOME.cents)} audit</a>)}
+          ? <a className={'lp-mobile-audit so-btn' + (quiet ? ' is-quiet' : '')} href={HREF.closer} aria-label={CLOSER.name + ', ' + usd(CLOSER.cents)}>{usd(CLOSER.cents)} proof</a>
+          : <a className={'lp-mobile-audit so-btn' + (quiet ? ' is-quiet' : '')} href={HREF.firstAudit} aria-label={'Run my ' + usd(WELCOME.cents) + ' audit'}>{usd(WELCOME.cents)} audit</a>)}
         <button
           type="button"
           className="so-burger"

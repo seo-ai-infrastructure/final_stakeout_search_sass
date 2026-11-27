@@ -415,6 +415,35 @@ if (!DATA) {
 // Google writes a name with different apostrophes, punctuation and case ("Stuart’s Plumbing", "Stuarts plumbing"): one key for all of them.
 const nameKey = (name) => String(name).toLowerCase().normalize('NFKD').replace(/[\u2018\u2019\u02bc`´']/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
 const me = (name) => nameKey(name) === nameKey(DATA.business);
+/* brand-groups:start */
+// One row per brand. Google writes the same firm several ways from one answer to the next ("Roto-Rooter" and
+// "Roto-Rooter Plumbing & Drain Services"; "1-Tom-Plumber Lakeland" and "Tom-Plumber Lakeland"; "Richard C Fox Plumbing"
+// and "Richard Fox Plumbing"). brandGroups takes name keys and returns key -> the key its brand is filed under.
+const BRAND_LEGAL = new Set(['llc', 'inc', 'co', 'corp', 'ltd', 'company', 'incorporated']);
+const brandTokens = (key) => String(key).split(' ').filter((t) => t && !BRAND_LEGAL.has(t));
+function sameBrand(a, b) {
+  const eq = (x, y) => x.length === y.length && x.every((t, i) => t === y[i]);
+  const [s, l] = a.length <= b.length ? [a, b] : [b, a];
+  if (!s.length) return false;
+  if (eq(s, l)) return true;
+  // A lone common word ("plumbing") is not a brand; two words or one long one is.
+  const solid = s.length >= 2 || s[0].length >= 8;
+  // The longer name starts with the shorter one: "Benjamin Franklin Plumbing of Lakeland".
+  if (solid && eq(s, l.slice(0, s.length))) return true;
+  // The longer name has one short lead-in: "1-Tom-Plumber Lakeland".
+  if (solid && l.length === s.length + 1 && l[0].length <= 2 && eq(s, l.slice(1))) return true;
+  // A middle initial: "Richard C Fox Plumbing".
+  const plain = (x) => x.filter((t, i) => !(t.length === 1 && /[a-z]/.test(t) && i > 0 && i < x.length - 1));
+  const pa = plain(a), pb = plain(b);
+  return pa.length >= 2 && (pa.length !== a.length || pb.length !== b.length) && eq(pa, pb);
+}
+function brandGroups(keys) {
+  const list = [...new Set(keys)], tok = list.map(brandTokens), parent = list.map((_, i) => i);
+  const root = (i) => (parent[i] === i ? i : (parent[i] = root(parent[i])));
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) if (sameBrand(tok[i], tok[j])) parent[root(j)] = root(i);
+  return new Map(list.map((k, i) => [k, list[root(i)]]));
+}
+/* brand-groups:end */
 const isOwnSite = (d) => Boolean(DATA.website) && (d === DATA.website || d.endsWith('.' + DATA.website));
 
 function readPin(x) {
@@ -676,15 +705,20 @@ function competitors() {
   // AI view: the first three businesses each answer named. Map view: the first three local results, where the page had them.
   const listOf = (p) => (ai ? (p.aiFirst && p.aiFirst.length ? p.aiFirst : !p.pack ? p.first : []) : p.pack ? p.first : []);
   const counted = s.pins.filter((p) => listOf(p).length);
-  // One row per firm however Google spelled it, and once per point; the first spelling seen is shown.
-  const shown = new Map();
-  counted.forEach((p) => new Set(listOf(p).map((n) => { const k = nameKey(n); if (!shown.has(k)) shown.set(k, n); return k; })).forEach((k) => count.set(k, (count.get(k) || 0) + 1)));
-  const rows = [...count].map(([k, c]) => [shown.get(k), c]).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const mine = [...count].map(([k, c]) => [shown.get(k), c]).find(([n]) => me(n));
-  if (!rows.some(([n]) => me(n)) && mine) rows.push(mine);
-  const max = Math.max(1, ...rows.map((r) => r[1]));
+  // One row per brand however Google spelled it, and once per point. The spelling seen most often is shown.
+  const seen = new Map();
+  counted.forEach((p) => listOf(p).forEach((n) => { const k = nameKey(n), e = seen.get(k) || { name: n, times: 0 }; e.times++; seen.set(k, e); }));
+  const brand = brandGroups([...seen.keys()]), yours = new Set(), spelled = new Map();
+  seen.forEach((e, k) => { const g = brand.get(k); if (me(e.name)) yours.add(g); spelled.set(g, [...(spelled.get(g) || []), e]); });
+  counted.forEach((p) => new Set(listOf(p).map((n) => brand.get(nameKey(n)))).forEach((g) => count.set(g, (count.get(g) || 0) + 1)));
+  const shown = new Map([...spelled].map(([g, list]) => [g, [...list].sort((a, b) => b.times - a.times)]));
+  const all = [...count].map(([g, c]) => ({ g, c, name: shown.get(g)[0].name, also: shown.get(g).slice(1).map((e) => e.name), you: yours.has(g) })).sort((a, b) => b.c - a.c);
+  const rows = all.slice(0, 8);
+  const mine = all.find((r) => r.you);
+  if (!rows.some((r) => r.you) && mine) rows.push(mine);
+  const max = Math.max(1, ...rows.map((r) => r.c));
   $('#compsub').textContent = (ai ? 'Firms among the first three the AI answer named' : 'Firms in the first three local results (map pack or single panel)') + `, at ${counted.length} of ${s.pins.length} points in this scan.`;
-  $('#comps').innerHTML = rows.map(([n, c]) => `<div class="bar ${me(n) ? 'me' : ''}"><span class="name" title="${esc(n)}">${esc(short(n))}${me(n) ? ' (you)' : ''}</span><span class="n">${c}</span><div class="track"><div class="fill" style="width:${(100 * c) / max}%"></div></div></div>`).join('') || '<p class="quiet">Not kept for this scan.</p>';
+  $('#comps').innerHTML = rows.map((r) => `<div class="bar ${r.you ? 'me' : ''}"><span class="name" title="${esc(r.name + (r.also.length ? ' · also written: ' + r.also.join(', ') : ''))}">${esc(short(r.you ? DATA.business : r.name))}${r.you ? ' (you)' : ''}</span><span class="n">${r.c}</span><div class="track"><div class="fill" style="width:${(100 * r.c) / max}%"></div></div></div>`).join('') || '<p class="quiet">Not kept for this scan.</p>';
 }
 function sources() {
   const s = state.scan, read = s.pins.filter((p) => p.state === 'parsed'), count = new Map();
