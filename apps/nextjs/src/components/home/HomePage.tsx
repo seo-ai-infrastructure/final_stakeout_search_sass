@@ -10,6 +10,7 @@ import { Bet } from './Bet';
 import { ClientReports } from './ClientReports';
 import { FounderFacade } from './FounderFacade';
 import { HeadToHead, type Duel } from './HeadToHead';
+import { REPORT_URL } from './data';
 import { HeroReport } from './HeroReport';
 import { Pricing, type PlanCard } from './Pricing';
 import { WinRetainers } from './WinRetainers';
@@ -146,7 +147,7 @@ export default function HomePage({ live, pocket }: { live: boolean; pocket: bool
           </div>
         </section>
 
-        <HeadToHead duel={DUEL} pocket={pocket} />
+        <HeadToHead duel={DUEL} pocket={pocket} reportUrl={REPORT_URL} />
 
         <section id="why-trackers-lie" className="scroll-mt-16 py-20 lg:py-24 border-b border-[#1E2B38] bg-[#0B1119]">
           <Was ids={['real-hardware']} />
@@ -169,7 +170,7 @@ export default function HomePage({ live, pocket }: { live: boolean; pocket: bool
                     <div aria-hidden="true" className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-2xl font-extrabold text-emerald-300 shrink-0">#2</div>
                     <div>
                       <div className="text-sm font-bold text-white">Tracker says: “You’re #2 right here!”</div>
-                      <p className="text-xs text-slate-400 mt-1">Stand on that exact corner with a real 5G phone and you aren’t #2 at all—you’re #9, completely missing from the 3-Pack, plus your GBP is completely wiped out by a competitor’s 1-Box. The scraper queried a Maps API from the city center and painted a fake green dot.</p>
+                      <p className="text-xs text-slate-400 mt-1">Stand on that exact corner with a real 5G phone and you aren’t #2 at all—you’re #9, completely missing from the 3-Pack, or wiped out by a competitor’s 1-Box. The scraper queried a Maps API from the city center and painted a fake green dot.</p>
                     </div>
                   </div>
                   <ul className="mt-6 space-y-3 text-sm text-slate-300">

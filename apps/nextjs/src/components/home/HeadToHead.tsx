@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowUpRight, Play } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Check, Play, X } from 'lucide-react';
+import { PocketOpenButton } from '../pocket/PocketBanner';
 import { Recording } from './Recording';
 
 /** One point of the 7×7 head-to-head: what the rank grid drew there and what the phone recorded. */
@@ -9,7 +10,11 @@ export type DuelPoint = { id: string; pinId: string; row: number; col: number; z
 export type Duel = { business: string; keyword: string; date: string; token: string; points: DuelPoint[] };
 
 /** Read off the tool's own scan report for this search (Nov 15, 2026, 7:29 PM): where it searched and its headline figures. */
-const TOOL = { surface: 'Google Maps', when: 'Nov 15, 2026 · 7:29 PM', found: 49, solv: '34.69%', arp: '5.47', rival: { name: '1-Tom-Plumber Lakeland', place: '7th', solv: '12.24%' } };
+const TOOL = { surface: 'Google Maps', when: 'Nov 15, 2026 · 7:29 PM', found: 49, solv: '34.69%', arp: '5.47', reviews: '1,696', rival: { name: '1-Tom-Plumber Lakeland', short: '1-Tom-Plumber', place: '7th', solv: '12.24%' } };
+/** Read off the same scan's public report: packs with that rival in the top 3, and Local Service Ads on the search page. */
+const PHONES = { rivalInPacks: 18, lsaPoints: 38, lsaMost: 3 };
+/** The Nov 25, 2026 scan on 5G lines (the hero's report): AI Overviews with the business, card #1, own site cited, top outside site. */
+const LATER = { date: 'Nov 25', points: 25, inAi: 25, cardOne: 12, ownSite: 1, topSite: 'rotorooter.com' };
 
 /** Where the tool's own map (cropped to its grid) draws its pins, as a share of the picture. */
 const AT = { x0: 12.37, y0: 12.24, step: 12.555 };
@@ -35,7 +40,7 @@ function verdict(p: DuelPoint) {
  * The same keyword, business and 49 points, in a leading rank-grid tool and on real phones.
  * A slider wipes the tool's own map over what the phones recorded; any point opens its recording.
  */
-export function HeadToHead({ duel, pocket }: { duel: Duel; pocket: boolean }) {
+export function HeadToHead({ duel, pocket, reportUrl }: { duel: Duel; pocket: boolean; reportUrl: string }) {
   const P = duel.points;
   const [reveal, setReveal] = useState(50);
   const [picked, setPicked] = useState(Math.max(0, P.findIndex((p) => p.row === 3 && p.col === 2)));
@@ -46,20 +51,29 @@ export function HeadToHead({ duel, pocket }: { duel: Duel; pocket: boolean }) {
   const packs = P.length - noPack, ownBox = P.filter((x) => x.own).length;
   const theirTop3 = P.filter((x) => x.theirs <= 3).length, packTop3 = P.filter((x) => x.pack && x.rank !== null && x.rank <= 3).length;
   const rivalBoxes = P.filter((x) => x.solo === TOOL.rival.name).length;
-  const rows: [string, string, string][] = [
-    ['Searched on', TOOL.surface, 'Google Search, on an Android phone'],
-    ['Started', TOOL.when, 'The same minute'],
-    ['Result for the business', `A rank at ${TOOL.found} of ${P.length} points`, `A map pack on screen at ${packs} of ${P.length}`],
-    ['Top 3', `${theirTop3} of ${P.length} (SoLV ${TOOL.solv})`, `${packTop3} in the pack, plus its own 1-Box at ${ownBox}`],
-    ['Competitor 1-Box panels', 'Not in the report', `${hijacks} of ${P.length} points`],
+  // The west side (the two western columns), where the tool's report says to focus.
+  const west = P.filter((x) => x.col <= 1), westNoPack = west.filter((x) => !x.pack).length;
+  const westLow = Math.min(...west.map((x) => x.theirs)), westHigh = Math.max(...west.map((x) => x.theirs));
+  const aio = P.filter((x) => x.aio).length, named = P.filter((x) => x.cited).length;
+  const theirs: [string, string][] = [
+    [`Drew a Rank on All ${P.length} Pins`, `Reported a position at ${TOOL.found} of ${P.length} points—including ${noPack} where Google Search showed no 3-Pack on a real phone.`],
+    [`Buried the Firm Holding the 1-Box (${TOOL.rival.solv} SoLV)`, `Ranked ${TOOL.rival.short} ${TOOL.rival.place} in the market with a ${TOOL.rival.solv} Share of Voice—while Google handed it the single-business 1-Box panel at ${rivalBoxes} of the ${P.length} points.`],
+    ['Sent the Agency Chasing a Ghost', `Its top recommendation: optimize the west and northwest, where it drew #${westLow}–#${westHigh}. On the phones, ${westNoPack} of those ${west.length} western points had no 3-Pack to rank in.`],
+    ['Zero AI Overviews + a Wrong Audit Flag', `Reported nothing on the AI Overviews Google showed at ${aio} of ${P.length} points, or the Local Service Ads at ${PHONES.lsaPoints}—and flagged the ${TOOL.reviews}-review profile as “missing a website link,” though its Website button is on screen in the recordings.`],
+  ];
+  const ours: [string, string][] = [
+    [`Exposed ${hijacks} Competitor 1-Box Hijacks`, `Captured Google replacing the entire 3-Pack with a single-business panel for rivals on ${hijacks} of ${P.length} points—with playable video proof.`],
+    ['Caught Who Actually Owns the Street', `Showed ${TOOL.rival.short} holding the 1-Box across the west side and a top-3 spot in ${PHONES.rivalInPacks} of the ${packs} packs—plus up to ${PHONES.lsaMost} Local Service Ads stacked above the results.`],
+    [`Measured Real Mobile AI Overviews (${aio} / ${P.length})`, `Recorded an AI Overview at ${aio} of ${P.length} points and ${duel.business} named in ${named} of them—including streets with no 3-Pack at all.`],
+    [`And on Live 5G, Ten Days Later (${LATER.inAi} / ${LATER.points})`, `The ${LATER.date} scan on 5G lines put ${duel.business} in all ${LATER.points} AI Overviews (Card #1 in ${LATER.cardOne} spots) while Google’s AI cited ${LATER.topSite} in every answer and its own site in ${LATER.ownSite}—an immediate retainer gameplan.`],
   ];
   return (
     <section id="head-to-head" className="scroll-mt-16 py-20 lg:py-24 border-b border-[#1E2B38]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl">
-          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[#FF8A4F]">Head to Head · Same Keyword · Same Business · Same {P.length} Points · Same Time</span>
-          <h2 className="mt-2 text-3xl sm:text-4xl font-extrabold tracking-tight text-white">A Leading Rank Grid Drew {P.length} Numbers. At {noPack} of Those Points, Google Never Showed a Map Pack.</h2>
-          <p className="mt-3 text-slate-300 text-base sm:text-lg leading-relaxed">We ran “{duel.keyword}” for {duel.business} through a leading map-grid rank tracker and through Stakeout in the same minute. Drag the slider: the tool’s report draws a rank at every point. The phones recorded a competitor’s 1-Box at {hijacks} of them, and every point has its video.</p>
+          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[#FF8A4F]">Caught Red-Handed in Lakeland, FL</span>
+          <h2 className="mt-2 text-3xl sm:text-4xl font-extrabold tracking-tight text-white">Same Plumber. Same Keyword. Two Completely Different Realities.</h2>
+          <p className="mt-3 text-slate-300 text-base sm:text-lg leading-relaxed">We ran “{duel.keyword}” for {duel.business} on one of the industry’s largest Maps-API grid trackers—and ran the exact same {P.length} coordinates on physical Android phones in the same minute. Drag the slider to switch between them; tap any pin for its video.</p>
         </div>
 
         <div className="mt-10 grid lg:grid-cols-12 gap-8 items-start">
@@ -96,28 +110,6 @@ export function HeadToHead({ duel, pocket }: { duel: Duel; pocket: boolean }) {
           </div>
 
           <div className="lg:col-span-5 space-y-5">
-            <div className="rounded-2xl bg-[#111923] border border-[#1E2B38] overflow-hidden">
-              <table className="w-full text-left text-[12.5px]">
-                <caption className="sr-only">The rank-grid tool’s own report beside what the phones recorded</caption>
-                <thead>
-                  <tr className="bg-[#0D141D] font-mono text-[10px] uppercase tracking-wider">
-                    <td className="px-3 py-2" />
-                    <th scope="col" className="px-3 py-2 font-bold text-rose-300">The tool’s report</th>
-                    <th scope="col" className="px-3 py-2 font-bold text-emerald-300">The phones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#1E2B38]">
-                  {rows.map(([k, a, b]) => (
-                    <tr key={k}>
-                      <th scope="row" className="px-3 py-2.5 align-top font-medium text-slate-400 w-[30%]">{k}</th>
-                      <td className="px-3 py-2.5 align-top text-slate-200">{a}</td>
-                      <td className="px-3 py-2.5 align-top text-white font-semibold">{b}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
             <div className="rounded-2xl bg-white text-slate-900 border border-slate-200 shadow-2xl p-5" aria-live="polite">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-500">Point {name(p)} · ZIP {p.zip}</span>
@@ -144,8 +136,42 @@ export function HeadToHead({ duel, pocket }: { duel: Duel; pocket: boolean }) {
               <a href={'/share/' + duel.token} className="mt-2 flex items-center justify-center gap-1 text-[11.5px] font-semibold text-slate-600 hover:text-[#FF6A28]">Open the full {P.length}-point scan <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" /></a>
             </div>
 
-            <p className="text-[13px] text-slate-300 leading-relaxed">The tool’s report places {TOOL.rival.name} {TOOL.rival.place} in this market, with a {TOOL.rival.solv} share. On the phones that firm held Google’s single-business panel at {rivalBoxes} of the {P.length} points. And it cuts both ways: at {low} points the phone showed {duel.business} in the top 3 while the tool drew #4 or lower.</p>
+            <p className="text-[13px] text-slate-400 leading-relaxed">It cuts both ways: at {low} points the phone showed {duel.business} in the top 3 while the tool drew #4 or lower. The tool put it in the top 3 at {theirTop3} of {P.length} points; the phones showed {packTop3} in the pack plus its own 1-Box at {ownBox}.</p>
           </div>
+        </div>
+
+        <div className="mt-12 grid lg:grid-cols-2 gap-7 items-stretch">
+          <div className="rounded-2xl bg-[#111923] border border-rose-500/30 p-6 sm:p-7">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-[10.5px] font-bold uppercase tracking-wider"><X className="w-3.5 h-3.5" aria-hidden="true" /> Leading Maps-API Grid Tracker</div>
+            <p className="mt-3 text-xs text-slate-400">Queries Google Maps API · Zero video proof · Blind to Search UI</p>
+            <ol className="mt-5 space-y-4">
+              {theirs.map(([t, b], i) => (
+                <li key={t} className="flex items-start gap-3">
+                  <span aria-hidden="true" className="shrink-0 w-6 h-6 rounded-full bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[11px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                  <span className="text-sm text-slate-300 leading-relaxed"><strong className="block text-white">{t}</strong>{b}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <div className="rounded-2xl bg-gradient-to-b from-[#15202D] to-[#111923] border border-[#FF6A28]/45 p-6 sm:p-7">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-mono text-[10.5px] font-bold uppercase tracking-wider"><Check className="w-3.5 h-3.5" aria-hidden="true" /> Stakeout Real Android Hardware</div>
+            <p className="mt-3 text-xs text-slate-300">Real Chrome Mobile Search · A phone at every pin · Video receipt on every pin</p>
+            <ol className="mt-5 space-y-4">
+              {ours.map(([t, b], i) => (
+                <li key={t} className="flex items-start gap-3">
+                  <span aria-hidden="true" className="shrink-0 w-6 h-6 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                  <span className="text-sm text-slate-200 leading-relaxed"><strong className="block text-white">{t}</strong>{b}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+
+        <div className="mt-8 rounded-2xl bg-gradient-to-r from-[#161F2C] via-[#1B2533] to-[#161F2C] border border-[#2C3E52] p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          {pocket
+            ? <PocketOpenButton className="inline-flex items-center justify-center gap-2 bg-[#FF6A28] hover:bg-[#ff7b40] text-white font-bold text-sm px-5 py-3.5 rounded-xl shadow-lg shadow-[#FF6A28]/25 transition-all cursor-pointer">Put Your Own Tracker to the $1 Pocket Test <ArrowRight className="w-4 h-4" aria-hidden="true" /></PocketOpenButton>
+            : <a href="#pricing" className="inline-flex items-center justify-center gap-2 bg-[#FF6A28] hover:bg-[#ff7b40] text-white font-bold text-sm px-5 py-3.5 rounded-xl shadow-lg shadow-[#FF6A28]/25 transition-all">See Monthly Plans <ArrowRight className="w-4 h-4" aria-hidden="true" /></a>}
+          <a href={reportUrl} className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-200 hover:text-[#FF8A4F] underline underline-offset-4">Inspect Stuart’s Full 25-Pin Report &amp; Video Receipts <ArrowUpRight className="w-4 h-4" aria-hidden="true" /></a>
         </div>
       </div>
 
