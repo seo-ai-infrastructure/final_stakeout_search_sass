@@ -16,6 +16,22 @@ const PHONES = { rivalInPacks: 18, lsaPoints: 38, lsaMost: 3 };
 /** The Nov 25, 2026 scan on 5G lines (the hero's report): AI Overviews with the business, card #1, own site cited, top outside site. */
 const LATER = { date: 'Nov 25', points: 25, inAi: 25, cardOne: 12, ownSite: 1, topSite: 'rotorooter.com' };
 
+/**
+ * The two leaderboards for these 49 points. `phones`: points where the firm was in the top 3 of the map pack or held
+ * the 1-Box, from this scan's competitor leaderboard. `tool`: its rank and Share of Local Voice (the share of points
+ * where it put the firm in the top 3) in the tool's own report.
+ */
+const BOARD: { name: string; me?: boolean; phones: number; toolRank: number; toolSolv: number }[] = [
+  { name: '1-Tom-Plumber Lakeland', phones: 29, toolRank: 7, toolSolv: 12.24 },
+  { name: 'Stuart’s Plumbing', me: true, phones: 24, toolRank: 4, toolSolv: 34.69 },
+  { name: 'Richard C Fox Plumbing', phones: 11, toolRank: 1, toolSolv: 69.39 },
+  { name: 'AP Drain Service', phones: 10, toolRank: 23, toolSolv: 0 },
+  { name: 'Benjamin Franklin Plumbing', phones: 9, toolRank: 2, toolSolv: 51.02 },
+  { name: 'Roto-Rooter', phones: 6, toolRank: 3, toolSolv: 36.73 },
+  { name: 'True Plumbers & AC', phones: 6, toolRank: 6, toolSolv: 24.49 },
+  { name: 'All Pro Plumbing & Air', phones: 0, toolRank: 5, toolSolv: 26.53 },
+];
+
 /** Where the tool's own map (cropped to its grid) draws its pins, as a share of the picture. */
 const AT = { x0: 5.23, y0: 5.15, step: 14.935 };
 const name = (p: DuelPoint) => `R${p.row + 1}·C${p.col + 1}`;
@@ -140,7 +156,44 @@ export function HeadToHead({ duel, pocket, reportUrl }: { duel: Duel; pocket: bo
           </div>
         </div>
 
-        <div className="mt-12 grid lg:grid-cols-2 gap-7 items-stretch">
+        <div className="mt-12 rounded-2xl bg-[#111923] border border-[#1E2B38] p-5 sm:p-7">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
+            <div className="max-w-2xl">
+              <h3 className="text-xl sm:text-2xl font-bold text-white">Same {P.length} Points. Two Different Leaderboards.</h3>
+              <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">How often each firm was in the top 3. The phones count the map pack’s top 3 or holding the 1-Box. The tool’s figure is its own Share of Local Voice.</p>
+            </div>
+            <div className="flex items-center gap-4 text-[11px] font-mono font-bold uppercase tracking-wider">
+              <span className="inline-flex items-center gap-1.5 text-emerald-300"><i className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" /> The phones</span>
+              <span className="inline-flex items-center gap-1.5 text-rose-300"><i className="w-2.5 h-2.5 rounded-full bg-rose-400 inline-block" /> The tool</span>
+            </div>
+          </div>
+          <ol className="mt-5 divide-y divide-[#1E2B38]">
+            {BOARD.map((b) => {
+              const share = Math.round((100 * b.phones) / P.length);
+              return (
+                <li key={b.name} className="py-3 grid sm:grid-cols-12 gap-x-5 gap-y-2 items-center">
+                  <div className="sm:col-span-4 flex items-baseline gap-2.5 min-w-0">
+                    <span className="font-mono text-xs text-slate-500 w-4 shrink-0">{b.phones ? 1 + BOARD.filter((x) => x.phones > b.phones).length : '–'}</span>
+                    <span className={`text-sm font-semibold truncate ${b.me ? 'text-emerald-300' : 'text-white'}`}>{b.name}{b.me ? ' (the client)' : ''}</span>
+                  </div>
+                  <div className="sm:col-span-8 space-y-1.5">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-2 rounded-full bg-[#0B1119] overflow-hidden"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${share}%` }} /></div>
+                      <span className="w-[150px] shrink-0 text-xs text-slate-200 tabular-nums"><strong className="text-white">{share}%</strong> · top 3 at {b.phones} of {P.length}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 h-2 rounded-full bg-[#0B1119] overflow-hidden"><div className="h-full rounded-full bg-rose-400" style={{ width: `${b.toolSolv}%` }} /></div>
+                      <span className="w-[150px] shrink-0 text-xs text-slate-400 tabular-nums"><strong className="text-slate-200">{b.toolSolv.toFixed(2)}%</strong> · ranked #{b.toolRank}</span>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          <p className="mt-4 text-[13px] text-slate-300 leading-relaxed">The tool crowned {BOARD[2].name} the market leader at {BOARD[2].toolSolv}%. On the phones it was in the top 3 at {BOARD[2].phones} of {P.length} points. The firm that led on the phones, {BOARD[0].name}, sits #{BOARD[0].toolRank} in the tool’s report, and the tool’s #{BOARD[7].toolRank}, {BOARD[7].name}, was not in a single top 3.</p>
+        </div>
+
+        <div className="mt-7 grid lg:grid-cols-2 gap-7 items-stretch">
           <div className="rounded-2xl bg-[#111923] border border-rose-500/30 p-6 sm:p-7">
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-[10.5px] font-bold uppercase tracking-wider"><X className="w-3.5 h-3.5" aria-hidden="true" /> Leading Maps-API Grid Tracker</div>
             <p className="mt-3 text-xs text-slate-400">Queries Google Maps API · Zero video proof · Blind to Search UI</p>
