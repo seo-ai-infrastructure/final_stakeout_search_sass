@@ -1,6 +1,7 @@
 import { ArrowRight, Check, Radio, X } from 'lucide-react';
 import { ACCOUNT_PLANS, type AccountPlan } from '@stakeout/core/gbpPlans';
 import { CLOSER, usd } from '@/lib/pricing';
+import { DEMO, TRACKER_GRID } from '@/lib/demo-real-scans';
 import { OfferBanner, SiteFoot } from '../marketing/SiteKit';
 import { HREF } from '../marketing/links';
 import PocketBanner from '../pocket/PocketBanner';
@@ -8,8 +9,10 @@ import '../marketing/site.css';
 import { Bet } from './Bet';
 import { ClientReports } from './ClientReports';
 import { FounderFacade } from './FounderFacade';
+import { HeadToHead, type Duel } from './HeadToHead';
 import { HeroReport } from './HeroReport';
 import { Pricing, type PlanCard } from './Pricing';
+import { WinRetainers } from './WinRetainers';
 
 const FONT = "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 /** A wrapper for the shared pieces styled under .so (the footer, the offer strip, the pocket test's panel) that adds nothing of its own. */
@@ -42,6 +45,13 @@ function planCard(key: AccountPlan, lead: string[]): PlanCard {
     ],
   };
 }
+
+/** The 7×7 scan of Nov 15, 2026 beside the ranks a leading rank-grid tool reported for the same points in the same minute. */
+const grid = DEMO.scans.grid;
+const DUEL: Duel = {
+  business: 'Stuart’s Plumbing', keyword: DEMO.keyword, date: grid.date, token: grid.shareToken,
+  points: grid.pins.map((p) => ({ id: p.id, pinId: p.pinId, row: p.row, col: p.col, zip: p.zip, theirs: TRACKER_GRID[p.row][p.col], rank: p.rank, pack: p.pack, solo: p.solo, own: p.solo === DEMO.business, aio: p.aio, cited: p.aiCited, aiPos: p.aiPos, aiCount: p.aiCount })),
+};
 
 /** The homepage (plans era): the $1 Pocket Test dare, a real report to click through, and the plan ladder. */
 export default function HomePage({ live, pocket }: { live: boolean; pocket: boolean }) {
@@ -136,6 +146,8 @@ export default function HomePage({ live, pocket }: { live: boolean; pocket: bool
           </div>
         </section>
 
+        <HeadToHead duel={DUEL} pocket={pocket} />
+
         <section id="why-trackers-lie" className="scroll-mt-16 py-20 lg:py-24 border-b border-[#1E2B38] bg-[#0B1119]">
           <Was ids={['real-hardware']} />
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -197,6 +209,7 @@ export default function HomePage({ live, pocket }: { live: boolean; pocket: bool
 
         <Was ids={['report']} />
         <ClientReports pocket={pocket} />
+        <WinRetainers closerHref={HREF.closer} closerPrice={usd(CLOSER.cents)} />
 
         <section id="founder-proof" className="scroll-mt-16 py-20 lg:py-24 border-b border-[#1E2B38] bg-[#0B1119]">
           <Was ids={['founder-story']} />
@@ -250,11 +263,13 @@ export default function HomePage({ live, pocket }: { live: boolean; pocket: bool
           pricingHref={HREF.pricing}
           closerHref={HREF.closer}
           closerPrice={usd(CLOSER.cents)}
+          supportHref={HREF.support}
+          supportEmail={HREF.support.replace('mailto:', '')}
         />
       </main>
 
       <div className="so" style={SO}>
-        <SiteFoot note="Verified on physical Android phones over live US 5G cellular lines. Every number comes with a real-device receipt. The report figures and phone recordings on this page come from the November 25, 2026 scan of Stuart’s Plumbing in Lakeland, Florida." />
+        <SiteFoot note="Verified on physical Android phones over live US 5G cellular lines. Every number comes with a real-device receipt. The report figures and phone recordings on this page come from the November 25, 2026 scan of Stuart’s Plumbing in Lakeland, Florida; the head-to-head comes from the 49-point scan of November 15, 2026." />
         {pocket && <PocketBanner bar={false} />}
       </div>
     </div>

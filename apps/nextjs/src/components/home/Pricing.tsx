@@ -6,7 +6,7 @@ import { ArrowRight, Check } from 'lucide-react';
 export type PlanCard = { name: string; dollars: number; bullets: string[] };
 
 /** The plan ladder. Prices and what each plan includes come from the live plan list, and each button starts that plan's sign-up; the $1 switch shows what a Pocket Test buyer pays the first month. */
-export function Pricing({ pocket, scout, agency, scale, max, plansHref, pricingHref, closerHref, closerPrice }: { pocket: boolean; scout: PlanCard; agency: PlanCard; scale: PlanCard; max: PlanCard; plansHref: string; pricingHref: string; closerHref: string; closerPrice: string }) {
+export function Pricing({ pocket, scout, agency, scale, max, plansHref, pricingHref, closerHref, closerPrice, supportHref, supportEmail }: { pocket: boolean; scout: PlanCard; agency: PlanCard; scale: PlanCard; max: PlanCard; plansHref: string; pricingHref: string; closerHref: string; closerPrice: string; supportHref: string; supportEmail: string }) {
   const [off, setOff] = useState(true);
   const [big, setBig] = useState<'scale' | 'max'>('scale');
   const high = big === 'scale' ? scale : max;
@@ -82,6 +82,11 @@ export function Pricing({ pocket, scout, agency, scale, max, plansHref, pricingH
             </div>
             {cta('mt-8 w-full py-3 px-4 rounded-xl bg-[#182330] hover:bg-[#213042] border border-[#2C3E52] text-white font-semibold text-sm transition-colors cursor-pointer', high)}
           </div>
+        </div>
+
+        <div className="mt-7 rounded-xl bg-gradient-to-r from-[#1A120E] via-[#23150E] to-[#1A120E] border border-[#FF6A28]/35 px-6 py-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <span className="shrink-0 px-2.5 py-1 rounded bg-[#FF6A28]/15 border border-[#FF6A28]/40 font-mono text-xs font-bold uppercase text-[#FF8A4F]">Dead-Tracker Buyout</span>
+          <p className="text-sm text-slate-200 leading-relaxed"><strong className="text-white">Locked into a legacy grid contract?</strong> Forward your last rank-tracker receipt to <a href={supportHref} className="font-semibold text-[#FF8A4F] hover:text-white underline underline-offset-4">{supportEmail}</a> after signing up and we’ll add <strong className="text-white">500 bonus phone sessions</strong> to your first month: twenty 5×5 grids on us.</p>
         </div>
 
         <p className="mt-6 text-center text-[13px] text-slate-400">

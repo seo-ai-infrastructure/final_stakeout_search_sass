@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, Play, X } from 'lucide-react';
-import { PocketOpenButton } from '../pocket/PocketBanner';
+import { ArrowUpRight, Play } from 'lucide-react';
+import { Recording } from './Recording';
 import { HOME_PIN_EVENT, PINS, REPORT, REPORT_URL, STATS, incomeTint, pct, pinBadge, pinName, recordingUrl, usd0, type GridMode, type HomePinEvent } from './data';
 
 const CENTER = PINS.findIndex((p) => p.r === 2 && p.c === 2);
@@ -33,12 +33,6 @@ export function HeroReport({ pocket }: { pocket: boolean }) {
     window.addEventListener(HOME_PIN_EVENT, open);
     return () => window.removeEventListener(HOME_PIN_EVENT, open);
   }, []);
-  useEffect(() => {
-    if (!playing) return;
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setPlaying(false); };
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [playing]);
 
   const lsa = pin.lsa.length;
   return (
@@ -191,31 +185,15 @@ export function HeroReport({ pocket }: { pocket: boolean }) {
       </div>
 
       {playing && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={`Phone recording for ${pinName(pin)}`} onClick={() => setPlaying(false)}>
-          <div className="w-full max-w-md max-h-full overflow-y-auto rounded-2xl bg-[#111923] border border-[#2C3E52] shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="px-4 py-3 bg-[#090E14] border-b border-[#1E2B38] flex items-center justify-between gap-3">
-              <div>
-                <span className="font-mono text-[10px] font-bold text-[#FF8A4F] uppercase">5G MP4 Screen Recording · {pinName(pin)}</span>
-                <h4 className="text-sm font-bold text-white">{pin.area} ({pin.zip})</h4>
-              </div>
-              <button type="button" autoFocus onClick={() => setPlaying(false)} aria-label="Close the recording" className="p-1.5 rounded-lg bg-slate-800/80 text-slate-300 hover:text-white cursor-pointer"><X className="w-4 h-4" aria-hidden="true" /></button>
-            </div>
-            <div className="p-5 bg-[#0B1119]">
-              <div className="mx-auto max-w-[300px] rounded-[26px] border-4 border-slate-700 bg-black overflow-hidden shadow-2xl">
-                <video key={pin.id} className="block w-full aspect-[9/16] max-h-[62vh] object-contain bg-black" src={recordingUrl(pin)} controls autoPlay muted playsInline preload="metadata" aria-label={`The phone’s screen recording of “${REPORT.keyword}” at ${pinName(pin)}, ${pin.area}`} />
-              </div>
-              <p className="mt-3 text-center text-[11px] text-slate-400">The real recording from this point: “{REPORT.keyword}”, {REPORT.when}.</p>
-              {pocket && (
-                <div className="mt-4 flex items-center justify-between gap-3">
-                  <span className="text-xs text-slate-400">Want to see this live at your own coordinates?</span>
-                  <span onClick={() => setPlaying(false)}>
-                    <PocketOpenButton className="shrink-0 inline-flex items-center gap-1 px-3.5 py-2 rounded-lg bg-[#FF6A28] hover:bg-[#ff7b40] text-white text-xs font-bold cursor-pointer">Test Your Pocket · $1 <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" /></PocketOpenButton>
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <Recording
+          point={pinName(pin)}
+          place={`${pin.area} (${pin.zip})`}
+          src={recordingUrl(pin)}
+          label={`The phone’s screen recording of “${REPORT.keyword}” at ${pinName(pin)}, ${pin.area}`}
+          caption={`The real recording from this point: “${REPORT.keyword}”, ${REPORT.when}.`}
+          pocket={pocket}
+          onClose={() => setPlaying(false)}
+        />
       )}
     </div>
   );
