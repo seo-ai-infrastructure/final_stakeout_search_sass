@@ -2,11 +2,10 @@
 
 import { useState } from 'react';
 import { ArrowRight, Check } from 'lucide-react';
-import { PocketOpenButton } from '../pocket/PocketBanner';
 
 export type PlanCard = { name: string; dollars: number; bullets: string[] };
 
-/** The plan ladder. Prices and what each plan includes come from the live plan list; the $1 switch shows what a Pocket Test buyer pays the first month. */
+/** The plan ladder. Prices and what each plan includes come from the live plan list, and each button starts that plan's sign-up; the $1 switch shows what a Pocket Test buyer pays the first month. */
 export function Pricing({ pocket, scout, agency, scale, max, plansHref, pricingHref, closerHref, closerPrice }: { pocket: boolean; scout: PlanCard; agency: PlanCard; scale: PlanCard; max: PlanCard; plansHref: string; pricingHref: string; closerHref: string; closerPrice: string }) {
   const [off, setOff] = useState(true);
   const [big, setBig] = useState<'scale' | 'max'>('scale');
@@ -23,14 +22,13 @@ export function Pricing({ pocket, scout, agency, scale, max, plansHref, pricingH
       {items.map((b) => <li key={b} className="flex items-start gap-2.5"><Check className={`w-4 h-4 ${tick} shrink-0 mt-0.5`} aria-hidden="true" /><span>{b}</span></li>)}
     </ul>
   );
-  const cta = (cls: string, label: string) => pocket
-    ? <PocketOpenButton className={cls}>{label}{'\u00A0'}→</PocketOpenButton>
-    : <a href={plansHref} className={cls + ' text-center block'}>Choose this plan →</a>;
+  // Each plan's button goes straight to sign-up and the plan checkout, as on the pricing page.
+  const cta = (cls: string, p: PlanCard) => <a href={plansHref} className={cls + ' block text-center'}>Start {p.name}{'\u00A0'}→</a>;
   return (
     <section id="pricing" className="scroll-mt-16 py-20 lg:py-24 border-b border-[#1E2B38]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center max-w-3xl mx-auto">
-          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[#FF8A4F]">Transparent Hardware Pricing • Zero Credit Games</span>
+          <span className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[#FF8A4F]">Transparent Hardware Pricing • No Coin Meters</span>
           <h2 className="mt-2 text-3xl sm:text-4xl font-extrabold tracking-tight text-white">Real 5G Phones. Predictable Monthly Plans. Zero “Casino Coins.”</h2>
           <p className="mt-3 text-slate-300 text-base">Every pin runs on physical Android hardware over live US 5G lines—with MP4 video receipts and AI Overview parsing included.</p>
           {pocket && (
@@ -52,7 +50,7 @@ export function Pricing({ pocket, scout, agency, scale, max, plansHref, pricingH
               {price(scout)}
               {list(scout.bullets, 'text-emerald-400', 'text-slate-300')}
             </div>
-            {cta('mt-8 w-full py-3 px-4 rounded-xl bg-[#182330] hover:bg-[#213042] border border-[#2C3E52] text-white font-semibold text-sm transition-colors cursor-pointer', 'Start With $1 Pocket Test')}
+            {cta('mt-8 w-full py-3 px-4 rounded-xl bg-[#182330] hover:bg-[#213042] border border-[#2C3E52] text-white font-semibold text-sm transition-colors cursor-pointer', scout)}
           </div>
 
           <div className="rounded-2xl bg-gradient-to-b from-[#192434] to-[#111923] border-2 border-[#FF6A28] p-7 flex flex-col justify-between relative shadow-2xl shadow-[#FF6A28]/10">
@@ -66,7 +64,7 @@ export function Pricing({ pocket, scout, agency, scale, max, plansHref, pricingH
               {price(agency)}
               {list(agency.bullets, 'text-[#FF8A4F]', 'text-slate-200')}
             </div>
-            {cta('mt-8 w-full py-3.5 px-4 rounded-xl bg-[#FF6A28] hover:bg-[#ff7b40] text-white font-bold text-sm shadow-lg shadow-[#FF6A28]/25 transition-all cursor-pointer', 'Test Your Pocket for $1, Then Upgrade')}
+            {cta('mt-8 w-full py-3.5 px-4 rounded-xl bg-[#FF6A28] hover:bg-[#ff7b40] text-white font-bold text-sm shadow-lg shadow-[#FF6A28]/25 transition-all cursor-pointer', agency)}
           </div>
 
           <div className="rounded-2xl bg-[#111923] border border-[#1E2B38] p-7 flex flex-col justify-between">
@@ -82,12 +80,11 @@ export function Pricing({ pocket, scout, agency, scale, max, plansHref, pricingH
               {price(high)}
               {list(high.bullets, 'text-emerald-400', 'text-slate-300')}
             </div>
-            {cta('mt-8 w-full py-3 px-4 rounded-xl bg-[#182330] hover:bg-[#213042] border border-[#2C3E52] text-white font-semibold text-sm transition-colors cursor-pointer', 'Verify Hardware for $1 First')}
+            {cta('mt-8 w-full py-3 px-4 rounded-xl bg-[#182330] hover:bg-[#213042] border border-[#2C3E52] text-white font-semibold text-sm transition-colors cursor-pointer', high)}
           </div>
         </div>
 
         <p className="mt-6 text-center text-[13px] text-slate-400">
-          {pocket && <><a href={plansHref} className="font-semibold text-slate-200 hover:text-[#FF8A4F] underline underline-offset-4">Skip the test and choose a plan now</a> · </>}
           <a href={pricingHref} className="font-semibold text-slate-200 hover:text-[#FF8A4F] underline underline-offset-4">Full pricing, yearly billing and the listing add-on</a>
         </p>
 

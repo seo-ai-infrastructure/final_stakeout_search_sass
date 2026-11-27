@@ -216,7 +216,7 @@ export default function HomePage({ live, pocket }: { live: boolean; pocket: bool
                 <div className="rounded-2xl bg-[#111923] border border-[#243444] overflow-hidden shadow-2xl">
                   <div className="px-4 py-3 bg-[#090E14] border-b border-[#1E2B38] flex items-center justify-between gap-2">
                     <span className="font-mono text-[10.5px] font-bold uppercase tracking-wider text-[#FF8A4F]">📼 Recorded Before Stakeout Existed • Unfiltered Breakdown</span>
-                    <span className="text-[11px] font-mono text-slate-400">07:34</span>
+                    <span className="text-[11px] font-mono text-slate-400">07:38</span>
                   </div>
                   <FounderFacade />
                   <div className="p-4 sm:p-5 text-xs sm:text-[13px] text-slate-300 leading-relaxed">Watch the original side-by-side test putting three major local rank trackers against physical mobile phones in Fort Lauderdale—exposing Maps API distortions, UULE snapback, and live mobile AI packs.</div>
