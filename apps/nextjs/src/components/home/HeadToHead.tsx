@@ -27,8 +27,8 @@ const BOARD: { name: string; me?: boolean; phones: number; toolRank: number; too
   { name: 'Richard C Fox Plumbing', phones: 11, toolRank: 1, toolSolv: 69.39 },
   { name: 'AP Drain Service', phones: 10, toolRank: 23, toolSolv: 0 },
   { name: 'Benjamin Franklin Plumbing', phones: 9, toolRank: 2, toolSolv: 51.02 },
-  { name: 'Roto-Rooter', phones: 6, toolRank: 3, toolSolv: 36.73 },
   { name: 'True Plumbers & AC', phones: 6, toolRank: 6, toolSolv: 24.49 },
+  { name: 'Roto-Rooter', phones: 6, toolRank: 3, toolSolv: 36.73 },
   { name: 'All Pro Plumbing & Air', phones: 0, toolRank: 5, toolSolv: 26.53 },
 ];
 
