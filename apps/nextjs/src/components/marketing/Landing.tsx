@@ -4,7 +4,6 @@ import { DEMO, scanStats, shareReportUrl } from '@/lib/demo-real-scans';
 import { CLOSER, WELCOME, usd } from '@/lib/pricing';
 import { Arrow, OfferBanner, SiteFoot, SiteNav } from './SiteKit';
 import { HREF } from './links';
-import { RecordedSearchLink } from './RecordedSearchLink';
 import { FounderVideo } from './FounderVideo';
 import PocketBanner, { PocketOpenButton } from '../pocket/PocketBanner';
 import './site.css';
@@ -56,17 +55,15 @@ export default function Landing({ live, plans }: { live: boolean; plans?: boolea
       <main>
         <section className="lp-hero" aria-labelledby="lp-title">
           <div className="lp-wrap lp-hero-layout">
-            <div className="lp-intro">
-              <p className="lp-kicker"><span className="lp-signal" /> Every data point comes with a receipt.</p>
-              <h1 id="lp-title">Show clients the Google search <em>behind every map pin.</em></h1>
-              <p className="lp-lead">At every grid pin, a real Android phone runs your keyword and records the screen. See where your client makes the local pack, where their website shows up and which businesses Google’s AI names.</p>
+            <div className="lp-intro lp-intro-bet">
+              <p className="lp-kicker"><span className="lp-signal" /> REAL 5G ANDROID HARDWARE • VIDEO RECEIPTS INCLUDED</p>
+              <h1 id="lp-title" className="lp-title-long">If Your Rank Tracker Can’t Match the Phone in Your Pocket, You’re Paying Monthly for <em>Fake Green Dots.</em></h1>
+              <p className="lp-lead">Legacy map grids rely on Maps-only APIs and headless data-center scrapers—completely missing Local Service Ads, mobile ads, AI Overviews, and true 3-Pack shifts. Stakeout Search runs physical Android phones over live 5G cellular lines and records every search on video.</p>
               <div className="lp-actions">
-                <RecordedSearchLink />
-                {plans
-                  ? <a className="lp-secondary" href={HREF.pricing + '#plans'}>Plans from {usd(ACCOUNT_PLANS.P_SCOUT.tiers[0].cents)}/mo <Arrow size={15} /></a>
-                  : <AuditLink plans={false} />}
+                {pocket && <PocketOpenButton className="lp-hero-bet so-btn">Test Your Location Right Now · $1 <Arrow size={17} /></PocketOpenButton>}
+                <a className={pocket ? 'lp-secondary' : 'lp-primary so-btn'} href="#pricing">See Monthly Grid Plans</a>
               </div>
-              {plans && <p className="lp-terms"><a className="lp-proof-link" href={HREF.closer}>Test your own keyword over 5G · {usd(CLOSER.cents)}</a> · Two 5×5 grids. No subscription.</p>}
+              {pocket && <p className="lp-terms">Apple Pay &amp; Google Pay supported · No subscription · Matches your phone on cellular + private tab, or send a screenshot for a full $1 refund.</p>}
             </div>
             <figure id="real-vs-reported" className="lp-mapcard">
               <figcaption className="lp-maphead">

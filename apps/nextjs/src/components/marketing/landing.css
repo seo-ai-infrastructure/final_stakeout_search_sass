@@ -172,3 +172,26 @@
   .lp-account-plans { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .lp a.lp-proof-link { color: #ffc19d; text-decoration: underline; text-underline-offset: 3px; }
+
+/* The hero's long headline ("…Fake Green Dots.") and its pocket-test button. */
+.lp h1.lp-title-long { font-size: clamp(34px, 3.35vw, 50px); line-height: 1.08; letter-spacing: -.045em; }
+.lp main .lp-intro-bet .lp-lead { max-width: 560px; font-size: clamp(16px, 1.2vw, 18px); }
+.lp .lp-hero-bet { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 48px; padding: 12px 19px; border: 0; border-radius: 8px; background: #ff641e; color: #15100d; font-family: inherit; font-weight: 700; font-size: 16px; line-height: 1.35; }
+.lp .lp-hero-bet:hover { filter: brightness(1.1); }
+.lp main .lp-intro-bet .lp-terms { max-width: 560px; }
+@media (max-width: 760px) {
+  .lp h1.lp-title-long { font-size: clamp(27px, 7.3vw, 40px); line-height: 1.1; letter-spacing: -.04em; margin-top: 12px; }
+  .lp-hero-layout:has(.lp-intro-bet) { padding-top: 22px; }
+  /* On a phone the $1 button comes straight after the headline, so it is on the first screen; the paragraph follows it. */
+  .lp-intro-bet { display: flex; flex-direction: column; }
+  .lp-intro-bet .lp-actions { order: 3; margin-top: 16px; }
+  .lp main .lp-intro-bet .lp-terms { order: 4; margin-top: 10px; font-size: 12.5px; }
+  .lp main .lp-intro-bet .lp-lead { order: 5; margin: 18px 0 0; }
+  .lp-intro-bet .lp-hero-bet { font-size: 15px; white-space: nowrap; }
+}
+@media (max-width: 440px) {
+  .lp main .lp-intro-bet .lp-kicker { font-size: 10px; letter-spacing: .06em; }
+}
+@media (max-width: 760px) {
+  .lp .lp-intro-bet .lp-actions a.lp-secondary { min-height: 44px; height: 46px; padding-block: 0; }
+}

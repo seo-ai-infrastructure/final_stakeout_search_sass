@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
-import { Smartphone, X } from 'lucide-react';
+import { ArrowRight, Smartphone, X } from 'lucide-react';
 import PocketTestForm from './PocketTestForm';
 import './pocket.css';
 
@@ -33,8 +33,8 @@ export default function PocketBanner() {
   return (
     <>
       <aside className="pk-banner" aria-label="The $1 Pocket Test">
-        <p><Smartphone size={17} aria-hidden="true" /> <span><strong>The $1 Pocket Test:</strong> run a live mobile capture right where you’re sitting and compare our video receipt to the phone in your hand. Not even close? Send a screenshot and get your buck back.</span></p>
-        <button type="button" className="pk-banner-cta" onClick={() => setOpen(true)}>Test your location for $1</button>
+        <p><Smartphone size={17} aria-hidden="true" /> <span><strong>The $1 Pocket Test:</strong> Bet $1 our live 5G phone matches the phone in your hand—or get your buck back.</span></p>
+        <button type="button" className="pk-banner-cta" onClick={() => setOpen(true)}>Take the $1 Bet <ArrowRight size={15} aria-hidden="true" /></button>
       </aside>
       <dialog ref={dialog} className="pk-drawer" aria-labelledby="pk-drawer-title" onClose={() => setOpen(false)} onClick={(e) => { if (e.target === dialog.current) setOpen(false); }}>
         <div className="pk-drawer-in">
