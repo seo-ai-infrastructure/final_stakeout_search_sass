@@ -156,8 +156,8 @@ export default function HomePage({ live, pocket }: { live: boolean; pocket: bool
                   <div className="mt-6 p-5 rounded-xl bg-[#090E14] border border-dashed border-slate-700 flex items-center gap-5">
                     <div aria-hidden="true" className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center text-2xl font-extrabold text-emerald-300 shrink-0">#2</div>
                     <div>
-                      <div className="text-sm font-bold text-white">Report says: “You’re crushing it at #2!”</div>
-                      <p className="text-xs text-slate-400 mt-1">Meanwhile, your client’s phone hasn’t rung since Tuesday—because on a real 5G phone, a competitor holds a 1-Box hijack or an AI Overview buried the pack 2.5 scrolls down.</p>
+                      <div className="text-sm font-bold text-white">Tracker says: “You’re #2 right here!”</div>
+                      <p className="text-xs text-slate-400 mt-1">Stand on that exact corner with a real 5G phone and you aren’t #2 at all—you’re #9, completely missing from the 3-Pack, plus your GBP is completely wiped out by a competitor’s 1-Box. The scraper queried a Maps API from the city center and painted a fake green dot.</p>
                     </div>
                   </div>
                   <ul className="mt-6 space-y-3 text-sm text-slate-300">
